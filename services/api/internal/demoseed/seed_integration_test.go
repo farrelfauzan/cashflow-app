@@ -149,11 +149,15 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, 10, ga["unit"].Rows)
 		require.Equal(t, 7, ga["tenant"].Rows)
 		require.Equal(t, 8, ga["lease"].Rows, "seven running leases and Dewi's ended one")
+		require.Equal(t, 5, ga["charge_type"].Rows)
+		require.Equal(t, 4, ga["lease_charge"].Rows, "Wi-Fi on two rooms, parkir and kebersihan on Ruko 1")
 		require.Equal(t, 4, gb["membership"].Rows)
 		require.Equal(t, 1, gb["property"].Rows)
 		require.Equal(t, 4, gb["unit"].Rows)
 		require.Equal(t, 3, gb["tenant"].Rows)
 		require.Equal(t, 3, gb["lease"].Rows)
+		require.Zero(t, gb["charge_type"].Rows)
+		require.Zero(t, gb["lease_charge"].Rows)
 		require.Positive(t, ga["audit_log"].Rows, "the snapshot covers the audit log too")
 		require.Equal(t, 6, ga["staff_user"].Rows, "an organization scope sees its own members' users")
 	})
@@ -257,6 +261,49 @@ func TestSeedDemo(t *testing.T) {
 		require.NotEqual(t, rinaA.ID, rinaB.ID)
 		require.Equal(t, []string{"Kontrakan Mawar/Rumah B", "Kos Melati/Kamar 1"}, leaseUnits(rinaA))
 		require.Equal(t, []string{"Kos Putri Anggrek/Kamar 3"}, leaseUnits(rinaB))
+	})
+
+	t.Run("a few leases carry fixed extras", func(t *testing.T) {
+		types, err := env.Tenants.ListChargeTypes(ctx, adminA)
+		require.NoError(t, err)
+		var typeNames []string
+		for _, ct := range types {
+			require.False(t, ct.Metered, ct.Name)
+			typeNames = append(typeNames, ct.Name)
+		}
+		require.Equal(t, []string{"Air", "Kebersihan", "Listrik", "Parkir", "Wi-Fi"}, typeNames)
+
+		got := map[string][]tenant.Charge{}
+		for _, tn := range tenantsA {
+			for _, l := range tn.Leases {
+				require.NotNil(t, l.Charges, "%s %s", l.PropertyName, l.UnitLabel)
+				for _, c := range l.Charges {
+					// Ids differ per run; names and amounts are fixed.
+					got[tn.Name+"/"+l.UnitLabel] = append(got[tn.Name+"/"+l.UnitLabel], tenant.Charge{Name: c.Name, Amount: c.Amount})
+				}
+			}
+		}
+		require.Equal(t, map[string][]tenant.Charge{
+			"Rina Wulandari/Kamar 1": {{Name: "Wi-Fi", Amount: 50_000}},
+			"Budi Santoso/Kamar 2":   {{Name: "Wi-Fi", Amount: 50_000}},
+			"Toko Sumber Rejeki (Pak Agus)/Ruko 1": {
+				{Name: "Kebersihan", Amount: 50_000}, {Name: "Parkir", Amount: 100_000},
+			},
+		}, got)
+	})
+
+	t.Run("a lease whose extras were changed keeps them on a rerun", func(t *testing.T) {
+		budi := find(t, tenantsA, "Budi Santoso")
+		_, err := env.Tenants.SetLeaseCharges(ctx, adminA, budi.Leases[0].ID, []tenant.ChargeInput{
+			{ChargeTypeID: budi.Leases[0].Charges[0].ChargeTypeID, Amount: 60_000},
+		})
+		require.NoError(t, err)
+		_, err = demoseed.Run(ctx, deps(env), env.Clock)
+		require.NoError(t, err)
+		again, err := env.Tenants.Get(ctx, adminA, budi.ID)
+		require.NoError(t, err)
+		require.Len(t, again.Leases[0].Charges, 1)
+		require.Equal(t, int64(60_000), again.Leases[0].Charges[0].Amount, "the seed never overwrites extras a lease already has")
 	})
 
 	t.Run("A's admin cannot see B's tenants", func(t *testing.T) {

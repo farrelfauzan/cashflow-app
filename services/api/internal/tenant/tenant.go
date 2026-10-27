@@ -91,9 +91,15 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Tenant, error)
 		if err != nil {
 			return fmt.Errorf("listing leases: %w", err)
 		}
+		leases := make([]Lease, len(leaseRows))
+		for i, r := range leaseRows {
+			leases[i] = toLease(dbgen.GetLeaseDetailRow(r))
+		}
+		if err := attachCharges(ctx, q, p.OrganizationID, leases); err != nil {
+			return err
+		}
 		byTenant := map[uuid.UUID][]Lease{}
-		for _, r := range leaseRows {
-			l := toLease(dbgen.GetLeaseDetailRow(r))
+		for _, l := range leases {
 			byTenant[l.TenantID] = append(byTenant[l.TenantID], l)
 		}
 		out = []Tenant{}
@@ -286,6 +292,9 @@ func load(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (dbgen.Tenan
 	leases := make([]Lease, len(rows))
 	for i, row := range rows {
 		leases[i] = toLease(dbgen.GetLeaseDetailRow(row))
+	}
+	if err := attachCharges(ctx, q, org, leases); err != nil {
+		return r, nil, err
 	}
 	return r, leases, nil
 }
