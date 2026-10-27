@@ -15,8 +15,9 @@ summarizes, reminds and reports.
   template. Its README says how to run it. Not built yet: invoices and everything after them
   (phase B onward), including the extra charges designed for slice 2. Still open from slice 0:
   VPS provider and staging.
-- **Web:** the scaffold plan is agreed and `apps/web` is being built by the frontend. Create or
-  change the scaffold only as part of that work.
+- **Web:** the scaffold plan is approved (decision 20) and the frontend is building `apps/web`.
+  Create or change the scaffold only as part of that work. The designs for the login,
+  organization picker and members screens are still awaiting approval.
 - **WhatsApp sending works through GOWA.** `internal/messaging/gowa` sends login codes today.
   In development `WHATSAPP_PROVIDER=devlog` writes messages to the API log instead, and only
   development may use it. Inbound messages (the GOWA webhook), the message log and send pacing
