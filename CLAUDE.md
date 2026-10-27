@@ -122,8 +122,8 @@ in this file, this file wins.
   OpenAPI contract as the source of truth.
 - **sqlc guardrails**:
   - CI runs `sqlc diff`, so generated code can never be stale.
-  - No `UPDATE` or `DELETE` queries on payment, allocation or correction tables. A database
-    trigger also rejects them, so a hand-written query cannot bypass the rule.
+  - No `UPDATE` or `DELETE` queries on payment, allocation, correction or invoice line tables.
+    A database trigger also rejects them, so a hand-written query cannot bypass the rule.
   - `depguard` forbids importing the pgx pool outside the store package, so every query goes
     through `WithOrgTx`.
   - An integration test connects as the app role, sets organization A and expects zero rows
@@ -295,6 +295,10 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   per month and billed once, on the next invoice generated after they are recorded. Lines are
   snapshotted when the invoice is generated and never recomputed; the invoice total is the one
   amount FIFO allocation pays. A missing meter amount never delays the invoice.
+- A metered amount can be edited until an invoice line bills it; then it is locked (the service
+  refuses and a trigger rejects the update), and fixes are corrections on the invoice. Metered
+  usage recorded after the last regular invoice goes on one final invoice at move-out (at most
+  one per lease), which the move-out-with-arrears rule treats like any other open invoice.
 - WA: H-3 (invoice + pay link), H0, H+3. At H+7 the tenant joins the karyawan visit list.
   Reminders stop the moment the invoice is fully paid.
 - Rollover message: "Tagihan Desember Rp X + sisa November Rp Y = Rp Z" with one pay link.
