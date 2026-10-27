@@ -67,12 +67,17 @@ func TestParseValues(t *testing.T) {
 	for in, want := range map[string]int64{
 		"850000": 850_000, "850.000": 850_000, "Rp850.000": 850_000, "rp 1.250.000": 1_250_000,
 		"Rp850.000,00": 850_000, " 15000000 ": 15_000_000, "": 0,
+		"850000.00": 850_000, "850000,00": 850_000, "1.250.000.00": 1_250_000, "850000.0": 850_000,
 	} {
 		got, ok := parseRupiah(in)
 		require.True(t, ok, in)
 		require.Equal(t, want, got, in)
 	}
-	for _, in := range []string{"850rb", "850,000", "850.000,50", "-850000", "Rp", "1e6"} {
+	// A dot that is not between groups of three is a decimal point: refused, never dropped.
+	for _, in := range []string{
+		"850rb", "850,000", "850.000,50", "-850000", "Rp", "1e6",
+		"850.5", "1.25", "850000.50", "85.0000", "8.50.000", ".850", "850.",
+	} {
 		if in == "Rp" {
 			got, ok := parseRupiah(in)
 			require.True(t, ok)

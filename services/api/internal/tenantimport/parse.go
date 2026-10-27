@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -154,22 +155,31 @@ func blank(fields []string) bool {
 	return !slices.ContainsFunc(fields, func(f string) bool { return strings.TrimSpace(f) != "" })
 }
 
-// parseRupiah reads a whole rupiah amount written as "850000", "850.000", "Rp850.000" or
-// "Rp 850.000,00". An empty cell is 0; the services decide whether 0 is allowed.
+var (
+	// zeroCents is an explicit "no cents" tail, as Excel writes it in either locale.
+	zeroCents = regexp.MustCompile(`[.,]00?$`)
+	// wholeRupiah is plain digits, or digits with a dot between every group of three.
+	wholeRupiah = regexp.MustCompile(`^(\d+|\d{1,3}(\.\d{3})+)$`)
+)
+
+// parseRupiah reads a whole rupiah amount written as "850000", "850.000", "Rp850.000",
+// "Rp 850.000,00" or "850000.00". A dot is only a thousands separator; any other fraction, such
+// as "850.5", is refused rather than guessed. An empty cell is 0; the services decide whether 0
+// is allowed.
 func parseRupiah(s string) (int64, bool) {
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 && strings.EqualFold(s[:2], "rp") {
 		s = s[2:]
 	}
-	s = strings.NewReplacer(" ", "", ".", "").Replace(s)
-	s = strings.TrimSuffix(strings.TrimSuffix(s, ",00"), ",0")
+	s = strings.ReplaceAll(s, " ", "")
 	if s == "" {
 		return 0, true
 	}
-	if strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+	s = zeroCents.ReplaceAllString(s, "")
+	if !wholeRupiah.MatchString(s) {
 		return 0, false
 	}
-	v, err := strconv.ParseInt(s, 10, 64)
+	v, err := strconv.ParseInt(strings.ReplaceAll(s, ".", ""), 10, 64)
 	return v, err == nil
 }
 
@@ -179,8 +189,8 @@ func parseDay(s string) (int, bool) {
 	if s == "" {
 		return 0, true
 	}
-	v, err := strconv.Atoi(s)
-	return v, err == nil
+	v, err := strconv.ParseInt(s, 10, 16) // bounded, so it fits any integer type downstream
+	return int(v), err == nil
 }
 
 // dateLayouts are the accepted date forms: ISO, and day first as Indonesians write dates.
