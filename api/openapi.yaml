@@ -561,6 +561,33 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/imports/tenants/template:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [tenants]
+      operationId: getTenantImportTemplate
+      summary: Download a CSV template for the tenant import (needs tenant:manage and lease:manage for the whole organization)
+      description: >
+        A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens
+        it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The
+        header row uses the Indonesian column names (properti, jenis_properti, kamar,
+        nama_penyewa, no_wa, sewa, jatuh_tempo, tanggal_mulai, jaminan), followed by two example
+        rows. The same file, example rows included, imports with no row errors. Served as an
+        attachment named template-impor-penyewa.csv.
+      responses:
+        "200":
+          description: The template
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="template-impor-penyewa.csv"' }
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   parameters:
     OrgId:
