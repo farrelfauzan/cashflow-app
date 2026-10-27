@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -74,6 +75,9 @@ func TestImport(t *testing.T) {
 			require.True(t, row.OK(), "line %d: %v", row.Line, row.Errors)
 		}
 		require.Equal(t, tenantimport.Matched, res.Rows[3].Tenant, "line 5 finds Rina from line 2")
+		require.Equal(t, &tenantimport.Values{
+			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Rent: 900_000, DueDay: 10,
+		}, res.Rows[1].Values, "the row shows the terms it would save: 01/10/2026 read day first, no deposit")
 		require.Equal(t, counts{}, countAll(t, env, admin))
 		require.Len(t, env.AuditLog(t, o.ID), auditBefore, "the audit rows of a dry run roll back with it")
 	})
@@ -86,6 +90,7 @@ func TestImport(t *testing.T) {
 		require.True(t, res.Rows[0].OK())
 		require.Equal(t, []string{"phone"}, errorColumns(res.Rows[1]))
 		require.Equal(t, []string{"rent"}, errorColumns(res.Rows[2]))
+		require.Nil(t, res.Rows[2].Values, "no values when the rent cannot be read")
 		require.Equal(t, []string{"due_day"}, errorColumns(res.Rows[3]))
 		require.Equal(t, []string{"start_date"}, errorColumns(res.Rows[4]))
 		require.Equal(t, []string{"unit"}, errorColumns(res.Rows[5]), "Kamar 1 is already rented to Rina on line 2")
@@ -143,18 +148,31 @@ func TestImport(t *testing.T) {
 		require.Equal(t, counts{properties: 3, units: 5, tenants: 4, leases: 5}, countAll(t, env, admin))
 	})
 
-	t.Run("existing records are matched, and differences are noted, not applied", func(t *testing.T) {
+	t.Run("a known phone under another name is an error, not a merge", func(t *testing.T) {
 		data := []byte("property,unit,tenant_name,phone,rent,due_day,start_date\n" +
-			"KOS MELATI,kamar 2,Pak Budi,0812-8100-5002,950.000,10,2026-10-01\n" +
-			"Kos Melati,Kamar 12,Pak Budi,0812-8100-5002,950.000,10,2026-11-01\n")
+			"Kos Melati,Kamar 7,Pak Budi,0812-8100-5002,950.000,10,2026-11-01\n")
+		res, err := env.Imports.Run(ctx, admin, data, false)
+		require.NoError(t, err)
+		require.False(t, res.Committed)
+		require.Equal(t, []string{"phone"}, errorColumns(res.Rows[0]))
+		require.Contains(t, res.Rows[0].Errors[0].Message, "Budi Santoso")
+		require.Empty(t, res.Rows[0].Unit, "the row's unit is rolled back with it")
+		require.Equal(t, counts{properties: 3, units: 5, tenants: 4, leases: 5}, countAll(t, env, admin))
+	})
+
+	t.Run("existing records are matched, and differences are noted, not applied", func(t *testing.T) {
+		data := []byte("property,unit,tenant_name,phone,rent,due_day,start_date,deposit\n" +
+			"KOS MELATI,kamar 2,budi santoso,0812-8100-5002,900.000,10,2026-10-01,500.000\n" +
+			"Kos Melati,Kamar 12,Budi Santoso,0812-8100-5002,950.000,10,2026-11-01,\n")
 		res, err := env.Imports.Run(ctx, admin, data, false)
 		require.NoError(t, err)
 		require.True(t, res.Committed)
 		first, second := res.Rows[0], res.Rows[1]
 		require.Equal(t, tenantimport.Matched, first.Property)
 		require.Equal(t, tenantimport.Matched, first.Unit)
+		require.Equal(t, tenantimport.Matched, first.Tenant, "names match ignoring case")
 		require.Equal(t, tenantimport.Matched, first.Lease)
-		require.Len(t, first.Notes, 2, "a different name and different lease terms")
+		require.Len(t, first.Notes, 1, "only the deposit differs, and it is noted")
 		require.Equal(t, tenantimport.Created, second.Unit)
 		require.Equal(t, tenantimport.Created, second.Lease)
 		require.Equal(t, counts{properties: 3, units: 6, tenants: 4, leases: 6}, countAll(t, env, admin))

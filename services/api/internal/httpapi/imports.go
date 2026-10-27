@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -72,6 +74,12 @@ func toAPIImportResult(res tenantimport.Result) apigen.ImportResult {
 			r.Errors = append(r.Errors, apigen.ImportRowError{Column: e.Column, Message: e.Message})
 		}
 		r.Notes = append(r.Notes, row.Notes...)
+		if v := row.Values; v != nil {
+			r.Values = &apigen.ImportRowValues{
+				StartDate: openapi_types.Date{Time: v.StartDate}, RentAmount: v.Rent, DepositAmount: v.Deposit,
+				DueDay: int32(v.DueDay), //nolint:gosec // parseDay keeps it within int16
+			}
+		}
 		out.Rows[i] = r
 	}
 	return out

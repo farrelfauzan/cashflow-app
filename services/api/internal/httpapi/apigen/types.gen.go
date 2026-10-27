@@ -219,12 +219,15 @@ type ImportRow struct {
 	// Line Line number in the file, counting the header as line 1.
 	Line int `json:"line"`
 
-	// Notes Things worth a look that are not errors, such as a known number with a different name.
+	// Notes Things worth a look that are not errors, such as an existing lease whose terms differ from the row.
 	Notes    []string        `json:"notes"`
 	Property *ImportAction   `json:"property,omitempty"`
 	Status   ImportRowStatus `json:"status"`
 	Tenant   *ImportAction   `json:"tenant,omitempty"`
 	Unit     *ImportAction   `json:"unit,omitempty"`
+
+	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+	Values *ImportRowValues `json:"values,omitempty"`
 }
 
 // ImportRowStatus defines model for ImportRow.Status.
@@ -239,6 +242,17 @@ type ImportRowError struct {
 
 	// Message Example: Nomor WhatsApp tidak valid.
 	Message string `json:"message"`
+}
+
+// ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+type ImportRowValues struct {
+	// DepositAmount Deposit in rupiah; 0 when the cell is empty.
+	DepositAmount int64 `json:"depositAmount"`
+	DueDay        int32 `json:"dueDay"`
+
+	// RentAmount Monthly rent in rupiah.
+	RentAmount int64              `json:"rentAmount"`
+	StartDate  openapi_types.Date `json:"startDate"`
 }
 
 // ImportSummary defines model for ImportSummary.

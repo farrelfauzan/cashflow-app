@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -42,6 +43,15 @@ type Row struct {
 	Notes  []string
 	// What happened to each record; empty when the row stopped before reaching it.
 	Property, Unit, Tenant, Lease Action
+	// Values are the lease terms as read from the row; nil when any of them could not be read.
+	Values *Values
+}
+
+// Values are the lease terms read from a row, shown so a dry run says exactly what is saved.
+type Values struct {
+	StartDate     time.Time
+	Rent, Deposit int64
+	DueDay        int
 }
 
 // OK reports whether the row has no errors.
@@ -177,6 +187,9 @@ func check(rec record, row *Row) input {
 		fail(colStartDate, "Tanggal mulai harus seperti 2026-10-01 atau 01/10/2026.")
 	}
 	parsed := len(row.Errors) == 0
+	if parsed {
+		row.Values = &Values{StartDate: start, Rent: rent, Deposit: deposit, DueDay: dueDay}
+	}
 
 	var in input
 	var err error
@@ -238,15 +251,19 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 	if err != nil {
 		return err
 	}
+	// One phone is one tenant. A different name usually means two people share a number (a
+	// parent's phone for two children), which the app cannot hold, so the admin must decide.
 	if row.Tenant == Matched && !strings.EqualFold(tn.Name, in.tenant.Name) {
-		row.Notes = append(row.Notes, fmt.Sprintf("Nomor ini sudah terdaftar atas nama %s; nama itu yang dipakai.", tn.Name))
+		msg := fmt.Sprintf("Nomor ini sudah dipakai %s. Samakan nama atau pakai nomor lain.", tn.Name)
+		return &rowError{RowError{Column: colPhone, Message: msg}}
 	}
 
 	current, err := tenant.ActiveLeaseForUnit(ctx, tx, org, unit.ID)
 	switch {
 	case err == nil && current.TenantID == tn.ID:
 		row.Lease = Matched
-		if current.RentAmount != in.terms.RentAmount || current.DueDay != in.terms.DueDay || !current.StartDate.Equal(in.terms.StartDate) {
+		if current.RentAmount != in.terms.RentAmount || current.DueDay != in.terms.DueDay ||
+			current.DepositAmount != in.terms.DepositAmount || !current.StartDate.Equal(in.terms.StartDate) {
 			row.Notes = append(row.Notes, "Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya.")
 		}
 		return nil

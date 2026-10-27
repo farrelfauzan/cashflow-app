@@ -39,6 +39,8 @@ func TestImportOverHTTP(t *testing.T) {
 		require.True(t, res.DryRun)
 		require.False(t, res.Committed)
 		require.Equal(t, 1, res.Summary.LeasesCreated)
+		require.Equal(t, int64(850_000), res.Rows[0].Values.RentAmount)
+		require.Contains(t, string(body), `"startDate":"2026-10-01"`, "01/10/2026 is read day first and shown as a plain date")
 
 		resp, body = admin.do(http.MethodGet, "/api/orgs/"+o.ID.String()+"/tenants", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
