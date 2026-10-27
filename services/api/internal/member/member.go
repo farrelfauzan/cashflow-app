@@ -69,7 +69,8 @@ type Member struct {
 type Invite struct {
 	Phone string
 	Name  string
-	Roles []string
+	// Roles are the member's built-in roles, each optionally limited to one property.
+	Roles []RoleGrant
 }
 
 // Service manages members.
@@ -112,8 +113,24 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 	return out, err
 }
 
-// Invite adds a staff member by phone number. Granting a role needs role:assign on that role,
-// so an Admin can add Admins and Karyawan but not a Supervisor.
+// Invite adds a staff member by phone number with built-in roles, each optionally limited to
+// one property. It needs member:invite and role:assign on every role granted, so an Admin can
+// add Admins and Karyawan but not a Supervisor. A property limit narrows the stored grant only;
+// it is not part of the check, and a principal whose roles are all limited to properties
+// cannot invite anyone.
+//
+// The staff user lives outside any organization and can only be written in the auth scope, so
+// an invite takes three steps:
+//  1. Validate the input, check every permission and every property limit. A denial or an
+//     invalid grant stops here and writes nothing except the audited denial.
+//  2. Find or create the staff user in the auth scope.
+//  3. In one organization transaction, authorize again (auditing the allowed actions), create
+//     the membership and every role assignment. The member gets every grant or no membership,
+//     and never holds a broader role than the one asked for.
+//
+// A failure in step 3 (such as ErrAlreadyMember or a property removed in between) can leave a
+// staff user from step 2 with no membership. That row grants nothing: access comes only from
+// memberships and their roles.
 func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Member, error) {
 	number, err := phone.Normalize(in.Phone)
 	if err != nil {
@@ -123,19 +140,26 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 	if err != nil {
 		return Member{}, err
 	}
-	roles, err := validRoles(in.Roles)
+	grants, err := validGrants(in.Roles)
 	if err != nil {
 		return Member{}, err
 	}
+	reqs := inviteRequests(grants)
 
-	// Check before creating the staff user, which happens outside the organization.
-	reqs := inviteRequests(roles)
+	// Step 1. Check records denials only; the allowed actions are audited in step 3.
 	for _, req := range reqs {
 		if err := s.authz.Check(ctx, p, req); err != nil {
 			return Member{}, err
 		}
 	}
+	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		return checkProperties(ctx, dbgen.New(tx), p.OrganizationID, grants)
+	})
+	if err != nil {
+		return Member{}, err
+	}
 
+	// Step 2.
 	var user dbgen.StaffUser
 	err = s.store.WithAuthTx(ctx, uuid.Nil, func(tx pgx.Tx) error {
 		user, err = dbgen.New(tx).UpsertStaffUser(ctx, dbgen.UpsertStaffUserParams{ID: uuid.New(), Phone: number, Name: name})
@@ -145,6 +169,7 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 		return Member{}, fmt.Errorf("finding or creating staff user: %w", err)
 	}
 
+	// Step 3.
 	var m Member
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		for _, req := range reqs {
@@ -153,7 +178,10 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 			}
 		}
 		q := dbgen.New(tx)
-		membershipID, err := Add(ctx, q, p.OrganizationID, user.ID, roles)
+		if err := checkProperties(ctx, q, p.OrganizationID, grants); err != nil {
+			return err
+		}
+		membershipID, err := Add(ctx, q, p.OrganizationID, user.ID, grants)
 		if err != nil {
 			return err
 		}
@@ -163,12 +191,25 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 	return m, err
 }
 
-func inviteRequests(roles []string) []authz.Request {
+// inviteRequests returns member:invite and role:assign on each granted role, once per role
+// even when it is limited to several properties. Like SetRoles, the property limit is not in
+// the request.
+func inviteRequests(grants []RoleGrant) []authz.Request {
 	reqs := []authz.Request{{Action: authz.ActionMemberInvite, Resource: authz.Resource{Type: "member"}}}
+	var roles []string
+	for _, g := range grants {
+		if !slices.Contains(roles, g.Role) {
+			roles = append(roles, g.Role)
+		}
+	}
 	for _, r := range roles {
-		reqs = append(reqs, authz.Request{Action: authz.ActionRoleAssign, Resource: authz.Resource{Type: "role", ID: r}})
+		reqs = append(reqs, roleAssign(r))
 	}
 	return reqs
+}
+
+func roleAssign(role string) authz.Request {
+	return authz.Request{Action: authz.ActionRoleAssign, Resource: authz.Resource{Type: "role", ID: role}}
 }
 
 // SetRoles replaces a member's built-in roles. It needs member:manage on that member, which
@@ -193,8 +234,7 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 			return err
 		}
 		for _, changed := range changedBuiltinRoles(current.Roles, grants) {
-			req := authz.Request{Action: authz.ActionRoleAssign, Resource: authz.Resource{Type: "role", ID: changed}}
-			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+			if err := s.authz.Authorize(ctx, tx, p, roleAssign(changed)); err != nil {
 				return err
 			}
 		}
@@ -233,19 +273,17 @@ func checkProperties(ctx context.Context, q *dbgen.Queries, org uuid.UUID, grant
 	return nil
 }
 
-// Add creates a membership with built-in roles inside an organization transaction. It is
-// shared with organization setup. The caller has already authorized the change.
-func Add(ctx context.Context, q *dbgen.Queries, org, userID uuid.UUID, roles []string) (uuid.UUID, error) {
+// Add creates a membership with built-in roles inside an organization transaction, so the
+// membership and every role assignment commit together. It is shared with organization setup.
+// The caller has already validated the grants (validGrants), checked their properties and
+// authorized the change.
+func Add(ctx context.Context, q *dbgen.Queries, org, userID uuid.UUID, grants []RoleGrant) (uuid.UUID, error) {
 	m, err := q.CreateMembership(ctx, dbgen.CreateMembershipParams{ID: uuid.New(), OrganizationID: org, StaffUserID: userID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, ErrAlreadyMember
 	}
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("creating membership: %w", err)
-	}
-	grants := make([]RoleGrant, len(roles))
-	for i, r := range roles {
-		grants[i] = RoleGrant{Role: r}
 	}
 	if err := assignBuiltinRoles(ctx, q, org, m.ID, grants); err != nil {
 		return uuid.Nil, err

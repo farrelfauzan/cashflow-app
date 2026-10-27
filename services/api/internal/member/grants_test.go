@@ -78,3 +78,30 @@ func TestChangedBuiltinRoles(t *testing.T) {
 		})
 	}
 }
+
+func TestInviteRequests(t *testing.T) {
+	t.Parallel()
+	melati, mawar := uuid.New(), uuid.New()
+	tests := []struct {
+		name   string
+		grants []RoleGrant
+		want   []string
+	}{
+		{"one role", []RoleGrant{{Role: authz.RoleKaryawan}}, []string{"member:invite member", "role:assign role/karyawan"}},
+		{"a property limit stays out of the request", []RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati}},
+			[]string{"member:invite member", "role:assign role/admin"}},
+		{"a role in two properties is checked once", []RoleGrant{
+			{Role: authz.RoleAdmin, PropertyID: melati}, {Role: authz.RoleAdmin, PropertyID: mawar}, {Role: authz.RoleKaryawan},
+		}, []string{"member:invite member", "role:assign role/admin", "role:assign role/karyawan"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			for _, req := range inviteRequests(tc.grants) {
+				got = append(got, req.Action+" "+req.Resource.Path())
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+}

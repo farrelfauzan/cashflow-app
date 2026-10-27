@@ -151,7 +151,7 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 		require.Len(t, decode[apigen.MemberList](t, body).Members, 3)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/members", apigen.InviteMember{
-			Phone: "0812 1313 9999", Name: "Mbak Sari", Roles: []apigen.InviteMemberRoles{apigen.InviteMemberRolesKaryawan},
+			Phone: "0812 1313 9999", Name: "Mbak Sari", Roles: []apigen.RoleGrant{{Role: apigen.Karyawan}},
 		})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		newMember = decode[apigen.Member](t, body)
@@ -160,7 +160,7 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 
 	t.Run("input errors name the field", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPost, orgPath+"/members", apigen.InviteMember{
-			Phone: "12", Name: "X", Roles: []apigen.InviteMemberRoles{apigen.InviteMemberRolesKaryawan},
+			Phone: "12", Name: "X", Roles: []apigen.RoleGrant{{Role: apigen.Karyawan}},
 		})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		e := decode[apigen.Error](t, body)
@@ -170,7 +170,7 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 
 	t.Run("the admin cannot make anyone a supervisor", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPut, orgPath+"/members/"+newMember.Id.String()+"/roles",
-			apigen.SetRoles{Roles: []apigen.RoleGrant{{Role: apigen.RoleGrantRoleSupervisor}}})
+			apigen.SetRoles{Roles: []apigen.RoleGrant{{Role: apigen.Supervisor}}})
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 		require.Contains(t, string(body), `"code":"forbidden"`)
 		require.NotContains(t, string(body), "role/", "the response does not leak policy detail")
@@ -278,22 +278,29 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 
-	t.Run("an admin limited to one property sees only that property", func(t *testing.T) {
+	t.Run("an invite limited to an unknown property is refused", func(t *testing.T) {
+		unknown := uuid.New()
 		resp, body := admin.do(http.MethodPost, orgPath+"/members", apigen.InviteMember{
-			Phone: "0812 1515 9999", Name: "Mbak Sari", Roles: []apigen.InviteMemberRoles{apigen.InviteMemberRolesKaryawan},
+			Phone: "0812 1515 8888", Name: "Pak Joko", Roles: []apigen.RoleGrant{{Role: apigen.Admin, PropertyId: &unknown}},
+		})
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, string(body))
+		e := decode[apigen.Error](t, body)
+		require.Equal(t, "invalid_input", e.Error.Code)
+		require.Equal(t, "roles", *e.Error.Field)
+	})
+
+	limited := newClient(t, srv.URL)
+	t.Run("an admin limited to one property sees only that property", func(t *testing.T) {
+		// One call: the member never holds the Admin role for the whole organization.
+		resp, body := admin.do(http.MethodPost, orgPath+"/members", apigen.InviteMember{
+			Phone: "0812 1515 9999", Name: "Mbak Sari", Roles: []apigen.RoleGrant{{Role: apigen.Admin, PropertyId: &mawar.Id}},
 		})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		sari := decode[apigen.Member](t, body)
+		require.Len(t, sari.Roles, 1)
+		require.Equal(t, "admin", sari.Roles[0].Key)
+		require.Equal(t, mawar.Id, *sari.Roles[0].PropertyId)
 
-		resp, body = admin.do(http.MethodPut, orgPath+"/members/"+sari.Id.String()+"/roles", apigen.SetRoles{Roles: []apigen.RoleGrant{
-			{Role: apigen.RoleGrantRoleAdmin, PropertyId: &mawar.Id},
-		}})
-		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
-		updated := decode[apigen.Member](t, body)
-		require.Len(t, updated.Roles, 1)
-		require.Equal(t, mawar.Id, *updated.Roles[0].PropertyId)
-
-		limited := newClient(t, srv.URL)
 		limited.signIn(env, "0812 1515 9999")
 
 		resp, body = limited.do(http.MethodGet, orgPath+"/properties", nil)
@@ -318,6 +325,14 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 		resp, _ = limited.do(http.MethodPost, orgPath+"/properties/"+mawar.Id.String()+"/units", apigen.UnitInput{Label: "Rumah A"})
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
+	})
+
+	t.Run("an admin limited to one property cannot invite, even into that property", func(t *testing.T) {
+		resp, body := limited.do(http.MethodPost, orgPath+"/members", apigen.InviteMember{
+			Phone: "0812 1515 7777", Name: "Mas Budi", Roles: []apigen.RoleGrant{{Role: apigen.Karyawan, PropertyId: &mawar.Id}},
+		})
+		require.Equal(t, http.StatusForbidden, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"code":"forbidden"`)
 	})
 
 	t.Run("a karyawan cannot list properties", func(t *testing.T) {

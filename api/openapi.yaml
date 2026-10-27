@@ -122,6 +122,12 @@ paths:
       tags: [members]
       operationId: inviteMember
       summary: Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
+      description: >
+        Each role can be limited to one property with propertyId, as in setMemberRoles. The
+        member and every role are created together, so the member never holds a broader role
+        than the one asked for. A role limited to a property grants nothing on
+        organization-wide records, so a member whose roles are all limited to properties cannot
+        invite anyone.
       requestBody:
         required: true
         content:
@@ -745,9 +751,7 @@ components:
         name: { type: string, maxLength: 100 }
         roles:
           type: array
-          items:
-            type: string
-            enum: [supervisor, admin, karyawan]
+          items: { $ref: "#/components/schemas/RoleGrant" }
 
     SetRoles:
       type: object

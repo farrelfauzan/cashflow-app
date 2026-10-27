@@ -175,8 +175,9 @@ func (s *seeder) ensureProperties(ctx context.Context) error {
 	})
 }
 
-// ensureMembers invites every staff member who is missing, then sets the property limits of
-// the ones it just invited. An existing member keeps their roles.
+// ensureMembers invites every staff member who is missing, with their roles and property
+// limits in one call, so a member is created with exactly their roles or not at all. An existing
+// member keeps their roles.
 func (s *seeder) ensureMembers(ctx context.Context) error {
 	existing, err := s.d.Members.List(ctx, s.p)
 	if err != nil {
@@ -194,14 +195,6 @@ func (s *seeder) ensureMembers(ctx context.Context) error {
 		if _, ok := s.staff[number]; ok {
 			continue
 		}
-		m, err := s.d.Members.Invite(ctx, s.p, member.Invite{Phone: sp.Phone, Name: sp.Name, Roles: inviteRoles(sp.Grants)})
-		if err != nil {
-			return fmt.Errorf("inviting %s: %w", sp.Name, err)
-		}
-		s.staff[number] = m.ID
-		if !hasPropertyLimit(sp.Grants) {
-			continue
-		}
 		grants := make([]member.RoleGrant, len(sp.Grants))
 		for i, g := range sp.Grants {
 			grants[i] = member.RoleGrant{Role: g.Role}
@@ -213,9 +206,11 @@ func (s *seeder) ensureMembers(ctx context.Context) error {
 				grants[i].PropertyID = id
 			}
 		}
-		if _, err := s.d.Members.SetRoles(ctx, s.p, m.ID, grants); err != nil {
-			return fmt.Errorf("limiting %s to a property: %w", sp.Name, err)
+		m, err := s.d.Members.Invite(ctx, s.p, member.Invite{Phone: sp.Phone, Name: sp.Name, Roles: grants})
+		if err != nil {
+			return fmt.Errorf("inviting %s: %w", sp.Name, err)
 		}
+		s.staff[number] = m.ID
 	}
 	return nil
 }
@@ -370,25 +365,4 @@ func roleKeys(grants []grantSpec) []string {
 		}
 	}
 	return out
-}
-
-// inviteRoles are the roles a member is invited with: their organization-wide roles, or only
-// Karyawan when every role they get is limited to a property. Invite cannot take a property
-// limit, so it is set right after; if that step fails, the member is left with the least access,
-// never with an organization-wide Admin role they should not have.
-func inviteRoles(grants []grantSpec) []string {
-	var whole []grantSpec
-	for _, g := range grants {
-		if g.Property == "" {
-			whole = append(whole, g)
-		}
-	}
-	if len(whole) == 0 {
-		return []string{authz.RoleKaryawan}
-	}
-	return roleKeys(whole)
-}
-
-func hasPropertyLimit(grants []grantSpec) bool {
-	return slices.ContainsFunc(grants, func(g grantSpec) bool { return g.Property != "" })
 }
