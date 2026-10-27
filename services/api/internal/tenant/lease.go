@@ -129,13 +129,16 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		if err != nil {
 			return err
 		}
-		err = q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
+		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
 			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
 			DueDay:        int16(terms.DueDay), //nolint:gosec // validTerms keeps it in 1..28
 			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 		})
 		if err != nil {
 			return fmt.Errorf("updating lease: %w", err)
+		}
+		if n == 0 {
+			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
 		out, err = loadLease(ctx, q, p.OrganizationID, id)
 		return err
@@ -161,8 +164,12 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		case endDate.After(today(s.clock)):
 			return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh setelah hari ini."}
 		}
-		if err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: p.OrganizationID, ID: id, EndDate: &endDate}); err != nil {
+		n, err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: p.OrganizationID, ID: id, EndDate: &endDate})
+		if err != nil {
 			return fmt.Errorf("ending lease: %w", err)
+		}
+		if n == 0 {
+			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
 		out, err = loadLease(ctx, q, p.OrganizationID, id)
 		return err
@@ -170,9 +177,17 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 	return out, err
 }
 
-// loadActiveForChange loads a lease, authorizes lease:manage on it and checks that it is
-// still active.
+// loadActiveForChange locks a lease row for the rest of the transaction, loads it, authorizes
+// lease:manage on it and checks that it is still active. The lock makes a concurrent change or
+// move-out wait, so it sees the committed status rather than the one before.
 func (s *Service) loadActiveForChange(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, p authz.Principal, id uuid.UUID) (Lease, error) {
+	_, err := q.LockLease(ctx, dbgen.LockLeaseParams{OrganizationID: p.OrganizationID, ID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Lease{}, ErrNotFound
+	}
+	if err != nil {
+		return Lease{}, fmt.Errorf("locking lease: %w", err)
+	}
 	current, err := loadLease(ctx, q, p.OrganizationID, id)
 	if err != nil {
 		return Lease{}, err

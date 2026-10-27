@@ -403,3 +403,114 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 		}
 	})
 }
+
+// TestChangeWaitingOnMoveOutSeesTheEndedLease makes the race between two admins deterministic:
+// the test moves the tenant out in a transaction it keeps open, starts the second change, waits
+// until Postgres reports that change blocked on the lease row, and only then commits.
+func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	w := newWorld(t, env, "0812751")
+	movedOut := day(2026, 11, 1)
+
+	cases := []struct {
+		name   string
+		unit   property.Unit
+		phone  string
+		change func(lease tenant.Lease) error
+	}{
+		{
+			name: "a rent change", unit: w.kamar1, phone: "0812-7510-5001",
+			change: func(lease tenant.Lease) error {
+				_, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, tenant.Terms{
+					StartDate: lease.StartDate, RentAmount: 1_250_000, DueDay: 20, DepositAmount: 1_000_000,
+				})
+				return err
+			},
+		},
+		{
+			name: "a second move-out", unit: w.kamar2, phone: "0812-7510-5002",
+			change: func(lease tenant.Lease) error {
+				_, err := env.Tenants.MoveOut(ctx, w.admin, lease.ID, day(2026, 11, 2))
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tn, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Siti Rahmawati", Phone: tc.phone})
+			require.NoError(t, err)
+			lease, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: tc.unit.ID, Terms: tenant.Terms{
+				StartDate: day(2026, 10, 1), RentAmount: 850_000, DueDay: 5, DepositAmount: 850_000,
+			}})
+			require.NoError(t, err)
+			allowsBefore := countAllowed(env.AuditLog(t, w.org.ID), "lease:manage")
+
+			done := make(chan error, 1)
+			err = env.Store.WithOrgTx(ctx, w.org.ID, func(tx pgx.Tx) error {
+				q := dbgen.New(tx)
+				if _, err := q.LockLease(ctx, dbgen.LockLeaseParams{OrganizationID: w.org.ID, ID: lease.ID}); err != nil {
+					return err
+				}
+				n, err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: w.org.ID, ID: lease.ID, EndDate: &movedOut})
+				if err != nil {
+					return err
+				}
+				require.Equal(t, int64(1), n)
+
+				go func() { done <- tc.change(lease) }()
+				waitUntilBlockedOn(ctx, t, tx)
+				return nil // commit: the waiting change now reads the ended lease
+			})
+			require.NoError(t, err)
+
+			select {
+			case err = <-done:
+			case <-time.After(30 * time.Second):
+				t.Fatal("the waiting change never returned")
+			}
+			require.ErrorIs(t, err, tenant.ErrLeaseEnded)
+
+			got, err := env.Tenants.Get(ctx, w.admin, tn.ID)
+			require.NoError(t, err)
+			require.Len(t, got.Leases, 1)
+			l := got.Leases[0]
+			require.Equal(t, tenant.StatusEnded, l.Status)
+			require.Equal(t, movedOut, *l.EndDate, "the first move-out's date stands")
+			require.Equal(t, int64(850_000), l.RentAmount)
+			require.Equal(t, 5, l.DueDay)
+			require.Equal(t, int64(850_000), l.DepositAmount)
+			require.Equal(t, allowsBefore, countAllowed(env.AuditLog(t, w.org.ID), "lease:manage"),
+				"no allowed change is audited for a change that did not happen")
+		})
+	}
+}
+
+// waitUntilBlockedOn polls pg_locks from the holding transaction until another session waits on
+// that transaction's id, which is how Postgres queues a second locker of a row it changed.
+func waitUntilBlockedOn(ctx context.Context, t *testing.T, tx pgx.Tx) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var blocked bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_locks
+			WHERE locktype = 'transactionid' AND NOT granted AND transactionid = xid(pg_current_xact_id()))`).Scan(&blocked)
+		require.NoError(t, err)
+		if blocked {
+			return
+		}
+		require.True(t, time.Now().Before(deadline), "the second change never waited on the lease row")
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func countAllowed(rows []dbgen.AuditLog, action string) int {
+	n := 0
+	for _, r := range rows {
+		if r.Decision == "allow" && r.Action == action {
+			n++
+		}
+	}
+	return n
+}
