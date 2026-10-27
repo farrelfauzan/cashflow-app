@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { APP_NAME } from "../src/lib/app-name";
+
 // Minimum body text size per project, CLAUDE.md "UX rules".
 const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 
@@ -22,10 +24,10 @@ test("placeholder page shows the app name in Indonesian at a readable size", asy
 
   await page.goto("/");
 
-  await expect(page).toHaveTitle("Pengelolaan Sewa");
+  await expect(page).toHaveTitle(APP_NAME);
   await expect(page.locator("html")).toHaveAttribute("lang", "id");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Pengelolaan Sewa" }),
+    page.getByRole("heading", { level: 1, name: APP_NAME }),
   ).toBeVisible();
   await expect(page.getByText("Aplikasi sedang disiapkan.")).toBeVisible();
 
