@@ -39,6 +39,32 @@ curl -b jar localhost:8080/api/orgs/<organization id>/members
 
 The endpoints are described in `api/openapi.yaml`.
 
+### Demo data (development only)
+
+To get a realistic database without typing it in, seed two demo organizations (Griya Sejahtera
+and Kost Putri Anggrek) with their staff, properties, units, tenants and leases. From
+`services/api`, with `DATABASE_URL` pointing at your local database (the app role, as for
+`create-org`):
+
+```bash
+APP_ENV=development go run ./cmd/admin seed-demo
+```
+
+It refuses to run unless `APP_ENV` is explicitly `development` (unset does not count), before it
+touches the database. It is safe to run again: it matches every record (organizations, members,
+properties, units, tenants, leases) and creates only what is missing; it never changes or
+deletes existing data. When it finishes it prints the login list to stdout: phone, name,
+organization, roles and property limit of every demo member. Sign in with any of those phones
+as above.
+
+### Login codes for end-to-end tests (development only)
+
+With `WHATSAPP_PROVIDER=devlog`, set `DEVLOG_FILE=/path/to/devlog.jsonl` and the API also appends
+every message to that file as one JSON line: `time`, `to` (E.164), `template`, `params` (in the
+template's order) and the rendered `text`. A login code is the last line whose `to` is the phone
+and whose `template` is `login_code`; the code is `params[0]`. The file is created with mode 0600.
+Config refuses `DEVLOG_FILE` outside development or with any other provider.
+
 ### Try the API in Swagger
 
 In development the API serves Swagger UI at http://localhost:8080/docs, from the same origin, so
