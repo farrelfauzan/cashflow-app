@@ -508,7 +508,7 @@ func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
 				require.Equal(t, int64(1), n)
 
 				go func() { done <- tc.change(lease) }()
-				waitUntilBlockedOn(ctx, t, tx)
+				testenv.WaitUntilBlockedOn(ctx, t, tx)
 				return nil // commit: the waiting change now reads the ended lease
 			})
 			require.NoError(t, err)
@@ -532,25 +532,6 @@ func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
 			require.Equal(t, allowsBefore, countAllowed(env.AuditLog(t, w.org.ID), "lease:manage"),
 				"no allowed change is audited for a change that did not happen")
 		})
-	}
-}
-
-// waitUntilBlockedOn polls pg_locks from the holding transaction until another session waits on
-// that transaction's id, which is how Postgres queues a second locker of a row it changed.
-func waitUntilBlockedOn(ctx context.Context, t *testing.T, tx pgx.Tx) {
-	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		var blocked bool
-		err := tx.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM pg_locks
-			WHERE locktype = 'transactionid' AND NOT granted AND transactionid = xid(pg_current_xact_id()))`).Scan(&blocked)
-		require.NoError(t, err)
-		if blocked {
-			return
-		}
-		require.True(t, time.Now().Before(deadline), "the second change never waited on the lease row")
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 

@@ -168,3 +168,41 @@ func (e *Env) AuditLog(t *testing.T, orgID uuid.UUID) []dbgen.AuditLog {
 	require.NoError(t, err)
 	return rows
 }
+
+// GrantCustomRole stores a custom role with the given policy document and gives it to a
+// membership, as the role editor will once it exists.
+func (e *Env) GrantCustomRole(t *testing.T, orgID, membershipID uuid.UUID, name, policy string) {
+	t.Helper()
+	ctx := context.Background()
+	err := e.Store.WithOrgTx(ctx, orgID, func(tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		role, err := q.CreateRole(ctx, dbgen.CreateRoleParams{ID: uuid.New(), OrganizationID: orgID, Name: name, Policy: []byte(policy)})
+		if err != nil {
+			return err
+		}
+		return q.CreateCustomRoleAssignment(ctx, dbgen.CreateCustomRoleAssignmentParams{
+			ID: uuid.New(), OrganizationID: orgID, MembershipID: membershipID, RoleID: uuid.NullUUID{UUID: role.ID, Valid: true},
+		})
+	})
+	require.NoError(t, err)
+}
+
+// WaitUntilBlockedOn polls pg_locks from the holding transaction until another session waits on
+// that transaction's id, which is how Postgres queues a second locker of a row it locked or
+// changed. Tests use it to make a race deterministic.
+func WaitUntilBlockedOn(ctx context.Context, t *testing.T, tx pgx.Tx) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var blocked bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_locks
+			WHERE locktype = 'transactionid' AND NOT granted AND transactionid = xid(pg_current_xact_id()))`).Scan(&blocked)
+		require.NoError(t, err)
+		if blocked {
+			return
+		}
+		require.True(t, time.Now().Before(deadline), "the second change never waited on the locked row")
+		time.Sleep(10 * time.Millisecond)
+	}
+}

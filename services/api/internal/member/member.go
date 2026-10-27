@@ -1,5 +1,5 @@
 // Package member manages the staff members of an organization: listing them, adding them by
-// phone number and changing their roles.
+// phone number, changing their roles and disabling or re-enabling them.
 package member
 
 import (
@@ -27,6 +27,15 @@ var (
 	ErrNotFound = errors.New("member: not found")
 	// ErrAlreadyMember means the phone number already belongs to a member.
 	ErrAlreadyMember = errors.New("member: already a member")
+	// ErrLastAdmin means the change would leave the organization without an active Admin for
+	// the whole organization.
+	ErrLastAdmin = errors.New("member: last active admin")
+)
+
+// Membership statuses. They match the CHECK constraint on membership.status.
+const (
+	StatusActive   = "active"
+	StatusDisabled = "disabled"
 )
 
 // InputError names the field that is wrong. Message is safe to show to the user.
@@ -215,6 +224,10 @@ func roleAssign(role string) authz.Request {
 // SetRoles replaces a member's built-in roles. It needs member:manage on that member, which
 // nobody has on themselves, and role:assign on every role it adds or removes, including a role
 // whose property limit changes.
+//
+// Taking the Admin role for the whole organization away from the last active member who holds
+// it fails with ErrLastAdmin; keeping Admin limited to a property does not count. It takes the
+// same lock as SetStatus, so a demotion and a disable cannot together remove the last Admin.
 func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID uuid.UUID, grants []RoleGrant) (Member, error) {
 	grants, err := validGrants(grants)
 	if err != nil {
@@ -223,6 +236,9 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 	var m Member
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
+		if err := q.LockOrganizationMembers(ctx, p.OrganizationID); err != nil {
+			return fmt.Errorf("locking memberships: %w", err)
+		}
 		current, err := load(ctx, q, p.OrganizationID, membershipID)
 		if err != nil {
 			return err
@@ -241,6 +257,11 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 		if err := checkProperties(ctx, q, p.OrganizationID, grants); err != nil {
 			return err
 		}
+		if current.Status == StatusActive && holdsOrgAdmin(current) && !grantsOrgAdmin(grants) {
+			if err := refuseLastAdmin(ctx, q, p.OrganizationID, membershipID); err != nil {
+				return err
+			}
+		}
 
 		if err := q.DeleteBuiltinRoleAssignments(ctx, dbgen.DeleteBuiltinRoleAssignmentsParams{
 			OrganizationID: p.OrganizationID, MembershipID: membershipID,
@@ -254,6 +275,111 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 		return err
 	})
 	return m, err
+}
+
+// SetStatus disables or re-enables a member. It needs the same permissions as removing every
+// built-in role the member holds: member:manage on that member, which nobody has on themselves,
+// and role:assign on each of those roles, so an Admin cannot disable or re-enable a Supervisor.
+//
+// Roles are kept, so re-enabling restores the same access. A disabled member's sessions stop
+// working in this organization at once, because authz.LoadPrincipal loads active memberships
+// only; their other organizations are untouched.
+//
+// Disabling the last active member who holds the Admin role for the whole organization fails
+// with ErrLastAdmin. Setting the status the member already has changes nothing, after the same
+// permission check.
+func (s *Service) SetStatus(ctx context.Context, p authz.Principal, membershipID uuid.UUID, status string) (Member, error) {
+	if status != StatusActive && status != StatusDisabled {
+		return Member{}, &InputError{Field: "status", Message: "Status harus active atau disabled."}
+	}
+	var m Member
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		// Taken before reading anything, so status and role changes in one organization run one
+		// after the other and the second sees the first's result. Without it, two admins
+		// disabling or demoting each other at once would each still count the other as active.
+		if err := q.LockOrganizationMembers(ctx, p.OrganizationID); err != nil {
+			return fmt.Errorf("locking memberships: %w", err)
+		}
+		current, err := load(ctx, q, p.OrganizationID, membershipID)
+		if err != nil {
+			return err
+		}
+		for _, req := range statusRequests(current) {
+			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+				return err
+			}
+		}
+		if current.Status == status {
+			m = current
+			return nil
+		}
+		if status == StatusDisabled && holdsOrgAdmin(current) {
+			if err := refuseLastAdmin(ctx, q, p.OrganizationID, membershipID); err != nil {
+				return err
+			}
+		}
+		n, err := q.SetMembershipStatus(ctx, dbgen.SetMembershipStatusParams{
+			OrganizationID: p.OrganizationID, ID: membershipID, Status: status,
+		})
+		if err != nil {
+			return fmt.Errorf("setting member status: %w", err)
+		}
+		if n != 1 {
+			return ErrNotFound
+		}
+		m, err = load(ctx, q, p.OrganizationID, membershipID)
+		return err
+	})
+	return m, err
+}
+
+// statusRequests returns member:manage on the member and role:assign on each built-in role
+// the member holds, once per role.
+func statusRequests(m Member) []authz.Request {
+	reqs := []authz.Request{{Action: authz.ActionMemberManage, Resource: authz.Resource{
+		Type: "member", ID: m.ID.String(), OwnerID: m.UserID,
+	}}}
+	var roles []string
+	for _, r := range m.Roles {
+		if r.Builtin && !slices.Contains(roles, r.Key) {
+			roles = append(roles, r.Key)
+		}
+	}
+	for _, r := range roles {
+		reqs = append(reqs, roleAssign(r))
+	}
+	return reqs
+}
+
+// refuseLastAdmin returns ErrLastAdmin when no active member other than membershipID holds the
+// Admin role for the whole organization. Callers hold LockOrganizationMembers, so the count
+// cannot change before they commit.
+func refuseLastAdmin(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) error {
+	others, err := q.CountOtherActiveOrgAdmins(ctx, dbgen.CountOtherActiveOrgAdminsParams{
+		OrganizationID: org, ExcludedMembershipID: membershipID,
+	})
+	if err != nil {
+		return fmt.Errorf("counting admins: %w", err)
+	}
+	if others == 0 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// grantsOrgAdmin reports whether the grants include the Admin role for the whole organization.
+func grantsOrgAdmin(grants []RoleGrant) bool {
+	return slices.ContainsFunc(grants, func(g RoleGrant) bool {
+		return g.Role == authz.RoleAdmin && g.PropertyID == uuid.Nil
+	})
+}
+
+// holdsOrgAdmin reports whether the member holds the Admin role for the whole organization.
+func holdsOrgAdmin(m Member) bool {
+	return slices.ContainsFunc(m.Roles, func(r RoleRef) bool {
+		return r.Builtin && r.Key == authz.RoleAdmin && r.PropertyID == uuid.Nil
+	})
 }
 
 // checkProperties makes sure every property limit names a property of this organization.

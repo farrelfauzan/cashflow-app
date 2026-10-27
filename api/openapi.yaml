@@ -160,7 +160,9 @@ paths:
         Nobody can change their own roles. Each role can be limited to one property with
         propertyId; give the same role once per property to cover several. A role limited to a
         property grants nothing on organization-wide records (members, settings, payslips), so
-        a member who needs those also needs the role without a property.
+        a member who needs those also needs the role without a property. The Admin role for
+        the whole organization cannot be taken from the last active member who holds it; Admin
+        limited to a property does not count (409 last_admin).
       requestBody:
         required: true
         content:
@@ -176,6 +178,55 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The change takes Admin from the last active Admin for the whole organization (code last_admin)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/members/{memberId}/status:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: memberId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [members]
+      operationId: setMemberStatus
+      summary: Disable or re-enable a member (needs member:manage and role:assign on every role the member holds)
+      description: >
+        A disabled member keeps their roles but can do nothing in this organization: their
+        sessions are refused here at once (the organization answers 404 not_found, as for a
+        non-member) and the organization leaves their list. Their other organizations and their
+        history are untouched. Re-enabling restores the same roles. Nobody can change their own
+        status, and an Admin cannot disable or re-enable a Supervisor. Setting the status the
+        member already has changes nothing and returns the member. The last active Admin for the
+        whole organization cannot be disabled (409 last_admin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetMemberStatus" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+        "400":
+          description: "The status is not active or disabled (code invalid_input, field status)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The member is the last active Admin for the whole organization (code last_admin)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /orgs/{orgId}/properties:
     parameters:
@@ -727,13 +778,22 @@ components:
         userId: { type: string, format: uuid }
         name: { type: string }
         phone: { type: string }
-        status:
-          type: string
-          enum: [active, disabled]
+        status: { $ref: "#/components/schemas/MemberStatus" }
         roles:
           type: array
           items: { $ref: "#/components/schemas/RoleRef" }
         createdAt: { type: string, format: date-time }
+
+    MemberStatus:
+      type: string
+      description: A disabled member keeps their roles but can do nothing in the organization.
+      enum: [active, disabled]
+
+    SetMemberStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/MemberStatus" }
 
     MemberList:
       type: object

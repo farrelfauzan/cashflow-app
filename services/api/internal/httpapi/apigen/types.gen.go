@@ -350,17 +350,19 @@ type Member struct {
 	Name      string             `json:"name"`
 	Phone     string             `json:"phone"`
 	Roles     []RoleRef          `json:"roles"`
-	Status    MemberStatus       `json:"status"`
-	UserId    openapi_types.UUID `json:"userId"`
-}
 
-// MemberStatus defines model for Member.Status.
-type MemberStatus string
+	// Status A disabled member keeps their roles but can do nothing in the organization.
+	Status MemberStatus       `json:"status"`
+	UserId openapi_types.UUID `json:"userId"`
+}
 
 // MemberList defines model for MemberList.
 type MemberList struct {
 	Members []Member `json:"members"`
 }
+
+// MemberStatus A disabled member keeps their roles but can do nothing in the organization.
+type MemberStatus string
 
 // MoveOut defines model for MoveOut.
 type MoveOut struct {
@@ -433,6 +435,12 @@ type RoleRef struct {
 
 	// PropertyId Set when the role is limited to this property; absent means the whole organization.
 	PropertyId *openapi_types.UUID `json:"propertyId,omitempty"`
+}
+
+// SetMemberStatus defines model for SetMemberStatus.
+type SetMemberStatus struct {
+	// Status A disabled member keeps their roles but can do nothing in the organization.
+	Status MemberStatus `json:"status"`
 }
 
 // SetRoles defines model for SetRoles.
@@ -549,6 +557,9 @@ type InviteMemberJSONRequestBody = InviteMember
 
 // SetMemberRolesJSONRequestBody defines body for SetMemberRoles for application/json ContentType.
 type SetMemberRolesJSONRequestBody = SetRoles
+
+// SetMemberStatusJSONRequestBody defines body for SetMemberStatus for application/json ContentType.
+type SetMemberStatusJSONRequestBody = SetMemberStatus
 
 // CreatePropertyJSONRequestBody defines body for CreateProperty for application/json ContentType.
 type CreatePropertyJSONRequestBody = PropertyInput

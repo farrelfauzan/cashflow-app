@@ -55,6 +55,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeErrorField(w, http.StatusConflict, "unit_occupied", "Unit ini masih disewa. Akhiri sewa yang lama dulu.", "unitId")
 	case errors.Is(err, tenant.ErrLeaseEnded):
 		s.writeError(w, http.StatusConflict, "lease_ended", "Sewa ini sudah berakhir dan tidak bisa diubah.")
+	case errors.Is(err, member.ErrLastAdmin):
+		s.writeError(w, http.StatusConflict, "last_admin", "Anggota ini admin terakhir yang aktif. Tambahkan admin lain dulu.")
 	case errors.Is(err, member.ErrAlreadyMember):
 		s.writeErrorField(w, http.StatusConflict, "already_member", "Nomor ini sudah terdaftar di usaha ini.", "phone")
 	case errors.Is(err, messaging.ErrNotConnected), errors.Is(err, messaging.ErrRateLimited),
