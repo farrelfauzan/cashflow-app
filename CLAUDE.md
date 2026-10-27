@@ -314,8 +314,10 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 - Dashboard and the Supervisor's weekly WA report: total arrears per tenant and the age
   of the oldest unpaid invoice.
 - Owner reports show gross income and clean income. Gross income is all money collected (rent
-  plus extra charges); clean income is the rent alone. Costs are part of neither. The owner can
-  drill into the gross down to the invoice lines; extra charges are not a separate category.
+  plus extra charges). Clean income is the rent alone (the rent lines of the invoices), totalled
+  per unit. Costs, such as maintenance and payroll, are part of neither figure: nothing is
+  deducted. The owner can drill into both down to the invoice lines; extra charges are not a
+  separate category.
 
 ## Payments
 
