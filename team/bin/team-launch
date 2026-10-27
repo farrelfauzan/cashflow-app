@@ -19,9 +19,20 @@ case "$agent" in
   reviewer) model="$MODEL_REVIEWER" ;;
 esac
 
-# Role prompt = shared team protocol + this agent's role.
+# Role prompt = shared team protocol (+ tier guide for the roles that use it) + this agent's role.
 prompt_file="$STATE_DIR/prompts/$agent.md"
-cat "$TEAM_DIR/prompts/shared.md" "$TEAM_DIR/prompts/$agent.md" >"$prompt_file"
+parts=("$TEAM_DIR/prompts/shared.md")
+case "$agent" in
+  orchestrator | backend | frontend) parts+=("$TEAM_DIR/prompts/tiers.md") ;;
+esac
+parts+=("$TEAM_DIR/prompts/$agent.md")
+cat "${parts[@]}" >"$prompt_file"
+
+# The developers get four sub-agents (hard, medium-critical, medium, light).
+extra_args=()
+case "$agent" in
+  backend | frontend) extra_args+=(--agents "$("$TEAM_DIR/bin/team-agents-json" "$agent")") ;;
+esac
 
 if [[ "$agent" == "reviewer" ]]; then
   export GITHUB_ACCOUNT
@@ -37,5 +48,6 @@ exec "$CLAUDE_BIN" \
   --name "team-$agent" \
   --permission-mode "$PERMISSION_MODE" \
   --settings "$TEAM_DIR/settings/$agent.json" \
+  "${extra_args[@]+"${extra_args[@]}"}" \
   --append-system-prompt "$(cat "$prompt_file")" \
   "$first_message"

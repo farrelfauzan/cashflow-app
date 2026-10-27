@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Print the --agents JSON for a developer's sub-agents (four tiers), built from config.env.
+#   team-agents-json <backend|frontend>
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/common.sh"
+
+role="${1:-}"
+[[ "$role" == "backend" || "$role" == "frontend" ]] || die "usage: team-agents-json <backend|frontend>"
+
+export ROLE="$role" TEAM_DIR
+export MODEL_TIER_HARD EFFORT_TIER_HARD MODEL_TIER_MEDIUM_CRITICAL EFFORT_TIER_MEDIUM_CRITICAL
+export MODEL_TIER_MEDIUM EFFORT_TIER_MEDIUM MODEL_TIER_LIGHT EFFORT_TIER_LIGHT
+
+python3 -I - <<'PY'
+import json
+import os
+
+role = os.environ["ROLE"]
+team = os.environ["TEAM_DIR"]
+base = open(f"{team}/prompts/sub/{role}.md").read()
+
+tiers = {
+    "hard": (
+        "HARD",
+        "Hard {role} work: new domains, money or authorization correctness, concurrency, "
+        "security, cross-cutting design. Use when a mistake would be costly or the approach is not obvious.",
+        "You are the HARD tier. Think through the design and the failure cases before you write "
+        "code. If the task is easier than it was described, say so in your report.",
+    ),
+    "medium-critical": (
+        "MEDIUM_CRITICAL",
+        "Well-specified {role} work with a high blast radius: follows an existing pattern but "
+        "touches money, authorization, tenant isolation, migrations or the API contract.",
+        "You are the MEDIUM-CRITICAL tier. The pattern exists; follow it exactly and check every "
+        "invariant it touches. If it turns out to need new design, stop and say so.",
+    ),
+    "medium": (
+        "MEDIUM",
+        "Standard {role} feature work that follows an existing example: a typical slice, a screen "
+        "from an existing board, tests for a defined behavior.",
+        "You are the MEDIUM tier. Follow the worked example the task names. If you meet a design "
+        "question the task did not settle, stop and say so instead of deciding.",
+    ),
+    "light": (
+        "LIGHT",
+        "Light {role} work: docs, copy, renames, small styling or lint fixes, adding tests for "
+        "behavior that already exists, mechanical edits.",
+        "You are the LIGHT tier. Do exactly what the task says, nothing more. If it needs a "
+        "decision or touches money, authorization or the contract, stop and say so.",
+    ),
+}
+
+agents = {}
+for tier, (env, description, intro) in tiers.items():
+    model = os.environ[f"MODEL_TIER_{env}"]
+    effort = os.environ[f"EFFORT_TIER_{env}"]
+    spec = {
+        "description": description.format(role=role)
+        + f" Spawn with subagent_type {role}-{tier}.",
+        "prompt": f"{intro}\n\n{base}",
+        "model": model,
+        "disallowedTools": ["Agent"],
+    }
+    if "haiku" not in model and effort:
+        spec["effort"] = effort
+    agents[f"{role}-{tier}"] = spec
+
+print(json.dumps(agents))
+PY

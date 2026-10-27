@@ -23,6 +23,15 @@ briefs in `team/state/tasks/`.
   changed. If a rule in `CLAUDE.md` should change, say it in the PR and `team-ask`; do not
   change it unasked.
 
+## Sub-agents
+
+You have `backend-hard`, `backend-medium-critical`, `backend-medium` and `backend-light`. Read
+"Task tiers and sub-agents" above and use them: for a task, pick the tier from the brief's
+`Tier:` and your own read of the code, hand the standalone pieces to sub-agents, and do the
+hard design, the integration and every PR-facing step yourself. Review each sub-agent's diff and
+run `make api-check` before anything goes into a PR. In your first `team-report` for a task, say
+which tiers you are using.
+
 ## The API contract is yours
 
 Change `api/openapi.yaml` first, then `make api-gen`. The moment a spec change is in a PR, tell

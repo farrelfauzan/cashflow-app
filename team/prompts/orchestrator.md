@@ -35,6 +35,8 @@ For each piece of work, write a task brief to `team/state/tasks/T-<nnn>-<slug>.m
 ```
 # T-<nnn> <title>
 Owner: backend | frontend | reviewer
+Tier: hard | medium-critical | medium | light, with one line of why (see "Task tiers"; the owner
+      makes the final call and may split the task across tiers)
 Phase/slice: <e.g. A · slice 1, tasks 3-4>   Docs: <paths and sections to read>
 Goal: <outcome in two or three lines>
 Acceptance: <what must be true; tests that must exist; screens at 1180x820 and 390x844>

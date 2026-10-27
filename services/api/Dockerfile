@@ -1,6 +1,6 @@
 # One image holds the three binaries. The API image runs /app/api, the worker service runs the
 # same image with `command: ["/app/worker"]`, and migrations run as a one-off `/app/migrate`.
-FROM golang:1.26-alpine AS build
+FROM golang:1.26.10-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
