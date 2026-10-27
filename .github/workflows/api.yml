@@ -1,0 +1,40 @@
+name: api
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/api/**", "api/**", ".github/workflows/api.yml"]
+  pull_request:
+    paths: ["services/api/**", "api/**", ".github/workflows/api.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Lint
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run
+      - name: Generated database code is current
+        run: go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 diff
+      - name: Generated API types are current
+        run: |
+          go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.1 -config oapi-codegen.yaml ../../api/openapi.yaml
+          git diff --exit-code -- internal/httpapi/apigen
+      - name: Unit tests
+        run: go test -race ./...
+      - name: Integration tests
+        run: go test -race -tags integration ./...
+      - name: Vulnerability check
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

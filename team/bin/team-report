@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# One-line milestone for the orchestrator: task started, PR opened, review verdict, blocked, done.
+#   team-report "PR #12 opened for T-004 (members API)"
+set -euo pipefail
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/team-tell" orchestrator --kind report -- "$@"

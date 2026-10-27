@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Print your unread messages, oldest first, and mark them read.
+#
+#   team-inbox          print and mark read
+#   team-inbox --peek   print without marking read
+#
+# Read messages are kept in team/state/inbox/<you>/read/.
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/common.sh"
+
+me="${TEAM_AGENT:-}"
+[[ -n "$me" ]] || die "TEAM_AGENT is not set; run this from an agent pane"
+is_agent "$me" || die "unknown agent '$me'"
+init_state
+
+peek=0
+[[ "${1:-}" == "--peek" ]] && peek=1
+
+box="$STATE_DIR/inbox/$me"
+shopt -s nullglob
+files=("$box"/*.md)
+if [[ ${#files[@]} -eq 0 ]]; then
+  echo "No unread messages."
+  exit 0
+fi
+
+for f in "${files[@]}"; do
+  echo "=== $(basename "$f") ==="
+  cat "$f"
+  echo
+  [[ $peek -eq 1 ]] || mv "$f" "$box/read/"
+done

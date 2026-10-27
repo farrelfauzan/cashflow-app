@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(team-tell:*)",
+      "Bash(team-inbox:*)",
+      "Bash(team-report:*)",
+      "Bash(team-ask:*)",
+      "Bash(ls:*)",
+      "Bash(date:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git fetch:*)",
+      "Bash(git worktree:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh auth status:*)",
+      "Bash(make api-gen:*)",
+      "Bash(make api-check:*)"
+    ],
+    "deny": [
+      "Bash(gh pr merge:*)",
+      "Bash(gh auth switch:*)",
+      "Bash(gh auth login:*)",
+      "Bash(gh auth logout:*)",
+      "Bash(gh repo delete:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)"
+    ]
+  }
+}

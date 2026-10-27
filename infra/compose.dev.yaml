@@ -1,0 +1,65 @@
+# PostgreSQL and Redis for local development. Run the Go binaries on your machine with
+# `make api-run` and `make worker-run`. Ports are bound to localhost only.
+name: cashflow-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: cashflow_owner
+      POSTGRES_PASSWORD: owner-dev-password
+      POSTGRES_DB: cashflow
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the cashflow_app role the first time the data volume is initialised.
+      - ../services/api/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cashflow_owner -d cashflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # appendonly keeps queued jobs across a restart. noeviction stops Redis from silently
+    # dropping job keys when it runs out of memory.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # GOWA: the WhatsApp gateway used at launch. It is its own container: the API sends
+  # messages to it over HTTP, and it drives a WhatsApp account linked by scanning a QR code
+  # at http://localhost:3001. Optional in development: start it with `make wa-up`, or keep
+  # WHATSAPP_PROVIDER=devlog and read messages from the API log instead.
+  gowa:
+    image: aldinokemal2104/go-whatsapp-web-multidevice:v9.6.0
+    command: ["rest"]
+    profiles: ["whatsapp"]
+    environment:
+      APP_PORT: "3000"
+      APP_OS: "Cashflow"
+      APP_BASIC_AUTH: "cashflow:gowa-dev-password"
+      MCP_ENABLED: "false"                 # the API is the only client
+      WHATSAPP_AUTO_DOWNLOAD_MEDIA: "false"
+      # Inbound replies go to the API from slice 5:
+      # WHATSAPP_WEBHOOK: "http://host.docker.internal:8080/webhooks/gowa"
+      # WHATSAPP_WEBHOOK_SECRET: "gowa-dev-webhook-secret"
+    ports:
+      - "127.0.0.1:3001:3000" # 3000 is left for the Next.js dev server
+    volumes:
+      # The linked WhatsApp session. Deleting it means scanning the QR code again.
+      - gowadata:/app/storages
+
+volumes:
+  pgdata:
+  redisdata:
+  gowadata:

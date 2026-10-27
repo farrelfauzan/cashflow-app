@@ -1,0 +1,5 @@
+# Generates the request and response types from api/openapi.yaml. Run `make api-gen`.
+package: apigen
+output: internal/httpapi/apigen/types.gen.go
+generate:
+  models: true

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Send a message to another agent.
+#
+#   team-tell <agent> [--kind note|task|review|report|decision|tick] [--subject "..."] -- <message>
+#   echo "long message" | team-tell <agent> --kind task --subject "T-004 members screen"
+#
+# The message is saved in the receiver's inbox (team/state/inbox/<agent>/), logged in
+# team/state/messages.log, and a one-line nudge is typed into the receiver's tmux pane. If the
+# pane is busy the nudge is queued by Claude Code; if the pane is waiting on a permission
+# dialog, the nudge is held back so it cannot answer the dialog, and the message simply waits in
+# the inbox until the receiver runs team-inbox.
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/common.sh"
+
+usage() {
+  sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  exit 2
+}
+
+[[ $# -ge 1 ]] || usage
+to="$1"
+shift
+is_agent "$to" || die "unknown agent '$to' (use: $AGENTS)"
+
+kind="note"
+subject=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --kind) kind="${2:?--kind needs a value}"; shift 2 ;;
+    --subject) subject="${2:?--subject needs a value}"; shift 2 ;;
+    --) shift; break ;;
+    -h | --help) usage ;;
+    *) break ;;
+  esac
+done
+
+if [[ $# -gt 0 ]]; then
+  body="$*"
+else
+  body="$(cat)"
+fi
+[[ -n "${body//[[:space:]]/}" ]] || die "empty message"
+
+from="${TEAM_AGENT:-user}"
+if [[ -z "$subject" ]]; then
+  subject="$(printf '%s' "$body" | head -n1)"
+fi
+subject="$(printf '%s' "$subject" | tr -d '\r\n' | cut -c1-100)"
+
+init_state
+now="$(date +%Y%m%d-%H%M%S)"
+file="$STATE_DIR/inbox/$to/${now}-$$-from-${from}.md"
+{
+  printf -- '---\nfrom: %s\nto: %s\nkind: %s\ntime: %s\nsubject: %s\n---\n\n%s\n' \
+    "$from" "$to" "$kind" "$(date -Iseconds)" "$subject" "$body"
+} >"$file"
+printf '%s %s->%s [%s] %s\n' "$(date -Iseconds)" "$from" "$to" "$kind" "$subject" >>"$STATE_DIR/messages.log"
+
+# Nudge the receiver's pane.
+pane_file="$STATE_DIR/panes/$to"
+if [[ ! -f "$pane_file" ]] || ! command -v tmux >/dev/null; then
+  warn "saved for $to (no live pane to nudge)"
+  exit 0
+fi
+pane="$(cat "$pane_file")"
+if ! tmux display-message -p -t "$pane" '#{pane_id}' >/dev/null 2>&1; then
+  warn "saved for $to (pane $pane is gone)"
+  exit 0
+fi
+
+# One sender at a time per receiver, so two nudges never interleave in the input box.
+lock="$STATE_DIR/locks/$to"
+have_lock=0
+for _ in $(seq 1 50); do
+  if mkdir "$lock" 2>/dev/null; then
+    have_lock=1
+    break
+  fi
+  sleep 0.2
+done
+trap '[[ $have_lock -eq 1 ]] && rmdir "$lock" 2>/dev/null || true' EXIT
+
+waiting_on_dialog() {
+  tmux capture-pane -p -t "$pane" -S -15 2>/dev/null |
+    grep -Eq 'Do you want to|Esc to cancel|Enter to select|\(y/n\)'
+}
+
+delivered=0
+for _ in $(seq 1 10); do
+  if waiting_on_dialog; then
+    sleep 3
+    continue
+  fi
+  tmux send-keys -t "$pane" -l -- "[team] ${kind} from ${from}: ${subject} (run team-inbox)"
+  sleep 0.4
+  tmux send-keys -t "$pane" Enter
+  delivered=1
+  break
+done
+if [[ $delivered -eq 0 ]]; then
+  warn "$to is waiting on a dialog; message saved, not nudged"
+fi

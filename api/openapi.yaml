@@ -1,0 +1,847 @@
+# The API contract and the shared source of types. Go request and response types are generated
+# from it into services/api/internal/httpapi/apigen (make api-gen); the TypeScript client will
+# be generated from the same file when the web app starts.
+#
+# Errors always have the Error shape. Messages are in Bahasa Indonesia and safe to show; the
+# web app should branch on the code, not the message.
+openapi: 3.0.3
+info:
+  title: Cashflow API
+  version: 0.1.0
+servers:
+  - url: /api
+tags:
+  - name: auth
+  - name: members
+  - name: properties
+  - name: tenants
+
+paths:
+  /auth/otp/request:
+    post:
+      tags: [auth]
+      operationId: requestLoginCode
+      summary: Send a login code over WhatsApp
+      description: >
+        Always answers 202 for a well-formed number, whether or not a code was sent, so the
+        response does not reveal which numbers are registered. Limited to 3 requests per number
+        per 15 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginCodeRequest" }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /auth/otp/verify:
+    post:
+      tags: [auth]
+      operationId: verifyLoginCode
+      summary: Check the code and start a session
+      description: Sets the cf_session cookie (HttpOnly, SameSite=Lax) on success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginCodeVerify" }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: End the current session
+      responses:
+        "204": { description: Signed out }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: The signed-in staff user and their organizations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/me:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [members]
+      operationId: getOrgMe
+      summary: The signed-in member's roles and what they may do in this organization
+      description: >
+        Capabilities are for showing or hiding controls. The server checks every request
+        regardless. "conditional" means allowed on some records, such as a karyawan's own
+        assigned tenants.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrgMeResponse" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/members:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [members]
+      operationId: listMembers
+      summary: Every member of the organization (needs member:read)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [members]
+      operationId: inviteMember
+      summary: Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteMember" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/members/{memberId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: memberId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [members]
+      operationId: setMemberRoles
+      summary: Replace a member's built-in roles (needs member:manage and role:assign per changed role)
+      description: >
+        Nobody can change their own roles. Each role can be limited to one property with
+        propertyId; give the same role once per property to cover several. A role limited to a
+        property grants nothing on organization-wide records (members, settings, payslips), so
+        a member who needs those also needs the role without a property.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetRoles" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/properties:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [properties]
+      operationId: listProperties
+      summary: Properties the member may see (needs property:read)
+      description: >
+        A member whose roles are limited to some properties gets only those. Sorted by name,
+        with numbers in natural order.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PropertyList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [properties]
+      operationId: createProperty
+      summary: Add a property (needs property:manage for the whole organization)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PropertyInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Property" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "Another property already has this name (code name_taken, field name)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/properties/{propertyId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/PropertyId"
+    put:
+      tags: [properties]
+      operationId: updateProperty
+      summary: Change a property's name, kind or address (needs property:manage on it)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PropertyInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Property" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "Another property already has this name (code name_taken, field name)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/properties/{propertyId}/units:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/PropertyId"
+    get:
+      tags: [properties]
+      operationId: listUnits
+      summary: Units of one property (needs unit:read on that property)
+      description: Sorted by label, with numbers in natural order ("Kamar 2" before "Kamar 11").
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnitList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [properties]
+      operationId: createUnit
+      summary: Add a unit to a property (needs unit:manage on that property)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UnitInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Unit" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The property already has a unit with this label (code label_taken, field label)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/units/{unitId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: unitId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [properties]
+      operationId: updateUnit
+      summary: Change a unit's label or default rent (needs unit:manage on its property)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UnitInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Unit" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The property already has a unit with this label (code label_taken, field label)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/tenants:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [tenants]
+      operationId: listTenants
+      summary: Tenants the member may see, with their leases (needs tenant:read)
+      description: >
+        A tenant is visible through any of their leases: a karyawan sees the tenants whose lease
+        names them as collector, a member limited to a property sees the tenants with a lease
+        there, and only those leases. Tenants without a lease are visible only to members with
+        tenant:read for the whole organization.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [tenants]
+      operationId: createTenant
+      summary: Add a tenant (needs tenant:manage for the whole organization)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "Another tenant already has this number (code phone_taken, field phone)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/tenants/{tenantId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: tenantId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [tenants]
+      operationId: getTenant
+      summary: One tenant with the leases the member may see (needs tenant:read)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [tenants]
+      operationId: updateTenant
+      summary: Change a tenant's name, number or note (needs tenant:manage)
+      description: >
+        A member limited to some properties may change a tenant only when every active lease of
+        that tenant is in their properties.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "Another tenant already has this number (code phone_taken, field phone)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/leases:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      tags: [tenants]
+      operationId: createLease
+      summary: Rent a unit to a tenant (needs lease:manage on the unit's property)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The unit already has an active lease (code unit_occupied, field unitId)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/leases/{leaseId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/LeaseId"
+    put:
+      tags: [tenants]
+      operationId: updateLease
+      summary: Change the terms of an active lease (needs lease:manage; audited)
+      description: >
+        Unit and tenant never change; end the lease and start a new one instead. A rent change
+        applies from the next invoice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseTerms" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The lease has already ended (code lease_ended)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/leases/{leaseId}/move-out:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/LeaseId"
+    post:
+      tags: [tenants]
+      operationId: moveOut
+      summary: End a lease on a date (needs lease:manage; audited)
+      description: >
+        The end date is the last day of the lease: not before the start date and not after
+        today in Asia/Jakarta. The unit is free for a new lease right away. What happens to
+        arrears is settled in slice 2.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MoveOut" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The lease has already ended (code lease_ended)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  parameters:
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PropertyId:
+      name: propertyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    LeaseId:
+      name: leaseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: invalid_code
+            message:
+              type: string
+              example: Kode salah atau sudah kedaluwarsa.
+            field:
+              type: string
+              description: The input field the error is about, when there is one.
+
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: sent }
+
+    LoginCodeRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          description: Any common Indonesian format, for example 0812-3456-7890 or +62 812 3456 7890.
+          example: 0812-3456-7890
+
+    LoginCodeVerify:
+      type: object
+      required: [phone, code]
+      properties:
+        phone: { type: string, example: 0812-3456-7890 }
+        code: { type: string, pattern: "^[0-9]{6}$", example: "123456" }
+
+    User:
+      type: object
+      required: [id, name, phone]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string, description: E.164 }
+
+    Organization:
+      type: object
+      required: [id, name, displayName]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        displayName: { type: string }
+
+    MeResponse:
+      type: object
+      required: [user, organizations]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        organizations:
+          type: array
+          items: { $ref: "#/components/schemas/Organization" }
+
+    RoleRef:
+      type: object
+      required: [key, name, builtin]
+      properties:
+        key: { type: string, example: admin }
+        name: { type: string, example: Admin }
+        builtin: { type: boolean }
+        propertyId:
+          type: string
+          format: uuid
+          description: Set when the role is limited to this property; absent means the whole organization.
+
+    Capability:
+      type: object
+      required: [action, access]
+      properties:
+        action: { type: string, example: "member:invite" }
+        access:
+          type: string
+          enum: [allow, conditional, deny]
+
+    OrgMeResponse:
+      type: object
+      required: [membershipId, roles, capabilities]
+      properties:
+        membershipId: { type: string, format: uuid }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleRef" }
+        capabilities:
+          type: array
+          items: { $ref: "#/components/schemas/Capability" }
+
+    Member:
+      type: object
+      required: [id, userId, name, phone, status, roles, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string }
+        status:
+          type: string
+          enum: [active, disabled]
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleRef" }
+        createdAt: { type: string, format: date-time }
+
+    MemberList:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          items: { $ref: "#/components/schemas/Member" }
+
+    InviteMember:
+      type: object
+      required: [phone, name, roles]
+      properties:
+        phone: { type: string }
+        name: { type: string, maxLength: 100 }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [supervisor, admin, karyawan]
+
+    SetRoles:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleGrant" }
+
+    RoleGrant:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [supervisor, admin, karyawan]
+        propertyId:
+          type: string
+          format: uuid
+          description: Limits the role to this property. Leave it out for the whole organization.
+
+    PropertyKind:
+      type: string
+      enum: [kos, kontrakan, ruko, other]
+
+    PropertyInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, maxLength: 100, example: Kos Melati }
+        kind: { $ref: "#/components/schemas/PropertyKind" }
+        address: { type: string, maxLength: 300, example: "Jl. Melati No. 12, Sleman" }
+
+    Property:
+      type: object
+      required: [id, name, kind, address, unitCount, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/PropertyKind" }
+        address: { type: string }
+        unitCount: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PropertyList:
+      type: object
+      required: [properties]
+      properties:
+        properties:
+          type: array
+          items: { $ref: "#/components/schemas/Property" }
+
+    UnitInput:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+          maxLength: 50
+          description: Unique inside its property, ignoring case.
+          example: Kamar 11
+        defaultRent:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Usual monthly rent in rupiah, a suggestion for new leases. Leave it out for none.
+          example: 1250000
+
+    Unit:
+      type: object
+      required: [id, propertyId, label, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        propertyId: { type: string, format: uuid }
+        label: { type: string }
+        defaultRent: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    UnitList:
+      type: object
+      required: [units]
+      properties:
+        units:
+          type: array
+          items: { $ref: "#/components/schemas/Unit" }
+
+    TenantInput:
+      type: object
+      required: [name, phone]
+      properties:
+        name: { type: string, maxLength: 100, example: Rina Wulandari }
+        phone:
+          type: string
+          description: WhatsApp number in any common Indonesian format; stored as E.164.
+          example: 0812-3456-7890
+        note: { type: string, maxLength: 500 }
+
+    Tenant:
+      type: object
+      required: [id, name, phone, note, leases, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string, description: E.164 }
+        note: { type: string }
+        leases:
+          type: array
+          description: The leases the member may see, active first.
+          items: { $ref: "#/components/schemas/Lease" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TenantList:
+      type: object
+      required: [tenants]
+      properties:
+        tenants:
+          type: array
+          items: { $ref: "#/components/schemas/Tenant" }
+
+    LeaseStatus:
+      type: string
+      enum: [active, ended]
+
+    Collector:
+      type: object
+      required: [memberId, name]
+      properties:
+        memberId: { type: string, format: uuid }
+        name: { type: string }
+
+    Lease:
+      type: object
+      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, rentAmount, dueDay, depositAmount, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        unitLabel: { type: string }
+        propertyId: { type: string, format: uuid }
+        propertyName: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date, description: "Last day of the lease, set by move-out." }
+        rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
+        dueDay: { type: integer, format: int32, description: "Day of the month rent is due, 1 to 28." }
+        depositAmount: { type: integer, format: int64, description: "Deposit held, in rupiah." }
+        status: { $ref: "#/components/schemas/LeaseStatus" }
+        collector: { $ref: "#/components/schemas/Collector" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    LeaseTerms:
+      type: object
+      required: [startDate, rentAmount, dueDay]
+      properties:
+        startDate: { type: string, format: date, example: "2026-11-01" }
+        rentAmount: { type: integer, format: int64, minimum: 1, example: 1250000 }
+        dueDay: { type: integer, format: int32, minimum: 1, maximum: 28, example: 5 }
+        depositAmount: { type: integer, format: int64, minimum: 0, description: Defaults to 0. }
+        collectorMemberId:
+          type: string
+          format: uuid
+          description: The member (Member.id) who collects from this tenant. Leave it out for none.
+
+    LeaseInput:
+      allOf:
+        - $ref: "#/components/schemas/LeaseTerms"
+        - type: object
+          required: [tenantId, unitId]
+          properties:
+            tenantId: { type: string, format: uuid }
+            unitId: { type: string, format: uuid }
+
+    MoveOut:
+      type: object
+      required: [endDate]
+      properties:
+        endDate: { type: string, format: date, example: "2026-11-30" }

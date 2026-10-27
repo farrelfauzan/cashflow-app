@@ -1,0 +1,28 @@
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+
+# Go
+services/api/bin/
+*.test
+*.out
+coverage.html
+
+# Node and Next.js
+node_modules/
+.next/
+out/
+.pnpm-store/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Kept local, never pushed
+docs/
+.claude/
+
+# Agent team runtime (inboxes, logs, worktrees, task briefs)
+team/state/

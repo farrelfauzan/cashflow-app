@@ -1,0 +1,38 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - gosec
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+  settings:
+    depguard:
+      rules:
+        pool-stays-in-store:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/internal/platform/store/**"
+          deny:
+            - pkg: github.com/jackc/pgx/v5/pgxpool
+              desc: the connection pool is private to internal/platform/store; run queries through Store.WithOrgTx
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/farrelfauzan/cashflow-app

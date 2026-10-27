@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Ask the orchestrator to get a decision or a verification from the user.
+# Say what is needed, the options, and which one you recommend. Work that does not depend on
+# the answer carries on.
+#   team-ask "Scaffold apps/web now? Recommend yes: login, org picker, members screen first."
+set -euo pipefail
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/team-tell" orchestrator --kind decision -- "$@"

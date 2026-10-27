@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Start one agent's Claude Code session in the current pane. Called by start.sh.
+#   team-launch <orchestrator|backend|frontend|reviewer>
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/common.sh"
+
+agent="${1:-}"
+is_agent "$agent" || die "usage: team-launch <$AGENTS>"
+init_state
+
+export TEAM_AGENT="$agent"
+export TEAM_DIR REPO_DIR
+export PATH="$TEAM_DIR/bin:$PATH"
+
+case "$agent" in
+  orchestrator) model="$MODEL_ORCHESTRATOR" ;;
+  backend) model="$MODEL_BACKEND" ;;
+  frontend) model="$MODEL_FRONTEND" ;;
+  reviewer) model="$MODEL_REVIEWER" ;;
+esac
+
+# Role prompt = shared team protocol + this agent's role.
+prompt_file="$STATE_DIR/prompts/$agent.md"
+cat "$TEAM_DIR/prompts/shared.md" "$TEAM_DIR/prompts/$agent.md" >"$prompt_file"
+
+if [[ "$agent" == "reviewer" ]]; then
+  export GITHUB_ACCOUNT
+fi
+
+first_message="You are the ${agent} agent. Your role and the team protocol are in your system prompt. \
+Start now: read CLAUDE.md and docs/README.md, run team-inbox, then wait for work. \
+Do not start anything on your own that is not in a task or a message."
+
+cd "$REPO_DIR"
+exec "$CLAUDE_BIN" \
+  --model "$model" \
+  --name "team-$agent" \
+  --permission-mode "$PERMISSION_MODE" \
+  --settings "$TEAM_DIR/settings/$agent.json" \
+  --append-system-prompt "$(cat "$prompt_file")" \
+  "$first_message"

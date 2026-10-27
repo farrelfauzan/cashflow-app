@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Runs in its own tmux window. Every DIGEST_INTERVAL_SECONDS it asks the orchestrator for the
+# digest. It is a timer, not an agent.
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/common.sh"
+export TEAM_AGENT=clock
+export PATH="$TEAM_DIR/bin:$PATH"
+
+echo "digest clock: every ${DIGEST_INTERVAL_SECONDS}s"
+while true; do
+  sleep "$DIGEST_INTERVAL_SECONDS"
+  team-tell orchestrator --kind tick --subject "digest due" -- \
+    "The digest interval has passed. Write the digest for the user now, as your prompt says."
+  echo "$(date -Iseconds) digest requested"
+done
