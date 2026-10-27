@@ -5,6 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * A disabled member keeps their roles but can do nothing in the organization.
+ */
 export type MemberStatus = typeof MemberStatus[keyof typeof MemberStatus];
 
 

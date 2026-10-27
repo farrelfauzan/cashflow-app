@@ -4,11 +4,11 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
-import type { InviteMemberRolesItem } from './inviteMemberRolesItem';
+import type { RoleGrant } from './roleGrant';
 
 export interface InviteMember {
   phone: string;
   /** @maxLength 100 */
   name: string;
-  roles: InviteMemberRolesItem[];
+  roles: RoleGrant[];
 }

@@ -24,11 +24,13 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Error,
   ErrorResponse,
   InviteMember,
   Member,
   MemberList,
   OrgMeResponse,
+  SetMemberStatus,
   SetRoles
 } from '../model';
 
@@ -260,6 +262,7 @@ export const getInviteMemberUrl = (orgId: string,) => {
 }
 
 /**
+ * Each role can be limited to one property with propertyId, as in setMemberRoles. The member and every role are created together, so the member never holds a broader role than the one asked for. A role limited to a property grants nothing on organization-wide records, so a member whose roles are all limited to properties cannot invite anyone.
  * @summary Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
  */
 export const inviteMember = async (orgId: string,
@@ -349,7 +352,7 @@ export const useInviteMember = <TError = ErrorType<ErrorResponse>,
 }
 
 /**
- * Nobody can change their own roles. Each role can be limited to one property with propertyId; give the same role once per property to cover several. A role limited to a property grants nothing on organization-wide records (members, settings, payslips), so a member who needs those also needs the role without a property.
+ * Nobody can change their own roles. Each role can be limited to one property with propertyId; give the same role once per property to cover several. A role limited to a property grants nothing on organization-wide records (members, settings, payslips), so a member who needs those also needs the role without a property. The Admin role for the whole organization cannot be taken from the last active member who holds it; Admin limited to a property does not count (409 last_admin).
  * @summary Replace a member's built-in roles (needs member:manage and role:assign per changed role)
  */
 export const setMemberRoles = async (orgId: string,
@@ -385,7 +388,7 @@ return apiFetch<Member>(getSetMemberRolesUrl(orgId,memberId),
 
 export const getSetMemberRolesMutationKey = () => ['setMemberRoles'] as const;
 
-export const getSetMemberRolesMutationOptions = <TError = ErrorType<ErrorResponse>,
+export const getSetMemberRolesMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext> => {
 
@@ -414,13 +417,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SetMemberRolesMutationResult = NonNullable<Awaited<ReturnType<typeof setMemberRoles>>>
     export type SetMemberRolesMutationBody = BodyType<SetRoles>
-    export type SetMemberRolesMutationError = ErrorType<ErrorResponse>
+    export type SetMemberRolesMutationError = ErrorType<ErrorResponse | Error>
     export type SetMemberRolesMutationVariables = {orgId: string;memberId: string;data: BodyType<SetRoles>}
 
     /**
  * @summary Replace a member's built-in roles (needs member:manage and role:assign per changed role)
  */
-export const useSetMemberRoles = <TError = ErrorType<ErrorResponse>,
+export const useSetMemberRoles = <TError = ErrorType<ErrorResponse | Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setMemberRoles>>,
@@ -429,4 +432,95 @@ export const useSetMemberRoles = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getSetMemberRolesMutationOptions(options), queryClient);
+    }
+    export const getSetMemberStatusUrl = (orgId: string,
+    memberId: string,) => {
+
+
+
+
+  return `/orgs/${orgId}/members/${memberId}/status`
+}
+
+/**
+ * A disabled member keeps their roles but can do nothing in this organization: their sessions are refused here at once (the organization answers 404 not_found, as for a non-member) and the organization leaves their list. Their other organizations and their history are untouched. Re-enabling restores the same roles. Nobody can change their own status, and an Admin cannot disable or re-enable a Supervisor. Setting the status the member already has changes nothing and returns the member. The last active Admin for the whole organization cannot be disabled (409 last_admin).
+ * @summary Disable or re-enable a member (needs member:manage and role:assign on every role the member holds)
+ */
+export const setMemberStatus = async (orgId: string,
+    memberId: string,
+    setMemberStatusBody: SetMemberStatus, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<Member>(getSetMemberStatusUrl(orgId,memberId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setMemberStatusBody)
+  }
+);}
+
+
+
+
+
+export const getSetMemberStatusMutationKey = () => ['setMemberStatus'] as const;
+
+export const getSetMemberStatusMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext> => {
+
+const mutationKey = getSetMemberStatusMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setMemberStatus>>, SetMemberStatusMutationVariables> = (props) => {
+          const {orgId,memberId,data} = props ?? {};
+
+          return  setMemberStatus(orgId,memberId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetMemberStatusMutationResult = NonNullable<Awaited<ReturnType<typeof setMemberStatus>>>
+    export type SetMemberStatusMutationBody = BodyType<SetMemberStatus>
+    export type SetMemberStatusMutationError = ErrorType<Error | ErrorResponse>
+    export type SetMemberStatusMutationVariables = {orgId: string;memberId: string;data: BodyType<SetMemberStatus>}
+
+    /**
+ * @summary Disable or re-enable a member (needs member:manage and role:assign on every role the member holds)
+ */
+export const useSetMemberStatus = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setMemberStatus>>,
+        TError,
+        SetMemberStatusMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetMemberStatusMutationOptions(options), queryClient);
     }

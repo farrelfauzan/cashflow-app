@@ -814,3 +814,101 @@ export const useImportTenants = <TError = ErrorType<Error | ErrorResponse>,
       > => {
       return useMutation(getImportTenantsMutationOptions(options), queryClient);
     }
+    export const getGetTenantImportTemplateUrl = (orgId: string,) => {
+
+
+
+
+  return `/orgs/${orgId}/imports/tenants/template`
+}
+
+/**
+ * A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The header row uses the Indonesian column names (properti, jenis_properti, kamar, nama_penyewa, no_wa, sewa, jatuh_tempo, tanggal_mulai, jaminan), followed by two example rows. The example rows only show the format: the import refuses them by their phone numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
+ * @summary Download a CSV template for the tenant import (needs tenant:manage and lease:manage for the whole organization)
+ */
+export const getTenantImportTemplate = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<string> => {
+
+  return apiFetch<string>(getGetTenantImportTemplateUrl(orgId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTenantImportTemplateQueryKey = (orgId: string,) =>
+    apiQueryKey({ orgId }, { url: `/orgs/${orgId}/imports/tenants/template` });
+
+
+export const useGetTenantImportTemplateQueryOptions = <TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId }, { url: `/orgs/${orgId}/imports/tenants/template`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTenantImportTemplate>>> = ({ signal }) => getTenantImportTemplate(orgId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetTenantImportTemplateQueryResult = NonNullable<Awaited<ReturnType<typeof getTenantImportTemplate>>>
+export type GetTenantImportTemplateQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTenantImportTemplate>>,
+          TError,
+          Awaited<ReturnType<typeof getTenantImportTemplate>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTenantImportTemplate>>,
+          TError,
+          Awaited<ReturnType<typeof getTenantImportTemplate>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Download a CSV template for the tenant import (needs tenant:manage and lease:manage for the whole organization)
+ */
+
+export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetTenantImportTemplateQueryOptions(orgId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
