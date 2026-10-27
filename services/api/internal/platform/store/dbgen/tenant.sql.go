@@ -79,7 +79,7 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 	return i, err
 }
 
-const endLease = `-- name: EndLease :exec
+const endLease = `-- name: EndLease :execrows
 UPDATE lease SET status = 'ended', end_date = $3, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active'
 `
@@ -90,9 +90,12 @@ type EndLeaseParams struct {
 	EndDate        *time.Time
 }
 
-func (q *Queries) EndLease(ctx context.Context, arg EndLeaseParams) error {
-	_, err := q.db.Exec(ctx, endLease, arg.OrganizationID, arg.ID, arg.EndDate)
-	return err
+func (q *Queries) EndLease(ctx context.Context, arg EndLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endLease, arg.OrganizationID, arg.ID, arg.EndDate)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const findTenantByPhone = `-- name: FindTenantByPhone :one
@@ -425,7 +428,32 @@ func (q *Queries) ListTenants(ctx context.Context, organizationID uuid.UUID) ([]
 	return items, nil
 }
 
-const updateLeaseTerms = `-- name: UpdateLeaseTerms :exec
+const lockLease = `-- name: LockLease :one
+SELECT id, status FROM lease
+WHERE organization_id = $1 AND id = $2
+FOR UPDATE
+`
+
+type LockLeaseParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type LockLeaseRow struct {
+	ID     uuid.UUID
+	Status string
+}
+
+// Locks the lease row for the rest of the transaction, so a concurrent change or move-out
+// waits and then sees the committed status.
+func (q *Queries) LockLease(ctx context.Context, arg LockLeaseParams) (LockLeaseRow, error) {
+	row := q.db.QueryRow(ctx, lockLease, arg.OrganizationID, arg.ID)
+	var i LockLeaseRow
+	err := row.Scan(&i.ID, &i.Status)
+	return i, err
+}
+
+const updateLeaseTerms = `-- name: UpdateLeaseTerms :execrows
 UPDATE lease SET start_date = $3, rent_amount = $4, due_day = $5, deposit_amount = $6,
        collector_staff_user_id = $7, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active'
@@ -442,8 +470,8 @@ type UpdateLeaseTermsParams struct {
 }
 
 // Only an active lease changes. Unit and tenant never change: end the lease and start another.
-func (q *Queries) UpdateLeaseTerms(ctx context.Context, arg UpdateLeaseTermsParams) error {
-	_, err := q.db.Exec(ctx, updateLeaseTerms,
+func (q *Queries) UpdateLeaseTerms(ctx context.Context, arg UpdateLeaseTermsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateLeaseTerms,
 		arg.OrganizationID,
 		arg.ID,
 		arg.StartDate,
@@ -452,7 +480,10 @@ func (q *Queries) UpdateLeaseTerms(ctx context.Context, arg UpdateLeaseTermsPara
 		arg.DepositAmount,
 		arg.CollectorStaffUserID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateTenant = `-- name: UpdateTenant :one

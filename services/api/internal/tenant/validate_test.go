@@ -67,3 +67,35 @@ func TestTodayIsTheJakartaCalendarDay(t *testing.T) {
 	require.Equal(t, time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
 		calendarDay(time.Date(2026, 11, 2, 23, 59, 0, 0, clock.Jakarta)), "a date keeps its own calendar day")
 }
+
+func TestMoveOutDates(t *testing.T) {
+	t.Parallel()
+	d := func(month, day int) time.Time { return time.Date(2026, time.Month(month), day, 0, 0, 0, 0, time.UTC) }
+	now := d(11, 2)
+	for _, tc := range []struct {
+		name       string
+		start, end time.Time
+		ok         bool
+	}{
+		{"today", d(10, 1), d(11, 2), true},
+		{"on the start day", d(10, 1), d(10, 1), true},
+		{"before the start", d(10, 1), d(9, 30), false},
+		{"tomorrow", d(10, 1), d(11, 3), false},
+		{"a lease starting today ends today", d(11, 2), d(11, 2), true},
+		{"a booking is cancelled on its start date", d(11, 10), d(11, 10), true},
+		{"a booking cannot end today", d(11, 10), d(11, 2), false},
+		{"a booking cannot end after its start", d(11, 10), d(11, 11), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkEndDate(tc.start, tc.end, now)
+			if tc.ok {
+				require.NoError(t, err)
+				return
+			}
+			var inputErr *InputError
+			require.ErrorAs(t, err, &inputErr)
+			require.Equal(t, "endDate", inputErr.Field)
+		})
+	}
+}

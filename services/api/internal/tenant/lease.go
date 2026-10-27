@@ -149,13 +149,16 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		if err != nil {
 			return err
 		}
-		err = q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
+		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
 			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
 			DueDay:        int16(terms.DueDay), //nolint:gosec // ValidTerms keeps it in 1..28
 			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 		})
 		if err != nil {
 			return fmt.Errorf("updating lease: %w", err)
+		}
+		if n == 0 {
+			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
 		out, err = loadLease(ctx, q, p.OrganizationID, id)
 		return err
@@ -164,8 +167,9 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 }
 
 // MoveOut ends an active lease. endDate is the last day: not before the start and not after
-// today in Asia/Jakarta. The unit is free for a new lease right away. What happens to arrears is
-// an organization setting applied in slice 2, when invoices exist.
+// today in Asia/Jakarta. A lease that has not started (a booking) is cancelled by ending it on
+// its start date. The unit is free for a new lease right away. What happens to arrears is an
+// organization setting applied in slice 2, when invoices exist.
 func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, endDate time.Time) (Lease, error) {
 	endDate = calendarDay(endDate)
 	var out Lease
@@ -175,14 +179,15 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		if err != nil {
 			return err
 		}
-		switch {
-		case endDate.Before(current.StartDate):
-			return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh sebelum tanggal mulai sewa."}
-		case endDate.After(today(s.clock)):
-			return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh setelah hari ini."}
+		if err := checkEndDate(current.StartDate, endDate, today(s.clock)); err != nil {
+			return err
 		}
-		if err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: p.OrganizationID, ID: id, EndDate: &endDate}); err != nil {
+		n, err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: p.OrganizationID, ID: id, EndDate: &endDate})
+		if err != nil {
 			return fmt.Errorf("ending lease: %w", err)
+		}
+		if n == 0 {
+			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
 		out, err = loadLease(ctx, q, p.OrganizationID, id)
 		return err
@@ -190,9 +195,35 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 	return out, err
 }
 
-// loadActiveForChange loads a lease, authorizes lease:manage on it and checks that it is
-// still active.
+// checkEndDate applies the move-out date rules. A booking that has not started can only be
+// cancelled, which ends it on its start date; slice 2 never invoices such a lease.
+func checkEndDate(start, end, now time.Time) error {
+	if start.After(now) {
+		if !end.Equal(start) {
+			return &InputError{Field: "endDate", Message: "Sewa ini belum mulai. Untuk membatalkannya, isi tanggal keluar sama dengan tanggal mulai sewa."}
+		}
+		return nil
+	}
+	switch {
+	case end.Before(start):
+		return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh sebelum tanggal mulai sewa."}
+	case end.After(now):
+		return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh setelah hari ini."}
+	}
+	return nil
+}
+
+// loadActiveForChange locks a lease row for the rest of the transaction, loads it, authorizes
+// lease:manage on it and checks that it is still active. The lock makes a concurrent change or
+// move-out wait, so it sees the committed status rather than the one before.
 func (s *Service) loadActiveForChange(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, p authz.Principal, id uuid.UUID) (Lease, error) {
+	_, err := q.LockLease(ctx, dbgen.LockLeaseParams{OrganizationID: p.OrganizationID, ID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Lease{}, ErrNotFound
+	}
+	if err != nil {
+		return Lease{}, fmt.Errorf("locking lease: %w", err)
+	}
 	current, err := loadLease(ctx, q, p.OrganizationID, id)
 	if err != nil {
 		return Lease{}, err

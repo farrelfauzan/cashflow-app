@@ -171,6 +171,7 @@ func TestTenantsAndLeases(t *testing.T) {
 		require.ErrorIs(t, err, tenant.ErrPhoneTaken, "Budi has that number")
 	})
 
+	var booking tenant.Lease
 	t.Run("move-out ends the lease on a date and frees the unit", func(t *testing.T) {
 		_, err := env.Tenants.MoveOut(ctx, w.admin, lease1.ID, day(2026, 11, 3))
 		requireField(t, err, "endDate") // tomorrow in Jakarta
@@ -195,8 +196,24 @@ func TestTenantsAndLeases(t *testing.T) {
 				budi = tn
 			}
 		}
-		_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
+		booking, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
 			StartDate: day(2026, 11, 3), RentAmount: 900_000, DueDay: 3,
+		}})
+		require.NoError(t, err, "the unit is free again, and a lease may start tomorrow")
+	})
+
+	t.Run("a booking that has not started is cancelled by ending it on its start date", func(t *testing.T) {
+		_, err := env.Tenants.MoveOut(ctx, w.admin, booking.ID, day(2026, 11, 2))
+		requireField(t, err, "endDate") // today, but the lease starts tomorrow
+		_, err = env.Tenants.MoveOut(ctx, w.admin, booking.ID, day(2026, 11, 4))
+		requireField(t, err, "endDate")
+
+		cancelled, err := env.Tenants.MoveOut(ctx, w.admin, booking.ID, day(2026, 11, 3))
+		require.NoError(t, err)
+		require.Equal(t, tenant.StatusEnded, cancelled.Status)
+		require.Equal(t, cancelled.StartDate, *cancelled.EndDate)
+		_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: booking.TenantID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
+			StartDate: day(2026, 11, 2), RentAmount: 900_000, DueDay: 2,
 		}})
 		require.NoError(t, err, "the unit is free again")
 	})
@@ -238,7 +255,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 	citra := newTenant("Citra Lestari", "0812-7210-5003") // no collector
 	dewi := newTenant("Dewi Anggraini", "0812-7210-5004") // two leases, one each
 	_ = newTenant("Eko Prasetyo", "0812-7210-5005")       // no lease at all
-	rent(rina, w.kamar1, w.karyawanMemberID)
+	rinaLease := rent(rina, w.kamar1, w.karyawanMemberID)
 	rent(budi, w.kamar2, sari.ID)
 	rent(citra, w.rumahA, uuid.Nil)
 	unit3, err := env.Properties.CreateUnit(ctx, w.admin, w.mawar.ID, property.UnitInput{Label: "Rumah B"})
@@ -290,6 +307,20 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 		_, err = env.Tenants.Update(ctx, w.karyawan, rina.ID, tenant.Input{Name: "Rina", Phone: "0812-7210-5001"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
+
+	t.Run("after move-out the former collector no longer sees the tenant", func(t *testing.T) {
+		_, err := env.Tenants.MoveOut(ctx, w.admin, rinaLease.ID, day(2026, 11, 1))
+		require.NoError(t, err)
+		tenants, err := env.Tenants.List(ctx, w.karyawan)
+		require.NoError(t, err)
+		require.Empty(t, tenants)
+		_, err = env.Tenants.Get(ctx, w.karyawan, rina.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+
+		got, err := env.Tenants.Get(ctx, w.admin, rina.ID)
+		require.NoError(t, err)
+		require.Len(t, got.Leases, 1, "an organization-wide admin still sees the tenant and the ended lease")
+	})
 }
 
 func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
@@ -308,7 +339,7 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 	dewi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Dewi", Phone: "0812-7310-5002"})
 	require.NoError(t, err)
 	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000, DueDay: 1}
-	_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
+	rinaKamar1, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
 	require.NoError(t, err)
 	_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: dewi.ID, UnitID: w.kamar2.ID, Terms: terms})
 	require.NoError(t, err)
@@ -329,10 +360,11 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
 
+	var rinaKamar3 tenant.Lease
 	t.Run("she rents units in Kos Melati only, and cannot add tenants", func(t *testing.T) {
 		kamar3, err := env.Properties.CreateUnit(ctx, limited, w.melati.ID, property.UnitInput{Label: "Kamar 3"})
 		require.NoError(t, err)
-		_, err = env.Tenants.CreateLease(ctx, limited, tenant.NewLease{TenantID: rina.ID, UnitID: kamar3.ID, Terms: terms})
+		rinaKamar3, err = env.Tenants.CreateLease(ctx, limited, tenant.NewLease{TenantID: rina.ID, UnitID: kamar3.ID, Terms: terms})
 		require.NoError(t, err)
 		rumahB, err := env.Properties.CreateUnit(ctx, w.admin, w.mawar.ID, property.UnitInput{Label: "Rumah B"})
 		require.NoError(t, err)
@@ -340,6 +372,23 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		_, err = env.Tenants.Create(ctx, limited, tenant.Input{Name: "Baru", Phone: "0812-7310-5999"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
+	})
+
+	t.Run("she sees a tenant only while one of their leases in Kos Melati is active", func(t *testing.T) {
+		_, err := env.Tenants.MoveOut(ctx, limited, rinaKamar1.ID, day(2026, 11, 1))
+		require.NoError(t, err)
+		got, err := env.Tenants.Get(ctx, limited, rina.ID)
+		require.NoError(t, err)
+		require.Len(t, got.Leases, 1, "the ended Kamar 1 lease is hidden, Kamar 3 still shows")
+		require.Equal(t, rinaKamar3.ID, got.Leases[0].ID)
+
+		_, err = env.Tenants.MoveOut(ctx, limited, rinaKamar3.ID, day(2026, 11, 1))
+		require.NoError(t, err)
+		_, err = env.Tenants.Get(ctx, limited, rina.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		tenants, err := env.Tenants.List(ctx, limited)
+		require.NoError(t, err)
+		require.Equal(t, []string{"Dewi"}, tenantNames(tenants))
 	})
 }
 
@@ -402,4 +451,115 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 			require.Equal(t, "23503", pgErr.Code, "%s: expected a foreign key violation", name)
 		}
 	})
+}
+
+// TestChangeWaitingOnMoveOutSeesTheEndedLease makes the race between two admins deterministic:
+// the test moves the tenant out in a transaction it keeps open, starts the second change, waits
+// until Postgres reports that change blocked on the lease row, and only then commits.
+func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	w := newWorld(t, env, "0812751")
+	movedOut := day(2026, 11, 1)
+
+	cases := []struct {
+		name   string
+		unit   property.Unit
+		phone  string
+		change func(lease tenant.Lease) error
+	}{
+		{
+			name: "a rent change", unit: w.kamar1, phone: "0812-7510-5001",
+			change: func(lease tenant.Lease) error {
+				_, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, tenant.Terms{
+					StartDate: lease.StartDate, RentAmount: 1_250_000, DueDay: 20, DepositAmount: 1_000_000,
+				})
+				return err
+			},
+		},
+		{
+			name: "a second move-out", unit: w.kamar2, phone: "0812-7510-5002",
+			change: func(lease tenant.Lease) error {
+				_, err := env.Tenants.MoveOut(ctx, w.admin, lease.ID, day(2026, 11, 2))
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tn, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Siti Rahmawati", Phone: tc.phone})
+			require.NoError(t, err)
+			lease, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: tc.unit.ID, Terms: tenant.Terms{
+				StartDate: day(2026, 10, 1), RentAmount: 850_000, DueDay: 5, DepositAmount: 850_000,
+			}})
+			require.NoError(t, err)
+			allowsBefore := countAllowed(env.AuditLog(t, w.org.ID), "lease:manage")
+
+			done := make(chan error, 1)
+			err = env.Store.WithOrgTx(ctx, w.org.ID, func(tx pgx.Tx) error {
+				q := dbgen.New(tx)
+				if _, err := q.LockLease(ctx, dbgen.LockLeaseParams{OrganizationID: w.org.ID, ID: lease.ID}); err != nil {
+					return err
+				}
+				n, err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: w.org.ID, ID: lease.ID, EndDate: &movedOut})
+				if err != nil {
+					return err
+				}
+				require.Equal(t, int64(1), n)
+
+				go func() { done <- tc.change(lease) }()
+				waitUntilBlockedOn(ctx, t, tx)
+				return nil // commit: the waiting change now reads the ended lease
+			})
+			require.NoError(t, err)
+
+			select {
+			case err = <-done:
+			case <-time.After(30 * time.Second):
+				t.Fatal("the waiting change never returned")
+			}
+			require.ErrorIs(t, err, tenant.ErrLeaseEnded)
+
+			got, err := env.Tenants.Get(ctx, w.admin, tn.ID)
+			require.NoError(t, err)
+			require.Len(t, got.Leases, 1)
+			l := got.Leases[0]
+			require.Equal(t, tenant.StatusEnded, l.Status)
+			require.Equal(t, movedOut, *l.EndDate, "the first move-out's date stands")
+			require.Equal(t, int64(850_000), l.RentAmount)
+			require.Equal(t, 5, l.DueDay)
+			require.Equal(t, int64(850_000), l.DepositAmount)
+			require.Equal(t, allowsBefore, countAllowed(env.AuditLog(t, w.org.ID), "lease:manage"),
+				"no allowed change is audited for a change that did not happen")
+		})
+	}
+}
+
+// waitUntilBlockedOn polls pg_locks from the holding transaction until another session waits on
+// that transaction's id, which is how Postgres queues a second locker of a row it changed.
+func waitUntilBlockedOn(ctx context.Context, t *testing.T, tx pgx.Tx) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var blocked bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_locks
+			WHERE locktype = 'transactionid' AND NOT granted AND transactionid = xid(pg_current_xact_id()))`).Scan(&blocked)
+		require.NoError(t, err)
+		if blocked {
+			return
+		}
+		require.True(t, time.Now().Before(deadline), "the second change never waited on the lease row")
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func countAllowed(rows []dbgen.AuditLog, action string) int {
+	n := 0
+	for _, r := range rows {
+		if r.Decision == "allow" && r.Action == action {
+			n++
+		}
+	}
+	return n
 }
