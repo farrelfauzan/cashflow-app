@@ -208,7 +208,7 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 	mawarUnit, err := env.Properties.CreateUnit(ctx, admin, mawar.ID, property.UnitInput{Label: "Rumah A"})
 	require.NoError(t, err)
 
-	sari, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-6210-0099", Name: "Mbak Sari", Roles: []string{authz.RoleKaryawan}})
+	sari, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-6210-0099", Name: "Mbak Sari", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
 	require.NoError(t, err)
 
 	t.Run("an admin limits Sari's admin role to Kos Melati", func(t *testing.T) {

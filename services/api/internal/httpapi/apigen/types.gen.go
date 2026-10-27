@@ -66,27 +66,6 @@ func (e ImportRowStatus) Valid() bool {
 	}
 }
 
-// Defines values for InviteMemberRoles.
-const (
-	InviteMemberRolesAdmin      InviteMemberRoles = "admin"
-	InviteMemberRolesKaryawan   InviteMemberRoles = "karyawan"
-	InviteMemberRolesSupervisor InviteMemberRoles = "supervisor"
-)
-
-// Valid indicates whether the value is a known member of the InviteMemberRoles enum.
-func (e InviteMemberRoles) Valid() bool {
-	switch e {
-	case InviteMemberRolesAdmin:
-		return true
-	case InviteMemberRolesKaryawan:
-		return true
-	case InviteMemberRolesSupervisor:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for LeaseStatus.
 const (
 	LeaseStatusActive LeaseStatus = "active"
@@ -149,19 +128,19 @@ func (e PropertyKind) Valid() bool {
 
 // Defines values for RoleGrantRole.
 const (
-	RoleGrantRoleAdmin      RoleGrantRole = "admin"
-	RoleGrantRoleKaryawan   RoleGrantRole = "karyawan"
-	RoleGrantRoleSupervisor RoleGrantRole = "supervisor"
+	Admin      RoleGrantRole = "admin"
+	Karyawan   RoleGrantRole = "karyawan"
+	Supervisor RoleGrantRole = "supervisor"
 )
 
 // Valid indicates whether the value is a known member of the RoleGrantRole enum.
 func (e RoleGrantRole) Valid() bool {
 	switch e {
-	case RoleGrantRoleAdmin:
+	case Admin:
 		return true
-	case RoleGrantRoleKaryawan:
+	case Karyawan:
 		return true
-	case RoleGrantRoleSupervisor:
+	case Supervisor:
 		return true
 	default:
 		return false
@@ -293,13 +272,10 @@ type ImportSummary struct {
 
 // InviteMember defines model for InviteMember.
 type InviteMember struct {
-	Name  string              `json:"name"`
-	Phone string              `json:"phone"`
-	Roles []InviteMemberRoles `json:"roles"`
+	Name  string      `json:"name"`
+	Phone string      `json:"phone"`
+	Roles []RoleGrant `json:"roles"`
 }
-
-// InviteMemberRoles defines model for InviteMember.Roles.
-type InviteMemberRoles string
 
 // Lease defines model for Lease.
 type Lease struct {

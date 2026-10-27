@@ -179,9 +179,8 @@ func TestLeaseChargesForAnAdminLimitedToOneProperty(t *testing.T) {
 	env := testenv.New(t)
 	w := newWorld(t, env, "0812771")
 
-	sari, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7710-0099", Name: "Mbak Sari", Roles: []string{authz.RoleKaryawan}})
-	require.NoError(t, err)
-	_, err = env.Members.SetRoles(ctx, w.admin, sari.ID, []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: w.melati.ID}})
+	sari, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7710-0099", Name: "Mbak Sari",
+		Roles: []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: w.melati.ID}}})
 	require.NoError(t, err)
 	limited := env.Principal(t, w.org.ID, sari.UserID)
 

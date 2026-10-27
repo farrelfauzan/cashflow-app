@@ -84,7 +84,7 @@ func (s *Service) Create(ctx context.Context, in New) (uuid.UUID, error) {
 			return fmt.Errorf("creating organization: %w", err)
 		}
 		for i, m := range members {
-			if _, err := member.Add(ctx, q, orgID, userIDs[i], m.Roles); err != nil {
+			if _, err := member.Add(ctx, q, orgID, userIDs[i], orgWide(m.Roles)); err != nil {
 				return err
 			}
 		}
@@ -95,6 +95,16 @@ func (s *Service) Create(ctx context.Context, in New) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 	return orgID, nil
+}
+
+// orgWide grants each role for the whole organization: the first members are not limited to a
+// property.
+func orgWide(roles []string) []member.RoleGrant {
+	out := make([]member.RoleGrant, len(roles))
+	for i, r := range roles {
+		out[i] = member.RoleGrant{Role: r}
+	}
+	return out
 }
 
 // ErrNotFound means the staff member has no active membership in an organization with that
