@@ -224,6 +224,10 @@ func roleAssign(role string) authz.Request {
 // SetRoles replaces a member's built-in roles. It needs member:manage on that member, which
 // nobody has on themselves, and role:assign on every role it adds or removes, including a role
 // whose property limit changes.
+//
+// Taking the Admin role for the whole organization away from the last active member who holds
+// it fails with ErrLastAdmin; keeping Admin limited to a property does not count. It takes the
+// same lock as SetStatus, so a demotion and a disable cannot together remove the last Admin.
 func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID uuid.UUID, grants []RoleGrant) (Member, error) {
 	grants, err := validGrants(grants)
 	if err != nil {
@@ -232,6 +236,9 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 	var m Member
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
+		if err := q.LockOrganizationMembers(ctx, p.OrganizationID); err != nil {
+			return fmt.Errorf("locking memberships: %w", err)
+		}
 		current, err := load(ctx, q, p.OrganizationID, membershipID)
 		if err != nil {
 			return err
@@ -249,6 +256,11 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 		}
 		if err := checkProperties(ctx, q, p.OrganizationID, grants); err != nil {
 			return err
+		}
+		if current.Status == StatusActive && holdsOrgAdmin(current) && !grantsOrgAdmin(grants) {
+			if err := refuseLastAdmin(ctx, q, p.OrganizationID, membershipID); err != nil {
+				return err
+			}
 		}
 
 		if err := q.DeleteBuiltinRoleAssignments(ctx, dbgen.DeleteBuiltinRoleAssignmentsParams{
@@ -283,9 +295,9 @@ func (s *Service) SetStatus(ctx context.Context, p authz.Principal, membershipID
 	var m Member
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		// Taken before reading anything, so two status changes in one organization run one
+		// Taken before reading anything, so status and role changes in one organization run one
 		// after the other and the second sees the first's result. Without it, two admins
-		// disabling each other at once would each still count the other as active.
+		// disabling or demoting each other at once would each still count the other as active.
 		if err := q.LockOrganizationMembers(ctx, p.OrganizationID); err != nil {
 			return fmt.Errorf("locking memberships: %w", err)
 		}
@@ -303,14 +315,8 @@ func (s *Service) SetStatus(ctx context.Context, p authz.Principal, membershipID
 			return nil
 		}
 		if status == StatusDisabled && holdsOrgAdmin(current) {
-			others, err := q.CountOtherActiveOrgAdmins(ctx, dbgen.CountOtherActiveOrgAdminsParams{
-				OrganizationID: p.OrganizationID, ExcludedMembershipID: membershipID,
-			})
-			if err != nil {
-				return fmt.Errorf("counting admins: %w", err)
-			}
-			if others == 0 {
-				return ErrLastAdmin
+			if err := refuseLastAdmin(ctx, q, p.OrganizationID, membershipID); err != nil {
+				return err
 			}
 		}
 		n, err := q.SetMembershipStatus(ctx, dbgen.SetMembershipStatusParams{
@@ -344,6 +350,29 @@ func statusRequests(m Member) []authz.Request {
 		reqs = append(reqs, roleAssign(r))
 	}
 	return reqs
+}
+
+// refuseLastAdmin returns ErrLastAdmin when no active member other than membershipID holds the
+// Admin role for the whole organization. Callers hold LockOrganizationMembers, so the count
+// cannot change before they commit.
+func refuseLastAdmin(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) error {
+	others, err := q.CountOtherActiveOrgAdmins(ctx, dbgen.CountOtherActiveOrgAdminsParams{
+		OrganizationID: org, ExcludedMembershipID: membershipID,
+	})
+	if err != nil {
+		return fmt.Errorf("counting admins: %w", err)
+	}
+	if others == 0 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// grantsOrgAdmin reports whether the grants include the Admin role for the whole organization.
+func grantsOrgAdmin(grants []RoleGrant) bool {
+	return slices.ContainsFunc(grants, func(g RoleGrant) bool {
+		return g.Role == authz.RoleAdmin && g.PropertyID == uuid.Nil
+	})
 }
 
 // holdsOrgAdmin reports whether the member holds the Admin role for the whole organization.

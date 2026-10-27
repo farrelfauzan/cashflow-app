@@ -229,3 +229,142 @@ func TestTwoAdminsDisablingEachOther(t *testing.T) {
 	require.Equal(t, member.StatusActive, statusOf(t, env, first, first.MembershipID))
 	require.Equal(t, member.StatusDisabled, statusOf(t, env, first, second.MembershipID))
 }
+
+func TestSetRolesKeepsAnAdmin(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812384")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+	melati, err := env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
+	require.NoError(t, err)
+	hendra, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-3840-0001", Name: "Pak Hendra", Roles: grants(authz.RoleKaryawan)})
+	require.NoError(t, err)
+	env.GrantCustomRole(t, o.ID, hendra.ID, "Pengelola Anggota", memberManager)
+	manager := env.Principal(t, o.ID, hendra.UserID)
+
+	refused := []struct {
+		name  string
+		roles []member.RoleGrant
+	}{
+		{name: "to karyawan", roles: grants(authz.RoleKaryawan)},
+		{name: "to admin limited to one property", roles: []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}}},
+		{
+			name:  "to admin limited to one property and karyawan",
+			roles: []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}, {Role: authz.RoleKaryawan}},
+		},
+	}
+	for _, tc := range refused {
+		t.Run("the last admin cannot be demoted "+tc.name, func(t *testing.T) {
+			allowsBefore := len(allowedBy(env.AuditLog(t, o.ID), hendra.UserID))
+			_, err := env.Members.SetRoles(ctx, manager, admin.MembershipID, tc.roles)
+			require.ErrorIs(t, err, member.ErrLastAdmin)
+			require.Equal(t, []string{authz.RoleAdmin}, env.Principal(t, o.ID, o.Admin.UserID).RoleKeys(), "nothing changes")
+			require.Len(t, allowedBy(env.AuditLog(t, o.ID), hendra.UserID), allowsBefore,
+				"no allowed change is audited for a change that did not happen")
+		})
+	}
+
+	t.Run("the last admin can gain roles while keeping admin", func(t *testing.T) {
+		m, err := env.Members.SetRoles(ctx, manager, admin.MembershipID, grants(authz.RoleAdmin, authz.RoleKaryawan))
+		require.NoError(t, err)
+		require.Equal(t, []string{authz.RoleAdmin, authz.RoleKaryawan}, roleKeys(m))
+	})
+
+	t.Run("an unauthorized caller is refused before the rule", func(t *testing.T) {
+		karyawan := env.Principal(t, o.ID, o.Karyawan.UserID)
+		_, err := env.Members.SetRoles(ctx, karyawan, admin.MembershipID, grants(authz.RoleKaryawan))
+		require.ErrorIs(t, err, authz.ErrForbidden)
+	})
+
+	t.Run("demoting one of two admins works", func(t *testing.T) {
+		rina, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-3840-0002", Name: "Bu Rina", Roles: grants(authz.RoleAdmin)})
+		require.NoError(t, err)
+		m, err := env.Members.SetRoles(ctx, admin, rina.ID, []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}})
+		require.NoError(t, err)
+		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID}}, m.Roles)
+	})
+}
+
+// TestAdminRemovedTwiceAtOnce makes the race between a disable and a demotion deterministic,
+// in both orders: the test applies the first change in a transaction it keeps open (holding
+// the organization lock, as the service would), starts the second admin's change against the
+// first admin, waits until Postgres reports it blocked, and only then commits.
+func TestAdminRemovedTwiceAtOnce(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+
+	cases := []struct {
+		name   string
+		prefix string
+		// first removes the second admin inside the held transaction.
+		first func(q *dbgen.Queries, org, membershipID uuid.UUID) error
+		// then is the second admin's call against the first admin.
+		then func(by authz.Principal, membershipID uuid.UUID) error
+	}{
+		{
+			name: "a disable holds the lock, a demotion waits", prefix: "0812385",
+			first: func(q *dbgen.Queries, org, membershipID uuid.UUID) error {
+				_, err := q.SetMembershipStatus(ctx, dbgen.SetMembershipStatusParams{
+					OrganizationID: org, ID: membershipID, Status: member.StatusDisabled,
+				})
+				return err
+			},
+			then: func(by authz.Principal, membershipID uuid.UUID) error {
+				_, err := env.Members.SetRoles(ctx, by, membershipID, grants(authz.RoleKaryawan))
+				return err
+			},
+		},
+		{
+			name: "a demotion holds the lock, a disable waits", prefix: "0812386",
+			first: func(q *dbgen.Queries, org, membershipID uuid.UUID) error {
+				err := q.DeleteBuiltinRoleAssignments(ctx, dbgen.DeleteBuiltinRoleAssignmentsParams{
+					OrganizationID: org, MembershipID: membershipID,
+				})
+				if err != nil {
+					return err
+				}
+				role := authz.RoleKaryawan
+				return q.CreateBuiltinRoleAssignment(ctx, dbgen.CreateBuiltinRoleAssignmentParams{
+					ID: uuid.New(), OrganizationID: org, MembershipID: membershipID, BuiltinRole: &role,
+				})
+			},
+			then: func(by authz.Principal, membershipID uuid.UUID) error {
+				_, err := env.Members.SetStatus(ctx, by, membershipID, member.StatusDisabled)
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := env.CreateOrg(t, "Griya "+tc.prefix, tc.prefix)
+			first := env.Principal(t, o.ID, o.Admin.UserID)
+			invited, err := env.Members.Invite(ctx, first, member.Invite{Phone: tc.prefix + "901", Name: "Bu Rina", Roles: grants(authz.RoleAdmin)})
+			require.NoError(t, err)
+			second := env.Principal(t, o.ID, invited.UserID)
+
+			done := make(chan error, 1)
+			err = env.Store.WithOrgTx(ctx, o.ID, func(tx pgx.Tx) error {
+				q := dbgen.New(tx)
+				if err := q.LockOrganizationMembers(ctx, o.ID); err != nil {
+					return err
+				}
+				if err := tc.first(q, o.ID, second.MembershipID); err != nil {
+					return err
+				}
+				go func() { done <- tc.then(second, first.MembershipID) }()
+				testenv.WaitUntilBlockedOn(ctx, t, tx)
+				return nil // commit: the waiting call now sees the second admin removed
+			})
+			require.NoError(t, err)
+
+			select {
+			case err = <-done:
+			case <-time.After(30 * time.Second):
+				t.Fatal("the waiting call never returned")
+			}
+			require.ErrorIs(t, err, member.ErrLastAdmin)
+			require.Equal(t, member.StatusActive, statusOf(t, env, first, first.MembershipID))
+			require.Equal(t, []string{authz.RoleAdmin}, env.Principal(t, o.ID, o.Admin.UserID).RoleKeys())
+		})
+	}
+}

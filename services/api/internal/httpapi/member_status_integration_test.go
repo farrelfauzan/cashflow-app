@@ -113,7 +113,7 @@ func TestMemberStatusOverHTTP(t *testing.T) {
 		require.Equal(t, authz.RoleKaryawan, decode[apigen.OrgMeResponse](t, data).Roles[0].Key)
 	})
 
-	t.Run("the last active admin cannot be disabled", func(t *testing.T) {
+	t.Run("the last active admin cannot be disabled or demoted", func(t *testing.T) {
 		hendra, err := env.Members.Invite(ctx, adminP, member.Invite{
 			Phone: "0812-1710-0001", Name: "Pak Hendra", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}},
 		})
@@ -131,5 +131,14 @@ func TestMemberStatusOverHTTP(t *testing.T) {
 
 		resp, _ = admin.do(http.MethodGet, orgPath+"/me", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "the admin is still active")
+
+		resp, data = manager.do(http.MethodPut, orgPath+"/members/"+adminP.MembershipID.String()+"/roles",
+			apigen.SetRoles{Roles: []apigen.RoleGrant{{Role: apigen.Karyawan}}})
+		require.Equal(t, http.StatusConflict, resp.StatusCode, string(data))
+		require.Equal(t, "last_admin", decode[apigen.Error](t, data).Error.Code)
+
+		resp, data = admin.do(http.MethodGet, orgPath+"/me", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, authz.RoleAdmin, decode[apigen.OrgMeResponse](t, data).Roles[0].Key, "the admin keeps the role")
 	})
 }
