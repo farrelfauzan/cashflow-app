@@ -29,6 +29,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 func main() {
@@ -94,6 +95,7 @@ func run() error {
 		Authz:          az,
 		Members:        member.NewService(st, az),
 		Properties:     property.NewService(st, az),
+		Tenants:        tenant.NewService(st, az, clk),
 		CookieSecure:   cfg.CookieSecure(),
 		AllowedOrigins: cfg.Origins(),
 		DocsSpecPath:   cfg.DocsSpecPath(),

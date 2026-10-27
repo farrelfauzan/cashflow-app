@@ -16,6 +16,10 @@ const (
 	ActionPropertyManage = "property:manage"
 	ActionUnitRead       = "unit:read"
 	ActionUnitManage     = "unit:manage"
+
+	ActionTenantRead   = "tenant:read"
+	ActionTenantManage = "tenant:manage"
+	ActionLeaseManage  = "lease:manage"
 )
 
 // catalog lists every action the app knows, by resource. A policy may only name these, or
@@ -74,6 +78,8 @@ var sensitive = map[string]bool{
 	"role:manage":         true,
 	"property:manage":     true,
 	"unit:manage":         true,
+	"tenant:manage":       true,
+	"lease:manage":        true,
 	"payment:record":      true,
 	"payment:check":       true,
 	"correction:create":   true,
