@@ -209,7 +209,7 @@ func TestImportPermissions(t *testing.T) {
 	t.Run("an admin limited to one property cannot import", func(t *testing.T) {
 		melati, err := env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
 		require.NoError(t, err)
-		sari, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-8210-0099", Name: "Mbak Sari", Roles: []string{authz.RoleKaryawan}})
+		sari, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-8210-0099", Name: "Mbak Sari", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
 		require.NoError(t, err)
 		_, err = env.Members.SetRoles(ctx, admin, sari.ID, []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}})
 		require.NoError(t, err)

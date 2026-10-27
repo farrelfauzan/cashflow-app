@@ -247,7 +247,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 		return l
 	}
 
-	sari, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7210-0099", Name: "Mbak Sari", Roles: []string{authz.RoleKaryawan}})
+	sari, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7210-0099", Name: "Mbak Sari", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
 	require.NoError(t, err)
 
 	rina := newTenant("Rina Wulandari", "0812-7210-5001") // collected by our karyawan
@@ -328,7 +328,7 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 	env := testenv.New(t)
 	w := newWorld(t, env, "0812731")
 
-	sari, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7310-0099", Name: "Mbak Sari", Roles: []string{authz.RoleKaryawan}})
+	sari, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7310-0099", Name: "Mbak Sari", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
 	require.NoError(t, err)
 	_, err = env.Members.SetRoles(ctx, w.admin, sari.ID, []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: w.melati.ID}})
 	require.NoError(t, err)
