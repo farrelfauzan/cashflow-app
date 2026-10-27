@@ -308,9 +308,9 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   no penalty. After N broken promises (org setting, default 2) the tenant joins the visit list.
 - Dashboard and the Supervisor's weekly WA report: total arrears per tenant and the age
   of the oldest unpaid invoice.
-- Owner reports show gross income and clean income, with drill-down into the gross down to the
-  invoice lines. Extra charges are not a separate report category. The definition of clean
-  income is still open (to be confirmed by the owner).
+- Owner reports show gross income and clean income. Gross income is all money collected (rent
+  plus extra charges); clean income is the rent alone. Costs are part of neither. The owner can
+  drill into the gross down to the invoice lines; extra charges are not a separate category.
 
 ## Payments
 
