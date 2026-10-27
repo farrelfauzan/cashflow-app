@@ -20,22 +20,28 @@ export function formatRupiah(amount: number): string {
   return amount < 0 ? `-Rp${grouped}` : `Rp${grouped}`;
 }
 
+// The same rule as the API's CSV import (internal/tenantimport/parse.go): an explicit "no cents"
+// tail is dropped, and what remains is plain digits or digits with a dot between every group of
+// three.
+const RP_PREFIX = /^rp/i;
+const ZERO_CENTS = /[.,]00?$/;
+const WHOLE_RUPIAH = /^(\d+|\d{1,3}(\.\d{3})+)$/;
+
 /**
- * Turns what a user typed into an amount field into integer rupiah, keeping digits only:
- * `"1.250.000"` and `"Rp 1.250.000"` give `1250000`.
+ * Turns what a user typed into an amount field into integer rupiah: `"1.250.000"`,
+ * `"Rp 1.250.000"`, `"1250000"` and `"1.250.000,00"` all give `1250000`.
  *
- * Returns `null` when there are no digits, when the input contains a comma (the Indonesian
- * decimal separator, so `"1.250.000,00"` is not read as a hundred times the amount), or when
- * the value is beyond `Number.MAX_SAFE_INTEGER`.
+ * A dot is only a thousands separator. Anything else is refused rather than guessed, so the
+ * field can show an error: `null` for empty input, letters (`"1.5jt"`), a fraction other than
+ * zero cents (`"850.5"`, `"850000.50"`), a misplaced dot, a sign, or a value beyond
+ * `Number.MAX_SAFE_INTEGER`.
  */
 export function parseRupiahInput(input: string): number | null {
-  if (input.includes(",")) {
+  const compact = input.trim().replace(RP_PREFIX, "").replace(/\s/g, "");
+  const whole = compact.replace(ZERO_CENTS, "");
+  if (!WHOLE_RUPIAH.test(whole)) {
     return null;
   }
-  const digits = input.replace(/\D/g, "");
-  if (digits === "") {
-    return null;
-  }
-  const amount = Number(digits);
+  const amount = Number(whole.replaceAll(".", ""));
   return Number.isSafeInteger(amount) ? amount : null;
 }
