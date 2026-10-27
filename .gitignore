@@ -14,6 +14,16 @@ node_modules/
 .next/
 out/
 .pnpm-store/
+.pnpm-debug.log*
+*.tsbuildinfo
+apps/web/next-env.d.ts
+apps/web/coverage/
+
+# Playwright output
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/blob-report/
+apps/web/playwright/.cache/
 
 # Editors and OS
 .DS_Store
