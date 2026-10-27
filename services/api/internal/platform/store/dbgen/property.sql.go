@@ -82,6 +82,59 @@ func (q *Queries) CreateUnit(ctx context.Context, arg CreateUnitParams) (Unit, e
 	return i, err
 }
 
+const findPropertyByName = `-- name: FindPropertyByName :one
+SELECT id, organization_id, name, kind, address, created_at, updated_at FROM property
+WHERE organization_id = $1 AND lower(name) = lower($2)
+`
+
+type FindPropertyByNameParams struct {
+	OrganizationID uuid.UUID
+	Name           string
+}
+
+// Names are unique per organization, ignoring case.
+func (q *Queries) FindPropertyByName(ctx context.Context, arg FindPropertyByNameParams) (Property, error) {
+	row := q.db.QueryRow(ctx, findPropertyByName, arg.OrganizationID, arg.Name)
+	var i Property
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Kind,
+		&i.Address,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const findUnitByLabel = `-- name: FindUnitByLabel :one
+SELECT id, organization_id, property_id, label, default_rent, created_at, updated_at FROM unit
+WHERE organization_id = $1 AND property_id = $2 AND lower(label) = lower($3)
+`
+
+type FindUnitByLabelParams struct {
+	OrganizationID uuid.UUID
+	PropertyID     uuid.UUID
+	Label          string
+}
+
+// Labels are unique per property, ignoring case.
+func (q *Queries) FindUnitByLabel(ctx context.Context, arg FindUnitByLabelParams) (Unit, error) {
+	row := q.db.QueryRow(ctx, findUnitByLabel, arg.OrganizationID, arg.PropertyID, arg.Label)
+	var i Unit
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.PropertyID,
+		&i.Label,
+		&i.DefaultRent,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getProperty = `-- name: GetProperty :one
 SELECT p.id, p.organization_id, p.name, p.kind, p.address, p.created_at, p.updated_at, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count
 FROM property p

@@ -39,3 +39,13 @@ RETURNING *;
 UPDATE unit SET label = $3, default_rent = $4, updated_at = now()
 WHERE organization_id = $1 AND id = $2
 RETURNING *;
+
+-- name: FindPropertyByName :one
+-- Names are unique per organization, ignoring case.
+SELECT * FROM property
+WHERE organization_id = $1 AND lower(name) = lower(sqlc.arg(name));
+
+-- name: FindUnitByLabel :one
+-- Labels are unique per property, ignoring case.
+SELECT * FROM unit
+WHERE organization_id = $1 AND property_id = $2 AND lower(label) = lower(sqlc.arg(label));
