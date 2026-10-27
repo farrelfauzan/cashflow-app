@@ -514,6 +514,9 @@ paths:
       operationId: importTenants
       summary: Import properties, units, tenants and leases from a CSV file (needs tenant:manage and lease:manage for the whole organization)
       description: >
+        Needs tenant:manage and lease:manage for the whole organization, plus property:manage or
+        unit:manage for each property or unit a row creates; a denial stops the whole import.
+
         The first line names the columns, separated by commas or semicolons, in any order:
         property, unit, tenant_name, phone, rent, due_day, start_date, and optionally deposit and
         property_kind (kos, kontrakan, ruko, other; new properties default to other). Indonesian
