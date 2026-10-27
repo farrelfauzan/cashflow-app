@@ -294,6 +294,10 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 
 ## Billing and reminders
 
+- Each lease bills on the anniversary of its own start date, in advance: a lease starting 15 Oct
+  has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due 15 Nov), and so on, with a full
+  first month and no proration. A start on the 29th to 31st is due on the last day of shorter
+  months, always counted from the start date (31 Jan, 28 Feb, 31 Mar).
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are
