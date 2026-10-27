@@ -3,6 +3,7 @@
 package tenantimport_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -220,5 +221,45 @@ func TestImportPermissions(t *testing.T) {
 		_, err := env.Imports.Run(ctx, admin, []byte("nama,kamar\nRina,1\n"), true)
 		var fileErr *tenantimport.FileError
 		require.ErrorAs(t, err, &fileErr)
+	})
+}
+
+func TestTemplate(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812841")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+
+	t.Run("the template's example rows are refused, and for nothing else", func(t *testing.T) {
+		data, err := env.Imports.Template(ctx, admin)
+		require.NoError(t, err)
+		res, err := env.Imports.Run(ctx, admin, data, false)
+		require.NoError(t, err)
+		require.False(t, res.Committed)
+		require.Equal(t, 2, res.Summary.RowsWithErrors)
+		for _, row := range res.Rows {
+			require.Equal(t, []tenantimport.RowError{{Column: "phone", Message: "Ini baris contoh. Hapus baris ini sebelum mengimpor."}}, row.Errors)
+		}
+		require.Equal(t, counts{}, countAll(t, env, admin))
+	})
+
+	t.Run("the template filled in with real numbers imports in a dry run without errors", func(t *testing.T) {
+		data, err := env.Imports.Template(ctx, admin)
+		require.NoError(t, err)
+		data = bytes.ReplaceAll(data, []byte("0812-0000-0001"), []byte("0813-8400-6001"))
+		data = bytes.ReplaceAll(data, []byte("0812-0000-0002"), []byte("0813-8400-6002"))
+		res, err := env.Imports.Run(ctx, admin, data, true)
+		require.NoError(t, err)
+		require.Zero(t, res.Summary.RowsWithErrors, "%+v", res.Rows)
+		require.Equal(t, 2, res.Summary.LeasesCreated)
+	})
+
+	t.Run("only those who may import may download it, and a refusal is audited", func(t *testing.T) {
+		karyawan := env.Principal(t, o.ID, o.Karyawan.UserID)
+		_, err := env.Imports.Template(ctx, karyawan)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		audit := env.AuditLog(t, o.ID)
+		require.Equal(t, "deny", audit[0].Decision)
+		require.Equal(t, "tenant:manage", audit[0].Action)
 	})
 }

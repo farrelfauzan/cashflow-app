@@ -1,7 +1,9 @@
 package tenantimport
 
 import (
+	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -133,4 +135,29 @@ func TestCheckReportsEveryProblemInARow(t *testing.T) {
 		cols = append(cols, e.Column)
 	}
 	require.ElementsMatch(t, []string{colProperty, colPhone, colDueDay}, cols, fmt.Sprint(row.Errors))
+}
+
+func TestTemplateReadsBackWithOnlyTheExampleError(t *testing.T) {
+	t.Parallel()
+	data, err := templateCSV()
+	require.NoError(t, err)
+	require.True(t, bytes.HasPrefix(data, []byte("\xef\xbb\xbf")), "a byte order mark, so Excel reads UTF-8")
+
+	records, err := parseFile(data)
+	require.NoError(t, err)
+	require.Len(t, records, len(templateRows))
+	for _, rec := range records {
+		var row Row
+		check(rec, &row)
+		require.Equal(t, []RowError{{Column: colPhone, Message: "Ini baris contoh. Hapus baris ini sebelum mengimpor."}},
+			row.Errors, "line %d: an example row is refused, and for nothing else", rec.Line)
+		require.NotNil(t, row.Values)
+
+		rec.Values[colPhone] = "0813-9900-" + strconv.Itoa(rec.Line*1111)
+		row = Row{}
+		check(rec, &row)
+		require.Empty(t, row.Errors, "line %d with a real number is a valid row", rec.Line)
+	}
+	require.Equal(t, "Kos Melati", records[0].get(colProperty), "every Indonesian header maps to a column")
+	require.Equal(t, "0", records[1].get(colDeposit))
 }

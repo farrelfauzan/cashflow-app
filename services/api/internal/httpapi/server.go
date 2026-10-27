@@ -108,6 +108,7 @@ func New(d Deps) *Server {
 				r.Put("/leases/{leaseID}", s.updateLease)
 				r.Post("/leases/{leaseID}/move-out", s.moveOut)
 				r.Post("/imports/tenants", s.importTenants)
+				r.Get("/imports/tenants/template", s.tenantImportTemplate)
 			})
 		})
 	})
