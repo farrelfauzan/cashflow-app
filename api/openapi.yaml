@@ -507,6 +507,85 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/leases/{leaseId}/charges:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/LeaseId"
+    put:
+      tags: [tenants]
+      operationId: setLeaseCharges
+      summary: Replace the fixed extra charges of an active lease (needs lease:manage; audited)
+      description: >
+        Replaces the whole set at once: charge types left out are removed, and an empty list
+        removes every extra. Each charge type appears at most once, must belong to the
+        organization and must not be metered (metered amounts are recorded per month instead).
+        Like a rent change, the new amounts apply from the next invoice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseChargesInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "400":
+          description: "Bad input (code invalid_input, field such as charges[1].chargeTypeId or charges[0].amount)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The lease has already ended (code lease_ended)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/charge-types:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [tenants]
+      operationId: listChargeTypes
+      summary: The organization's kinds of extra charge, by name (needs lease:manage, for the whole organization or limited to properties)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChargeTypeList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [tenants]
+      operationId: createChargeType
+      summary: Add a kind of extra charge (needs lease:manage for the whole organization; audited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChargeTypeInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChargeType" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "Another charge type already has this name (code charge_type_taken, field name)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /orgs/{orgId}/imports/tenants:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -883,7 +962,7 @@ components:
 
     Lease:
       type: object
-      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, rentAmount, dueDay, depositAmount, status, createdAt, updatedAt]
+      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, rentAmount, dueDay, depositAmount, status, charges, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
@@ -898,8 +977,71 @@ components:
         depositAmount: { type: integer, format: int64, description: "Deposit held, in rupiah." }
         status: { $ref: "#/components/schemas/LeaseStatus" }
         collector: { $ref: "#/components/schemas/Collector" }
+        charges:
+          type: array
+          description: Fixed monthly extras on top of rent, by name. Always present, empty when none.
+          items: { $ref: "#/components/schemas/LeaseCharge" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    LeaseCharge:
+      type: object
+      required: [chargeTypeId, name, amount]
+      properties:
+        chargeTypeId: { type: string, format: uuid }
+        name: { type: string, example: Wi-Fi }
+        amount: { type: integer, format: int64, description: Monthly amount in rupiah., example: 50000 }
+
+    LeaseChargeInput:
+      type: object
+      required: [chargeTypeId, amount]
+      properties:
+        chargeTypeId: { type: string, format: uuid }
+        amount: { type: integer, format: int64, minimum: 1, description: Monthly amount in rupiah., example: 50000 }
+
+    LeaseChargesInput:
+      type: object
+      required: [charges]
+      properties:
+        charges:
+          type: array
+          maxItems: 20
+          description: The lease's whole set of fixed extras; each charge type at most once.
+          items: { $ref: "#/components/schemas/LeaseChargeInput" }
+
+    ChargeTypeInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Unique in the organization, ignoring case. Leading and trailing spaces are dropped.
+          example: Wi-Fi
+        metered:
+          type: boolean
+          description: >
+            True when the amount differs every month and is recorded from a meter. Metered types
+            cannot be fixed lease charges. Defaults to false.
+
+    ChargeType:
+      type: object
+      required: [id, name, metered, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        metered: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ChargeTypeList:
+      type: object
+      required: [chargeTypes]
+      properties:
+        chargeTypes:
+          type: array
+          items: { $ref: "#/components/schemas/ChargeType" }
 
     LeaseTerms:
       type: object
