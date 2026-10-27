@@ -29,7 +29,7 @@ func TestValidTerms(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := validTerms(tc.in)
+			_, err := ValidTerms(tc.in)
 			if tc.wantField == "" {
 				require.NoError(t, err)
 				return
@@ -43,7 +43,7 @@ func TestValidTerms(t *testing.T) {
 
 func TestValidTenant(t *testing.T) {
 	t.Parallel()
-	got, err := validTenant(Input{Name: " Rina ", Phone: "0812 3456 7890", Note: " pindahan "})
+	got, err := ValidTenant(Input{Name: " Rina ", Phone: "0812 3456 7890", Note: " pindahan "})
 	require.NoError(t, err)
 	require.Equal(t, Input{Name: "Rina", Phone: "+6281234567890", Note: "pindahan"}, got)
 
@@ -52,7 +52,7 @@ func TestValidTenant(t *testing.T) {
 		"phone": {Name: "Rina", Phone: "021-555-1234"},
 		"note":  {Name: "Rina", Phone: "081234567890", Note: strings.Repeat("a", 501)},
 	} {
-		_, err := validTenant(in)
+		_, err := ValidTenant(in)
 		var inputErr *InputError
 		require.ErrorAs(t, err, &inputErr, field)
 		require.Equal(t, field, inputErr.Field)

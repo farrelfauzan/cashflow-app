@@ -72,3 +72,11 @@ WHERE organization_id = $1 AND id = $2 AND status = 'active';
 -- name: EndLease :execrows
 UPDATE lease SET status = 'ended', end_date = $3, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active';
+
+-- name: FindTenantByPhone :one
+SELECT * FROM tenant
+WHERE organization_id = $1 AND phone = $2;
+
+-- name: GetActiveLeaseForUnit :one
+SELECT * FROM lease
+WHERE organization_id = $1 AND unit_id = $2 AND status = 'active';

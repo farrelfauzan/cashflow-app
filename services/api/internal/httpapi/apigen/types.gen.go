@@ -30,6 +30,42 @@ func (e CapabilityAccess) Valid() bool {
 	}
 }
 
+// Defines values for ImportAction.
+const (
+	Created ImportAction = "created"
+	Matched ImportAction = "matched"
+)
+
+// Valid indicates whether the value is a known member of the ImportAction enum.
+func (e ImportAction) Valid() bool {
+	switch e {
+	case Created:
+		return true
+	case Matched:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImportRowStatus.
+const (
+	ImportRowStatusError ImportRowStatus = "error"
+	ImportRowStatusOk    ImportRowStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the ImportRowStatus enum.
+func (e ImportRowStatus) Valid() bool {
+	switch e {
+	case ImportRowStatusError:
+		return true
+	case ImportRowStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InviteMemberRoles.
 const (
 	InviteMemberRolesAdmin      InviteMemberRoles = "admin"
@@ -161,6 +197,73 @@ type Error struct {
 		// Message Example: Kode salah atau sudah kedaluwarsa.
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// ImportAction defines model for ImportAction.
+type ImportAction string
+
+// ImportResult defines model for ImportResult.
+type ImportResult struct {
+	// Committed True only when the rows were saved.
+	Committed bool          `json:"committed"`
+	DryRun    bool          `json:"dryRun"`
+	Rows      []ImportRow   `json:"rows"`
+	Summary   ImportSummary `json:"summary"`
+}
+
+// ImportRow defines model for ImportRow.
+type ImportRow struct {
+	Errors []ImportRowError `json:"errors"`
+	Lease  *ImportAction    `json:"lease,omitempty"`
+
+	// Line Line number in the file, counting the header as line 1.
+	Line int `json:"line"`
+
+	// Notes Things worth a look that are not errors, such as an existing lease whose terms differ from the row.
+	Notes    []string        `json:"notes"`
+	Property *ImportAction   `json:"property,omitempty"`
+	Status   ImportRowStatus `json:"status"`
+	Tenant   *ImportAction   `json:"tenant,omitempty"`
+	Unit     *ImportAction   `json:"unit,omitempty"`
+
+	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+	Values *ImportRowValues `json:"values,omitempty"`
+}
+
+// ImportRowStatus defines model for ImportRow.Status.
+type ImportRowStatus string
+
+// ImportRowError defines model for ImportRowError.
+type ImportRowError struct {
+	// Column The CSV column the error is about, by its canonical name.
+	//
+	// Example: phone
+	Column string `json:"column"`
+
+	// Message Example: Nomor WhatsApp tidak valid.
+	Message string `json:"message"`
+}
+
+// ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+type ImportRowValues struct {
+	// DepositAmount Deposit in rupiah; 0 when the cell is empty.
+	DepositAmount int64 `json:"depositAmount"`
+	DueDay        int32 `json:"dueDay"`
+
+	// RentAmount Monthly rent in rupiah.
+	RentAmount int64              `json:"rentAmount"`
+	StartDate  openapi_types.Date `json:"startDate"`
+}
+
+// ImportSummary defines model for ImportSummary.
+type ImportSummary struct {
+	LeasesCreated     int `json:"leasesCreated"`
+	LeasesMatched     int `json:"leasesMatched"`
+	PropertiesCreated int `json:"propertiesCreated"`
+	Rows              int `json:"rows"`
+	RowsWithErrors    int `json:"rowsWithErrors"`
+	TenantsCreated    int `json:"tenantsCreated"`
+	UnitsCreated      int `json:"unitsCreated"`
 }
 
 // InviteMember defines model for InviteMember.
@@ -444,6 +547,11 @@ type OrgId = openapi_types.UUID
 
 // PropertyId defines model for PropertyId.
 type PropertyId = openapi_types.UUID
+
+// ImportTenantsParams defines parameters for ImportTenants.
+type ImportTenantsParams struct {
+	DryRun *bool `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+}
 
 // RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.
 type RequestLoginCodeJSONRequestBody = LoginCodeRequest

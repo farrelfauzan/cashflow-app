@@ -507,6 +507,60 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/imports/tenants:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      tags: [tenants]
+      operationId: importTenants
+      summary: Import properties, units, tenants and leases from a CSV file (needs tenant:manage and lease:manage for the whole organization)
+      description: >
+        Needs tenant:manage and lease:manage for the whole organization, plus property:manage or
+        unit:manage for each property or unit a row creates; a denial stops the whole import.
+
+        The first line names the columns, separated by commas or semicolons, in any order:
+        property, unit, tenant_name, phone, rent, due_day, start_date, and optionally deposit and
+        property_kind (kos, kontrakan, ruko, other; new properties default to other). Indonesian
+        names work too (properti, kamar, nama_penyewa, no_wa, sewa, jatuh_tempo, tanggal_mulai,
+        jaminan, jenis_properti). Amounts are whole rupiah ("850000", "850.000" or "Rp850.000").
+        Dates are 2026-10-01 or 01/10/2026 (day first).
+
+        Properties match by name, units by label inside their property, tenants by phone; anything
+        missing is created. A row whose unit already has an active lease for the same tenant is
+        reported as matched and left unchanged (differing terms come back as a note), so running the
+        same file twice is safe; an active lease for another tenant is an error. A phone already
+        stored under a different name is an error too: one phone is one tenant. Amounts take dots
+        only as thousands separators; anything after a decimal point other than zeros is refused.
+
+        With dryRun (the default) nothing is saved and every row comes back with its errors. With
+        dryRun=false everything is saved in one transaction, but only when no row has an error;
+        otherwise nothing is saved and committed is false. At most 2000 rows and 1 MiB.
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+      responses:
+        "200":
+          description: Every row with what happened or would happen to it
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResult" }
+        "400":
+          description: "The file cannot be read: missing columns, no rows or too many (code invalid_input, field file)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+
 components:
   parameters:
     OrgId:
@@ -846,3 +900,71 @@ components:
       required: [endDate]
       properties:
         endDate: { type: string, format: date, example: "2026-11-30" }
+
+    ImportAction:
+      type: string
+      enum: [created, matched]
+
+    ImportRowError:
+      type: object
+      required: [column, message]
+      properties:
+        column: { type: string, description: "The CSV column the error is about, by its canonical name.", example: phone }
+        message: { type: string, example: Nomor WhatsApp tidak valid. }
+
+    ImportRow:
+      type: object
+      required: [line, status, errors, notes]
+      properties:
+        line: { type: integer, description: "Line number in the file, counting the header as line 1." }
+        status:
+          type: string
+          enum: [ok, error]
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/ImportRowError" }
+        notes:
+          type: array
+          description: Things worth a look that are not errors, such as an existing lease whose terms differ from the row.
+          items: { type: string }
+        property: { $ref: "#/components/schemas/ImportAction" }
+        unit: { $ref: "#/components/schemas/ImportAction" }
+        tenant: { $ref: "#/components/schemas/ImportAction" }
+        lease: { $ref: "#/components/schemas/ImportAction" }
+        values: { $ref: "#/components/schemas/ImportRowValues" }
+
+    ImportRowValues:
+      type: object
+      description: >
+        The lease terms as the API read them from the row, so a dry run shows exactly what will be
+        saved (for example a date read day first). Missing when the row's rent, deposit, due day or
+        start date could not be read.
+      required: [startDate, rentAmount, dueDay, depositAmount]
+      properties:
+        startDate: { type: string, format: date }
+        rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
+        dueDay: { type: integer, format: int32 }
+        depositAmount: { type: integer, format: int64, description: "Deposit in rupiah; 0 when the cell is empty." }
+
+    ImportSummary:
+      type: object
+      required: [rows, rowsWithErrors, propertiesCreated, unitsCreated, tenantsCreated, leasesCreated, leasesMatched]
+      properties:
+        rows: { type: integer }
+        rowsWithErrors: { type: integer }
+        propertiesCreated: { type: integer }
+        unitsCreated: { type: integer }
+        tenantsCreated: { type: integer }
+        leasesCreated: { type: integer }
+        leasesMatched: { type: integer }
+
+    ImportResult:
+      type: object
+      required: [dryRun, committed, summary, rows]
+      properties:
+        dryRun: { type: boolean }
+        committed: { type: boolean, description: True only when the rows were saved. }
+        summary: { $ref: "#/components/schemas/ImportSummary" }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ImportRow" }

@@ -70,52 +70,72 @@ type NewLease struct {
 // CreateLease rents a unit to a tenant. It needs lease:manage on the unit's property, and the
 // unit must not have an active lease.
 func (s *Service) CreateLease(ctx context.Context, p authz.Principal, in NewLease) (Lease, error) {
-	terms, err := validTerms(in.Terms)
-	if err != nil {
-		return Lease{}, err
-	}
 	var out Lease
-	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
-		q := dbgen.New(tx)
-		if _, err := q.GetTenant(ctx, dbgen.GetTenantParams{OrganizationID: p.OrganizationID, ID: in.TenantID}); err != nil {
-			return lookupError(err, "tenantId", "Penyewa tidak ditemukan.")
-		}
-		unit, err := q.GetUnit(ctx, dbgen.GetUnitParams{OrganizationID: p.OrganizationID, ID: in.UnitID})
-		if err != nil {
-			return lookupError(err, "unitId", "Unit tidak ditemukan.")
-		}
-		collector, err := collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID)
-		if err != nil {
-			return err
-		}
-		id := uuid.New()
-		req := authz.Request{Action: authz.ActionLeaseManage, Resource: authz.Resource{
-			Type: "lease", ID: id.String(), PropertyID: unit.PropertyID, OwnerID: collector.UUID,
-		}}
-		if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
-			return err
-		}
-		err = q.CreateLease(ctx, dbgen.CreateLeaseParams{
-			ID: id, OrganizationID: p.OrganizationID, UnitID: in.UnitID, TenantID: in.TenantID,
-			StartDate: terms.StartDate, RentAmount: terms.RentAmount, DueDay: int16(terms.DueDay), //nolint:gosec // validTerms keeps it in 1..28
-			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
-		})
-		if isUniqueViolation(err, "lease_one_active_per_unit") {
-			return ErrUnitOccupied
-		}
-		if err != nil {
-			return fmt.Errorf("creating lease: %w", err)
-		}
-		out, err = loadLease(ctx, q, p.OrganizationID, id)
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		var err error
+		out, err = s.CreateLeaseTx(ctx, tx, p, in)
 		return err
 	})
 	return out, err
 }
 
+// CreateLeaseTx is CreateLease inside the caller's organization transaction.
+func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principal, in NewLease) (Lease, error) {
+	terms, err := ValidTerms(in.Terms)
+	if err != nil {
+		return Lease{}, err
+	}
+	q := dbgen.New(tx)
+	if _, err := q.GetTenant(ctx, dbgen.GetTenantParams{OrganizationID: p.OrganizationID, ID: in.TenantID}); err != nil {
+		return Lease{}, lookupError(err, "tenantId", "Penyewa tidak ditemukan.")
+	}
+	unit, err := q.GetUnit(ctx, dbgen.GetUnitParams{OrganizationID: p.OrganizationID, ID: in.UnitID})
+	if err != nil {
+		return Lease{}, lookupError(err, "unitId", "Unit tidak ditemukan.")
+	}
+	collector, err := collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID)
+	if err != nil {
+		return Lease{}, err
+	}
+	id := uuid.New()
+	req := authz.Request{Action: authz.ActionLeaseManage, Resource: authz.Resource{
+		Type: "lease", ID: id.String(), PropertyID: unit.PropertyID, OwnerID: collector.UUID,
+	}}
+	if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+		return Lease{}, err
+	}
+	err = q.CreateLease(ctx, dbgen.CreateLeaseParams{
+		ID: id, OrganizationID: p.OrganizationID, UnitID: in.UnitID, TenantID: in.TenantID,
+		StartDate: terms.StartDate, RentAmount: terms.RentAmount, DueDay: int16(terms.DueDay), //nolint:gosec // ValidTerms keeps it in 1..28
+		DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
+	})
+	if isUniqueViolation(err, "lease_one_active_per_unit") {
+		return Lease{}, ErrUnitOccupied
+	}
+	if err != nil {
+		return Lease{}, fmt.Errorf("creating lease: %w", err)
+	}
+	return loadLease(ctx, q, p.OrganizationID, id)
+}
+
+// ActiveLeaseForUnit returns the unit's active lease, or ErrNotFound when the unit is free. It
+// does no permission check.
+func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID) (Lease, error) {
+	q := dbgen.New(tx)
+	r, err := q.GetActiveLeaseForUnit(ctx, dbgen.GetActiveLeaseForUnitParams{OrganizationID: org, UnitID: unitID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Lease{}, ErrNotFound
+	}
+	if err != nil {
+		return Lease{}, fmt.Errorf("finding active lease: %w", err)
+	}
+	return loadLease(ctx, q, org, r.ID)
+}
+
 // UpdateLease changes the terms of an active lease. Each change is audited; a new rent applies
 // from the next invoice.
 func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UUID, t Terms) (Lease, error) {
-	terms, err := validTerms(t)
+	terms, err := ValidTerms(t)
 	if err != nil {
 		return Lease{}, err
 	}
@@ -131,7 +151,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		}
 		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
 			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
-			DueDay:        int16(terms.DueDay), //nolint:gosec // validTerms keeps it in 1..28
+			DueDay:        int16(terms.DueDay), //nolint:gosec // ValidTerms keeps it in 1..28
 			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 		})
 		if err != nil {
@@ -270,7 +290,9 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	return l
 }
 
-func validTerms(t Terms) (Terms, error) {
+// ValidTerms checks lease terms and returns them with the start date as a calendar day. Errors
+// are *InputError.
+func ValidTerms(t Terms) (Terms, error) {
 	t.StartDate = calendarDay(t.StartDate)
 	switch {
 	case t.StartDate.IsZero():

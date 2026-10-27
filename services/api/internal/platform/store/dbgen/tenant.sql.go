@@ -98,6 +98,62 @@ func (q *Queries) EndLease(ctx context.Context, arg EndLeaseParams) (int64, erro
 	return result.RowsAffected(), nil
 }
 
+const findTenantByPhone = `-- name: FindTenantByPhone :one
+SELECT id, organization_id, name, phone, note, created_at, updated_at FROM tenant
+WHERE organization_id = $1 AND phone = $2
+`
+
+type FindTenantByPhoneParams struct {
+	OrganizationID uuid.UUID
+	Phone          string
+}
+
+func (q *Queries) FindTenantByPhone(ctx context.Context, arg FindTenantByPhoneParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, findTenantByPhone, arg.OrganizationID, arg.Phone)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Phone,
+		&i.Note,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getActiveLeaseForUnit = `-- name: GetActiveLeaseForUnit :one
+SELECT id, organization_id, unit_id, tenant_id, start_date, end_date, rent_amount, due_day, deposit_amount, status, collector_staff_user_id, created_at, updated_at FROM lease
+WHERE organization_id = $1 AND unit_id = $2 AND status = 'active'
+`
+
+type GetActiveLeaseForUnitParams struct {
+	OrganizationID uuid.UUID
+	UnitID         uuid.UUID
+}
+
+func (q *Queries) GetActiveLeaseForUnit(ctx context.Context, arg GetActiveLeaseForUnitParams) (Lease, error) {
+	row := q.db.QueryRow(ctx, getActiveLeaseForUnit, arg.OrganizationID, arg.UnitID)
+	var i Lease
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UnitID,
+		&i.TenantID,
+		&i.StartDate,
+		&i.EndDate,
+		&i.RentAmount,
+		&i.DueDay,
+		&i.DepositAmount,
+		&i.Status,
+		&i.CollectorStaffUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLeaseDetail = `-- name: GetLeaseDetail :one
 SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.due_day, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, u.label AS unit_label, u.property_id, p.name AS property_name,
        m.id AS collector_member_id, su.name AS collector_name
