@@ -1,5 +1,5 @@
 // Package member manages the staff members of an organization: listing them, adding them by
-// phone number and changing their roles.
+// phone number, changing their roles and disabling or re-enabling them.
 package member
 
 import (
@@ -27,6 +27,15 @@ var (
 	ErrNotFound = errors.New("member: not found")
 	// ErrAlreadyMember means the phone number already belongs to a member.
 	ErrAlreadyMember = errors.New("member: already a member")
+	// ErrLastAdmin means the change would leave the organization without an active Admin for
+	// the whole organization.
+	ErrLastAdmin = errors.New("member: last active admin")
+)
+
+// Membership statuses. They match the CHECK constraint on membership.status.
+const (
+	StatusActive   = "active"
+	StatusDisabled = "disabled"
 )
 
 // InputError names the field that is wrong. Message is safe to show to the user.
@@ -69,7 +78,8 @@ type Member struct {
 type Invite struct {
 	Phone string
 	Name  string
-	Roles []string
+	// Roles are the member's built-in roles, each optionally limited to one property.
+	Roles []RoleGrant
 }
 
 // Service manages members.
@@ -112,8 +122,24 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 	return out, err
 }
 
-// Invite adds a staff member by phone number. Granting a role needs role:assign on that role,
-// so an Admin can add Admins and Karyawan but not a Supervisor.
+// Invite adds a staff member by phone number with built-in roles, each optionally limited to
+// one property. It needs member:invite and role:assign on every role granted, so an Admin can
+// add Admins and Karyawan but not a Supervisor. A property limit narrows the stored grant only;
+// it is not part of the check, and a principal whose roles are all limited to properties
+// cannot invite anyone.
+//
+// The staff user lives outside any organization and can only be written in the auth scope, so
+// an invite takes three steps:
+//  1. Validate the input, check every permission and every property limit. A denial or an
+//     invalid grant stops here and writes nothing except the audited denial.
+//  2. Find or create the staff user in the auth scope.
+//  3. In one organization transaction, authorize again (auditing the allowed actions), create
+//     the membership and every role assignment. The member gets every grant or no membership,
+//     and never holds a broader role than the one asked for.
+//
+// A failure in step 3 (such as ErrAlreadyMember or a property removed in between) can leave a
+// staff user from step 2 with no membership. That row grants nothing: access comes only from
+// memberships and their roles.
 func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Member, error) {
 	number, err := phone.Normalize(in.Phone)
 	if err != nil {
@@ -123,19 +149,26 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 	if err != nil {
 		return Member{}, err
 	}
-	roles, err := validRoles(in.Roles)
+	grants, err := validGrants(in.Roles)
 	if err != nil {
 		return Member{}, err
 	}
+	reqs := inviteRequests(grants)
 
-	// Check before creating the staff user, which happens outside the organization.
-	reqs := inviteRequests(roles)
+	// Step 1. Check records denials only; the allowed actions are audited in step 3.
 	for _, req := range reqs {
 		if err := s.authz.Check(ctx, p, req); err != nil {
 			return Member{}, err
 		}
 	}
+	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		return checkProperties(ctx, dbgen.New(tx), p.OrganizationID, grants)
+	})
+	if err != nil {
+		return Member{}, err
+	}
 
+	// Step 2.
 	var user dbgen.StaffUser
 	err = s.store.WithAuthTx(ctx, uuid.Nil, func(tx pgx.Tx) error {
 		user, err = dbgen.New(tx).UpsertStaffUser(ctx, dbgen.UpsertStaffUserParams{ID: uuid.New(), Phone: number, Name: name})
@@ -145,6 +178,7 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 		return Member{}, fmt.Errorf("finding or creating staff user: %w", err)
 	}
 
+	// Step 3.
 	var m Member
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		for _, req := range reqs {
@@ -153,7 +187,10 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 			}
 		}
 		q := dbgen.New(tx)
-		membershipID, err := Add(ctx, q, p.OrganizationID, user.ID, roles)
+		if err := checkProperties(ctx, q, p.OrganizationID, grants); err != nil {
+			return err
+		}
+		membershipID, err := Add(ctx, q, p.OrganizationID, user.ID, grants)
 		if err != nil {
 			return err
 		}
@@ -163,17 +200,34 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 	return m, err
 }
 
-func inviteRequests(roles []string) []authz.Request {
+// inviteRequests returns member:invite and role:assign on each granted role, once per role
+// even when it is limited to several properties. Like SetRoles, the property limit is not in
+// the request.
+func inviteRequests(grants []RoleGrant) []authz.Request {
 	reqs := []authz.Request{{Action: authz.ActionMemberInvite, Resource: authz.Resource{Type: "member"}}}
+	var roles []string
+	for _, g := range grants {
+		if !slices.Contains(roles, g.Role) {
+			roles = append(roles, g.Role)
+		}
+	}
 	for _, r := range roles {
-		reqs = append(reqs, authz.Request{Action: authz.ActionRoleAssign, Resource: authz.Resource{Type: "role", ID: r}})
+		reqs = append(reqs, roleAssign(r))
 	}
 	return reqs
+}
+
+func roleAssign(role string) authz.Request {
+	return authz.Request{Action: authz.ActionRoleAssign, Resource: authz.Resource{Type: "role", ID: role}}
 }
 
 // SetRoles replaces a member's built-in roles. It needs member:manage on that member, which
 // nobody has on themselves, and role:assign on every role it adds or removes, including a role
 // whose property limit changes.
+//
+// Taking the Admin role for the whole organization away from the last active member who holds
+// it fails with ErrLastAdmin; keeping Admin limited to a property does not count. It takes the
+// same lock as SetStatus, so a demotion and a disable cannot together remove the last Admin.
 func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID uuid.UUID, grants []RoleGrant) (Member, error) {
 	grants, err := validGrants(grants)
 	if err != nil {
@@ -182,6 +236,9 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 	var m Member
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
+		if err := q.LockOrganizationMembers(ctx, p.OrganizationID); err != nil {
+			return fmt.Errorf("locking memberships: %w", err)
+		}
 		current, err := load(ctx, q, p.OrganizationID, membershipID)
 		if err != nil {
 			return err
@@ -193,13 +250,17 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 			return err
 		}
 		for _, changed := range changedBuiltinRoles(current.Roles, grants) {
-			req := authz.Request{Action: authz.ActionRoleAssign, Resource: authz.Resource{Type: "role", ID: changed}}
-			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+			if err := s.authz.Authorize(ctx, tx, p, roleAssign(changed)); err != nil {
 				return err
 			}
 		}
 		if err := checkProperties(ctx, q, p.OrganizationID, grants); err != nil {
 			return err
+		}
+		if current.Status == StatusActive && holdsOrgAdmin(current) && !grantsOrgAdmin(grants) {
+			if err := refuseLastAdmin(ctx, q, p.OrganizationID, membershipID); err != nil {
+				return err
+			}
 		}
 
 		if err := q.DeleteBuiltinRoleAssignments(ctx, dbgen.DeleteBuiltinRoleAssignmentsParams{
@@ -214,6 +275,111 @@ func (s *Service) SetRoles(ctx context.Context, p authz.Principal, membershipID 
 		return err
 	})
 	return m, err
+}
+
+// SetStatus disables or re-enables a member. It needs the same permissions as removing every
+// built-in role the member holds: member:manage on that member, which nobody has on themselves,
+// and role:assign on each of those roles, so an Admin cannot disable or re-enable a Supervisor.
+//
+// Roles are kept, so re-enabling restores the same access. A disabled member's sessions stop
+// working in this organization at once, because authz.LoadPrincipal loads active memberships
+// only; their other organizations are untouched.
+//
+// Disabling the last active member who holds the Admin role for the whole organization fails
+// with ErrLastAdmin. Setting the status the member already has changes nothing, after the same
+// permission check.
+func (s *Service) SetStatus(ctx context.Context, p authz.Principal, membershipID uuid.UUID, status string) (Member, error) {
+	if status != StatusActive && status != StatusDisabled {
+		return Member{}, &InputError{Field: "status", Message: "Status harus active atau disabled."}
+	}
+	var m Member
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		// Taken before reading anything, so status and role changes in one organization run one
+		// after the other and the second sees the first's result. Without it, two admins
+		// disabling or demoting each other at once would each still count the other as active.
+		if err := q.LockOrganizationMembers(ctx, p.OrganizationID); err != nil {
+			return fmt.Errorf("locking memberships: %w", err)
+		}
+		current, err := load(ctx, q, p.OrganizationID, membershipID)
+		if err != nil {
+			return err
+		}
+		for _, req := range statusRequests(current) {
+			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+				return err
+			}
+		}
+		if current.Status == status {
+			m = current
+			return nil
+		}
+		if status == StatusDisabled && holdsOrgAdmin(current) {
+			if err := refuseLastAdmin(ctx, q, p.OrganizationID, membershipID); err != nil {
+				return err
+			}
+		}
+		n, err := q.SetMembershipStatus(ctx, dbgen.SetMembershipStatusParams{
+			OrganizationID: p.OrganizationID, ID: membershipID, Status: status,
+		})
+		if err != nil {
+			return fmt.Errorf("setting member status: %w", err)
+		}
+		if n != 1 {
+			return ErrNotFound
+		}
+		m, err = load(ctx, q, p.OrganizationID, membershipID)
+		return err
+	})
+	return m, err
+}
+
+// statusRequests returns member:manage on the member and role:assign on each built-in role
+// the member holds, once per role.
+func statusRequests(m Member) []authz.Request {
+	reqs := []authz.Request{{Action: authz.ActionMemberManage, Resource: authz.Resource{
+		Type: "member", ID: m.ID.String(), OwnerID: m.UserID,
+	}}}
+	var roles []string
+	for _, r := range m.Roles {
+		if r.Builtin && !slices.Contains(roles, r.Key) {
+			roles = append(roles, r.Key)
+		}
+	}
+	for _, r := range roles {
+		reqs = append(reqs, roleAssign(r))
+	}
+	return reqs
+}
+
+// refuseLastAdmin returns ErrLastAdmin when no active member other than membershipID holds the
+// Admin role for the whole organization. Callers hold LockOrganizationMembers, so the count
+// cannot change before they commit.
+func refuseLastAdmin(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) error {
+	others, err := q.CountOtherActiveOrgAdmins(ctx, dbgen.CountOtherActiveOrgAdminsParams{
+		OrganizationID: org, ExcludedMembershipID: membershipID,
+	})
+	if err != nil {
+		return fmt.Errorf("counting admins: %w", err)
+	}
+	if others == 0 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// grantsOrgAdmin reports whether the grants include the Admin role for the whole organization.
+func grantsOrgAdmin(grants []RoleGrant) bool {
+	return slices.ContainsFunc(grants, func(g RoleGrant) bool {
+		return g.Role == authz.RoleAdmin && g.PropertyID == uuid.Nil
+	})
+}
+
+// holdsOrgAdmin reports whether the member holds the Admin role for the whole organization.
+func holdsOrgAdmin(m Member) bool {
+	return slices.ContainsFunc(m.Roles, func(r RoleRef) bool {
+		return r.Builtin && r.Key == authz.RoleAdmin && r.PropertyID == uuid.Nil
+	})
 }
 
 // checkProperties makes sure every property limit names a property of this organization.
@@ -233,19 +399,17 @@ func checkProperties(ctx context.Context, q *dbgen.Queries, org uuid.UUID, grant
 	return nil
 }
 
-// Add creates a membership with built-in roles inside an organization transaction. It is
-// shared with organization setup. The caller has already authorized the change.
-func Add(ctx context.Context, q *dbgen.Queries, org, userID uuid.UUID, roles []string) (uuid.UUID, error) {
+// Add creates a membership with built-in roles inside an organization transaction, so the
+// membership and every role assignment commit together. It is shared with organization setup.
+// The caller has already validated the grants (validGrants), checked their properties and
+// authorized the change.
+func Add(ctx context.Context, q *dbgen.Queries, org, userID uuid.UUID, grants []RoleGrant) (uuid.UUID, error) {
 	m, err := q.CreateMembership(ctx, dbgen.CreateMembershipParams{ID: uuid.New(), OrganizationID: org, StaffUserID: userID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, ErrAlreadyMember
 	}
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("creating membership: %w", err)
-	}
-	grants := make([]RoleGrant, len(roles))
-	for i, r := range roles {
-		grants[i] = RoleGrant{Role: r}
 	}
 	if err := assignBuiltinRoles(ctx, q, org, m.ID, grants); err != nil {
 		return uuid.Nil, err

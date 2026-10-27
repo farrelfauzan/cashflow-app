@@ -122,6 +122,12 @@ paths:
       tags: [members]
       operationId: inviteMember
       summary: Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
+      description: >
+        Each role can be limited to one property with propertyId, as in setMemberRoles. The
+        member and every role are created together, so the member never holds a broader role
+        than the one asked for. A role limited to a property grants nothing on
+        organization-wide records, so a member whose roles are all limited to properties cannot
+        invite anyone.
       requestBody:
         required: true
         content:
@@ -154,7 +160,9 @@ paths:
         Nobody can change their own roles. Each role can be limited to one property with
         propertyId; give the same role once per property to cover several. A role limited to a
         property grants nothing on organization-wide records (members, settings, payslips), so
-        a member who needs those also needs the role without a property.
+        a member who needs those also needs the role without a property. The Admin role for
+        the whole organization cannot be taken from the last active member who holds it; Admin
+        limited to a property does not count (409 last_admin).
       requestBody:
         required: true
         content:
@@ -170,6 +178,55 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The change takes Admin from the last active Admin for the whole organization (code last_admin)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/members/{memberId}/status:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: memberId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [members]
+      operationId: setMemberStatus
+      summary: Disable or re-enable a member (needs member:manage and role:assign on every role the member holds)
+      description: >
+        A disabled member keeps their roles but can do nothing in this organization: their
+        sessions are refused here at once (the organization answers 404 not_found, as for a
+        non-member) and the organization leaves their list. Their other organizations and their
+        history are untouched. Re-enabling restores the same roles. Nobody can change their own
+        status, and an Admin cannot disable or re-enable a Supervisor. Setting the status the
+        member already has changes nothing and returns the member. The last active Admin for the
+        whole organization cannot be disabled (409 last_admin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetMemberStatus" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+        "400":
+          description: "The status is not active or disabled (code invalid_input, field status)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The member is the last active Admin for the whole organization (code last_admin)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /orgs/{orgId}/properties:
     parameters:
@@ -561,6 +618,34 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/imports/tenants/template:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [tenants]
+      operationId: getTenantImportTemplate
+      summary: Download a CSV template for the tenant import (needs tenant:manage and lease:manage for the whole organization)
+      description: >
+        A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens
+        it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The
+        header row uses the Indonesian column names (properti, jenis_properti, kamar,
+        nama_penyewa, no_wa, sewa, jatuh_tempo, tanggal_mulai, jaminan), followed by two example
+        rows. The example rows only show the format: the import refuses them by their phone
+        numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in
+        the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
+      responses:
+        "200":
+          description: The template
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="template-impor-penyewa.csv"' }
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   parameters:
     OrgId:
@@ -693,13 +778,22 @@ components:
         userId: { type: string, format: uuid }
         name: { type: string }
         phone: { type: string }
-        status:
-          type: string
-          enum: [active, disabled]
+        status: { $ref: "#/components/schemas/MemberStatus" }
         roles:
           type: array
           items: { $ref: "#/components/schemas/RoleRef" }
         createdAt: { type: string, format: date-time }
+
+    MemberStatus:
+      type: string
+      description: A disabled member keeps their roles but can do nothing in the organization.
+      enum: [active, disabled]
+
+    SetMemberStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/MemberStatus" }
 
     MemberList:
       type: object
@@ -717,9 +811,7 @@ components:
         name: { type: string, maxLength: 100 }
         roles:
           type: array
-          items:
-            type: string
-            enum: [supervisor, admin, karyawan]
+          items: { $ref: "#/components/schemas/RoleGrant" }
 
     SetRoles:
       type: object

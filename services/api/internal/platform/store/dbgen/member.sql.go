@@ -12,6 +12,29 @@ import (
 	"github.com/google/uuid"
 )
 
+const countOtherActiveOrgAdmins = `-- name: CountOtherActiveOrgAdmins :one
+SELECT count(*) FROM membership m
+WHERE m.organization_id = $1 AND m.status = 'active' AND m.id <> $2
+  AND EXISTS (
+      SELECT 1 FROM role_assignment ra
+      WHERE ra.organization_id = m.organization_id AND ra.membership_id = m.id
+        AND ra.builtin_role = 'admin' AND ra.property_id IS NULL
+  )
+`
+
+type CountOtherActiveOrgAdminsParams struct {
+	OrganizationID       uuid.UUID
+	ExcludedMembershipID uuid.UUID
+}
+
+// Active members other than the given one that hold the Admin role for the whole organization.
+func (q *Queries) CountOtherActiveOrgAdmins(ctx context.Context, arg CountOtherActiveOrgAdminsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveOrgAdmins, arg.OrganizationID, arg.ExcludedMembershipID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBuiltinRoleAssignment = `-- name: CreateBuiltinRoleAssignment :exec
 INSERT INTO role_assignment (id, organization_id, membership_id, builtin_role, property_id)
 VALUES ($1, $2, $3, $4, $5)
@@ -325,4 +348,38 @@ func (q *Queries) ListRoleAssignmentsForMembership(ctx context.Context, arg List
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOrganizationMembers = `-- name: LockOrganizationMembers :exec
+SELECT id FROM organization WHERE id = $1 FOR NO KEY UPDATE
+`
+
+// Serializes changes to who is an active Admin of the organization: a second caller waits
+// here until the first commits, and its next statement sees the committed memberships.
+// FOR NO KEY UPDATE, not FOR UPDATE: it does not block the FOR KEY SHARE locks that foreign
+// keys take, so inserts that reference the organization (such as the audit row of a denial,
+// written in its own transaction while this lock is held) never wait on it.
+func (q *Queries) LockOrganizationMembers(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockOrganizationMembers, id)
+	return err
+}
+
+const setMembershipStatus = `-- name: SetMembershipStatus :execrows
+UPDATE membership SET status = $3
+WHERE organization_id = $1 AND id = $2
+`
+
+type SetMembershipStatusParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	Status         string
+}
+
+// Roles are kept, so re-enabling restores the same access.
+func (q *Queries) SetMembershipStatus(ctx context.Context, arg SetMembershipStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setMembershipStatus, arg.OrganizationID, arg.ID, arg.Status)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

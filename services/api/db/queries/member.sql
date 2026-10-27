@@ -55,3 +55,26 @@ RETURNING *;
 -- name: CreateCustomRoleAssignment :exec
 INSERT INTO role_assignment (id, organization_id, membership_id, role_id)
 VALUES ($1, $2, $3, $4);
+
+-- name: LockOrganizationMembers :exec
+-- Serializes changes to who is an active Admin of the organization: a second caller waits
+-- here until the first commits, and its next statement sees the committed memberships.
+-- FOR NO KEY UPDATE, not FOR UPDATE: it does not block the FOR KEY SHARE locks that foreign
+-- keys take, so inserts that reference the organization (such as the audit row of a denial,
+-- written in its own transaction while this lock is held) never wait on it.
+SELECT id FROM organization WHERE id = $1 FOR NO KEY UPDATE;
+
+-- name: CountOtherActiveOrgAdmins :one
+-- Active members other than the given one that hold the Admin role for the whole organization.
+SELECT count(*) FROM membership m
+WHERE m.organization_id = $1 AND m.status = 'active' AND m.id <> sqlc.arg(excluded_membership_id)
+  AND EXISTS (
+      SELECT 1 FROM role_assignment ra
+      WHERE ra.organization_id = m.organization_id AND ra.membership_id = m.id
+        AND ra.builtin_role = 'admin' AND ra.property_id IS NULL
+  );
+
+-- name: SetMembershipStatus :execrows
+-- Roles are kept, so re-enabling restores the same access.
+UPDATE membership SET status = sqlc.arg(status)
+WHERE organization_id = $1 AND id = $2;

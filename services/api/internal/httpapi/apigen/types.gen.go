@@ -66,27 +66,6 @@ func (e ImportRowStatus) Valid() bool {
 	}
 }
 
-// Defines values for InviteMemberRoles.
-const (
-	InviteMemberRolesAdmin      InviteMemberRoles = "admin"
-	InviteMemberRolesKaryawan   InviteMemberRoles = "karyawan"
-	InviteMemberRolesSupervisor InviteMemberRoles = "supervisor"
-)
-
-// Valid indicates whether the value is a known member of the InviteMemberRoles enum.
-func (e InviteMemberRoles) Valid() bool {
-	switch e {
-	case InviteMemberRolesAdmin:
-		return true
-	case InviteMemberRolesKaryawan:
-		return true
-	case InviteMemberRolesSupervisor:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for LeaseStatus.
 const (
 	LeaseStatusActive LeaseStatus = "active"
@@ -149,19 +128,19 @@ func (e PropertyKind) Valid() bool {
 
 // Defines values for RoleGrantRole.
 const (
-	RoleGrantRoleAdmin      RoleGrantRole = "admin"
-	RoleGrantRoleKaryawan   RoleGrantRole = "karyawan"
-	RoleGrantRoleSupervisor RoleGrantRole = "supervisor"
+	Admin      RoleGrantRole = "admin"
+	Karyawan   RoleGrantRole = "karyawan"
+	Supervisor RoleGrantRole = "supervisor"
 )
 
 // Valid indicates whether the value is a known member of the RoleGrantRole enum.
 func (e RoleGrantRole) Valid() bool {
 	switch e {
-	case RoleGrantRoleAdmin:
+	case Admin:
 		return true
-	case RoleGrantRoleKaryawan:
+	case Karyawan:
 		return true
-	case RoleGrantRoleSupervisor:
+	case Supervisor:
 		return true
 	default:
 		return false
@@ -268,13 +247,10 @@ type ImportSummary struct {
 
 // InviteMember defines model for InviteMember.
 type InviteMember struct {
-	Name  string              `json:"name"`
-	Phone string              `json:"phone"`
-	Roles []InviteMemberRoles `json:"roles"`
+	Name  string      `json:"name"`
+	Phone string      `json:"phone"`
+	Roles []RoleGrant `json:"roles"`
 }
-
-// InviteMemberRoles defines model for InviteMember.Roles.
-type InviteMemberRoles string
 
 // Lease defines model for Lease.
 type Lease struct {
@@ -374,17 +350,19 @@ type Member struct {
 	Name      string             `json:"name"`
 	Phone     string             `json:"phone"`
 	Roles     []RoleRef          `json:"roles"`
-	Status    MemberStatus       `json:"status"`
-	UserId    openapi_types.UUID `json:"userId"`
-}
 
-// MemberStatus defines model for Member.Status.
-type MemberStatus string
+	// Status A disabled member keeps their roles but can do nothing in the organization.
+	Status MemberStatus       `json:"status"`
+	UserId openapi_types.UUID `json:"userId"`
+}
 
 // MemberList defines model for MemberList.
 type MemberList struct {
 	Members []Member `json:"members"`
 }
+
+// MemberStatus A disabled member keeps their roles but can do nothing in the organization.
+type MemberStatus string
 
 // MoveOut defines model for MoveOut.
 type MoveOut struct {
@@ -457,6 +435,12 @@ type RoleRef struct {
 
 	// PropertyId Set when the role is limited to this property; absent means the whole organization.
 	PropertyId *openapi_types.UUID `json:"propertyId,omitempty"`
+}
+
+// SetMemberStatus defines model for SetMemberStatus.
+type SetMemberStatus struct {
+	// Status A disabled member keeps their roles but can do nothing in the organization.
+	Status MemberStatus `json:"status"`
 }
 
 // SetRoles defines model for SetRoles.
@@ -573,6 +557,9 @@ type InviteMemberJSONRequestBody = InviteMember
 
 // SetMemberRolesJSONRequestBody defines body for SetMemberRoles for application/json ContentType.
 type SetMemberRolesJSONRequestBody = SetRoles
+
+// SetMemberStatusJSONRequestBody defines body for SetMemberStatus for application/json ContentType.
+type SetMemberStatusJSONRequestBody = SetMemberStatus
 
 // CreatePropertyJSONRequestBody defines body for CreateProperty for application/json ContentType.
 type CreatePropertyJSONRequestBody = PropertyInput

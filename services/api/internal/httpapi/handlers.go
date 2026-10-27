@@ -129,11 +129,7 @@ func (s *Server) inviteMember(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	roles := make([]string, len(body.Roles))
-	for i, role := range body.Roles {
-		roles[i] = string(role)
-	}
-	m, err := s.Members.Invite(r.Context(), p, member.Invite{Phone: body.Phone, Name: body.Name, Roles: roles})
+	m, err := s.Members.Invite(r.Context(), p, member.Invite{Phone: body.Phone, Name: body.Name, Roles: roleGrants(body.Roles)})
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -156,19 +152,48 @@ func (s *Server) setMemberRoles(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	grants := make([]member.RoleGrant, len(body.Roles))
-	for i, g := range body.Roles {
-		grants[i] = member.RoleGrant{Role: string(g.Role)}
-		if g.PropertyId != nil {
-			grants[i].PropertyID = *g.PropertyId
-		}
-	}
-	m, err := s.Members.SetRoles(r.Context(), p, memberID, grants)
+	m, err := s.Members.SetRoles(r.Context(), p, memberID, roleGrants(body.Roles))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, toAPIMember(m))
+}
+
+func (s *Server) setMemberStatus(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	var body apigen.SetMemberStatus
+	if !s.decode(w, r, &body) {
+		return
+	}
+	m, err := s.Members.SetStatus(r.Context(), p, memberID, string(body.Status))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIMember(m))
+}
+
+// roleGrants converts the contract's role grants; a missing propertyId means the whole
+// organization.
+func roleGrants(in []apigen.RoleGrant) []member.RoleGrant {
+	out := make([]member.RoleGrant, len(in))
+	for i, g := range in {
+		out[i] = member.RoleGrant{Role: string(g.Role)}
+		if g.PropertyId != nil {
+			out[i].PropertyID = *g.PropertyId
+		}
+	}
+	return out
 }
 
 func toAPIMember(m member.Member) apigen.Member {

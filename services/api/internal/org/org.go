@@ -1,5 +1,6 @@
-// Package org creates organizations. Until the onboarding screens exist, the platform operator
-// creates each organization and its first members with cmd/admin.
+// Package org creates organizations and finds the ones a staff member belongs to. Until the
+// onboarding screens exist, the platform operator creates each organization and its first
+// members with cmd/admin.
 package org
 
 import (
@@ -83,7 +84,7 @@ func (s *Service) Create(ctx context.Context, in New) (uuid.UUID, error) {
 			return fmt.Errorf("creating organization: %w", err)
 		}
 		for i, m := range members {
-			if _, err := member.Add(ctx, q, orgID, userIDs[i], m.Roles); err != nil {
+			if _, err := member.Add(ctx, q, orgID, userIDs[i], orgWide(m.Roles)); err != nil {
 				return err
 			}
 		}
@@ -94,6 +95,75 @@ func (s *Service) Create(ctx context.Context, in New) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 	return orgID, nil
+}
+
+// orgWide grants each role for the whole organization: the first members are not limited to a
+// property.
+func orgWide(roles []string) []member.RoleGrant {
+	out := make([]member.RoleGrant, len(roles))
+	for i, r := range roles {
+		out[i] = member.RoleGrant{Role: r}
+	}
+	return out
+}
+
+// ErrNotFound means the staff member has no active membership in an organization with that
+// name, or the phone number is not a staff user at all.
+var ErrNotFound = errors.New("org: not found")
+
+// Membership names one organization a staff user belongs to.
+type Membership struct {
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+// FindForMember returns the organization called name among the staff user's own active
+// memberships, or ErrNotFound. It reads only through the auth scope, which shows a user their
+// own memberships and nothing else, so it cannot find an organization the person does not
+// belong to. Two of their organizations with the same name are an error.
+func (s *Service) FindForMember(ctx context.Context, rawPhone, name string) (Membership, error) {
+	number, err := phone.Normalize(rawPhone)
+	if err != nil {
+		return Membership{}, fmt.Errorf("finding organization: %w", err)
+	}
+	name = strings.TrimSpace(name)
+
+	var user dbgen.StaffUser
+	err = s.store.WithAuthTx(ctx, uuid.Nil, func(tx pgx.Tx) error {
+		user, err = dbgen.New(tx).GetStaffUserByPhone(ctx, number)
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Membership{}, ErrNotFound
+	}
+	if err != nil {
+		return Membership{}, fmt.Errorf("finding staff user %s: %w", phone.Mask(number), err)
+	}
+
+	var found []uuid.UUID
+	err = s.store.WithAuthTx(ctx, user.ID, func(tx pgx.Tx) error {
+		rows, err := dbgen.New(tx).ListMyOrganizations(ctx, user.ID)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if r.Name == name {
+				found = append(found, r.ID)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return Membership{}, fmt.Errorf("listing organizations of %s: %w", phone.Mask(number), err)
+	}
+	switch len(found) {
+	case 0:
+		return Membership{}, ErrNotFound
+	case 1:
+		return Membership{OrganizationID: found[0], UserID: user.ID}, nil
+	default:
+		return Membership{}, fmt.Errorf("staff user %s belongs to %d organizations named %q", phone.Mask(number), len(found), name)
+	}
 }
 
 func normalizeMembers(in []NewMember) ([]NewMember, error) {

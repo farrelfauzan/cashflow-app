@@ -98,8 +98,7 @@ func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRu
 	}
 	res := Result{DryRun: dryRun, Rows: make([]Row, len(records))}
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
-		for _, action := range []string{authz.ActionTenantManage, authz.ActionLeaseManage} {
-			req := authz.Request{Action: action, Resource: authz.Resource{Type: strings.TrimSuffix(action, ":manage")}}
+		for _, req := range importRequests() {
 			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
 				return err
 			}
@@ -125,6 +124,16 @@ func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRu
 	}
 	res.Committed = true
 	return res, nil
+}
+
+// importRequests are the checks an import needs: tenant:manage and lease:manage for the whole
+// organization. The template download asks for the same.
+func importRequests() []authz.Request {
+	var reqs []authz.Request
+	for _, action := range []string{authz.ActionTenantManage, authz.ActionLeaseManage} {
+		reqs = append(reqs, authz.Request{Action: action, Resource: authz.Resource{Type: strings.TrimSuffix(action, ":manage")}})
+	}
+	return reqs
 }
 
 // importRow checks one record and, when it is valid, finds or creates its property, unit, tenant
@@ -207,6 +216,8 @@ func check(rec record, row *Row) input {
 	}
 	if in.tenant, err = tenant.ValidTenant(tenant.Input{Name: rec.get(colTenantName), Phone: rec.get(colPhone)}); err != nil {
 		addInputError(row, err)
+	} else if isExamplePhone(in.tenant.Phone) {
+		fail(colPhone, "Ini baris contoh. Hapus baris ini sebelum mengimpor.")
 	}
 	if parsed {
 		if in.terms, err = tenant.ValidTerms(tenant.Terms{

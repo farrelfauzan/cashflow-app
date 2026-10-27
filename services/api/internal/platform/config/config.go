@@ -39,7 +39,10 @@ type API struct {
 	// WhatsAppProvider picks the messaging adapter: "gowa" (launch) or "devlog" (development
 	// only). "cloudapi" is reserved for the WhatsApp Cloud API adapter, not built yet.
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
-	GOWA             GOWA   `env:", prefix=GOWA_"`
+	// DevlogFile, when set, makes the devlog provider also append each message to this file as
+	// one JSON line, so end-to-end tests can read login codes. Development with devlog only.
+	DevlogFile string `env:"DEVLOG_FILE"`
+	GOWA       GOWA   `env:", prefix=GOWA_"`
 	// OpenAPISpec is the spec file Swagger UI shows at /docs. Only development serves it; the
 	// default works when the API runs from services/api, as `make api-run` does.
 	OpenAPISpec string `env:"OPENAPI_SPEC, default=../../api/openapi.yaml"`
@@ -96,6 +99,10 @@ func (c API) validate() error {
 		return errors.New("WHATSAPP_PROVIDER=cloudapi is not built yet; use gowa")
 	default:
 		return fmt.Errorf("WHATSAPP_PROVIDER must be gowa or devlog, got %q", c.WhatsAppProvider)
+	}
+	// Login codes in a file are only acceptable on a developer's machine.
+	if c.DevlogFile != "" && (c.Env != "development" || c.WhatsAppProvider != "devlog") {
+		return errors.New("DEVLOG_FILE only works in development with WHATSAPP_PROVIDER=devlog; unset it")
 	}
 	return nil
 }
