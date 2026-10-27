@@ -216,6 +216,8 @@ func check(rec record, row *Row) input {
 	}
 	if in.tenant, err = tenant.ValidTenant(tenant.Input{Name: rec.get(colTenantName), Phone: rec.get(colPhone)}); err != nil {
 		addInputError(row, err)
+	} else if isExamplePhone(in.tenant.Phone) {
+		fail(colPhone, "Ini baris contoh. Hapus baris ini sebelum mengimpor.")
 	}
 	if parsed {
 		if in.terms, err = tenant.ValidTerms(tenant.Terms{

@@ -3,6 +3,7 @@ package tenantimport
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,7 +137,7 @@ func TestCheckReportsEveryProblemInARow(t *testing.T) {
 	require.ElementsMatch(t, []string{colProperty, colPhone, colDueDay}, cols, fmt.Sprint(row.Errors))
 }
 
-func TestTemplateReadsBackWithoutErrors(t *testing.T) {
+func TestTemplateReadsBackWithOnlyTheExampleError(t *testing.T) {
 	t.Parallel()
 	data, err := templateCSV()
 	require.NoError(t, err)
@@ -148,8 +149,14 @@ func TestTemplateReadsBackWithoutErrors(t *testing.T) {
 	for _, rec := range records {
 		var row Row
 		check(rec, &row)
-		require.Empty(t, row.Errors, "line %d", rec.Line)
+		require.Equal(t, []RowError{{Column: colPhone, Message: "Ini baris contoh. Hapus baris ini sebelum mengimpor."}},
+			row.Errors, "line %d: an example row is refused, and for nothing else", rec.Line)
 		require.NotNil(t, row.Values)
+
+		rec.Values[colPhone] = "0813-9900-" + strconv.Itoa(rec.Line*1111)
+		row = Row{}
+		check(rec, &row)
+		require.Empty(t, row.Errors, "line %d with a real number is a valid row", rec.Line)
 	}
 	require.Equal(t, "Kos Melati", records[0].get(colProperty), "every Indonesian header maps to a column")
 	require.Equal(t, "0", records[1].get(colDeposit))
