@@ -8,8 +8,9 @@
 //
 // It is safe to run again. Each record is matched before it is created: an organization by name
 // among its Admin's own memberships, members by phone, properties by name, units by label in
-// their property, tenants by phone and leases by an active lease of that tenant on the unit. A
-// record that already exists is left exactly as it is, even when its values differ.
+// their property, charge types by name ignoring case, tenants by phone and leases by an active
+// lease of that tenant on the unit. A record that already exists is left exactly as it is, even
+// when its values differ; fixed extras are set only on a lease that has none.
 package demoseed
 
 import (
@@ -85,6 +86,7 @@ type seeder struct {
 	spec  orgSpec
 	p     authz.Principal                 // the org-wide Admin who makes the changes
 	props map[string]uuid.UUID            // property name -> id
+	types map[string]uuid.UUID            // lower-case charge type name -> id
 	units map[string]map[string]uuid.UUID // property name -> unit label -> id
 	staff map[string]uuid.UUID            // E.164 phone -> membership id
 	notes []string
@@ -102,6 +104,9 @@ func (s *seeder) run(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureMembers(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureChargeTypes(ctx); err != nil {
 		return err
 	}
 	for _, t := range s.spec.Tenants {
@@ -175,6 +180,58 @@ func (s *seeder) ensureProperties(ctx context.Context) error {
 	})
 }
 
+// ensureChargeTypes finds every charge type by name, ignoring case, and adds the missing ones.
+func (s *seeder) ensureChargeTypes(ctx context.Context) error {
+	existing, err := s.d.Tenants.ListChargeTypes(ctx, s.p)
+	if err != nil {
+		return err
+	}
+	s.types = map[string]uuid.UUID{}
+	for _, ct := range existing {
+		s.types[strings.ToLower(ct.Name)] = ct.ID
+	}
+	for _, name := range s.spec.ChargeTypes {
+		if _, ok := s.types[strings.ToLower(name)]; ok {
+			continue
+		}
+		ct, err := s.d.Tenants.CreateChargeType(ctx, s.p, tenant.ChargeTypeInput{Name: name})
+		if err != nil {
+			return fmt.Errorf("charge type %s: %w", name, err)
+		}
+		s.types[strings.ToLower(name)] = ct.ID
+	}
+	return nil
+}
+
+// ensureCharges sets the spec's fixed extras on a running lease that has none yet. A lease
+// whose extras were set or cleared since keeps them.
+func (s *seeder) ensureCharges(ctx context.Context, tenantID, leaseID uuid.UUID, ls leaseSpec) error {
+	if len(ls.Charges) == 0 || leaseID == uuid.Nil {
+		return nil
+	}
+	tn, err := s.d.Tenants.Get(ctx, s.p, tenantID)
+	if err != nil {
+		return err
+	}
+	for _, l := range tn.Leases {
+		if l.ID == leaseID && len(l.Charges) > 0 {
+			return nil
+		}
+	}
+	in := make([]tenant.ChargeInput, len(ls.Charges))
+	for i, c := range ls.Charges {
+		id, ok := s.types[strings.ToLower(c.Type)]
+		if !ok {
+			return fmt.Errorf("unknown charge type %q", c.Type)
+		}
+		in[i] = tenant.ChargeInput{ChargeTypeID: id, Amount: c.Amount}
+	}
+	if _, err := s.d.Tenants.SetLeaseCharges(ctx, s.p, leaseID, in); err != nil {
+		return fmt.Errorf("extras on %s %s: %w", ls.Property, ls.Unit, err)
+	}
+	return nil
+}
+
 // ensureMembers invites every staff member who is missing, with their roles and property
 // limits in one call, so a member is created with exactly their roles or not at all. An existing
 // member keeps their roles.
@@ -219,6 +276,7 @@ func (s *seeder) ensureMembers(ctx context.Context) error {
 // records any move-out, which the tenant service does in a transaction of its own.
 func (s *seeder) ensureTenant(ctx context.Context, ts tenantSpec) error {
 	var tenantID uuid.UUID
+	running := make([]uuid.UUID, len(ts.Leases)) // lease ids by spec index; uuid.Nil when skipped
 	err := s.d.Store.WithOrgTx(ctx, s.p.OrganizationID, func(tx pgx.Tx) error {
 		req := authz.Request{Action: authz.ActionTenantRead, Resource: authz.Resource{Type: "tenant"}}
 		if err := s.d.Authz.Authorize(ctx, tx, s.p, req); err != nil {
@@ -236,11 +294,11 @@ func (s *seeder) ensureTenant(ctx context.Context, ts tenantSpec) error {
 			return err
 		}
 		tenantID = tn.ID
-		for _, ls := range ts.Leases {
+		for i, ls := range ts.Leases {
 			if !ls.MovedOut.IsZero() {
 				continue
 			}
-			if _, err := s.ensureActiveLease(ctx, tx, tenantID, ls); err != nil {
+			if running[i], err = s.ensureActiveLease(ctx, tx, tenantID, ls); err != nil {
 				return err
 			}
 		}
@@ -248,6 +306,11 @@ func (s *seeder) ensureTenant(ctx context.Context, ts tenantSpec) error {
 	})
 	if err != nil {
 		return err
+	}
+	for i, ls := range ts.Leases {
+		if err := s.ensureCharges(ctx, tenantID, running[i], ls); err != nil {
+			return err
+		}
 	}
 	for _, ls := range ts.Leases {
 		if ls.MovedOut.IsZero() {

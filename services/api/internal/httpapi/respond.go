@@ -51,6 +51,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeErrorField(w, http.StatusConflict, "label_taken", "Nama unit ini sudah dipakai di properti ini.", "label")
 	case errors.Is(err, tenant.ErrPhoneTaken):
 		s.writeErrorField(w, http.StatusConflict, "phone_taken", "Nomor ini sudah dipakai penyewa lain.", "phone")
+	case errors.Is(err, tenant.ErrChargeTypeTaken):
+		s.writeErrorField(w, http.StatusConflict, "charge_type_taken", "Nama biaya ini sudah dipakai.", "name")
 	case errors.Is(err, tenant.ErrUnitOccupied):
 		s.writeErrorField(w, http.StatusConflict, "unit_occupied", "Unit ini masih disewa. Akhiri sewa yang lama dulu.", "unitId")
 	case errors.Is(err, tenant.ErrLeaseEnded):

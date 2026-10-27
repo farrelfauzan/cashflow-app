@@ -23,6 +23,15 @@ type AuditLog struct {
 	CreatedAt        time.Time
 }
 
+type ChargeType struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	Name           string
+	Metered        bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type Lease struct {
 	ID                   uuid.UUID
 	OrganizationID       uuid.UUID
@@ -37,6 +46,16 @@ type Lease struct {
 	CollectorStaffUserID uuid.NullUUID
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+}
+
+type LeaseCharge struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+	ChargeTypeID   uuid.UUID
+	Amount         int64
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type Membership struct {
