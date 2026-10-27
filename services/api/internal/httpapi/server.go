@@ -19,6 +19,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 const (
@@ -40,6 +41,7 @@ type Deps struct {
 	Authz      *authz.Service
 	Members    *member.Service
 	Properties *property.Service
+	Tenants    *tenant.Service
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
 	CookieSecure bool
 	// AllowedOrigins are the browser origins allowed to send state-changing requests.
@@ -96,6 +98,13 @@ func New(d Deps) *Server {
 				r.Get("/properties/{propertyID}/units", s.listUnits)
 				r.Post("/properties/{propertyID}/units", s.createUnit)
 				r.Put("/units/{unitID}", s.updateUnit)
+				r.Get("/tenants", s.listTenants)
+				r.Post("/tenants", s.createTenant)
+				r.Get("/tenants/{tenantID}", s.getTenant)
+				r.Put("/tenants/{tenantID}", s.updateTenant)
+				r.Post("/leases", s.createLease)
+				r.Put("/leases/{leaseID}", s.updateLease)
+				r.Post("/leases/{leaseID}/move-out", s.moveOut)
 			})
 		})
 	})

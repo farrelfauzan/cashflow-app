@@ -318,3 +318,110 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		require.Contains(t, string(body), `"code":"forbidden"`)
 	})
 }
+
+func TestTenantsAndLeasesOverHTTP(t *testing.T) {
+	env := testenv.New(t) // the clock reads 2 November 2026 in Jakarta
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812161")
+
+	srv := httptest.NewServer(httpapi.New(httpapi.Deps{
+		Log: env.Log, DB: env.Store, Auth: env.Auth, Authz: env.Authz, Members: env.Members,
+		Properties: env.Properties, Tenants: env.Tenants, CookieSecure: false, AllowedOrigins: []string{origin},
+	}).Handler())
+	t.Cleanup(srv.Close)
+
+	orgPath := "/api/orgs/" + o.ID.String()
+	admin := newClient(t, srv.URL)
+	admin.signIn(env, o.Admin.Phone)
+
+	resp, body := admin.do(http.MethodPost, orgPath+"/properties", apigen.PropertyInput{Name: "Kos Melati", Kind: apigen.Kos})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+	melati := decode[apigen.Property](t, body)
+	resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: "Kamar 1"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+	kamar1 := decode[apigen.Unit](t, body)
+
+	resp, body = admin.do(http.MethodGet, orgPath+"/members", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var karyawanMember uuid.UUID
+	for _, m := range decode[apigen.MemberList](t, body).Members {
+		if m.UserId == o.Karyawan.UserID {
+			karyawanMember = m.Id
+		}
+	}
+
+	var rina apigen.Tenant
+	t.Run("the admin adds a tenant", func(t *testing.T) {
+		resp, body := admin.do(http.MethodPost, orgPath+"/tenants", apigen.TenantInput{Name: "Rina Wulandari", Phone: "0812 1616 5001"})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		rina = decode[apigen.Tenant](t, body)
+		require.Equal(t, "+6281216165001", rina.Phone)
+		require.Contains(t, string(body), `"leases":[]`, "an empty list, never null")
+
+		resp, body = admin.do(http.MethodPost, orgPath+"/tenants", apigen.TenantInput{Name: "Rina", Phone: "+62 812-1616-5001"})
+		require.Equal(t, http.StatusConflict, resp.StatusCode)
+		e := decode[apigen.Error](t, body)
+		require.Equal(t, "phone_taken", e.Error.Code)
+		require.Equal(t, "phone", *e.Error.Field)
+	})
+
+	var lease apigen.Lease
+	t.Run("the admin rents a unit with dates as plain days", func(t *testing.T) {
+		resp, body := admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01",
+			"rentAmount": 850000, "dueDay": 5, "depositAmount": 850000, "collectorMemberId": karyawanMember,
+		})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"startDate":"2026-10-01"`)
+		lease = decode[apigen.Lease](t, body)
+		require.Equal(t, apigen.LeaseStatusActive, lease.Status)
+		require.Equal(t, o.Karyawan.Name, lease.Collector.Name)
+
+		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "rentAmount": 1, "dueDay": 1,
+		})
+		require.Equal(t, http.StatusConflict, resp.StatusCode)
+		require.Equal(t, "unit_occupied", decode[apigen.Error](t, body).Error.Code)
+
+		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "1 Oktober 2026", "rentAmount": 1, "dueDay": 1,
+		})
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Equal(t, "invalid_json", decode[apigen.Error](t, body).Error.Code)
+	})
+
+	t.Run("the karyawan sees the tenant they collect from", func(t *testing.T) {
+		karyawan := newClient(t, srv.URL)
+		karyawan.signIn(env, o.Karyawan.Phone)
+		resp, body := karyawan.do(http.MethodGet, orgPath+"/tenants", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		tenants := decode[apigen.TenantList](t, body).Tenants
+		require.Len(t, tenants, 1)
+		require.Equal(t, rina.Id, tenants[0].Id)
+
+		resp, _ = karyawan.do(http.MethodPost, orgPath+"/leases/"+lease.Id.String()+"/move-out", apigen.MoveOut{})
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
+	t.Run("the admin records the move-out", func(t *testing.T) {
+		resp, body := admin.do(http.MethodPost, orgPath+"/leases/"+lease.Id.String()+"/move-out", map[string]string{"endDate": "2026-12-01"})
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Equal(t, "endDate", *decode[apigen.Error](t, body).Error.Field)
+
+		resp, body = admin.do(http.MethodPost, orgPath+"/leases/"+lease.Id.String()+"/move-out", map[string]string{"endDate": "2026-11-02"})
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"endDate":"2026-11-02"`)
+		require.Contains(t, string(body), `"status":"ended"`)
+
+		resp, body = admin.do(http.MethodPut, orgPath+"/leases/"+lease.Id.String(), map[string]any{
+			"startDate": "2026-10-01", "rentAmount": 1, "dueDay": 1,
+		})
+		require.Equal(t, http.StatusConflict, resp.StatusCode)
+		require.Equal(t, "lease_ended", decode[apigen.Error](t, body).Error.Code)
+
+		resp, body = admin.do(http.MethodGet, orgPath+"/tenants/"+rina.Id.String(), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Len(t, decode[apigen.Tenant](t, body).Leases, 1)
+		resp, _ = admin.do(http.MethodGet, orgPath+"/tenants/"+uuid.NewString(), nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+}
