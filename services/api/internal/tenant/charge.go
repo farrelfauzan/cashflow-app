@@ -56,7 +56,7 @@ type ChargeInput struct {
 // chargeTypeRequest is lease:manage on the organization's charge types. It names no property,
 // so only an organization-wide grant allows it. Creating a type uses it, so a member limited to
 // some properties cannot add the types every property shares (decision 15). Listing is open to
-// anyone with any lease:manage access (decision 21) and uses this request only to record a
+// anyone with any lease:manage access (decision 22) and uses this request only to record a
 // denial.
 func chargeTypeRequest(id uuid.UUID) authz.Request {
 	res := authz.Resource{Type: "charge-type"}
