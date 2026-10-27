@@ -23,6 +23,25 @@ mouse works). Window `clock` is the hourly timer (`Ctrl-b n` to switch). Detach 
 Give work to the orchestrator in its pane. It will validate, ask you if something conflicts with
 the docs, and delegate.
 
+## Sub-agent tiers
+
+Backend and frontend each have four sub-agents, defined at launch from `config.env`
+(`team/bin/team-agents-json` builds them). Effort is Claude Code's thinking level.
+
+| Tier | Model · effort | For |
+|---|---|---|
+| `<role>-hard` | Opus 5.5 · high | Unclear approach, or a costly mistake: money correctness, concurrency, authz design, scaffold, session and tenant-page flows |
+| `<role>-medium-critical` | Opus 5.5 · medium | Existing pattern, high blast radius: money, authz, RLS, migrations, the API contract |
+| `<role>-medium` | Sonnet 5.5 · high | Standard slice or screen that follows an example |
+| `<role>-light` | Sonnet 5.5 · medium | Docs, copy, renames, lint fixes, tests for existing behavior |
+
+The orchestrator suggests a tier in every task brief; the developer decides, can split a task
+across tiers, and reviews every sub-agent's diff before it goes in a PR. Sub-agents cannot spawn
+more sub-agents, open PRs, or message the team. The full rules, with examples, are in
+`prompts/tiers.md`. For Haiku on the light tier: `MODEL_TIER_LIGHT=claude-haiku-5-5 team/start.sh`
+(Haiku takes no effort setting). Backend and frontend defaults to Opus 5.5 themselves, as in
+`config.env`.
+
 ## How the agents talk
 
 Every agent has `team-tell`, `team-report`, `team-ask` and `team-inbox` on its `PATH`.
@@ -77,7 +96,9 @@ first reviewable work is ready so you can initialize it.
 team/
   start.sh stop.sh config.env     run it, models, intervals, GitHub account
   bin/                            team-tell team-inbox team-report team-ask team-clock team-launch
-  prompts/                        shared.md + one file per agent (the roles)
+                                  team-agents-json
+  prompts/                        shared.md, tiers.md + one file per agent (the roles);
+                                  sub/ holds the sub-agents' prompts
   settings/                       per-agent shell permissions
   state/                          (ignored) inboxes, STATUS.md, tasks, digests, reviews, worktrees
 ```
