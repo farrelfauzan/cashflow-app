@@ -122,6 +122,13 @@ func TestWhatsAppProviderChoice(t *testing.T) {
 			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p"}), ""},
 		{"cloud api not built", with(map[string]string{"WHATSAPP_PROVIDER": "cloudapi"}), "not built yet"},
 		{"unknown provider", with(map[string]string{"WHATSAPP_PROVIDER": "twilio"}), "gowa or devlog"},
+		{"devlog file in development", with(map[string]string{"DEVLOG_FILE": "/tmp/devlog.jsonl"}), ""},
+		{"devlog file refused in staging", with(map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "gowa",
+			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
+		{"devlog file refused in production", with(map[string]string{"APP_ENV": "production", "WHATSAPP_PROVIDER": "gowa",
+			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
+		{"devlog file refused with gowa in development", with(map[string]string{"WHATSAPP_PROVIDER": "gowa",
+			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

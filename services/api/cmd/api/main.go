@@ -123,7 +123,7 @@ func messenger(cfg config.API, log *slog.Logger) (messaging.Provider, error) {
 			DeviceID: cfg.GOWA.DeviceID,
 		})
 	case "devlog":
-		return devlog.New(log), nil
+		return devlog.New(log, cfg.DevlogFile), nil
 	default:
 		// config.LoadAPI has already rejected anything else.
 		return nil, errors.New("no WhatsApp provider configured")
