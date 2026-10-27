@@ -94,6 +94,7 @@ func New(d Deps) *Server {
 				r.Get("/members", s.listMembers)
 				r.Post("/members", s.inviteMember)
 				r.Put("/members/{memberID}/roles", s.setMemberRoles)
+				r.Put("/members/{memberID}/status", s.setMemberStatus)
 				r.Get("/properties", s.listProperties)
 				r.Post("/properties", s.createProperty)
 				r.Put("/properties/{propertyID}", s.updateProperty)
