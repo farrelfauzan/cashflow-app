@@ -33,17 +33,30 @@ var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, co
 
 var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit)
 
+// The Indonesian column names. The template writes them, and the parser reads them as aliases.
+const (
+	idProperty     = "properti"
+	idPropertyKind = "jenis_properti"
+	idUnit         = "kamar"
+	idTenantName   = "nama_penyewa"
+	idPhone        = "no_wa"
+	idRent         = "sewa"
+	idDueDay       = "jatuh_tempo"
+	idStartDate    = "tanggal_mulai"
+	idDeposit      = "jaminan"
+)
+
 // aliases maps the Indonesian headers people are likely to type to the canonical names.
 var aliases = map[string]string{
-	"properti": colProperty, "nama_properti": colProperty,
-	"jenis_properti": colPropertyKind, "jenis": colPropertyKind,
-	"kamar": colUnit, "nama_unit": colUnit,
-	"nama_penyewa": colTenantName, "penyewa": colTenantName, "nama": colTenantName,
-	"no_wa": colPhone, "nomor_wa": colPhone, "whatsapp": colPhone, "telepon": colPhone, "no_hp": colPhone,
-	"sewa": colRent, "harga_sewa": colRent,
-	"jatuh_tempo": colDueDay, "tanggal_jatuh_tempo": colDueDay,
-	"tanggal_mulai": colStartDate, "mulai_sewa": colStartDate,
-	"jaminan": colDeposit, "uang_jaminan": colDeposit,
+	idProperty: colProperty, "nama_properti": colProperty,
+	idPropertyKind: colPropertyKind, "jenis": colPropertyKind,
+	idUnit: colUnit, "nama_unit": colUnit,
+	idTenantName: colTenantName, "penyewa": colTenantName, "nama": colTenantName,
+	idPhone: colPhone, "nomor_wa": colPhone, "whatsapp": colPhone, "telepon": colPhone, "no_hp": colPhone,
+	idRent: colRent, "harga_sewa": colRent,
+	idDueDay: colDueDay, "tanggal_jatuh_tempo": colDueDay,
+	idStartDate: colStartDate, "mulai_sewa": colStartDate,
+	idDeposit: colDeposit, "uang_jaminan": colDeposit,
 }
 
 // kindAliases maps property kinds as people write them to the stored kinds.

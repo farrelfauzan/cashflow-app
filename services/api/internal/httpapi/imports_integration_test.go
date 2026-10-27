@@ -88,6 +88,19 @@ func TestImportOverHTTP(t *testing.T) {
 		require.Equal(t, "too_large", decode[apigen.Error](t, body).Error.Code)
 	})
 
+	t.Run("the template downloads as a CSV attachment", func(t *testing.T) {
+		resp, body := admin.do(http.MethodGet, path+"/template", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Equal(t, "text/csv; charset=utf-8", resp.Header.Get("Content-Type"))
+		require.Equal(t, `attachment; filename="template-impor-penyewa.csv"`, resp.Header.Get("Content-Disposition"))
+		require.True(t, bytes.HasPrefix(body, []byte("\xef\xbb\xbfproperti;")), "byte order mark, then the Indonesian header")
+
+		karyawan := newClient(t, srv.URL)
+		karyawan.signIn(env, o.Karyawan.Phone)
+		resp, _ = karyawan.do(http.MethodGet, path+"/template", nil)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
 	t.Run("a karyawan is refused, even for a dry run", func(t *testing.T) {
 		karyawan := newClient(t, srv.URL)
 		karyawan.signIn(env, o.Karyawan.Phone)

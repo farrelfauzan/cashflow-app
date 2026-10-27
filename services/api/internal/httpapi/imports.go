@@ -49,6 +49,25 @@ func (s *Server) importTenants(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, toAPIImportResult(res))
 }
 
+func (s *Server) tenantImportTemplate(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	data, err := s.Imports.Template(r.Context(), p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+tenantimport.TemplateFilename+`"`)
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(data); err != nil {
+		s.log.WarnContext(r.Context(), "writing import template", "error", err)
+	}
+}
+
 func toAPIImportResult(res tenantimport.Result) apigen.ImportResult {
 	out := apigen.ImportResult{
 		DryRun:    res.DryRun,
