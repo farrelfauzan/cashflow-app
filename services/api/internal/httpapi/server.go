@@ -20,6 +20,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
 
 const (
@@ -42,6 +43,7 @@ type Deps struct {
 	Members    *member.Service
 	Properties *property.Service
 	Tenants    *tenant.Service
+	Imports    *tenantimport.Service
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
 	CookieSecure bool
 	// AllowedOrigins are the browser origins allowed to send state-changing requests.
@@ -105,6 +107,7 @@ func New(d Deps) *Server {
 				r.Post("/leases", s.createLease)
 				r.Put("/leases/{leaseID}", s.updateLease)
 				r.Post("/leases/{leaseID}/move-out", s.moveOut)
+				r.Post("/imports/tenants", s.importTenants)
 			})
 		})
 	})

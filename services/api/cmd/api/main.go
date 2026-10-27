@@ -30,6 +30,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
 
 func main() {
@@ -87,6 +88,8 @@ func run() error {
 		return err
 	}
 	az := authz.NewService(st, clk, log)
+	props := property.NewService(st, az)
+	tenants := tenant.NewService(st, az, clk)
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,
@@ -94,8 +97,9 @@ func run() error {
 		Auth:           authSvc,
 		Authz:          az,
 		Members:        member.NewService(st, az),
-		Properties:     property.NewService(st, az),
-		Tenants:        tenant.NewService(st, az, clk),
+		Properties:     props,
+		Tenants:        tenants,
+		Imports:        tenantimport.NewService(st, az, props, tenants),
 		CookieSecure:   cfg.CookieSecure(),
 		AllowedOrigins: cfg.Origins(),
 		DocsSpecPath:   cfg.DocsSpecPath(),

@@ -12,6 +12,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
 
 // fail turns a domain error into a response. Messages are in Bahasa Indonesia and never carry
@@ -20,6 +21,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var input *member.InputError
 	var propertyInput *property.InputError
 	var tenantInput *tenant.InputError
+	var fileErr *tenantimport.FileError
 	switch {
 	case errors.As(err, &input):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", input.Message, input.Field)
@@ -27,6 +29,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", propertyInput.Message, propertyInput.Field)
 	case errors.As(err, &tenantInput):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", tenantInput.Message, tenantInput.Field)
+	case errors.As(err, &fileErr):
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", fileErr.Message, "file")
 	case errors.Is(err, auth.ErrInvalidPhone):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_phone", "Nomor WhatsApp tidak valid.", "phone")
 	case errors.Is(err, auth.ErrInvalidCode):

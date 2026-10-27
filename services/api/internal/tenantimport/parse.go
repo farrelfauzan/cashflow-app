@@ -1,0 +1,211 @@
+package tenantimport
+
+import (
+	"bytes"
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Canonical column names. Error messages name columns by these.
+const (
+	colProperty     = "property"
+	colPropertyKind = "property_kind"
+	colUnit         = "unit"
+	colTenantName   = "tenant_name"
+	colPhone        = "phone"
+	colRent         = "rent"
+	colDueDay       = "due_day"
+	colStartDate    = "start_date"
+	colDeposit      = "deposit"
+)
+
+// MaxRows is the most data rows one file may hold.
+const MaxRows = 2000
+
+var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, colRent, colDueDay, colStartDate}
+
+var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit)
+
+// aliases maps the Indonesian headers people are likely to type to the canonical names.
+var aliases = map[string]string{
+	"properti": colProperty, "nama_properti": colProperty,
+	"jenis_properti": colPropertyKind, "jenis": colPropertyKind,
+	"kamar": colUnit, "nama_unit": colUnit,
+	"nama_penyewa": colTenantName, "penyewa": colTenantName, "nama": colTenantName,
+	"no_wa": colPhone, "nomor_wa": colPhone, "whatsapp": colPhone, "telepon": colPhone, "no_hp": colPhone,
+	"sewa": colRent, "harga_sewa": colRent,
+	"jatuh_tempo": colDueDay, "tanggal_jatuh_tempo": colDueDay,
+	"tanggal_mulai": colStartDate, "mulai_sewa": colStartDate,
+	"jaminan": colDeposit, "uang_jaminan": colDeposit,
+}
+
+// kindAliases maps property kinds as people write them to the stored kinds.
+var kindAliases = map[string]string{"": "other", "lainnya": "other", "lain": "other"}
+
+// record is one data row as text, with the line it came from.
+type record struct {
+	Line   int
+	Values map[string]string
+}
+
+func (r record) get(col string) string { return strings.TrimSpace(r.Values[col]) }
+
+// FileError means the file as a whole cannot be read. Message is safe to show to the user.
+type FileError struct{ Message string }
+
+func (e *FileError) Error() string { return "tenantimport: " + e.Message }
+
+// parseFile reads the CSV: a header line, then data rows. The separator is a comma or, as
+// Excel writes in an Indonesian locale, a semicolon. Blank rows are skipped.
+func parseFile(data []byte) ([]record, error) {
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")) // Excel's UTF-8 byte order mark
+	firstLine, _, _ := bytes.Cut(data, []byte("\n"))
+	r := csv.NewReader(bytes.NewReader(data))
+	if bytes.Count(firstLine, []byte(";")) > bytes.Count(firstLine, []byte(",")) {
+		r.Comma = ';'
+	}
+	r.FieldsPerRecord = -1
+	r.TrimLeadingSpace = true
+
+	header, err := r.Read()
+	if errors.Is(err, io.EOF) {
+		return nil, &FileError{Message: "Berkas kosong."}
+	}
+	if err != nil {
+		return nil, &FileError{Message: "Berkas bukan CSV yang bisa dibaca."}
+	}
+	columns, err := headerColumns(header)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []record
+	for {
+		fields, err := r.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		var parseErr *csv.ParseError
+		if errors.As(err, &parseErr) {
+			return nil, &FileError{Message: fmt.Sprintf("Baris %d tidak bisa dibaca sebagai CSV.", parseErr.StartLine)}
+		}
+		if err != nil {
+			return nil, &FileError{Message: "Berkas bukan CSV yang bisa dibaca."}
+		}
+		if blank(fields) {
+			continue
+		}
+		line, _ := r.FieldPos(0)
+		rec := record{Line: line, Values: map[string]string{}}
+		for i, col := range columns {
+			if col != "" && i < len(fields) {
+				rec.Values[col] = fields[i]
+			}
+		}
+		out = append(out, rec)
+		if len(out) > MaxRows {
+			return nil, &FileError{Message: fmt.Sprintf("Paling banyak %d baris per berkas. Bagi berkas menjadi beberapa bagian.", MaxRows)}
+		}
+	}
+	if len(out) == 0 {
+		return nil, &FileError{Message: "Berkas tidak berisi baris data."}
+	}
+	return out, nil
+}
+
+// headerColumns returns the canonical name of each column, or "" for a column the import does
+// not use.
+func headerColumns(header []string) ([]string, error) {
+	columns := make([]string, len(header))
+	seen := map[string]bool{}
+	for i, h := range header {
+		name := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToLower(strings.TrimSpace(h)))
+		if alias, ok := aliases[name]; ok {
+			name = alias
+		}
+		if !slices.Contains(knownColumns, name) {
+			continue
+		}
+		if seen[name] {
+			return nil, &FileError{Message: fmt.Sprintf("Kolom %s muncul dua kali.", name)}
+		}
+		seen[name] = true
+		columns[i] = name
+	}
+	var missing []string
+	for _, col := range requiredColumns {
+		if !seen[col] {
+			missing = append(missing, col)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, &FileError{Message: "Kolom wajib tidak ada: " + strings.Join(missing, ", ") + "."}
+	}
+	return columns, nil
+}
+
+func blank(fields []string) bool {
+	return !slices.ContainsFunc(fields, func(f string) bool { return strings.TrimSpace(f) != "" })
+}
+
+// parseRupiah reads a whole rupiah amount written as "850000", "850.000", "Rp850.000" or
+// "Rp 850.000,00". An empty cell is 0; the services decide whether 0 is allowed.
+func parseRupiah(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && strings.EqualFold(s[:2], "rp") {
+		s = s[2:]
+	}
+	s = strings.NewReplacer(" ", "", ".", "").Replace(s)
+	s = strings.TrimSuffix(strings.TrimSuffix(s, ",00"), ",0")
+	if s == "" {
+		return 0, true
+	}
+	if strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	return v, err == nil
+}
+
+// parseDay reads a due day. An empty cell is 0, which the lease rules reject.
+func parseDay(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, true
+	}
+	v, err := strconv.Atoi(s)
+	return v, err == nil
+}
+
+// dateLayouts are the accepted date forms: ISO, and day first as Indonesians write dates.
+var dateLayouts = []string{"2006-01-02", "02/01/2006", "2/1/2006", "02-01-2006", "2-1-2006"}
+
+// parseDate reads a calendar day. An empty cell is the zero time, which the lease rules reject.
+func parseDate(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, true
+	}
+	for _, layout := range dateLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// parseKind turns a property kind as typed into a stored kind. Unknown values pass through for
+// the property rules to reject.
+func parseKind(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if k, ok := kindAliases[s]; ok {
+		return k
+	}
+	return s
+}

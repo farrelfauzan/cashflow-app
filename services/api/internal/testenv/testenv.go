@@ -28,6 +28,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
 
 // Secret is the login-code key used in tests.
@@ -47,6 +48,7 @@ type Env struct {
 	Orgs       *org.Service
 	Properties *property.Service
 	Tenants    *tenant.Service
+	Imports    *tenantimport.Service
 }
 
 // New starts PostgreSQL, applies the migrations and wires the services.
@@ -76,6 +78,7 @@ func New(t *testing.T) *Env {
 	e.Orgs = org.NewService(st, e.Authz)
 	e.Properties = property.NewService(st, e.Authz)
 	e.Tenants = tenant.NewService(st, e.Authz, e.Clock)
+	e.Imports = tenantimport.NewService(st, e.Authz, e.Properties, e.Tenants)
 	return e
 }
 
