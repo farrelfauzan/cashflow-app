@@ -227,7 +227,8 @@ of the same organization can do. Both must pass.
   - Admin: manage property, unit, tenant and lease (extra charges included); `charge:record`,
     `payment:record`, `payment:check`, `correction:create`, `payroll:check`, `payroll:record`,
     `expense:create`, members. Cannot approve. May grant the Admin and Karyawan roles
-    (`role:assign` on `role/admin` and `role/karyawan`), never Supervisor. Supervisors are set when the organization is created.
+    (`role:assign` on `role/admin` and `role/karyawan`), never Supervisor. Supervisors are set
+    when the organization is created.
   - Karyawan: `visit:*`, `cash:record` and `charge:record` (meter amounts) on assigned
     tenants, and read their own payslip and commission.
 - **Separation of duties** (guardrail): whoever checked a payroll run or created an expense
