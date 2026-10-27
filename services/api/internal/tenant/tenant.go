@@ -223,9 +223,12 @@ func visibleLeases(p authz.Principal, all bool, leases []Lease) ([]Lease, bool) 
 		}
 		return leases, true
 	}
+	// Only active leases make a tenant visible to a member who is not organization-wide: after
+	// move-out the former collector and a property-limited admin lose the tenant (decided
+	// 2026-10-27; revisit in slice 2, when arrears after move-out exist).
 	out := []Lease{}
 	for _, l := range leases {
-		if authz.Allowed(p, authz.Request{Action: authz.ActionTenantRead, Resource: tenantVia(l)}) {
+		if l.Status == StatusActive && authz.Allowed(p, authz.Request{Action: authz.ActionTenantRead, Resource: tenantVia(l)}) {
 			out = append(out, l)
 		}
 	}

@@ -171,6 +171,7 @@ func TestTenantsAndLeases(t *testing.T) {
 		require.ErrorIs(t, err, tenant.ErrPhoneTaken, "Budi has that number")
 	})
 
+	var booking tenant.Lease
 	t.Run("move-out ends the lease on a date and frees the unit", func(t *testing.T) {
 		_, err := env.Tenants.MoveOut(ctx, w.admin, lease1.ID, day(2026, 11, 3))
 		requireField(t, err, "endDate") // tomorrow in Jakarta
@@ -195,8 +196,24 @@ func TestTenantsAndLeases(t *testing.T) {
 				budi = tn
 			}
 		}
-		_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
+		booking, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
 			StartDate: day(2026, 11, 3), RentAmount: 900_000, DueDay: 3,
+		}})
+		require.NoError(t, err, "the unit is free again, and a lease may start tomorrow")
+	})
+
+	t.Run("a booking that has not started is cancelled by ending it on its start date", func(t *testing.T) {
+		_, err := env.Tenants.MoveOut(ctx, w.admin, booking.ID, day(2026, 11, 2))
+		requireField(t, err, "endDate") // today, but the lease starts tomorrow
+		_, err = env.Tenants.MoveOut(ctx, w.admin, booking.ID, day(2026, 11, 4))
+		requireField(t, err, "endDate")
+
+		cancelled, err := env.Tenants.MoveOut(ctx, w.admin, booking.ID, day(2026, 11, 3))
+		require.NoError(t, err)
+		require.Equal(t, tenant.StatusEnded, cancelled.Status)
+		require.Equal(t, cancelled.StartDate, *cancelled.EndDate)
+		_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: booking.TenantID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
+			StartDate: day(2026, 11, 2), RentAmount: 900_000, DueDay: 2,
 		}})
 		require.NoError(t, err, "the unit is free again")
 	})
@@ -238,7 +255,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 	citra := newTenant("Citra Lestari", "0812-7210-5003") // no collector
 	dewi := newTenant("Dewi Anggraini", "0812-7210-5004") // two leases, one each
 	_ = newTenant("Eko Prasetyo", "0812-7210-5005")       // no lease at all
-	rent(rina, w.kamar1, w.karyawanMemberID)
+	rinaLease := rent(rina, w.kamar1, w.karyawanMemberID)
 	rent(budi, w.kamar2, sari.ID)
 	rent(citra, w.rumahA, uuid.Nil)
 	unit3, err := env.Properties.CreateUnit(ctx, w.admin, w.mawar.ID, property.UnitInput{Label: "Rumah B"})
@@ -290,6 +307,20 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 		_, err = env.Tenants.Update(ctx, w.karyawan, rina.ID, tenant.Input{Name: "Rina", Phone: "0812-7210-5001"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
+
+	t.Run("after move-out the former collector no longer sees the tenant", func(t *testing.T) {
+		_, err := env.Tenants.MoveOut(ctx, w.admin, rinaLease.ID, day(2026, 11, 1))
+		require.NoError(t, err)
+		tenants, err := env.Tenants.List(ctx, w.karyawan)
+		require.NoError(t, err)
+		require.Empty(t, tenants)
+		_, err = env.Tenants.Get(ctx, w.karyawan, rina.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+
+		got, err := env.Tenants.Get(ctx, w.admin, rina.ID)
+		require.NoError(t, err)
+		require.Len(t, got.Leases, 1, "an organization-wide admin still sees the tenant and the ended lease")
+	})
 }
 
 func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
@@ -308,7 +339,7 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 	dewi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Dewi", Phone: "0812-7310-5002"})
 	require.NoError(t, err)
 	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000, DueDay: 1}
-	_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
+	rinaKamar1, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
 	require.NoError(t, err)
 	_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: dewi.ID, UnitID: w.kamar2.ID, Terms: terms})
 	require.NoError(t, err)
@@ -329,10 +360,11 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
 
+	var rinaKamar3 tenant.Lease
 	t.Run("she rents units in Kos Melati only, and cannot add tenants", func(t *testing.T) {
 		kamar3, err := env.Properties.CreateUnit(ctx, limited, w.melati.ID, property.UnitInput{Label: "Kamar 3"})
 		require.NoError(t, err)
-		_, err = env.Tenants.CreateLease(ctx, limited, tenant.NewLease{TenantID: rina.ID, UnitID: kamar3.ID, Terms: terms})
+		rinaKamar3, err = env.Tenants.CreateLease(ctx, limited, tenant.NewLease{TenantID: rina.ID, UnitID: kamar3.ID, Terms: terms})
 		require.NoError(t, err)
 		rumahB, err := env.Properties.CreateUnit(ctx, w.admin, w.mawar.ID, property.UnitInput{Label: "Rumah B"})
 		require.NoError(t, err)
@@ -340,6 +372,23 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		_, err = env.Tenants.Create(ctx, limited, tenant.Input{Name: "Baru", Phone: "0812-7310-5999"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
+	})
+
+	t.Run("she sees a tenant only while one of their leases in Kos Melati is active", func(t *testing.T) {
+		_, err := env.Tenants.MoveOut(ctx, limited, rinaKamar1.ID, day(2026, 11, 1))
+		require.NoError(t, err)
+		got, err := env.Tenants.Get(ctx, limited, rina.ID)
+		require.NoError(t, err)
+		require.Len(t, got.Leases, 1, "the ended Kamar 1 lease is hidden, Kamar 3 still shows")
+		require.Equal(t, rinaKamar3.ID, got.Leases[0].ID)
+
+		_, err = env.Tenants.MoveOut(ctx, limited, rinaKamar3.ID, day(2026, 11, 1))
+		require.NoError(t, err)
+		_, err = env.Tenants.Get(ctx, limited, rina.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		tenants, err := env.Tenants.List(ctx, limited)
+		require.NoError(t, err)
+		require.Equal(t, []string{"Dewi"}, tenantNames(tenants))
 	})
 }
 

@@ -483,8 +483,9 @@ paths:
       summary: End a lease on a date (needs lease:manage; audited)
       description: >
         The end date is the last day of the lease: not before the start date and not after
-        today in Asia/Jakarta. The unit is free for a new lease right away. What happens to
-        arrears is settled in slice 2.
+        today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same
+        way, with the end date equal to its start date; it will never be invoiced. The unit is
+        free for a new lease right away. What happens to arrears is settled in slice 2.
       requestBody:
         required: true
         content:

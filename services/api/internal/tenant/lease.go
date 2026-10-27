@@ -147,8 +147,9 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 }
 
 // MoveOut ends an active lease. endDate is the last day: not before the start and not after
-// today in Asia/Jakarta. The unit is free for a new lease right away. What happens to arrears is
-// an organization setting applied in slice 2, when invoices exist.
+// today in Asia/Jakarta. A lease that has not started (a booking) is cancelled by ending it on
+// its start date. The unit is free for a new lease right away. What happens to arrears is an
+// organization setting applied in slice 2, when invoices exist.
 func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, endDate time.Time) (Lease, error) {
 	endDate = calendarDay(endDate)
 	var out Lease
@@ -158,11 +159,8 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		if err != nil {
 			return err
 		}
-		switch {
-		case endDate.Before(current.StartDate):
-			return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh sebelum tanggal mulai sewa."}
-		case endDate.After(today(s.clock)):
-			return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh setelah hari ini."}
+		if err := checkEndDate(current.StartDate, endDate, today(s.clock)); err != nil {
+			return err
 		}
 		n, err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: p.OrganizationID, ID: id, EndDate: &endDate})
 		if err != nil {
@@ -175,6 +173,24 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		return err
 	})
 	return out, err
+}
+
+// checkEndDate applies the move-out date rules. A booking that has not started can only be
+// cancelled, which ends it on its start date; slice 2 never invoices such a lease.
+func checkEndDate(start, end, now time.Time) error {
+	if start.After(now) {
+		if !end.Equal(start) {
+			return &InputError{Field: "endDate", Message: "Sewa ini belum mulai. Untuk membatalkannya, isi tanggal keluar sama dengan tanggal mulai sewa."}
+		}
+		return nil
+	}
+	switch {
+	case end.Before(start):
+		return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh sebelum tanggal mulai sewa."}
+	case end.After(now):
+		return &InputError{Field: "endDate", Message: "Tanggal keluar tidak boleh setelah hari ini."}
+	}
+	return nil
 }
 
 // loadActiveForChange locks a lease row for the rest of the transaction, loads it, authorizes
