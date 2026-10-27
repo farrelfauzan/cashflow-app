@@ -21,7 +21,6 @@ const (
 	colTenantName   = "tenant_name"
 	colPhone        = "phone"
 	colRent         = "rent"
-	colDueDay       = "due_day"
 	colStartDate    = "start_date"
 	colDeposit      = "deposit"
 )
@@ -29,7 +28,7 @@ const (
 // MaxRows is the most data rows one file may hold.
 const MaxRows = 2000
 
-var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, colRent, colDueDay, colStartDate}
+var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, colRent, colStartDate}
 
 var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit)
 
@@ -41,7 +40,6 @@ const (
 	idTenantName   = "nama_penyewa"
 	idPhone        = "no_wa"
 	idRent         = "sewa"
-	idDueDay       = "jatuh_tempo"
 	idStartDate    = "tanggal_mulai"
 	idDeposit      = "jaminan"
 )
@@ -54,7 +52,6 @@ var aliases = map[string]string{
 	idTenantName: colTenantName, "penyewa": colTenantName, "nama": colTenantName,
 	idPhone: colPhone, "nomor_wa": colPhone, "whatsapp": colPhone, "telepon": colPhone, "no_hp": colPhone,
 	idRent: colRent, "harga_sewa": colRent,
-	idDueDay: colDueDay, "tanggal_jatuh_tempo": colDueDay,
 	idStartDate: colStartDate, "mulai_sewa": colStartDate,
 	idDeposit: colDeposit, "uang_jaminan": colDeposit,
 }
@@ -194,16 +191,6 @@ func parseRupiah(s string) (int64, bool) {
 	}
 	v, err := strconv.ParseInt(strings.ReplaceAll(s, ".", ""), 10, 64)
 	return v, err == nil
-}
-
-// parseDay reads a due day. An empty cell is 0, which the lease rules reject.
-func parseDay(s string) (int, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, true
-	}
-	v, err := strconv.ParseInt(s, 10, 16) // bounded, so it fits any integer type downstream
-	return int(v), err == nil
 }
 
 // dateLayouts are the accepted date forms: ISO, and day first as Indonesians write dates.

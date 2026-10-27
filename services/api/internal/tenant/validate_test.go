@@ -18,13 +18,11 @@ func TestValidTerms(t *testing.T) {
 		in        Terms
 		wantField string
 	}{
-		{"minimal terms", Terms{StartDate: start, RentAmount: 1, DueDay: 1}, ""},
-		{"due on the 28th", Terms{StartDate: start, RentAmount: 850_000, DueDay: 28, DepositAmount: 850_000}, ""},
-		{"no start date", Terms{RentAmount: 1, DueDay: 1}, "startDate"},
-		{"free rent", Terms{StartDate: start, DueDay: 1}, "rentAmount"},
-		{"due day 0", Terms{StartDate: start, RentAmount: 1}, "dueDay"},
-		{"due day 29 does not exist every month", Terms{StartDate: start, RentAmount: 1, DueDay: 29}, "dueDay"},
-		{"negative deposit", Terms{StartDate: start, RentAmount: 1, DueDay: 1, DepositAmount: -1}, "depositAmount"},
+		{"minimal terms", Terms{StartDate: start, RentAmount: 1}, ""},
+		{"with a deposit", Terms{StartDate: start, RentAmount: 850_000, DepositAmount: 850_000}, ""},
+		{"no start date", Terms{RentAmount: 1}, "startDate"},
+		{"free rent", Terms{StartDate: start}, "rentAmount"},
+		{"negative deposit", Terms{StartDate: start, RentAmount: 1, DepositAmount: -1}, "depositAmount"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -77,7 +77,7 @@ func TestImport(t *testing.T) {
 		}
 		require.Equal(t, tenantimport.Matched, res.Rows[3].Tenant, "line 5 finds Rina from line 2")
 		require.Equal(t, &tenantimport.Values{
-			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Rent: 900_000, DueDay: 10,
+			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Rent: 900_000,
 		}, res.Rows[1].Values, "the row shows the terms it would save: 01/10/2026 read day first, no deposit")
 		require.Equal(t, counts{}, countAll(t, env, admin))
 		require.Len(t, env.AuditLog(t, o.ID), auditBefore, "the audit rows of a dry run roll back with it")
@@ -92,7 +92,7 @@ func TestImport(t *testing.T) {
 		require.Equal(t, []string{"phone"}, errorColumns(res.Rows[1]))
 		require.Equal(t, []string{"rent"}, errorColumns(res.Rows[2]))
 		require.Nil(t, res.Rows[2].Values, "no values when the rent cannot be read")
-		require.Equal(t, []string{"due_day"}, errorColumns(res.Rows[3]))
+		require.Equal(t, []string{"deposit"}, errorColumns(res.Rows[3]))
 		require.Equal(t, []string{"start_date"}, errorColumns(res.Rows[4]))
 		require.Equal(t, []string{"unit"}, errorColumns(res.Rows[5]), "Kamar 1 is already rented to Rina on line 2")
 		require.Equal(t, 7, res.Rows[5].Line)
@@ -132,7 +132,6 @@ func TestImport(t *testing.T) {
 		require.Len(t, budi.Leases, 1)
 		require.Equal(t, int64(900_000), budi.Leases[0].RentAmount)
 		require.Zero(t, budi.Leases[0].DepositAmount)
-		require.Equal(t, 10, budi.Leases[0].DueDay)
 
 		var actions []string
 		for _, a := range env.AuditLog(t, o.ID) {
@@ -150,8 +149,8 @@ func TestImport(t *testing.T) {
 	})
 
 	t.Run("a known phone under another name is an error, not a merge", func(t *testing.T) {
-		data := []byte("property,unit,tenant_name,phone,rent,due_day,start_date\n" +
-			"Kos Melati,Kamar 7,Pak Budi,0812-8100-5002,950.000,10,2026-11-01\n")
+		data := []byte("property,unit,tenant_name,phone,rent,start_date\n" +
+			"Kos Melati,Kamar 7,Pak Budi,0812-8100-5002,950.000,2026-11-01\n")
 		res, err := env.Imports.Run(ctx, admin, data, false)
 		require.NoError(t, err)
 		require.False(t, res.Committed)
@@ -162,9 +161,9 @@ func TestImport(t *testing.T) {
 	})
 
 	t.Run("existing records are matched, and differences are noted, not applied", func(t *testing.T) {
-		data := []byte("property,unit,tenant_name,phone,rent,due_day,start_date,deposit\n" +
-			"KOS MELATI,kamar 2,budi santoso,0812-8100-5002,900.000,10,2026-10-01,500.000\n" +
-			"Kos Melati,Kamar 12,Budi Santoso,0812-8100-5002,950.000,10,2026-11-01,\n")
+		data := []byte("property,unit,tenant_name,phone,rent,start_date,deposit\n" +
+			"KOS MELATI,kamar 2,budi santoso,0812-8100-5002,900.000,2026-10-01,500.000\n" +
+			"Kos Melati,Kamar 12,Budi Santoso,0812-8100-5002,950.000,2026-11-01,\n")
 		res, err := env.Imports.Run(ctx, admin, data, false)
 		require.NoError(t, err)
 		require.True(t, res.Committed)
@@ -180,8 +179,8 @@ func TestImport(t *testing.T) {
 	})
 
 	t.Run("a unit rented to someone else is an error", func(t *testing.T) {
-		data := []byte("property,unit,tenant_name,phone,rent,due_day,start_date\n" +
-			"Kos Melati,Kamar 1,Penyewa Baru,0812-8100-5099,850.000,5,2026-11-01\n")
+		data := []byte("property,unit,tenant_name,phone,rent,start_date\n" +
+			"Kos Melati,Kamar 1,Penyewa Baru,0812-8100-5099,850.000,2026-11-01\n")
 		res, err := env.Imports.Run(ctx, admin, data, false)
 		require.NoError(t, err)
 		require.False(t, res.Committed)

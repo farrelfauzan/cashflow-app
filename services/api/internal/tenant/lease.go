@@ -30,16 +30,16 @@ var (
 // Lease is a tenant renting a unit. Dates are calendar days (midnight UTC, no time zone
 // meaning); amounts are rupiah.
 type Lease struct {
-	ID            uuid.UUID
-	TenantID      uuid.UUID
-	UnitID        uuid.UUID
-	UnitLabel     string
-	PropertyID    uuid.UUID
-	PropertyName  string
+	ID           uuid.UUID
+	TenantID     uuid.UUID
+	UnitID       uuid.UUID
+	UnitLabel    string
+	PropertyID   uuid.UUID
+	PropertyName string
+	// StartDate is the first day; rent is due on its day of every month (decision 24).
 	StartDate     time.Time
 	EndDate       *time.Time // last day, set by move-out
 	RentAmount    int64
-	DueDay        int
 	DepositAmount int64
 	Status        string
 	// Collector is the member who collects from this tenant, if any.
@@ -56,7 +56,6 @@ type Lease struct {
 type Terms struct {
 	StartDate     time.Time
 	RentAmount    int64
-	DueDay        int
 	DepositAmount int64
 	// CollectorMemberID is a member id (not a staff user id); uuid.Nil means no collector.
 	CollectorMemberID uuid.UUID
@@ -108,7 +107,7 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	}
 	err = q.CreateLease(ctx, dbgen.CreateLeaseParams{
 		ID: id, OrganizationID: p.OrganizationID, UnitID: in.UnitID, TenantID: in.TenantID,
-		StartDate: terms.StartDate, RentAmount: terms.RentAmount, DueDay: int16(terms.DueDay), //nolint:gosec // ValidTerms keeps it in 1..28
+		StartDate: terms.StartDate, RentAmount: terms.RentAmount,
 		DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 	})
 	if isUniqueViolation(err, "lease_one_active_per_unit") {
@@ -153,7 +152,6 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		}
 		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
 			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
-			DueDay:        int16(terms.DueDay), //nolint:gosec // ValidTerms keeps it in 1..28
 			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 		})
 		if err != nil {
@@ -285,7 +283,7 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	l := Lease{
 		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, UnitLabel: r.UnitLabel,
 		PropertyID: r.PropertyID, PropertyName: r.PropertyName,
-		StartDate: r.StartDate, EndDate: r.EndDate, RentAmount: r.RentAmount, DueDay: int(r.DueDay),
+		StartDate: r.StartDate, EndDate: r.EndDate, RentAmount: r.RentAmount,
 		DepositAmount: r.DepositAmount, Status: r.Status, Charges: []Charge{},
 		CollectorMemberID: r.CollectorMemberID.UUID, CollectorUserID: r.CollectorStaffUserID.UUID,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -305,8 +303,6 @@ func ValidTerms(t Terms) (Terms, error) {
 		return t, &InputError{Field: "startDate", Message: "Tanggal mulai sewa wajib diisi."}
 	case t.RentAmount <= 0:
 		return t, &InputError{Field: "rentAmount", Message: "Harga sewa harus lebih dari Rp0."}
-	case t.DueDay < 1 || t.DueDay > 28:
-		return t, &InputError{Field: "dueDay", Message: "Tanggal jatuh tempo harus antara 1 dan 28."}
 	case t.DepositAmount < 0:
 		return t, &InputError{Field: "depositAmount", Message: "Deposit tidak boleh negatif."}
 	}

@@ -393,7 +393,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 	t.Run("the admin rents a unit with dates as plain days", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
 			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01",
-			"rentAmount": 850000, "dueDay": 5, "depositAmount": 850000, "collectorMemberId": karyawanMember,
+			"rentAmount": 850000, "depositAmount": 850000, "collectorMemberId": karyawanMember,
 		})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"startDate":"2026-10-01"`)
@@ -402,13 +402,13 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 		require.Equal(t, o.Karyawan.Name, lease.Collector.Name)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "rentAmount": 1, "dueDay": 1,
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "rentAmount": 1,
 		})
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
 		require.Equal(t, "unit_occupied", decode[apigen.Error](t, body).Error.Code)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "1 Oktober 2026", "rentAmount": 1, "dueDay": 1,
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "1 Oktober 2026", "rentAmount": 1,
 		})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		require.Equal(t, "invalid_json", decode[apigen.Error](t, body).Error.Code)
@@ -438,7 +438,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 		require.Contains(t, string(body), `"status":"ended"`)
 
 		resp, body = admin.do(http.MethodPut, orgPath+"/leases/"+lease.Id.String(), map[string]any{
-			"startDate": "2026-10-01", "rentAmount": 1, "dueDay": 1,
+			"startDate": "2026-10-01", "rentAmount": 1,
 		})
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
 		require.Equal(t, "lease_ended", decode[apigen.Error](t, body).Error.Code)

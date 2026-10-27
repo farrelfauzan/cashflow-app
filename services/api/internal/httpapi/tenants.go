@@ -103,7 +103,7 @@ func (s *Server) createLease(w http.ResponseWriter, r *http.Request) {
 		TenantID: body.TenantId,
 		UnitID:   body.UnitId,
 		Terms: leaseTerms(apigen.LeaseTerms{
-			StartDate: body.StartDate, RentAmount: body.RentAmount, DueDay: body.DueDay,
+			StartDate: body.StartDate, RentAmount: body.RentAmount,
 			DepositAmount: body.DepositAmount, CollectorMemberId: body.CollectorMemberId,
 		}),
 	})
@@ -169,7 +169,7 @@ func tenantInput(body apigen.TenantInput) tenant.Input {
 }
 
 func leaseTerms(body apigen.LeaseTerms) tenant.Terms {
-	t := tenant.Terms{StartDate: body.StartDate.Time, RentAmount: body.RentAmount, DueDay: int(body.DueDay)}
+	t := tenant.Terms{StartDate: body.StartDate.Time, RentAmount: body.RentAmount}
 	if body.DepositAmount != nil {
 		t.DepositAmount = *body.DepositAmount
 	}
@@ -195,8 +195,8 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 	out := apigen.Lease{
 		Id: l.ID, TenantId: l.TenantID, UnitId: l.UnitID, UnitLabel: l.UnitLabel,
 		PropertyId: l.PropertyID, PropertyName: l.PropertyName,
-		StartDate:  openapi_types.Date{Time: l.StartDate},
-		RentAmount: l.RentAmount, DueDay: int32(l.DueDay), //nolint:gosec // 1..28 by the database CHECK
+		StartDate:     openapi_types.Date{Time: l.StartDate},
+		RentAmount:    l.RentAmount,
 		DepositAmount: l.DepositAmount, Status: apigen.LeaseStatus(l.Status),
 		Charges:   make([]apigen.LeaseCharge, len(l.Charges)),
 		CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,

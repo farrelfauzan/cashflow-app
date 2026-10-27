@@ -29,8 +29,8 @@ func TestImportOverHTTP(t *testing.T) {
 	path := "/api/orgs/" + o.ID.String() + "/imports/tenants"
 	admin := newClient(t, srv.URL)
 	admin.signIn(env, o.Admin.Phone)
-	csv := []byte("properti;kamar;nama_penyewa;no_wa;sewa;jatuh_tempo;tanggal_mulai\n" +
-		"Kos Melati;Kamar 1;Rina Wulandari;0812-1717-5001;850.000;5;01/10/2026\n")
+	csv := []byte("properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai\n" +
+		"Kos Melati;Kamar 1;Rina Wulandari;0812-1717-5001;850.000;01/10/2026\n")
 
 	t.Run("without dryRun nothing is saved", func(t *testing.T) {
 		resp, body := admin.send(http.MethodPost, path, "text/csv", csv)
@@ -57,8 +57,8 @@ func TestImportOverHTTP(t *testing.T) {
 	})
 
 	t.Run("a bad row comes back with its column, and nothing is saved", func(t *testing.T) {
-		bad := []byte("property,unit,tenant_name,phone,rent,due_day,start_date\n" +
-			"Kos Melati,Kamar 2,Budi Santoso,12345,900.000,10,2026-10-01\n")
+		bad := []byte("property,unit,tenant_name,phone,rent,start_date\n" +
+			"Kos Melati,Kamar 2,Budi Santoso,12345,900.000,2026-10-01\n")
 		resp, body := admin.send(http.MethodPost, path+"?dryRun=false", "text/csv", bad)
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		res := decode[apigen.ImportResult](t, body)
