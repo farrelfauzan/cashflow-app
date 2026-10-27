@@ -105,3 +105,40 @@ func TestScopesSeeOnlyWhatTheyShould(t *testing.T) {
 		require.ErrorContains(t, err, "foreign key")
 	})
 }
+
+func TestFindForMember(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	a := env.CreateOrg(t, "Kos Melati", "0812303")
+	b := env.CreateOrg(t, "Kontrakan Mawar", "0812404")
+
+	tests := []struct {
+		name    string
+		phone   string
+		orgName string
+		want    org.Membership
+		wantErr error
+	}{
+		{name: "an admin finds their own organization", phone: a.Admin.Phone, orgName: "Kos Melati", want: org.Membership{OrganizationID: a.ID, UserID: a.Admin.UserID}},
+		{name: "the phone may be in any common format", phone: "+62" + b.Karyawan.Phone[1:], orgName: " Kontrakan Mawar ", want: org.Membership{OrganizationID: b.ID, UserID: b.Karyawan.UserID}},
+		{name: "another organization's name finds nothing", phone: a.Admin.Phone, orgName: "Kontrakan Mawar", wantErr: org.ErrNotFound},
+		{name: "an unknown number finds nothing", phone: "0812-9999-9999", orgName: "Kos Melati", wantErr: org.ErrNotFound},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := env.Orgs.FindForMember(ctx, tc.phone, tc.orgName)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("a bad number is an error, not a miss", func(t *testing.T) {
+		_, err := env.Orgs.FindForMember(ctx, "12", "Kos Melati")
+		require.Error(t, err)
+		require.NotErrorIs(t, err, org.ErrNotFound)
+	})
+}
