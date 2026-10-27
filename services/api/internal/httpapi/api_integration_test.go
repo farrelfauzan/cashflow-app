@@ -44,15 +44,25 @@ type result struct {
 
 func (c *client) do(method, path string, body any) (result, []byte) {
 	c.t.Helper()
-	var r io.Reader
+	var raw []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		require.NoError(c.t, err)
-		r = bytes.NewReader(b)
+		raw = b
+	}
+	return c.send(method, path, "application/json", raw)
+}
+
+// send makes a request with a body that is already encoded, such as a CSV file.
+func (c *client) send(method, path, contentType string, body []byte) (result, []byte) {
+	c.t.Helper()
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(c.t.Context(), method, c.base+path, r)
 	require.NoError(c.t, err)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Origin", origin)
 	resp, err := c.http.Do(req)
 	require.NoError(c.t, err)
