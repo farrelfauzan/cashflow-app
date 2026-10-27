@@ -318,7 +318,8 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   the owner records: maintenance, payroll and other expenses. Extra charges never count toward
   clean income. It is shown per property and unit where a cost belongs to one, and both figures
   drill down to the underlying rows (invoice lines, expenses, payroll payments). Extra charges
-  are not a separate report category.
+  are not a separate report category. Open until the report design (slices 9 and 10): whether
+  rent counts as billed or collected, and how shared costs are attributed to units.
 
 ## Payments
 
