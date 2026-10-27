@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/* Light theme only. `dark:` utilities (shipped inside shadcn primitives) apply only under a
+   `.dark` class, which the app never sets, so a device in dark mode still gets this theme. */
+@custom-variant dark (&:is(.dark *));
+
+/* Every color in the app is defined here, once. Components use the semantic tokens below
+   (bg-background, text-muted-foreground, bg-warning, ...), never raw colors.
+
+   Palette from CLAUDE.md "UX rules", plus shades derived from it. WCAG contrast of each
+   text pair, checked:
+     ink on cream 13.3:1, on paper 14.2:1, on sand 11.9:1, on mint 11.9:1
+     slate on cream 7.0:1, on paper 7.5:1, on sand 6.3:1
+     cream on accent 5.7:1 (4.6:1 on the 90% hover); accent on cream 5.7:1, on mint 5.1:1
+     cream on warning 4.5:1; warning on cream 4.5:1, on paper 4.8:1 (not on sand)
+     cream on error 6.6:1; error on cream 6.6:1, on paper 7.0:1
+     stone (input borders) on cream 3.5:1, the 3:1 needed for control outlines */
+:root {
+  --palette-ink: #1e2a2b;
+  --palette-cream: #f5f3ee;
+  --palette-accent: #1d6b63;
+  --palette-warning: #b4530f;
+
+  --palette-paper: #fbfaf7; /* cream, lighter: cards and popovers */
+  --palette-sand: #eae6dd; /* cream, darker: muted and secondary surfaces */
+  --palette-slate: #4a5455; /* ink toward cream: secondary text */
+  --palette-mint: #dce9e6; /* cream toward accent: subtle hover surfaces */
+  --palette-line: #d8d2c6; /* decorative borders and dividers */
+  --palette-stone: #7c8380; /* input outlines */
+  --palette-error: #a3281c; /* errors and destructive actions */
+
+  --radius: 0.625rem;
+
+  --background: var(--palette-cream);
+  --foreground: var(--palette-ink);
+  --card: var(--palette-paper);
+  --card-foreground: var(--palette-ink);
+  --popover: var(--palette-paper);
+  --popover-foreground: var(--palette-ink);
+  --primary: var(--palette-accent);
+  --primary-foreground: var(--palette-cream);
+  --secondary: var(--palette-sand);
+  --secondary-foreground: var(--palette-ink);
+  --muted: var(--palette-sand);
+  --muted-foreground: var(--palette-slate);
+  --accent: var(--palette-mint);
+  --accent-foreground: var(--palette-ink);
+  --destructive: var(--palette-error);
+  --destructive-foreground: var(--palette-cream);
+  --warning: var(--palette-warning);
+  --warning-foreground: var(--palette-cream);
+  --border: var(--palette-line);
+  --input: var(--palette-stone);
+  --ring: var(--palette-accent);
+}
+
+@theme inline {
+  --font-sans:
+    var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  /* 16px body text on every screen: at least 16px on iPad and 14px on phone, and inputs at
+     16px also stop iOS Safari from zooming in on focus. */
+  body {
+    @apply bg-background font-sans text-base text-foreground antialiased;
+  }
+}

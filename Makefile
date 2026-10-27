@@ -1,4 +1,5 @@
 API_DIR      := services/api
+WEB_DIR      := apps/web
 COMPOSE      := docker compose -f infra/compose.dev.yaml
 SQLC         := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 OAPI_CODEGEN := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.1
@@ -95,3 +96,36 @@ api-gen: ## Regenerate the Go API types from api/openapi.yaml
 
 .PHONY: api-check
 api-check: api-lint sqlc-diff api-test api-test-integration api-vuln ## Everything CI runs
+
+# ---- web (apps/web) --------------------------------------------------------------------
+
+.PHONY: web-install
+web-install: ## Install the web app's dependencies from the lockfile
+	cd $(WEB_DIR) && pnpm install --frozen-lockfile
+
+.PHONY: web-dev
+web-dev: ## Run the web app on http://localhost:3000
+	cd $(WEB_DIR) && pnpm dev
+
+.PHONY: web-lint
+web-lint: ## ESLint and the Prettier check for the web app
+	cd $(WEB_DIR) && pnpm lint
+
+.PHONY: web-typecheck
+web-typecheck: ## Type-check the web app
+	cd $(WEB_DIR) && pnpm typecheck
+
+.PHONY: web-test
+web-test: ## Web unit tests (Vitest)
+	cd $(WEB_DIR) && pnpm test
+
+.PHONY: web-e2e
+web-e2e: ## Web end-to-end tests (Playwright, iPad and phone sizes)
+	cd $(WEB_DIR) && pnpm e2e
+
+.PHONY: web-build
+web-build: ## Production build of the web app
+	cd $(WEB_DIR) && pnpm build
+
+.PHONY: web-check
+web-check: web-lint web-typecheck web-test web-build ## Everything web CI runs

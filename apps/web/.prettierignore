@@ -1,0 +1,16 @@
+# Build output and dependencies
+.next/
+out/
+build/
+node_modules/
+pnpm-lock.yaml
+next-env.d.ts
+
+# Generated code (the Orval API client arrives in W2)
+src/lib/api/generated/
+
+# Test output
+playwright-report/
+test-results/
+blob-report/
+coverage/
