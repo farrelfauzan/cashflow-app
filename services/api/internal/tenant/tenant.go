@@ -135,33 +135,53 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Ten
 // Create adds a tenant. It needs tenant:manage for the whole organization: a new tenant has no
 // lease yet, so no property limit can cover them.
 func (s *Service) Create(ctx context.Context, p authz.Principal, in Input) (Tenant, error) {
-	in, err := validTenant(in)
+	var out Tenant
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		var err error
+		out, err = s.CreateTx(ctx, tx, p, in)
+		return err
+	})
+	return out, err
+}
+
+// CreateTx is Create inside the caller's organization transaction, for changes that span
+// several records, such as an import.
+func (s *Service) CreateTx(ctx context.Context, tx pgx.Tx, p authz.Principal, in Input) (Tenant, error) {
+	in, err := ValidTenant(in)
 	if err != nil {
 		return Tenant{}, err
 	}
-	var out Tenant
-	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
-		id := uuid.New()
-		req := authz.Request{Action: authz.ActionTenantManage, Resource: authz.Resource{Type: "tenant", ID: id.String()}}
-		if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
-			return err
-		}
-		r, err := dbgen.New(tx).CreateTenant(ctx, dbgen.CreateTenantParams{
-			ID: id, OrganizationID: p.OrganizationID, Name: in.Name, Phone: in.Phone, Note: in.Note,
-		})
-		if err != nil {
-			return tenantWriteError(err)
-		}
-		out = toTenant(r, []Lease{})
-		return nil
+	id := uuid.New()
+	req := authz.Request{Action: authz.ActionTenantManage, Resource: authz.Resource{Type: "tenant", ID: id.String()}}
+	if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+		return Tenant{}, err
+	}
+	r, err := dbgen.New(tx).CreateTenant(ctx, dbgen.CreateTenantParams{
+		ID: id, OrganizationID: p.OrganizationID, Name: in.Name, Phone: in.Phone, Note: in.Note,
 	})
-	return out, err
+	if err != nil {
+		return Tenant{}, tenantWriteError(err)
+	}
+	return toTenant(r, []Lease{}), nil
+}
+
+// FindByPhone returns the tenant with this E.164 number, without leases, or ErrNotFound. It does
+// no permission check: the caller has authorized the change it is part of.
+func FindByPhone(ctx context.Context, tx pgx.Tx, org uuid.UUID, e164 string) (Tenant, error) {
+	r, err := dbgen.New(tx).FindTenantByPhone(ctx, dbgen.FindTenantByPhoneParams{OrganizationID: org, Phone: e164})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Tenant{}, ErrNotFound
+	}
+	if err != nil {
+		return Tenant{}, fmt.Errorf("finding tenant: %w", err)
+	}
+	return toTenant(r, nil), nil
 }
 
 // Update changes a tenant's name, number and note. A member limited to some properties may do
 // it only when every active lease of the tenant is in their properties.
 func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, in Input) (Tenant, error) {
-	in, err := validTenant(in)
+	in, err := ValidTenant(in)
 	if err != nil {
 		return Tenant{}, err
 	}
@@ -286,7 +306,9 @@ func isUniqueViolation(err error, constraint string) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == constraint
 }
 
-func validTenant(in Input) (Input, error) {
+// ValidTenant checks a tenant input and returns it trimmed, with the phone in E.164. Errors are
+// *InputError.
+func ValidTenant(in Input) (Input, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Note = strings.TrimSpace(in.Note)
 	number, err := phone.Normalize(in.Phone)

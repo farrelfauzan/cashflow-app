@@ -29,7 +29,7 @@ func TestValidProperty(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := validProperty(tc.in)
+			got, err := ValidProperty(tc.in)
 			if tc.wantField == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.want, got)
@@ -60,7 +60,7 @@ func TestValidUnit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := validUnit(tc.in)
+			got, err := ValidUnit(tc.in)
 			if tc.wantField == "" {
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(tc.in.Label), got.Label)

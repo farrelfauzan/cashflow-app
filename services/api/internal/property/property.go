@@ -130,32 +130,39 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Property, erro
 // Create adds a property. It needs property:manage for the whole organization, so a member
 // whose roles are limited to some properties cannot add new ones.
 func (s *Service) Create(ctx context.Context, p authz.Principal, in PropertyInput) (Property, error) {
-	in, err := validProperty(in)
-	if err != nil {
-		return Property{}, err
-	}
 	var out Property
-	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
-		id := uuid.New()
-		req := authz.Request{Action: authz.ActionPropertyManage, Resource: authz.Resource{Type: "property", ID: id.String()}}
-		if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
-			return err
-		}
-		r, err := dbgen.New(tx).CreateProperty(ctx, dbgen.CreatePropertyParams{
-			ID: id, OrganizationID: p.OrganizationID, Name: in.Name, Kind: in.Kind, Address: in.Address,
-		})
-		if err != nil {
-			return propertyWriteError(err)
-		}
-		out = Property{ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
-		return nil
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		var err error
+		out, err = s.CreateTx(ctx, tx, p, in)
+		return err
 	})
 	return out, err
 }
 
+// CreateTx is Create inside the caller's organization transaction, for changes that span
+// several records, such as an import.
+func (s *Service) CreateTx(ctx context.Context, tx pgx.Tx, p authz.Principal, in PropertyInput) (Property, error) {
+	in, err := ValidProperty(in)
+	if err != nil {
+		return Property{}, err
+	}
+	id := uuid.New()
+	req := authz.Request{Action: authz.ActionPropertyManage, Resource: authz.Resource{Type: "property", ID: id.String()}}
+	if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
+		return Property{}, err
+	}
+	r, err := dbgen.New(tx).CreateProperty(ctx, dbgen.CreatePropertyParams{
+		ID: id, OrganizationID: p.OrganizationID, Name: in.Name, Kind: in.Kind, Address: in.Address,
+	})
+	if err != nil {
+		return Property{}, propertyWriteError(err)
+	}
+	return Property{ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}, nil
+}
+
 // Update changes a property's name, kind and address.
 func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, in PropertyInput) (Property, error) {
-	in, err := validProperty(in)
+	in, err := ValidProperty(in)
 	if err != nil {
 		return Property{}, err
 	}
@@ -211,35 +218,69 @@ func (s *Service) ListUnits(ctx context.Context, p authz.Principal, propertyID u
 
 // CreateUnit adds a unit to a property.
 func (s *Service) CreateUnit(ctx context.Context, p authz.Principal, propertyID uuid.UUID, in UnitInput) (Unit, error) {
-	in, err := validUnit(in)
-	if err != nil {
-		return Unit{}, err
-	}
 	var out Unit
-	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
-		q := dbgen.New(tx)
-		if _, err := getProperty(ctx, q, p.OrganizationID, propertyID); err != nil {
-			return err
-		}
-		id := uuid.New()
-		if err := s.authz.Authorize(ctx, tx, p, unitRequest(authz.ActionUnitManage, propertyID, id)); err != nil {
-			return err
-		}
-		r, err := q.CreateUnit(ctx, dbgen.CreateUnitParams{
-			ID: id, OrganizationID: p.OrganizationID, PropertyID: propertyID, Label: in.Label, DefaultRent: in.DefaultRent,
-		})
-		if err != nil {
-			return unitWriteError(err)
-		}
-		out = toUnit(r)
-		return nil
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		var err error
+		out, err = s.CreateUnitTx(ctx, tx, p, propertyID, in)
+		return err
 	})
 	return out, err
 }
 
+// CreateUnitTx is CreateUnit inside the caller's organization transaction.
+func (s *Service) CreateUnitTx(ctx context.Context, tx pgx.Tx, p authz.Principal, propertyID uuid.UUID, in UnitInput) (Unit, error) {
+	in, err := ValidUnit(in)
+	if err != nil {
+		return Unit{}, err
+	}
+	q := dbgen.New(tx)
+	if _, err := getProperty(ctx, q, p.OrganizationID, propertyID); err != nil {
+		return Unit{}, err
+	}
+	id := uuid.New()
+	if err := s.authz.Authorize(ctx, tx, p, unitRequest(authz.ActionUnitManage, propertyID, id)); err != nil {
+		return Unit{}, err
+	}
+	r, err := q.CreateUnit(ctx, dbgen.CreateUnitParams{
+		ID: id, OrganizationID: p.OrganizationID, PropertyID: propertyID, Label: in.Label, DefaultRent: in.DefaultRent,
+	})
+	if err != nil {
+		return Unit{}, unitWriteError(err)
+	}
+	return toUnit(r), nil
+}
+
+// FindByName returns the property with this name, ignoring case, or ErrNotFound. It does no
+// permission check: the caller has authorized the change it is part of.
+func FindByName(ctx context.Context, tx pgx.Tx, org uuid.UUID, name string) (Property, error) {
+	r, err := dbgen.New(tx).FindPropertyByName(ctx, dbgen.FindPropertyByNameParams{OrganizationID: org, Name: strings.TrimSpace(name)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Property{}, ErrNotFound
+	}
+	if err != nil {
+		return Property{}, fmt.Errorf("finding property: %w", err)
+	}
+	return Property{ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}, nil
+}
+
+// FindUnit returns the unit with this label in a property, ignoring case, or ErrNotFound. It
+// does no permission check.
+func FindUnit(ctx context.Context, tx pgx.Tx, org, propertyID uuid.UUID, label string) (Unit, error) {
+	r, err := dbgen.New(tx).FindUnitByLabel(ctx, dbgen.FindUnitByLabelParams{
+		OrganizationID: org, PropertyID: propertyID, Label: strings.TrimSpace(label),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Unit{}, ErrNotFound
+	}
+	if err != nil {
+		return Unit{}, fmt.Errorf("finding unit: %w", err)
+	}
+	return toUnit(r), nil
+}
+
 // UpdateUnit changes a unit's label and default rent. The unit stays in its property.
 func (s *Service) UpdateUnit(ctx context.Context, p authz.Principal, id uuid.UUID, in UnitInput) (Unit, error) {
-	in, err := validUnit(in)
+	in, err := ValidUnit(in)
 	if err != nil {
 		return Unit{}, err
 	}
@@ -325,7 +366,8 @@ func isUniqueViolation(err error, constraint string) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == constraint
 }
 
-func validProperty(in PropertyInput) (PropertyInput, error) {
+// ValidProperty checks a property input and returns it trimmed. Errors are *InputError.
+func ValidProperty(in PropertyInput) (PropertyInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Address = strings.TrimSpace(in.Address)
 	switch {
@@ -341,7 +383,8 @@ func validProperty(in PropertyInput) (PropertyInput, error) {
 	return in, nil
 }
 
-func validUnit(in UnitInput) (UnitInput, error) {
+// ValidUnit checks a unit input and returns it trimmed. Errors are *InputError.
+func ValidUnit(in UnitInput) (UnitInput, error) {
 	in.Label = strings.TrimSpace(in.Label)
 	switch {
 	case in.Label == "":
