@@ -224,12 +224,12 @@ of the same organization can do. Both must pass.
   the database. The data model supports them from day one, the editor screen is not designed yet.
 - **Intent of the built-in roles** (initial, confirm against the screens):
   - Supervisor: read everything, plus `payroll:approve` and `expense:approve`. No other writes.
-  - Admin: manage property, unit, tenant and lease; `payment:record`, `payment:check`,
-    `correction:create`, `payroll:check`, `payroll:record`, `expense:create`, members. Cannot
-    approve. May grant the Admin and Karyawan roles (`role:assign` on `role/admin` and
-    `role/karyawan`), never Supervisor. Supervisors are set when the organization is created.
-  - Karyawan: `visit:*` and `cash:record` on assigned tenants, and read their own payslip and
-    commission.
+  - Admin: manage property, unit, tenant and lease (extra charges included); `charge:record`,
+    `payment:record`, `payment:check`, `correction:create`, `payroll:check`, `payroll:record`,
+    `expense:create`, members. Cannot approve. May grant the Admin and Karyawan roles
+    (`role:assign` on `role/admin` and `role/karyawan`), never Supervisor. Supervisors are set when the organization is created.
+  - Karyawan: `visit:*`, `cash:record` and `charge:record` (meter amounts) on assigned
+    tenants, and read their own payslip and commission.
 - **Separation of duties** (guardrail): whoever checked a payroll run or created an expense
   cannot approve it (`"actor": true` denies).
 - **No self-granted access** (guardrail): nobody runs `member:manage` on their own membership.
@@ -256,7 +256,8 @@ of the same organization can do. Both must pass.
 
 ## Domain model (minimum)
 
-organization, property, unit, tenant, lease, invoice, payment, payment_allocation,
+organization, property, unit, tenant, lease, charge_type, lease_charge, metered_charge, invoice,
+invoice_line, payment, payment_allocation,
 payment_promise (+ promise_version), qris_attempt, va_account, cash_deposit, correction,
 employee, payroll_run, payslip, payroll_payment (manual record), share_holder, share_allocation (versioned
 per asset), message_log, audit_log, settings, staff_user, membership, role, role_assignment
@@ -283,12 +284,20 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 - **Idempotency**: QRIS tasks keyed by `transaction_id` and backed by a database UNIQUE
   constraint. Payroll payment records keyed by payslip id.
 - Refunds of double payments only with admin approval. The default is credit.
+- **Invoice lines are append-only**, inserted with their invoice, and add up to the invoice
+  amount. A wrong line is fixed with a correction on the invoice, never by editing the line.
 
 ## Billing and reminders
 
-- Invoices per period. WA: H-3 (invoice + pay link), H0, H+3. At H+7 the tenant joins the
-  karyawan visit list. Reminders stop the moment the invoice is fully paid.
-- Rollover message: "Sewa Desember Rp X + sisa November Rp Y = Rp Z" with one pay link.
+- Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
+  air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
+  per month and billed once, on the next invoice generated after they are recorded. Lines are
+  snapshotted when the invoice is generated and never recomputed; the invoice total is the one
+  amount FIFO allocation pays. A missing meter amount never delays the invoice.
+- WA: H-3 (invoice + pay link), H0, H+3. At H+7 the tenant joins the karyawan visit list.
+  Reminders stop the moment the invoice is fully paid.
+- Rollover message: "Tagihan Desember Rp X + sisa November Rp Y = Rp Z" with one pay link.
+  Messages show an invoice's line breakdown as one template parameter.
 - `payment_promise` belongs to the tenant or lease, not to one invoice. Fields:
   promised_date, promised_amount (null = all outstanding at that time),
   kind = `specific_date | with_next_invoice`, source = `tenant_page | karyawan | admin`, note.
@@ -299,6 +308,9 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   no penalty. After N broken promises (org setting, default 2) the tenant joins the visit list.
 - Dashboard and the Supervisor's weekly WA report: total arrears per tenant and the age
   of the oldest unpaid invoice.
+- Owner reports show gross income and clean income, with drill-down into the gross down to the
+  invoice lines. Extra charges are not a separate report category. The definition of clean
+  income is still open (to be confirmed by the owner).
 
 ## Payments
 
@@ -339,10 +351,11 @@ transfers go to the admin "Antrean cek" queue.
 ## Payroll
 
 Day X (setting): payslip = base + collection commission + overtime/bonus − kasbon.
-Commission on full payment or per instalment (setting). Flow: admin checks → Supervisor
-approves (iPad or WA button) → admin pays by hand (cash or own bank transfer) and records
-each payment (date, amount, optional proof photo; any difference from the payslip stays
-visible) → WA payslip to the employee. The app never sends money. Recording is idempotent
+Commission on full payment or per instalment (setting), counted on rent only: extra charges
+earn no commission, and a partly paid invoice counts its rent share in proportion to its lines.
+Flow: admin checks → Supervisor approves (iPad or WA button) → admin pays by hand (cash or own
+bank transfer) and records each payment (date, amount, optional proof photo; any difference from
+the payslip stays visible) → WA payslip to the employee. The app never sends money. Recording is idempotent
 per payslip id.
 
 Deferred: automatic transfer through a `DisbursementProvider` (prepaid deposit balance check,
