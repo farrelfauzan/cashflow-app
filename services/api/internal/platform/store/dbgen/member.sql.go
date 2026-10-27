@@ -86,7 +86,7 @@ const createMembership = `-- name: CreateMembership :one
 INSERT INTO membership (id, organization_id, staff_user_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (organization_id, staff_user_id) DO NOTHING
-RETURNING id, organization_id, staff_user_id, status, created_at
+RETURNING id, organization_id, staff_user_id, status, created_at, invitation_state, invitation_last_sent_at
 `
 
 type CreateMembershipParams struct {
@@ -105,6 +105,8 @@ func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipPara
 		&i.StaffUserID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.InvitationState,
+		&i.InvitationLastSentAt,
 	)
 	return i, err
 }
@@ -157,7 +159,7 @@ func (q *Queries) DeleteBuiltinRoleAssignments(ctx context.Context, arg DeleteBu
 
 const getActiveMembershipForUser = `-- name: GetActiveMembershipForUser :one
 
-SELECT id, organization_id, staff_user_id, status, created_at FROM membership
+SELECT id, organization_id, staff_user_id, status, created_at, invitation_state, invitation_last_sent_at FROM membership
 WHERE organization_id = $1 AND staff_user_id = $2 AND status = 'active'
 `
 
@@ -176,12 +178,15 @@ func (q *Queries) GetActiveMembershipForUser(ctx context.Context, arg GetActiveM
 		&i.StaffUserID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.InvitationState,
+		&i.InvitationLastSentAt,
 	)
 	return i, err
 }
 
 const getMembership = `-- name: GetMembership :one
-SELECT m.id, m.staff_user_id, m.status, m.created_at, u.phone, u.name
+SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
+       u.phone, u.name, u.first_sign_in_at
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2
@@ -193,12 +198,15 @@ type GetMembershipParams struct {
 }
 
 type GetMembershipRow struct {
-	ID          uuid.UUID
-	StaffUserID uuid.UUID
-	Status      string
-	CreatedAt   time.Time
-	Phone       string
-	Name        string
+	ID                   uuid.UUID
+	StaffUserID          uuid.UUID
+	Status               string
+	CreatedAt            time.Time
+	InvitationState      *string
+	InvitationLastSentAt *time.Time
+	Phone                string
+	Name                 string
+	FirstSignInAt        *time.Time
 }
 
 func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (GetMembershipRow, error) {
@@ -209,14 +217,18 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 		&i.StaffUserID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.InvitationState,
+		&i.InvitationLastSentAt,
 		&i.Phone,
 		&i.Name,
+		&i.FirstSignInAt,
 	)
 	return i, err
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT m.id, m.staff_user_id, m.status, m.created_at, u.phone, u.name
+SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
+       u.phone, u.name, u.first_sign_in_at
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1
@@ -224,12 +236,15 @@ ORDER BY u.name, m.id
 `
 
 type ListMembersRow struct {
-	ID          uuid.UUID
-	StaffUserID uuid.UUID
-	Status      string
-	CreatedAt   time.Time
-	Phone       string
-	Name        string
+	ID                   uuid.UUID
+	StaffUserID          uuid.UUID
+	Status               string
+	CreatedAt            time.Time
+	InvitationState      *string
+	InvitationLastSentAt *time.Time
+	Phone                string
+	Name                 string
+	FirstSignInAt        *time.Time
 }
 
 func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]ListMembersRow, error) {
@@ -246,8 +261,11 @@ func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]
 			&i.StaffUserID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.InvitationState,
+			&i.InvitationLastSentAt,
 			&i.Phone,
 			&i.Name,
+			&i.FirstSignInAt,
 		); err != nil {
 			return nil, err
 		}
@@ -362,6 +380,35 @@ SELECT id FROM organization WHERE id = $1 FOR NO KEY UPDATE
 func (q *Queries) LockOrganizationMembers(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, lockOrganizationMembers, id)
 	return err
+}
+
+const setMembershipInvitation = `-- name: SetMembershipInvitation :execrows
+UPDATE membership
+SET invitation_state = $3::text,
+    invitation_last_sent_at = COALESCE($4, invitation_last_sent_at)
+WHERE organization_id = $1 AND id = $2
+`
+
+type SetMembershipInvitationParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	State          string
+	LastSentAt     *time.Time
+}
+
+// Records an invitation's state. A NULL last_sent_at keeps the time of the last send that
+// reached WhatsApp, so a failed resend does not erase it.
+func (q *Queries) SetMembershipInvitation(ctx context.Context, arg SetMembershipInvitationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setMembershipInvitation,
+		arg.OrganizationID,
+		arg.ID,
+		arg.State,
+		arg.LastSentAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setMembershipStatus = `-- name: SetMembershipStatus :execrows

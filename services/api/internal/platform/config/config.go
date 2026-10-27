@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/sethvargo/go-envconfig/v2"
@@ -36,6 +37,10 @@ type API struct {
 	// AllowedOrigins is a comma-separated list of browser origins allowed to send
 	// state-changing requests.
 	AllowedOrigins string `env:"ALLOWED_ORIGINS, default=http://localhost:3000"`
+	// PublicWebOrigin is where people open the web app, for links in WhatsApp messages, for
+	// example https://app.example.id. Required outside development, where it must be https;
+	// development defaults to the Next.js dev server.
+	PublicWebOrigin string `env:"PUBLIC_WEB_ORIGIN"`
 	// WhatsAppProvider picks the messaging adapter: "gowa" (launch) or "devlog" (development
 	// only). "cloudapi" is reserved for the WhatsApp Cloud API adapter, not built yet.
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
@@ -75,6 +80,29 @@ func (c API) Origins() []string {
 	return out
 }
 
+// LoginURL is the web login page, linked from the member invitation. It carries no token: the
+// invitee signs in with the usual WhatsApp code.
+func (c API) LoginURL() string { return c.PublicWebOrigin + "/login" }
+
+// devWebOrigin is the Next.js dev server, the PUBLIC_WEB_ORIGIN default in development.
+const devWebOrigin = "http://localhost:3000"
+
+// validWebOrigin checks that origin is an absolute http(s) origin with no path, query or
+// fragment, and https outside development.
+func validWebOrigin(origin, env string) error {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("PUBLIC_WEB_ORIGIN must be an absolute http(s) origin such as https://app.example.id, got %q", origin)
+	}
+	if u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(origin, "?") || strings.HasSuffix(origin, "#") {
+		return fmt.Errorf("PUBLIC_WEB_ORIGIN must be an origin only, with no path, query or credentials, got %q", origin)
+	}
+	if env != "development" && u.Scheme != "https" {
+		return fmt.Errorf("PUBLIC_WEB_ORIGIN must use https in %s, got %q", env, origin)
+	}
+	return nil
+}
+
 // CookieSecure reports whether cookies must be marked Secure. Only local development, which
 // runs over plain HTTP, turns it off.
 func (c API) CookieSecure() bool { return c.Env != "development" }
@@ -85,6 +113,12 @@ func (c API) validate() error {
 	}
 	if len(c.AuthSecret) < 32 {
 		return fmt.Errorf("AUTH_SECRET must be at least 32 bytes, got %d", len(c.AuthSecret))
+	}
+	if c.PublicWebOrigin == "" {
+		return fmt.Errorf("PUBLIC_WEB_ORIGIN is required in %s", c.Env)
+	}
+	if err := validWebOrigin(c.PublicWebOrigin, c.Env); err != nil {
+		return err
 	}
 	switch c.WhatsAppProvider {
 	case "devlog":
@@ -157,6 +191,9 @@ func loadAPI(ctx context.Context, l envconfig.Lookuper) (API, error) {
 	var c API
 	if err := process(ctx, l, &c); err != nil {
 		return API{}, fmt.Errorf("loading api config: %w", err)
+	}
+	if c.PublicWebOrigin == "" && c.Env == "development" {
+		c.PublicWebOrigin = devWebOrigin
 	}
 	if err := c.validate(); err != nil {
 		return API{}, fmt.Errorf("loading api config: %w", err)

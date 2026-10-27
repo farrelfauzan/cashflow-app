@@ -183,6 +183,25 @@ func (s *Server) setMemberStatus(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, toAPIMember(m))
 }
 
+func (s *Server) resendMemberInvitation(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	m, err := s.Members.ResendInvitation(r.Context(), p, memberID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIMember(m))
+}
+
 // roleGrants converts the contract's role grants; a missing propertyId means the whole
 // organization.
 func roleGrants(in []apigen.RoleGrant) []member.RoleGrant {
@@ -205,6 +224,11 @@ func toAPIMember(m member.Member) apigen.Member {
 		Status:    apigen.MemberStatus(m.Status),
 		CreatedAt: m.CreatedAt,
 		Roles:     make([]apigen.RoleRef, len(m.Roles)),
+
+		FirstSignInAt: m.FirstSignInAt,
+	}
+	if m.Invitation != nil {
+		out.Invitation = &apigen.Invitation{State: apigen.InvitationState(m.Invitation.State), LastSentAt: m.Invitation.LastSentAt}
 	}
 	for i, role := range m.Roles {
 		out.Roles[i] = apigen.RoleRef{Key: role.Key, Name: role.Name, Builtin: role.Builtin, PropertyId: optionalID(role.PropertyID)}

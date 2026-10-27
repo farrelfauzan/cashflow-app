@@ -54,3 +54,8 @@ FROM membership m
 JOIN organization o ON o.id = m.organization_id
 WHERE m.staff_user_id = $1 AND m.status = 'active'
 ORDER BY o.display_name;
+
+-- name: SetFirstSignIn :exec
+-- Only the first successful sign-in is kept.
+UPDATE staff_user SET first_sign_in_at = $2
+WHERE id = $1 AND first_sign_in_at IS NULL;

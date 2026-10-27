@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -54,6 +55,28 @@ func TestSendTemplate(t *testing.T) {
 	require.Equal(t, "application/json", got.contentType)
 	require.Equal(t, "6281234567890", got.body.Phone, "GOWA wants digits without the +")
 	require.Contains(t, got.body.Message, "*482913*")
+}
+
+func TestSendMemberInviteSendsTheLoginLinkAsText(t *testing.T) {
+	var body sendMessageRequest
+	c := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		_, _ = io.WriteString(w, `{"code":"SUCCESS","results":{"message_id":"3EB0DEF"}}`)
+	}, "")
+
+	_, err := c.SendTemplate(t.Context(), messaging.Message{
+		To:       "+6281213139999",
+		Template: messaging.TemplateMemberInvite,
+		Params: map[string]string{
+			"name": "Mbak Sari", "role": "Karyawan", "organization": "Griya Sejahtera", "inviter": "Pak Budi",
+		},
+		Buttons: []messaging.Button{{Title: "Masuk", Payload: "member_invite", URL: "https://app.example.id/login"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "6281213139999", body.Phone)
+	require.Contains(t, body.Message, "*Griya Sejahtera*")
+	require.Contains(t, body.Message, "Masuk:\nhttps://app.example.id/login", "GOWA has no buttons, so the link is in the text")
+	require.Equal(t, 1, strings.Count(body.Message, "https://"), "the link appears once")
 }
 
 func TestNoDeviceHeaderWhenNotConfigured(t *testing.T) {

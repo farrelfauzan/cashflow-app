@@ -40,11 +40,13 @@ type Lease struct {
 }
 
 type Membership struct {
-	ID             uuid.UUID
-	OrganizationID uuid.UUID
-	StaffUserID    uuid.UUID
-	Status         string
-	CreatedAt      time.Time
+	ID                   uuid.UUID
+	OrganizationID       uuid.UUID
+	StaffUserID          uuid.UUID
+	Status               string
+	CreatedAt            time.Time
+	InvitationState      *string
+	InvitationLastSentAt *time.Time
 }
 
 type Organization struct {
@@ -103,10 +105,11 @@ type StaffSession struct {
 }
 
 type StaffUser struct {
-	ID        uuid.UUID
-	Phone     string
-	Name      string
-	CreatedAt time.Time
+	ID            uuid.UUID
+	Phone         string
+	Name          string
+	CreatedAt     time.Time
+	FirstSignInAt *time.Time
 }
 
 type Tenant struct {
