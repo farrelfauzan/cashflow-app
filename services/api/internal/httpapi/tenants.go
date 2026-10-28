@@ -198,7 +198,11 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 		StartDate:  openapi_types.Date{Time: l.StartDate},
 		RentAmount: l.RentAmount, DueDay: int32(l.DueDay), //nolint:gosec // 1..28 by the database CHECK
 		DepositAmount: l.DepositAmount, Status: apigen.LeaseStatus(l.Status),
+		Charges:   make([]apigen.LeaseCharge, len(l.Charges)),
 		CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
+	}
+	for i, c := range l.Charges {
+		out.Charges[i] = apigen.LeaseCharge{ChargeTypeId: c.ChargeTypeID, Name: c.Name, Amount: c.Amount}
 	}
 	if l.EndDate != nil {
 		out.EndDate = &openapi_types.Date{Time: *l.EndDate}

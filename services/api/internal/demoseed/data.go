@@ -44,6 +44,13 @@ type leaseSpec struct {
 	Deposit        int64
 	Collector      string    // phone of the collecting member; "" means none
 	MovedOut       time.Time // last day of an ended lease; zero for a lease that is still running
+	Charges        []chargeSpec
+}
+
+// chargeSpec is a fixed monthly extra on a running lease.
+type chargeSpec struct {
+	Type   string // charge type name
+	Amount int64  // rupiah
 }
 
 type tenantSpec struct {
@@ -62,7 +69,9 @@ type orgSpec struct {
 	// Invited are added by the Actor afterwards, so a property limit can name a property.
 	Invited    []staffSpec
 	Properties []propertySpec
-	Tenants    []tenantSpec
+	// ChargeTypes are the organization's kinds of extra charge, none of them metered.
+	ChargeTypes []string
+	Tenants     []tenantSpec
 }
 
 func day(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
@@ -92,6 +101,10 @@ const (
 	propMawar     = "Kontrakan Mawar"
 	propRuko      = "Ruko Godean"
 	propAnggrek   = "Kos Putri Anggrek"
+
+	chargeWiFi       = "Wi-Fi"
+	chargeParkir     = "Parkir"
+	chargeKebersihan = "Kebersihan"
 )
 
 func demoOrgs(c clock.Clock) []orgSpec {
@@ -133,13 +146,20 @@ func demoOrgs(c clock.Clock) []orgSpec {
 					Units: units("Ruko", 1, 2), Rent: 4_500_000,
 				},
 			},
+			ChargeTypes: []string{"Listrik", "Air", chargeWiFi, chargeParkir, chargeKebersihan},
 			Tenants: []tenantSpec{
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
-					{Property: propKosMelati, Unit: "Kamar 1", Start: day(2026, 7, 1), Rent: 850_000, DueDay: 5, Deposit: 850_000, Collector: dimas},
+					{
+						Property: propKosMelati, Unit: "Kamar 1", Start: day(2026, 7, 1), Rent: 850_000, DueDay: 5, Deposit: 850_000, Collector: dimas,
+						Charges: []chargeSpec{{Type: chargeWiFi, Amount: 50_000}},
+					},
 					{Property: propMawar, Unit: "Rumah B", Start: day(2026, 8, 1), Rent: 1_500_000, DueDay: 5},
 				}},
 				{Name: "Budi Santoso", Phone: "0813-0001-0002", Leases: []leaseSpec{
-					{Property: propKosMelati, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 900_000, DueDay: 10, Collector: dimas},
+					{
+						Property: propKosMelati, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 900_000, DueDay: 10, Collector: dimas,
+						Charges: []chargeSpec{{Type: chargeWiFi, Amount: 50_000}},
+					},
 				}},
 				{Name: "Citra Lestari", Phone: "0813-0001-0003", Leases: []leaseSpec{
 					{Property: propKosMelati, Unit: "Kamar 3", Start: day(2026, 8, 15), Rent: 850_000, DueDay: 1, Collector: joko},
@@ -155,7 +175,10 @@ func demoOrgs(c clock.Clock) []orgSpec {
 					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Rent: 1_500_000, DueDay: 15},
 				}},
 				{Name: "Toko Sumber Rejeki (Pak Agus)", Phone: "0813-0001-0006", Leases: []leaseSpec{
-					{Property: propRuko, Unit: "Ruko 1", Start: day(2026, 1, 1), Rent: 4_500_000, DueDay: 1, Collector: joko},
+					{
+						Property: propRuko, Unit: "Ruko 1", Start: day(2026, 1, 1), Rent: 4_500_000, DueDay: 1, Collector: joko,
+						Charges: []chargeSpec{{Type: chargeParkir, Amount: 100_000}, {Type: chargeKebersihan, Amount: 50_000}},
+					},
 				}},
 				{Name: "Fajar Nugroho", Phone: "0813-0001-0007", Leases: []leaseSpec{
 					// A booking: it starts on the first day of next month.

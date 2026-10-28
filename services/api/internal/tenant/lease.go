@@ -46,8 +46,10 @@ type Lease struct {
 	CollectorMemberID uuid.UUID
 	CollectorUserID   uuid.UUID
 	CollectorName     string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// Charges are the fixed monthly extras on top of rent, by name; never nil once loaded.
+	Charges   []Charge
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Terms are the editable terms of a lease.
@@ -264,7 +266,11 @@ func loadLease(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (Lease,
 	if err != nil {
 		return Lease{}, fmt.Errorf("loading lease: %w", err)
 	}
-	return toLease(r), nil
+	out := []Lease{toLease(r)}
+	if err := attachCharges(ctx, q, org, out); err != nil {
+		return Lease{}, err
+	}
+	return out[0], nil
 }
 
 // lookupError turns a missing referenced record into an input error on the field that named it.
@@ -280,7 +286,7 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, UnitLabel: r.UnitLabel,
 		PropertyID: r.PropertyID, PropertyName: r.PropertyName,
 		StartDate: r.StartDate, EndDate: r.EndDate, RentAmount: r.RentAmount, DueDay: int(r.DueDay),
-		DepositAmount: r.DepositAmount, Status: r.Status,
+		DepositAmount: r.DepositAmount, Status: r.Status, Charges: []Charge{},
 		CollectorMemberID: r.CollectorMemberID.UUID, CollectorUserID: r.CollectorStaffUserID.UUID,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}

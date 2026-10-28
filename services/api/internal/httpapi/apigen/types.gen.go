@@ -158,6 +158,31 @@ type Capability struct {
 // CapabilityAccess defines model for Capability.Access.
 type CapabilityAccess string
 
+// ChargeType defines model for ChargeType.
+type ChargeType struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+	Metered   bool               `json:"metered"`
+	Name      string             `json:"name"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+}
+
+// ChargeTypeInput defines model for ChargeTypeInput.
+type ChargeTypeInput struct {
+	// Metered True when the amount differs every month and is recorded from a meter. Metered types cannot be fixed lease charges. Defaults to false.
+	Metered *bool `json:"metered,omitempty"`
+
+	// Name Unique in the organization, ignoring case. Leading and trailing spaces are dropped.
+	//
+	// Example: Wi-Fi
+	Name string `json:"name"`
+}
+
+// ChargeTypeList defines model for ChargeTypeList.
+type ChargeTypeList struct {
+	ChargeTypes []ChargeType `json:"chargeTypes"`
+}
+
 // Collector defines model for Collector.
 type Collector struct {
 	MemberId openapi_types.UUID `json:"memberId"`
@@ -254,8 +279,10 @@ type InviteMember struct {
 
 // Lease defines model for Lease.
 type Lease struct {
-	Collector *Collector `json:"collector,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
+	// Charges Fixed monthly extras on top of rent, by name. Always present, empty when none.
+	Charges   []LeaseCharge `json:"charges"`
+	Collector *Collector    `json:"collector,omitempty"`
+	CreatedAt time.Time     `json:"createdAt"`
 
 	// DepositAmount Deposit held, in rupiah.
 	DepositAmount int64 `json:"depositAmount"`
@@ -277,6 +304,33 @@ type Lease struct {
 	UnitId     openapi_types.UUID `json:"unitId"`
 	UnitLabel  string             `json:"unitLabel"`
 	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
+// LeaseCharge defines model for LeaseCharge.
+type LeaseCharge struct {
+	// Amount Monthly amount in rupiah.
+	//
+	// Example: 50000
+	Amount       int64              `json:"amount"`
+	ChargeTypeId openapi_types.UUID `json:"chargeTypeId"`
+
+	// Name Example: Wi-Fi
+	Name string `json:"name"`
+}
+
+// LeaseChargeInput defines model for LeaseChargeInput.
+type LeaseChargeInput struct {
+	// Amount Monthly amount in rupiah.
+	//
+	// Example: 50000
+	Amount       int64              `json:"amount"`
+	ChargeTypeId openapi_types.UUID `json:"chargeTypeId"`
+}
+
+// LeaseChargesInput defines model for LeaseChargesInput.
+type LeaseChargesInput struct {
+	// Charges The lease's whole set of fixed extras; each charge type at most once.
+	Charges []LeaseChargeInput `json:"charges"`
 }
 
 // LeaseInput defines model for LeaseInput.
@@ -543,11 +597,17 @@ type RequestLoginCodeJSONRequestBody = LoginCodeRequest
 // VerifyLoginCodeJSONRequestBody defines body for VerifyLoginCode for application/json ContentType.
 type VerifyLoginCodeJSONRequestBody = LoginCodeVerify
 
+// CreateChargeTypeJSONRequestBody defines body for CreateChargeType for application/json ContentType.
+type CreateChargeTypeJSONRequestBody = ChargeTypeInput
+
 // CreateLeaseJSONRequestBody defines body for CreateLease for application/json ContentType.
 type CreateLeaseJSONRequestBody = LeaseInput
 
 // UpdateLeaseJSONRequestBody defines body for UpdateLease for application/json ContentType.
 type UpdateLeaseJSONRequestBody = LeaseTerms
+
+// SetLeaseChargesJSONRequestBody defines body for SetLeaseCharges for application/json ContentType.
+type SetLeaseChargesJSONRequestBody = LeaseChargesInput
 
 // MoveOutJSONRequestBody defines body for MoveOut for application/json ContentType.
 type MoveOutJSONRequestBody = MoveOut
