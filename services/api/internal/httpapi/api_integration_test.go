@@ -318,6 +318,11 @@ func TestPropertiesOverHTTP(t *testing.T) {
 			access[c.Action] = c.Access
 		}
 		require.Equal(t, apigen.Conditional, access["unit:manage"])
+		for _, action := range []string{"member:read", "member:invite", "role:assign", "settings:update"} {
+			require.Equal(t, apigen.Deny, access[action], "%s: records with no property, as the server answers", action)
+		}
+		resp, _ = limited.do(http.MethodGet, orgPath+"/members", nil)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
 		resp, _ = limited.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String()+"/units", nil)
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
