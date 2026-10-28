@@ -46,7 +46,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 	rina, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina Wulandari", Phone: "0812-7610-5001"})
 	require.NoError(t, err)
 	lease, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-		StartDate: day(2026, 10, 1), RentAmount: 850_000, DueDay: 5, CollectorMemberID: w.karyawanMemberID,
+		StartDate: day(2026, 10, 1), RentAmount: 850_000, CollectorMemberID: w.karyawanMemberID,
 	}})
 	require.NoError(t, err)
 
@@ -164,7 +164,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 		budi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Budi Santoso", Phone: "0812-7610-5002"})
 		require.NoError(t, err)
 		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 900_000, DueDay: 10,
+			StartDate: day(2026, 10, 1), RentAmount: 900_000,
 		}})
 		require.NoError(t, err)
 		_, err = env.Tenants.MoveOut(ctx, w.admin, l.ID, day(2026, 11, 1))
@@ -186,7 +186,7 @@ func TestLeaseChargesForAnAdminLimitedToOneProperty(t *testing.T) {
 
 	wifi, err := env.Tenants.CreateChargeType(ctx, w.admin, tenant.ChargeTypeInput{Name: "Wi-Fi"})
 	require.NoError(t, err)
-	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000, DueDay: 1}
+	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000}
 	rina, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina", Phone: "0812-7710-5001"})
 	require.NoError(t, err)
 	inMelati, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
@@ -239,7 +239,7 @@ func TestLeaseChargesStayInsideTheirOrganization(t *testing.T) {
 		tn, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina", Phone: phone})
 		require.NoError(t, err)
 		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 800_000, DueDay: 1,
+			StartDate: day(2026, 10, 1), RentAmount: 800_000,
 		}})
 		require.NoError(t, err)
 		return l

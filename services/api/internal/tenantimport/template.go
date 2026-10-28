@@ -16,7 +16,7 @@ const TemplateFilename = "template-impor-penyewa.csv"
 
 // templateColumns are the template's header, in the order an owner fills a row in.
 var templateColumns = []string{
-	idProperty, idPropertyKind, idUnit, idTenantName, idPhone, idRent, idDueDay, idStartDate, idDeposit,
+	idProperty, idPropertyKind, idUnit, idTenantName, idPhone, idRent, idStartDate, idDeposit,
 }
 
 // templateRows are the example rows. The import refuses them by their phone numbers (see
@@ -25,8 +25,8 @@ var templateColumns = []string{
 // the cell as a formula. Amounts are plain digits so no locale reads a thousands dot as a decimal
 // point; dates are day first, as Indonesians write them.
 var templateRows = [][]string{
-	{"Kos Melati", "kos", "Kamar 1", "Rina Wulandari", "0812-0000-0001", "850000", "5", "01/10/2026", "850000"},
-	{"Kontrakan Mawar", "kontrakan", "Rumah A", "Budi Santoso", "0812-0000-0002", "15000000", "1", "01/07/2026", "0"},
+	{"Kos Melati", "kos", "Kamar 1", "Rina Wulandari", "0812-0000-0001", "850000", "15/10/2026", "850000"},
+	{"Kontrakan Mawar", "kontrakan", "Rumah A", "Budi Santoso", "0812-0000-0002", "15000000", "01/07/2026", "0"},
 }
 
 // isExamplePhone reports whether a normalized phone is one of the example rows' numbers. The

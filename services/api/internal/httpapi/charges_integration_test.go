@@ -39,7 +39,7 @@ func TestLeaseChargesOverHTTP(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	rina := decode[apigen.Tenant](t, body)
 	resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-		"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01", "rentAmount": 850000, "dueDay": 5,
+		"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01", "rentAmount": 850000,
 	})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	require.Contains(t, string(body), `"charges":[]`, "an empty list, never null")

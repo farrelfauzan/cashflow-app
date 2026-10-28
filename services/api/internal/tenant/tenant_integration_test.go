@@ -97,7 +97,7 @@ func TestTenantsAndLeases(t *testing.T) {
 	t.Run("an admin rents Kamar 1 to Rina, collected by the karyawan", func(t *testing.T) {
 		var err error
 		lease1, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 850_000, DueDay: 5, DepositAmount: 850_000, CollectorMemberID: w.karyawanMemberID,
+			StartDate: day(2026, 10, 1), RentAmount: 850_000, DepositAmount: 850_000, CollectorMemberID: w.karyawanMemberID,
 		}})
 		require.NoError(t, err)
 		require.Equal(t, tenant.StatusActive, lease1.Status)
@@ -112,14 +112,14 @@ func TestTenantsAndLeases(t *testing.T) {
 		budi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Budi Santoso", Phone: "0812-7110-5002"})
 		require.NoError(t, err)
 		_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 11, 1), RentAmount: 900_000, DueDay: 1,
+			StartDate: day(2026, 11, 1), RentAmount: 900_000,
 		}})
 		require.ErrorIs(t, err, tenant.ErrUnitOccupied)
 	})
 
 	t.Run("a tenant can rent two units", func(t *testing.T) {
 		_, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.rumahA.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 11, 1), RentAmount: 15_000_000, DueDay: 28,
+			StartDate: day(2026, 11, 1), RentAmount: 15_000_000,
 		}})
 		require.NoError(t, err)
 		got, err := env.Tenants.Get(ctx, w.admin, rina.ID)
@@ -128,15 +128,14 @@ func TestTenantsAndLeases(t *testing.T) {
 	})
 
 	t.Run("bad lease input names the field", func(t *testing.T) {
-		good := tenant.Terms{StartDate: day(2026, 11, 1), RentAmount: 500_000, DueDay: 10}
+		good := tenant.Terms{StartDate: day(2026, 11, 1), RentAmount: 500_000}
 		cases := map[string]tenant.NewLease{
 			"tenantId":          {TenantID: uuid.New(), UnitID: w.kamar2.ID, Terms: good},
 			"unitId":            {TenantID: rina.ID, UnitID: uuid.New(), Terms: good},
-			"startDate":         {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{RentAmount: 500_000, DueDay: 10}},
-			"rentAmount":        {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate, DueDay: 10}},
-			"dueDay":            {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate, RentAmount: 1, DueDay: 29}},
-			"depositAmount":     {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate, RentAmount: 1, DueDay: 1, DepositAmount: -1}},
-			"collectorMemberId": {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate, RentAmount: 1, DueDay: 1, CollectorMemberID: uuid.New()}},
+			"startDate":         {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{RentAmount: 500_000}},
+			"rentAmount":        {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate}},
+			"depositAmount":     {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate, RentAmount: 1, DepositAmount: -1}},
+			"collectorMemberId": {TenantID: rina.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{StartDate: good.StartDate, RentAmount: 1, CollectorMemberID: uuid.New()}},
 		}
 		for field, in := range cases {
 			_, err := env.Tenants.CreateLease(ctx, w.admin, in)
@@ -150,7 +149,7 @@ func TestTenantsAndLeases(t *testing.T) {
 
 	t.Run("an admin changes the rent, and the change is audited", func(t *testing.T) {
 		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease1.ID, tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 900_000, DueDay: 5, DepositAmount: 850_000, CollectorMemberID: w.karyawanMemberID,
+			StartDate: day(2026, 10, 1), RentAmount: 900_000, DepositAmount: 850_000, CollectorMemberID: w.karyawanMemberID,
 		})
 		require.NoError(t, err)
 		require.Equal(t, int64(900_000), updated.RentAmount)
@@ -185,7 +184,7 @@ func TestTenantsAndLeases(t *testing.T) {
 
 		_, err = env.Tenants.MoveOut(ctx, w.admin, lease1.ID, day(2026, 11, 2))
 		require.ErrorIs(t, err, tenant.ErrLeaseEnded)
-		_, err = env.Tenants.UpdateLease(ctx, w.admin, lease1.ID, tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 1, DueDay: 1})
+		_, err = env.Tenants.UpdateLease(ctx, w.admin, lease1.ID, tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 1})
 		require.ErrorIs(t, err, tenant.ErrLeaseEnded)
 
 		tenants, err := env.Tenants.List(ctx, w.admin)
@@ -197,7 +196,7 @@ func TestTenantsAndLeases(t *testing.T) {
 			}
 		}
 		booking, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 11, 3), RentAmount: 900_000, DueDay: 3,
+			StartDate: day(2026, 11, 3), RentAmount: 900_000,
 		}})
 		require.NoError(t, err, "the unit is free again, and a lease may start tomorrow")
 	})
@@ -213,7 +212,7 @@ func TestTenantsAndLeases(t *testing.T) {
 		require.Equal(t, tenant.StatusEnded, cancelled.Status)
 		require.Equal(t, cancelled.StartDate, *cancelled.EndDate)
 		_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: booking.TenantID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 11, 2), RentAmount: 900_000, DueDay: 2,
+			StartDate: day(2026, 11, 2), RentAmount: 900_000,
 		}})
 		require.NoError(t, err, "the unit is free again")
 	})
@@ -241,7 +240,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 	}
 	rent := func(tn tenant.Tenant, u property.Unit, collector uuid.UUID) tenant.Lease {
 		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 750_000, DueDay: 10, CollectorMemberID: collector,
+			StartDate: day(2026, 10, 1), RentAmount: 750_000, CollectorMemberID: collector,
 		}})
 		require.NoError(t, err)
 		return l
@@ -293,7 +292,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 
 	t.Run("reassigning the collector moves the tenant to the other karyawan", func(t *testing.T) {
 		_, err := env.Tenants.UpdateLease(ctx, w.admin, dewiMine.ID, tenant.Terms{
-			StartDate: dewiMine.StartDate, RentAmount: dewiMine.RentAmount, DueDay: dewiMine.DueDay, CollectorMemberID: sari.ID,
+			StartDate: dewiMine.StartDate, RentAmount: dewiMine.RentAmount, CollectorMemberID: sari.ID,
 		})
 		require.NoError(t, err)
 		tenants, err := env.Tenants.List(ctx, w.karyawan)
@@ -338,7 +337,7 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 	require.NoError(t, err)
 	dewi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Dewi", Phone: "0812-7310-5002"})
 	require.NoError(t, err)
-	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000, DueDay: 1}
+	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000}
 	rinaKamar1, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
 	require.NoError(t, err)
 	_, err = env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: dewi.ID, UnitID: w.kamar2.ID, Terms: terms})
@@ -401,7 +400,7 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 	tenantB, err := env.Tenants.Create(ctx, b.admin, tenant.Input{Name: "Rina", Phone: "0812-7420-5001"})
 	require.NoError(t, err)
 	leaseB, err := env.Tenants.CreateLease(ctx, b.admin, tenant.NewLease{TenantID: tenantB.ID, UnitID: b.kamar1.ID, Terms: tenant.Terms{
-		StartDate: day(2026, 10, 1), RentAmount: 800_000, DueDay: 1,
+		StartDate: day(2026, 10, 1), RentAmount: 800_000,
 	}})
 	require.NoError(t, err)
 
@@ -413,16 +412,16 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 	t.Run("B's records do not exist for A, even with the right ids", func(t *testing.T) {
 		_, err := env.Tenants.Get(ctx, a.admin, tenantB.ID)
 		require.ErrorIs(t, err, tenant.ErrNotFound)
-		_, err = env.Tenants.UpdateLease(ctx, a.admin, leaseB.ID, tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 1, DueDay: 1})
+		_, err = env.Tenants.UpdateLease(ctx, a.admin, leaseB.ID, tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 1})
 		require.ErrorIs(t, err, tenant.ErrNotFound)
 		_, err = env.Tenants.MoveOut(ctx, a.admin, leaseB.ID, day(2026, 11, 1))
 		require.ErrorIs(t, err, tenant.ErrNotFound)
 		_, err = env.Tenants.CreateLease(ctx, a.admin, tenant.NewLease{TenantID: tenantB.ID, UnitID: a.kamar2.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 1, DueDay: 1,
+			StartDate: day(2026, 10, 1), RentAmount: 1,
 		}})
 		requireField(t, err, "tenantId")
 		_, err = env.Tenants.CreateLease(ctx, a.admin, tenant.NewLease{TenantID: tenantB.ID, UnitID: b.kamar2.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 1, DueDay: 1, CollectorMemberID: b.karyawanMemberID,
+			StartDate: day(2026, 10, 1), RentAmount: 1, CollectorMemberID: b.karyawanMemberID,
 		}})
 		requireField(t, err, "tenantId")
 		tenants, err := env.Tenants.List(ctx, a.admin)
@@ -442,7 +441,7 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 		}
 		for name, params := range cases {
 			params.ID, params.OrganizationID = uuid.New(), a.org.ID
-			params.StartDate, params.RentAmount, params.DueDay = day(2026, 10, 1), 1, 1
+			params.StartDate, params.RentAmount = day(2026, 10, 1), 1
 			err := env.Store.WithOrgTx(ctx, a.org.ID, func(tx pgx.Tx) error {
 				return dbgen.New(tx).CreateLease(ctx, params)
 			})
@@ -472,7 +471,7 @@ func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
 			name: "a rent change", unit: w.kamar1, phone: "0812-7510-5001",
 			change: func(lease tenant.Lease) error {
 				_, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, tenant.Terms{
-					StartDate: lease.StartDate, RentAmount: 1_250_000, DueDay: 20, DepositAmount: 1_000_000,
+					StartDate: lease.StartDate, RentAmount: 1_250_000, DepositAmount: 1_000_000,
 				})
 				return err
 			},
@@ -490,7 +489,7 @@ func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
 			tn, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Siti Rahmawati", Phone: tc.phone})
 			require.NoError(t, err)
 			lease, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: tc.unit.ID, Terms: tenant.Terms{
-				StartDate: day(2026, 10, 1), RentAmount: 850_000, DueDay: 5, DepositAmount: 850_000,
+				StartDate: day(2026, 10, 1), RentAmount: 850_000, DepositAmount: 850_000,
 			}})
 			require.NoError(t, err)
 			allowsBefore := countAllowed(env.AuditLog(t, w.org.ID), "lease:manage")
@@ -527,7 +526,6 @@ func TestChangeWaitingOnMoveOutSeesTheEndedLease(t *testing.T) {
 			require.Equal(t, tenant.StatusEnded, l.Status)
 			require.Equal(t, movedOut, *l.EndDate, "the first move-out's date stands")
 			require.Equal(t, int64(850_000), l.RentAmount)
-			require.Equal(t, 5, l.DueDay)
 			require.Equal(t, int64(850_000), l.DepositAmount)
 			require.Equal(t, allowsBefore, countAllowed(env.AuditLog(t, w.org.ID), "lease:manage"),
 				"no allowed change is audited for a change that did not happen")

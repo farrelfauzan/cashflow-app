@@ -53,8 +53,8 @@ LEFT JOIN staff_user su ON su.id = l.collector_staff_user_id
 WHERE l.organization_id = $1 AND l.id = $2;
 
 -- name: CreateLease :exec
-INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, due_day, deposit_amount, collector_staff_user_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount, collector_staff_user_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: LockLease :one
 -- Locks the lease row for the rest of the transaction, so a concurrent change or move-out
@@ -65,8 +65,8 @@ FOR UPDATE;
 
 -- name: UpdateLeaseTerms :execrows
 -- Only an active lease changes. Unit and tenant never change: end the lease and start another.
-UPDATE lease SET start_date = $3, rent_amount = $4, due_day = $5, deposit_amount = $6,
-       collector_staff_user_id = $7, updated_at = now()
+UPDATE lease SET start_date = $3, rent_amount = $4, deposit_amount = $5,
+       collector_staff_user_id = $6, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active';
 
 -- name: EndLease :execrows

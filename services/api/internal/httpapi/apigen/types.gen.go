@@ -248,7 +248,7 @@ type ImportRow struct {
 	Tenant   *ImportAction   `json:"tenant,omitempty"`
 	Unit     *ImportAction   `json:"unit,omitempty"`
 
-	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
 	Values *ImportRowValues `json:"values,omitempty"`
 }
 
@@ -266,11 +266,10 @@ type ImportRowError struct {
 	Message string `json:"message"`
 }
 
-// ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+// ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
 type ImportRowValues struct {
 	// DepositAmount Deposit in rupiah; 0 when the cell is empty.
 	DepositAmount int64 `json:"depositAmount"`
-	DueDay        int32 `json:"dueDay"`
 
 	// RentAmount Monthly rent in rupiah.
 	RentAmount int64              `json:"rentAmount"`
@@ -317,9 +316,6 @@ type Lease struct {
 	// DepositAmount Deposit held, in rupiah.
 	DepositAmount int64 `json:"depositAmount"`
 
-	// DueDay Day of the month rent is due, 1 to 28.
-	DueDay int32 `json:"dueDay"`
-
 	// EndDate Last day of the lease, set by move-out.
 	EndDate      *openapi_types.Date `json:"endDate,omitempty"`
 	Id           openapi_types.UUID  `json:"id"`
@@ -327,13 +323,15 @@ type Lease struct {
 	PropertyName string              `json:"propertyName"`
 
 	// RentAmount Monthly rent in rupiah.
-	RentAmount int64              `json:"rentAmount"`
-	StartDate  openapi_types.Date `json:"startDate"`
-	Status     LeaseStatus        `json:"status"`
-	TenantId   openapi_types.UUID `json:"tenantId"`
-	UnitId     openapi_types.UUID `json:"unitId"`
-	UnitLabel  string             `json:"unitLabel"`
-	UpdatedAt  time.Time          `json:"updatedAt"`
+	RentAmount int64 `json:"rentAmount"`
+
+	// StartDate First day of the lease. Rent is billed in advance on this day of every month (the last day of a shorter month when it is the 29th to 31st).
+	StartDate openapi_types.Date `json:"startDate"`
+	Status    LeaseStatus        `json:"status"`
+	TenantId  openapi_types.UUID `json:"tenantId"`
+	UnitId    openapi_types.UUID `json:"unitId"`
+	UnitLabel string             `json:"unitLabel"`
+	UpdatedAt time.Time          `json:"updatedAt"`
 }
 
 // LeaseCharge defines model for LeaseCharge.
@@ -371,13 +369,12 @@ type LeaseInput struct {
 	// DepositAmount Defaults to 0.
 	DepositAmount *int64 `json:"depositAmount,omitempty"`
 
-	// DueDay Example: 5
-	DueDay int32 `json:"dueDay"`
-
 	// RentAmount Example: 1250000
 	RentAmount int64 `json:"rentAmount"`
 
-	// StartDate Example: 2026-11-01
+	// StartDate Also the day of the month rent is due.
+	//
+	// Example: 2026-11-15
 	StartDate openapi_types.Date `json:"startDate"`
 	TenantId  openapi_types.UUID `json:"tenantId"`
 	UnitId    openapi_types.UUID `json:"unitId"`
@@ -394,13 +391,12 @@ type LeaseTerms struct {
 	// DepositAmount Defaults to 0.
 	DepositAmount *int64 `json:"depositAmount,omitempty"`
 
-	// DueDay Example: 5
-	DueDay int32 `json:"dueDay"`
-
 	// RentAmount Example: 1250000
 	RentAmount int64 `json:"rentAmount"`
 
-	// StartDate Example: 2026-11-01
+	// StartDate Also the day of the month rent is due.
+	//
+	// Example: 2026-11-15
 	StartDate openapi_types.Date `json:"startDate"`
 }
 
