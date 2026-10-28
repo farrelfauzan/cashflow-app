@@ -3,7 +3,7 @@ import type { Capability, Lease, Tenant } from "@/lib/api/generated/model";
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
 import { formatRupiah } from "@/lib/format/rupiah";
-import { canSee } from "@/lib/organization/org-menu";
+import { canSee } from "@/lib/capabilities";
 
 import type {
   ChipTone,

@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
 import { formatPhone } from "@/lib/format/phone";
-import { orgPath } from "@/lib/organization/org-menu";
+import { orgPath } from "@/lib/org-path";
 
 type TenantDetailHeaderProps = {
   orgId: string;

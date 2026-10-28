@@ -1,6 +1,6 @@
 "use client";
 
-import { orgPath } from "@/lib/organization/org-menu";
+import { orgPath } from "@/lib/org-path";
 import type { TenantRowView } from "./type";
 
 import { TenantCard } from "./tenant-card";
