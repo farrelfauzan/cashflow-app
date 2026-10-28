@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -259,5 +260,62 @@ describe("orgQueryKeyPrefix", () => {
     const key = apiQueryKey({ orgId: "o1" }, { url: "/orgs/o1/members" });
     expect(orgQueryKeyPrefix("o1")).toEqual(["org", "o1"]);
     expect(key.slice(0, 2)).toEqual(orgQueryKeyPrefix("o1"));
+  });
+});
+
+describe("invalidating a list", () => {
+  // A real cache: what matters is that TanStack's partial match finds the queries.
+  function cacheWith(keys: readonly (readonly unknown[])[]): QueryClient {
+    const client = new QueryClient();
+    for (const key of keys) client.setQueryData(key, { items: [] });
+    return client;
+  }
+
+  it("with the plain key refreshes every page and filter of that list", async () => {
+    const page = generated.getListPropertiesQueryKey("o1", { pageSize: 100 });
+    const filtered = generated.getListTenantsQueryKey("o1", {
+      page: 2,
+      pageSize: 20,
+      q: "rina",
+      status: "active",
+    });
+    const client = cacheWith([page, filtered]);
+
+    await client.invalidateQueries({
+      queryKey: generated.getListPropertiesQueryKey("o1"),
+    });
+    await client.invalidateQueries({
+      queryKey: generated.getListTenantsQueryKey("o1"),
+    });
+
+    expect(client.getQueryState(page)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(filtered)?.isInvalidated).toBe(true);
+  });
+
+  it("leaves another organization's list and another list alone", async () => {
+    const other = generated.getListPropertiesQueryKey("o2", { pageSize: 100 });
+    const members = generated.getListMembersQueryKey("o1", { pageSize: 100 });
+    const client = cacheWith([other, members]);
+
+    await client.invalidateQueries({
+      queryKey: generated.getListPropertiesQueryKey("o1"),
+    });
+
+    expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(members)?.isInvalidated).toBe(false);
+  });
+
+  it("leaves an undefined input out of the key", () => {
+    expect(generated.getListPropertiesQueryKey("o1")).toEqual([
+      "org",
+      "o1",
+      "/orgs/o1/properties",
+      {},
+    ]);
+    expect(apiQueryKey({ params: undefined }, { url: "/me" })).toEqual([
+      "user",
+      "/me",
+      {},
+    ]);
   });
 });

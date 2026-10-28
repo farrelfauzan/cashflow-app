@@ -34,14 +34,18 @@ export function MembersView({
   roleGuide,
 }: MembersViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const members = useListMembers(orgId);
+  const members = useListMembers(orgId, { pageSize: 100 });
   const capabilities = orgMe.data?.capabilities;
-  const properties = useListProperties(orgId, {
-    query: {
-      enabled:
-        capabilities !== undefined && canSee(capabilities, "property:read"),
+  const properties = useListProperties(
+    orgId,
+    { pageSize: 100 },
+    {
+      query: {
+        enabled:
+          capabilities !== undefined && canSee(capabilities, "property:read"),
+      },
     },
-  });
+  );
   const [panel, setPanel] = useState<MemberPanelState>({ kind: "closed" });
   // A short confirmation after a panel closes, announced to screen readers.
   const [notice, setNotice] = useState("");
