@@ -108,6 +108,7 @@ func New(d Deps) *Server {
 				r.Put("/tenants/{tenantID}", s.updateTenant)
 				r.Post("/leases", s.createLease)
 				r.Put("/leases/{leaseID}", s.updateLease)
+				r.Put("/leases/{leaseID}/planned-end", s.setLeasePlannedEnd)
 				r.Post("/leases/{leaseID}/move-out", s.moveOut)
 				r.Put("/leases/{leaseID}/charges", s.setLeaseCharges)
 				r.Get("/charge-types", s.listChargeTypes)

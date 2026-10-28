@@ -198,3 +198,37 @@ func TestTemplateReadsBackWithOnlyTheExampleError(t *testing.T) {
 	require.Equal(t, "Kos Melati", records[0].get(colProperty), "every Indonesian header maps to a column")
 	require.Equal(t, "0", records[1].get(colDeposit))
 }
+
+func TestParseBillFromColumn(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		data string
+	}{
+		{"canonical header", "property,unit,tenant_name,phone,rent,start_date,bill_from\n" +
+			"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,2026-09-15,2026-10-15\n"},
+		{"mulai_tagih", "properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih\n" +
+			"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;2026-09-15;2026-10-15\n"},
+		{"Mulai Ditagih, mixed case", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Tanggal Mulai;Mulai Ditagih\n" +
+			"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;2026-09-15;2026-10-15\n"},
+		{"Tagih Mulai", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Tanggal Mulai;Tagih Mulai\n" +
+			"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;2026-09-15;2026-10-15\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			recs, err := parseFile([]byte(tc.data))
+			require.NoError(t, err)
+			require.Len(t, recs, 1)
+			require.Equal(t, "2026-10-15", recs[0].get(colBillFrom))
+		})
+	}
+
+	t.Run("the column is optional", func(t *testing.T) {
+		t.Parallel()
+		recs, err := parseFile([]byte("property,unit,tenant_name,phone,rent,start_date\n" +
+			"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,2026-09-15\n"))
+		require.NoError(t, err)
+		require.Empty(t, recs[0].get(colBillFrom))
+	})
+}

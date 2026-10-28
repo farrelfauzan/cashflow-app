@@ -23,6 +23,7 @@ const (
 	colRent         = "rent"
 	colStartDate    = "start_date"
 	colDeposit      = "deposit"
+	colBillFrom     = "bill_from"
 	// colOldDueDay is the due day of older templates. Rent is now due on the start date's day,
 	// so it is read only to warn when an older sheet says otherwise.
 	colOldDueDay = "due_day"
@@ -33,7 +34,7 @@ const MaxRows = 2000
 
 var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, colRent, colStartDate}
 
-var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit, colOldDueDay)
+var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit, colBillFrom, colOldDueDay)
 
 // The Indonesian column names. The template writes them, and the parser reads them as aliases.
 const (
@@ -45,6 +46,7 @@ const (
 	idRent         = "sewa"
 	idStartDate    = "tanggal_mulai"
 	idDeposit      = "jaminan"
+	idBillFrom     = "mulai_tagih"
 )
 
 // aliases maps the Indonesian headers people are likely to type to the canonical names.
@@ -57,6 +59,7 @@ var aliases = map[string]string{
 	idRent: colRent, "harga_sewa": colRent,
 	idStartDate: colStartDate, "mulai_sewa": colStartDate,
 	idDeposit: colDeposit, "uang_jaminan": colDeposit,
+	idBillFrom: colBillFrom, "mulai_ditagih": colBillFrom, "tagih_mulai": colBillFrom,
 	"jatuh_tempo": colOldDueDay, "tanggal_jatuh_tempo": colOldDueDay,
 }
 

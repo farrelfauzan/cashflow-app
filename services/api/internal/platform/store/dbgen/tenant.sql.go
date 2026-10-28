@@ -13,8 +13,9 @@ import (
 )
 
 const createLease = `-- name: CreateLease :exec
-INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount, collector_staff_user_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount,
+                   collector_staff_user_id, entered_on, billed_from)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `
 
 type CreateLeaseParams struct {
@@ -26,6 +27,8 @@ type CreateLeaseParams struct {
 	RentAmount           int64
 	DepositAmount        int64
 	CollectorStaffUserID uuid.NullUUID
+	EnteredOn            time.Time
+	BilledFrom           time.Time
 }
 
 func (q *Queries) CreateLease(ctx context.Context, arg CreateLeaseParams) error {
@@ -38,6 +41,8 @@ func (q *Queries) CreateLease(ctx context.Context, arg CreateLeaseParams) error 
 		arg.RentAmount,
 		arg.DepositAmount,
 		arg.CollectorStaffUserID,
+		arg.EnteredOn,
+		arg.BilledFrom,
 	)
 	return err
 }
@@ -78,7 +83,7 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 }
 
 const endLease = `-- name: EndLease :execrows
-UPDATE lease SET status = 'ended', end_date = $3, updated_at = now()
+UPDATE lease SET status = 'ended', end_date = $3, planned_end_date = NULL, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active'
 `
 
@@ -88,6 +93,7 @@ type EndLeaseParams struct {
 	EndDate        *time.Time
 }
 
+// The move-out clears the planned end date: the real end replaces it.
 func (q *Queries) EndLease(ctx context.Context, arg EndLeaseParams) (int64, error) {
 	result, err := q.db.Exec(ctx, endLease, arg.OrganizationID, arg.ID, arg.EndDate)
 	if err != nil {
@@ -122,7 +128,7 @@ func (q *Queries) FindTenantByPhone(ctx context.Context, arg FindTenantByPhonePa
 }
 
 const getActiveLeaseForUnit = `-- name: GetActiveLeaseForUnit :one
-SELECT id, organization_id, unit_id, tenant_id, start_date, end_date, rent_amount, deposit_amount, status, collector_staff_user_id, created_at, updated_at FROM lease
+SELECT id, organization_id, unit_id, tenant_id, start_date, end_date, rent_amount, deposit_amount, status, collector_staff_user_id, created_at, updated_at, entered_on, billed_from, planned_end_date FROM lease
 WHERE organization_id = $1 AND unit_id = $2 AND status = 'active'
 `
 
@@ -147,12 +153,15 @@ func (q *Queries) GetActiveLeaseForUnit(ctx context.Context, arg GetActiveLeaseF
 		&i.CollectorStaffUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnteredOn,
+		&i.BilledFrom,
+		&i.PlannedEndDate,
 	)
 	return i, err
 }
 
 const getLeaseDetail = `-- name: GetLeaseDetail :one
-SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, u.label AS unit_label, u.property_id, p.name AS property_name,
+SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
        m.id AS collector_member_id, su.name AS collector_name
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
@@ -180,6 +189,9 @@ type GetLeaseDetailRow struct {
 	CollectorStaffUserID uuid.NullUUID
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	EnteredOn            time.Time
+	BilledFrom           time.Time
+	PlannedEndDate       *time.Time
 	UnitLabel            string
 	PropertyID           uuid.UUID
 	PropertyName         string
@@ -203,6 +215,9 @@ func (q *Queries) GetLeaseDetail(ctx context.Context, arg GetLeaseDetailParams) 
 		&i.CollectorStaffUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnteredOn,
+		&i.BilledFrom,
+		&i.PlannedEndDate,
 		&i.UnitLabel,
 		&i.PropertyID,
 		&i.PropertyName,
@@ -238,7 +253,7 @@ func (q *Queries) GetTenant(ctx context.Context, arg GetTenantParams) (Tenant, e
 }
 
 const listLeaseDetails = `-- name: ListLeaseDetails :many
-SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, u.label AS unit_label, u.property_id, p.name AS property_name,
+SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
        m.id AS collector_member_id, su.name AS collector_name
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
@@ -262,6 +277,9 @@ type ListLeaseDetailsRow struct {
 	CollectorStaffUserID uuid.NullUUID
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	EnteredOn            time.Time
+	BilledFrom           time.Time
+	PlannedEndDate       *time.Time
 	UnitLabel            string
 	PropertyID           uuid.UUID
 	PropertyName         string
@@ -292,6 +310,9 @@ func (q *Queries) ListLeaseDetails(ctx context.Context, organizationID uuid.UUID
 			&i.CollectorStaffUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnteredOn,
+			&i.BilledFrom,
+			&i.PlannedEndDate,
 			&i.UnitLabel,
 			&i.PropertyID,
 			&i.PropertyName,
@@ -309,7 +330,7 @@ func (q *Queries) ListLeaseDetails(ctx context.Context, organizationID uuid.UUID
 }
 
 const listLeaseDetailsForTenant = `-- name: ListLeaseDetailsForTenant :many
-SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, u.label AS unit_label, u.property_id, p.name AS property_name,
+SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
        m.id AS collector_member_id, su.name AS collector_name
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
@@ -338,6 +359,9 @@ type ListLeaseDetailsForTenantRow struct {
 	CollectorStaffUserID uuid.NullUUID
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	EnteredOn            time.Time
+	BilledFrom           time.Time
+	PlannedEndDate       *time.Time
 	UnitLabel            string
 	PropertyID           uuid.UUID
 	PropertyName         string
@@ -367,6 +391,9 @@ func (q *Queries) ListLeaseDetailsForTenant(ctx context.Context, arg ListLeaseDe
 			&i.CollectorStaffUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnteredOn,
+			&i.BilledFrom,
+			&i.PlannedEndDate,
 			&i.UnitLabel,
 			&i.PropertyID,
 			&i.PropertyName,
@@ -444,9 +471,29 @@ func (q *Queries) LockLease(ctx context.Context, arg LockLeaseParams) (LockLease
 	return i, err
 }
 
+const setLeasePlannedEnd = `-- name: SetLeasePlannedEnd :execrows
+UPDATE lease SET planned_end_date = $3, updated_at = now()
+WHERE organization_id = $1 AND id = $2 AND status = 'active'
+`
+
+type SetLeasePlannedEndParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	PlannedEndDate *time.Time
+}
+
+// NULL clears it. Only an active lease has one.
+func (q *Queries) SetLeasePlannedEnd(ctx context.Context, arg SetLeasePlannedEndParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setLeasePlannedEnd, arg.OrganizationID, arg.ID, arg.PlannedEndDate)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateLeaseTerms = `-- name: UpdateLeaseTerms :execrows
 UPDATE lease SET start_date = $3, rent_amount = $4, deposit_amount = $5,
-       collector_staff_user_id = $6, updated_at = now()
+       collector_staff_user_id = $6, billed_from = $7, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active'
 `
 
@@ -457,6 +504,7 @@ type UpdateLeaseTermsParams struct {
 	RentAmount           int64
 	DepositAmount        int64
 	CollectorStaffUserID uuid.NullUUID
+	BilledFrom           time.Time
 }
 
 // Only an active lease changes. Unit and tenant never change: end the lease and start another.
@@ -468,6 +516,7 @@ func (q *Queries) UpdateLeaseTerms(ctx context.Context, arg UpdateLeaseTermsPara
 		arg.RentAmount,
 		arg.DepositAmount,
 		arg.CollectorStaffUserID,
+		arg.BilledFrom,
 	)
 	if err != nil {
 		return 0, err

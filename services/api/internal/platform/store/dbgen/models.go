@@ -45,6 +45,9 @@ type Lease struct {
 	CollectorStaffUserID uuid.NullUUID
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	EnteredOn            time.Time
+	BilledFrom           time.Time
+	PlannedEndDate       *time.Time
 }
 
 type LeaseCharge struct {
