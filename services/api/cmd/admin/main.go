@@ -151,11 +151,13 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 
 	c := clock.System()
 	az := authz.NewService(st, c, log)
+	// The demo seed sends no WhatsApp: its invited members show the invitation not_sent.
+	members := member.NewService(st, az, member.Invitations{Clock: c, Log: log})
 	res, err := demoseed.Run(ctx, demoseed.Deps{
 		Store:      st,
 		Authz:      az,
 		Orgs:       org.NewService(st, az),
-		Members:    member.NewService(st, az),
+		Members:    members,
 		Properties: property.NewService(st, az),
 		Tenants:    tenant.NewService(st, az, c),
 	}, c)

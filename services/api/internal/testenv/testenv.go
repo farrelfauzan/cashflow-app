@@ -31,6 +31,9 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
 
+// LoginURL is the web login page linked from member invitations in tests.
+const LoginURL = "https://app.test/login"
+
 // Secret is the login-code key used in tests.
 var Secret = []byte("test-secret-test-secret-test-secret")
 
@@ -74,7 +77,9 @@ func New(t *testing.T) *Env {
 	e.Auth, err = auth.NewService(st, e.Messenger, e.Limiter, e.Clock, log, Secret)
 	require.NoError(t, err)
 	e.Authz = authz.NewService(st, e.Clock, log)
-	e.Members = member.NewService(st, e.Authz)
+	e.Members = member.NewService(st, e.Authz, member.Invitations{
+		Messenger: e.Messenger, Limiter: e.Limiter, Clock: e.Clock, Log: log, LoginURL: LoginURL,
+	})
 	e.Orgs = org.NewService(st, e.Authz)
 	e.Properties = property.NewService(st, e.Authz)
 	e.Tenants = tenant.NewService(st, e.Authz, e.Clock)

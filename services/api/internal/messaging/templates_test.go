@@ -13,6 +13,21 @@ func TestRenderLoginCode(t *testing.T) {
 	require.Contains(t, text, "Berlaku 5 menit")
 }
 
+func TestRenderMemberInvite(t *testing.T) {
+	text, err := Render(Message{
+		Template: TemplateMemberInvite,
+		Params: map[string]string{
+			"name": "Mbak Sari", "role": "Admin (Kos Melati)", "organization": "Griya Sejahtera", "inviter": "Pak Budi",
+		},
+		Buttons: []Button{{Title: "Masuk", Payload: "member_invite", URL: "https://app.example.id/login"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Halo Mbak Sari,\n\n"+
+		"Anda diundang sebagai *Admin (Kos Melati)* di *Griya Sejahtera* oleh Pak Budi.\n\n"+
+		"Masuk lewat tautan di bawah dengan nomor WhatsApp ini. Kode masuk akan dikirim ke WhatsApp Anda."+
+		"\n\nMasuk:\nhttps://app.example.id/login", text)
+}
+
 func TestRenderAppendsButtonLinks(t *testing.T) {
 	text, err := Render(Message{
 		Template: TemplateLoginCode,
@@ -30,6 +45,12 @@ func TestRenderRejectsMistakes(t *testing.T) {
 		"blank parameter":       {Template: TemplateLoginCode, Params: map[string]string{"code": "  "}},
 		"unexpected parameter":  {Template: TemplateLoginCode, Params: map[string]string{"code": "1", "kode": "1"}},
 		"button without a link": {Template: TemplateLoginCode, Params: map[string]string{"code": "1"}, Buttons: []Button{{Title: "Setujui", Payload: "x"}}},
+		"invite missing the organization": {Template: TemplateMemberInvite, Params: map[string]string{
+			"name": "Sari", "role": "Admin", "inviter": "Budi",
+		}},
+		"invite with an extra link parameter": {Template: TemplateMemberInvite, Params: map[string]string{
+			"name": "Sari", "role": "Admin", "organization": "Griya", "inviter": "Budi", "link": "https://app.example.id/login",
+		}},
 	}
 	for name, m := range tests {
 		t.Run(name, func(t *testing.T) {

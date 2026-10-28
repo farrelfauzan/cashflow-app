@@ -11,7 +11,8 @@ import (
 // Template names. Each one is registered below with its parameters and its Bahasa Indonesia
 // text.
 const (
-	TemplateLoginCode = "login_code"
+	TemplateLoginCode    = "login_code"
+	TemplateMemberInvite = "member_invite"
 )
 
 // Template is a message the app can send.
@@ -40,6 +41,18 @@ func init() {
 		Params: []string{"code"},
 		Text: "Kode masuk Anda: *{{.code}}*\n\n" +
 			"Berlaku 5 menit. Jangan berikan kode ini kepada siapa pun, termasuk orang yang mengaku petugas.",
+	})
+
+	// Sent when a member is added to an organization. role is the Indonesian role name, with
+	// its property in brackets when limited to one, for example "Admin (Kos Melati)". The
+	// login link travels as the message's one button (URL), so text-only providers print it
+	// once, under the body; it holds no token.
+	register(Template{
+		Name:   TemplateMemberInvite,
+		Params: []string{"name", "role", "organization", "inviter"},
+		Text: "Halo {{.name}},\n\n" +
+			"Anda diundang sebagai *{{.role}}* di *{{.organization}}* oleh {{.inviter}}.\n\n" +
+			"Masuk lewat tautan di bawah dengan nomor WhatsApp ini. Kode masuk akan dikirim ke WhatsApp Anda.",
 	})
 }
 

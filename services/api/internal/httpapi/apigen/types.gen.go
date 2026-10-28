@@ -66,6 +66,24 @@ func (e ImportRowStatus) Valid() bool {
 	}
 }
 
+// Defines values for InvitationState.
+const (
+	NotSent InvitationState = "not_sent"
+	Sent    InvitationState = "sent"
+)
+
+// Valid indicates whether the value is a known member of the InvitationState enum.
+func (e InvitationState) Valid() bool {
+	switch e {
+	case NotSent:
+		return true
+	case Sent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LeaseStatus.
 const (
 	LeaseStatusActive LeaseStatus = "active"
@@ -270,6 +288,18 @@ type ImportSummary struct {
 	UnitsCreated      int `json:"unitsCreated"`
 }
 
+// Invitation defines model for Invitation.
+type Invitation struct {
+	// LastSentAt When the invitation last reached WhatsApp. Absent if it never did.
+	LastSentAt *time.Time `json:"lastSentAt,omitempty"`
+
+	// State sent: the last send reached WhatsApp. not_sent: the member was invited but the last send failed or was refused (rate limit), so the screen offers a resend.
+	State InvitationState `json:"state"`
+}
+
+// InvitationState sent: the last send reached WhatsApp. not_sent: the member was invited but the last send failed or was refused (rate limit), so the screen offers a resend.
+type InvitationState string
+
 // InviteMember defines model for InviteMember.
 type InviteMember struct {
 	Name  string      `json:"name"`
@@ -399,11 +429,17 @@ type MeResponse struct {
 
 // Member defines model for Member.
 type Member struct {
-	CreatedAt time.Time          `json:"createdAt"`
-	Id        openapi_types.UUID `json:"id"`
-	Name      string             `json:"name"`
-	Phone     string             `json:"phone"`
-	Roles     []RoleRef          `json:"roles"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// FirstSignInAt When the member first opened this organization after signing in (their first getOrgMe here); null until they have. Each organization sees only its own, so it never reveals that a number belongs to another organization.
+	FirstSignInAt *time.Time         `json:"firstSignInAt"`
+	Id            openapi_types.UUID `json:"id"`
+
+	// Invitation The WhatsApp invitation, or null for a member who was never invited (the organization's founders).
+	Invitation *Invitation `json:"invitation"`
+	Name       string      `json:"name"`
+	Phone      string      `json:"phone"`
+	Roles      []RoleRef   `json:"roles"`
 
 	// Status A disabled member keeps their roles but can do nothing in the organization.
 	Status MemberStatus       `json:"status"`
