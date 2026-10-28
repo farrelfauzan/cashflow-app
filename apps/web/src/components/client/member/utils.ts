@@ -2,13 +2,12 @@ import { ApiError } from "@/lib/api/errors";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 import { formatTimestampDate } from "@/lib/format/date";
 import type {
-  Capability,
   Member,
   Property,
   RoleGrant,
   RoleRef,
 } from "@/lib/api/generated/model";
-import { canSee } from "@/lib/capabilities";
+import type { AppAbility } from "@/lib/capabilities";
 
 import type {
   MemberPermissions,
@@ -31,8 +30,6 @@ export const NAME_MAX_LENGTH = 100;
 export const INPUT_CLASS =
   "h-13 rounded-xl border-[1.5px] bg-card px-3.5 text-[17px] aria-invalid:border-2";
 
-export const NO_PERMISSIONS = { canInvite: false, canManage: false };
-
 export const RESENT_MESSAGE = "Undangan sudah dikirim ulang.";
 
 // The chip's surface by role key, from the theme tokens. Styling only; what a member may do
@@ -52,15 +49,13 @@ export const SCOPED_ROLE_LABELS: Record<ScopedRoleKey, string> = {
 export const ROLE_OPTION_CLASS =
   "min-h-11 gap-2.5 text-base leading-normal font-normal";
 
-// Member controls: which controls show, from the signed-in member's capabilities (getOrgMe),
+// Member controls: which controls show, from the member's ability (getOrgMe's capabilities),
 // never from role names. "conditional" shows the control and lets the API decide per member.
 // Hiding is visibility only; the API checks every request.
-export function memberPermissions(
-  capabilities: readonly Capability[],
-): MemberPermissions {
+export function memberPermissions(ability: AppAbility): MemberPermissions {
   return {
-    canInvite: canSee(capabilities, "member:invite"),
-    canManage: canSee(capabilities, "member:manage"),
+    canInvite: ability.can("invite", "member"),
+    canManage: ability.can("manage", "member"),
   };
 }
 
