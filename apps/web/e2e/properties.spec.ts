@@ -28,12 +28,17 @@ function minFont(testInfo: TestInfo): number {
   return MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
 }
 
-// A name no other project, test or retry uses: both projects run in parallel on one database,
-// and property names are unique per organization (ignoring case).
+// A name no other run, project, test or retry uses: both projects run in parallel on one
+// database, property names are unique per organization (ignoring case), and nothing deletes a
+// property, so a second run on the same database needs new names.
 function uniqueName(testInfo: TestInfo, base: string): string {
+  const run = process.env.E2E_RUN_ID;
+  if (run === undefined) {
+    throw new Error("E2E_RUN_ID is set by playwright.config.ts");
+  }
   const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
-  return `${base} ${project}${retry}`;
+  return `${base} ${run} ${project}${retry}`;
 }
 
 // Opens the organization's properties page: straight in for one organization, by name for
@@ -321,6 +326,19 @@ test.describe("Admin of the whole organization", () => {
     await expect(rent).toHaveValue("12.500.005");
     await rent.fill("1250000");
     await expect(rent).toHaveValue("1.250.000");
+    // Backspace right after a dot removes the digit before it, and the caret stays where the
+    // admin is typing.
+    await rent.focus();
+    await rent.evaluate((input: HTMLInputElement) =>
+      input.setSelectionRange(2, 2),
+    );
+    await page.keyboard.press("Backspace");
+    await expect(rent).toHaveValue("250.000");
+    await page.keyboard.press("1");
+    await expect(rent).toHaveValue("1.250.000");
+    expect(
+      await rent.evaluate((input: HTMLInputElement) => input.selectionStart),
+    ).toBe(1);
     await attachFullPageScreenshot(page, testInfo, "unit-form");
     await expectTouchTarget(rent);
     await expectTouchTarget(panel.getByRole("button", { name: "Simpan unit" }));

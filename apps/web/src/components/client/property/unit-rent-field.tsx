@@ -1,15 +1,25 @@
 "use client";
 
-import { useId, type Ref } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { Label } from "@/components/ui/label";
-import { rupiahFieldText } from "@/lib/format/rupiah-input";
+import {
+  caretAfterDigits,
+  rupiahDigitsBefore,
+  rupiahFieldText,
+} from "@/lib/format/rupiah-input";
 
 import { FIELD_HINT_CLASS, FIELD_LABEL_CLASS } from "./utils";
 
 type UnitRentFieldProps = {
-  inputRef: Ref<HTMLInputElement>;
+  inputRef: RefObject<HTMLInputElement | null>;
   // The field's text: digits grouped with dots, empty for none.
   value: string;
   onChange: (text: string) => void;
@@ -19,7 +29,8 @@ type UnitRentFieldProps = {
 
 // "Sewa biasa per bulan": an amount in rupiah behind a fixed "Rp". It takes digits only (anything
 // else typed or pasted is dropped) and shows them grouped like 1.250.000; the form sends the
-// integer.
+// integer. The caret stays after the same digits when the text is grouped again, and Backspace
+// or Delete next to a dot removes the digit beyond it.
 export function UnitRentField({
   inputRef,
   value,
@@ -30,6 +41,36 @@ export function UnitRentField({
   const id = useId();
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
+
+  // Where the caret goes once the grouped text is in the field. A new object on every change, so
+  // the field renders and the effect runs even when the text stays the same (a letter typed).
+  const [caret, setCaret] = useState<{ at: number } | null>(null);
+  useLayoutEffect(() => {
+    if (caret !== null) inputRef.current?.setSelectionRange(caret.at, caret.at);
+  }, [caret, inputRef]);
+
+  function handleChange(input: HTMLInputElement) {
+    const typed = input.value;
+    const text = rupiahFieldText(typed);
+    setCaret({
+      at: caretAfterDigits(
+        text,
+        rupiahDigitsBefore(typed, input.selectionStart ?? typed.length),
+      ),
+    });
+    onChange(text);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const at = input.selectionStart;
+    if (at === null || at !== input.selectionEnd) return;
+    if (event.key === "Backspace" && input.value[at - 1] === ".") {
+      input.setSelectionRange(at - 1, at - 1);
+    } else if (event.key === "Delete" && input.value[at] === ".") {
+      input.setSelectionRange(at + 1, at + 1);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -52,7 +93,8 @@ export function UnitRentField({
           autoComplete="off"
           placeholder="1.250.000"
           value={value}
-          onChange={(event) => onChange(rupiahFieldText(event.target.value))}
+          onChange={(event) => handleChange(event.target)}
+          onKeyDown={handleKeyDown}
           disabled={disabled}
           aria-invalid={error !== undefined}
           aria-describedby={

@@ -24,3 +24,25 @@ export function groupRupiahDigits(digits: string): string {
 export function rupiahFieldText(input: string): string {
   return groupRupiahDigits(rupiahDigits(input));
 }
+
+/**
+ * How many digits of a typed value sit before the caret, counted as the field keeps them, so the
+ * caret can go back after the same digits once the text is grouped again.
+ */
+export function rupiahDigitsBefore(input: string, caret: number): number {
+  return rupiahDigits(input.slice(0, caret)).length;
+}
+
+/** The caret position right after the first `count` digits of a grouped text. */
+export function caretAfterDigits(text: string, count: number): number {
+  if (count <= 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charAt(i);
+    if (char >= "0" && char <= "9") {
+      seen++;
+      if (seen === count) return i + 1;
+    }
+  }
+  return text.length;
+}
