@@ -127,5 +127,13 @@ web-e2e: ## Web end-to-end tests (Playwright, iPad and phone sizes)
 web-build: ## Production build of the web app
 	cd $(WEB_DIR) && pnpm build
 
+.PHONY: web-gen
+web-gen: ## Regenerate the web API client (Orval) from api/openapi.yaml
+	cd $(WEB_DIR) && pnpm gen
+
+.PHONY: web-gen-check
+web-gen-check: ## Fail if the generated web API client is stale
+	cd $(WEB_DIR) && pnpm gen:check
+
 .PHONY: web-check
-web-check: web-lint web-typecheck web-test web-build ## Everything web CI runs
+web-check: web-gen-check web-lint web-typecheck web-test web-build ## Everything web CI runs except e2e

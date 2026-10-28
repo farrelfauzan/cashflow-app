@@ -24,6 +24,10 @@ apps/web/playwright-report/
 apps/web/test-results/
 apps/web/blob-report/
 apps/web/playwright/.cache/
+apps/web/e2e/.auth/
+
+# Written and re-added by `next dev`; CLAUDE.md and the repo rules govern agents here.
+apps/web/AGENTS.md
 
 # Editors and OS
 .DS_Store
