@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { orgInitials } from "./org-initials";
+import { orgInitials } from "./utils";
 
 describe("orgInitials", () => {
   it.each([

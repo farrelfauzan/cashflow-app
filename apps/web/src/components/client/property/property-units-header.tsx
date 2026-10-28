@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import type { Property } from "@/lib/api/generated/model";
-import { orgPath } from "@/lib/organization/org-menu";
+import { orgPath } from "@/lib/org-path";
 import { propertySummary } from "./utils";
 
 type PropertyUnitsHeaderProps = {

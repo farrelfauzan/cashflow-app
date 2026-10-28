@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 import type { Organization } from "@/lib/api/generated/model";
-import { orgPath } from "@/lib/organization/org-menu";
+import { orgPath } from "@/lib/org-path";
 
 import { OrgTile } from "./org-tile";
 

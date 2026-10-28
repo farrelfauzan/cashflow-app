@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Capability } from "@/lib/api/generated/model";
 
-import { canSee, ORG_MENU, orgPath, visibleOrgMenu } from "./org-menu";
+import { ORG_MENU, roleSummary, visibleOrgMenu } from "./utils";
 
 function capabilities(
   entries: Record<string, Capability["access"]>,
@@ -45,12 +45,6 @@ describe("visibleOrgMenu", () => {
     expect(visibleOrgMenu([]).map((item) => item.key)).toEqual(["home"]);
   });
 
-  it("treats an action missing from the list as denied", () => {
-    expect(
-      canSee(capabilities({ "tenant:read": "allow" }), "member:read"),
-    ).toBe(false);
-  });
-
   it("names a catalog action for every gated item", () => {
     for (const item of ORG_MENU) {
       if (item.action !== null) expect(item.action).toMatch(/^[a-z]+:[a-z]+$/);
@@ -58,13 +52,26 @@ describe("visibleOrgMenu", () => {
   });
 });
 
-describe("orgPath", () => {
-  it("builds the home and a section path", () => {
-    expect(orgPath("org-1")).toBe("/o/org-1");
-    expect(orgPath("org-1", "members")).toBe("/o/org-1/members");
+describe("roleSummary", () => {
+  it("joins role names in the API's order", () => {
+    expect(
+      roleSummary([
+        { key: "karyawan", name: "Karyawan", builtin: true },
+        { key: "admin", name: "Admin", builtin: true, propertyId: "p-1" },
+      ]),
+    ).toBe("Karyawan, Admin");
   });
 
-  it("encodes the id", () => {
-    expect(orgPath("a/b?c")).toBe("/o/a%2Fb%3Fc");
+  it("shows a role held for several properties once", () => {
+    expect(
+      roleSummary([
+        { key: "admin", name: "Admin", builtin: true, propertyId: "p-1" },
+        { key: "admin", name: "Admin", builtin: true, propertyId: "p-2" },
+      ]),
+    ).toBe("Admin");
+  });
+
+  it("is empty without roles", () => {
+    expect(roleSummary([])).toBe("");
   });
 });
