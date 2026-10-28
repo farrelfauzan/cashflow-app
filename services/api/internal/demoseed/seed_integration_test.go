@@ -15,6 +15,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
@@ -395,7 +396,7 @@ func TestSeedDemo(t *testing.T) {
 	t.Run("Kos Bulanan Sejahtera has volume for several pages", func(t *testing.T) {
 		adminC := env.Principal(t, c.OrganizationID, c.UserID)
 
-		props, err := env.Properties.List(ctx, adminC)
+		props, err := env.AllProperties(ctx, adminC)
 		require.NoError(t, err)
 		require.Len(t, props, 25)
 		lower := map[string]bool{}
@@ -404,11 +405,11 @@ func TestSeedDemo(t *testing.T) {
 			lower[strings.ToLower(p.Name)] = true
 		}
 		require.True(t, lower["kos melati 2"] && lower["ruko cempaka"], "small properties with searchable names")
-		bigUnits, err := env.Properties.ListUnits(ctx, adminC, propertyID(t, env, adminC, "Kos Sejahtera Utama"))
+		bigUnits, err := env.AllUnits(ctx, adminC, propertyID(t, env, adminC, "Kos Sejahtera Utama"))
 		require.NoError(t, err)
 		require.Len(t, bigUnits, 30)
 
-		members, err := env.Members.List(ctx, adminC)
+		members, err := env.AllMembers(ctx, adminC)
 		require.NoError(t, err)
 		require.Len(t, members, 27)
 		var disabled int
@@ -421,9 +422,13 @@ func TestSeedDemo(t *testing.T) {
 		}
 		require.Equal(t, 4, disabled)
 
-		tenantsC, err := env.Tenants.List(ctx, adminC)
+		tenantsC, err := env.AllTenants(ctx, adminC)
 		require.NoError(t, err)
 		require.Len(t, tenantsC, 45)
+		first, err := env.Tenants.List(ctx, adminC, tenant.ListQuery{})
+		require.NoError(t, err)
+		require.Len(t, first.Items, listing.DefaultPageSize, "the first page is full")
+		require.Equal(t, int64(45), first.Total)
 		today := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC) // the test clock
 		var active, booked, ended, none, flagged int
 		for _, tn := range tenantsC {
@@ -457,7 +462,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("Lestari is limited to Kontrakan Seturan in Kos Bulanan Sejahtera", func(t *testing.T) {
-		members, err := env.Members.List(ctx, env.Principal(t, c.OrganizationID, c.UserID))
+		members, err := env.AllMembers(ctx, env.Principal(t, c.OrganizationID, c.UserID))
 		require.NoError(t, err)
 		var lestari member.Member
 		for _, m := range members {
@@ -478,7 +483,7 @@ func TestSeedDemo(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, orgs, 1, "only Kos Bulanan Sejahtera")
 
-		seen, err := env.Tenants.List(ctx, env.Principal(t, c.OrganizationID, lestari.UserID))
+		seen, err := env.AllTenants(ctx, env.Principal(t, c.OrganizationID, lestari.UserID))
 		require.NoError(t, err)
 		// Seven running leases and Mulyadi's booking; Novita's ended lease is not listed.
 		require.Equal(t, []string{
