@@ -13,6 +13,7 @@ import { apiAxios, apiRequest } from "./client";
 import {
   ApiError,
   GENERIC_ERROR_MESSAGE,
+  INVALID_PATH_CODE,
   NETWORK_ERROR_CODE,
   NETWORK_ERROR_MESSAGE,
   UNKNOWN_ERROR_CODE,
@@ -147,6 +148,47 @@ describe("apiRequest request", () => {
 
     expect(apiAxios.getUri(sentConfig())).toBe(sent);
   });
+
+  it.each([
+    { name: "a parent segment and a query", id: "../auth/me?x=" },
+    { name: "a parent segment", id: "../auth" },
+    { name: "a current segment", id: "." },
+    { name: "a percent-encoded parent segment", id: "%2E%2e" },
+    { name: "a half-encoded parent segment", id: ".%2e" },
+    { name: "a backslash", id: "..\\auth" },
+    { name: "a fragment", id: "org-1#x" },
+    { name: "a tab between two dots", id: ".\t." },
+    { name: "a newline between two dots", id: ".\n./auth" },
+  ])("never sends a path value with $name", async ({ id }) => {
+    const error = await caught(apiRequest({ url: `/orgs/${id}/me` }));
+
+    expect(error).toMatchObject({
+      status: 400,
+      code: INVALID_PATH_CODE,
+      message: GENERIC_ERROR_MESSAGE,
+    });
+    expect(adapter).not.toHaveBeenCalled();
+  });
+
+  it("checks the url a caller's options put in place of the generated one", async () => {
+    const error = await caught(
+      apiRequest({ url: "/me" }, { url: "/orgs/../auth/me" }),
+    );
+
+    expect(error.code).toBe(INVALID_PATH_CODE);
+    expect(adapter).not.toHaveBeenCalled();
+  });
+
+  it.each(["0d6f6e7c-5b1a-4c44-9a37-2f0d0c9b6a11", "tok_a1B2-c3.d4", "..tok"])(
+    "sends an ordinary path value (%s)",
+    async (id) => {
+      respond("{}", 200);
+
+      await apiRequest({ url: `/t/${id}/status` });
+
+      expect(apiAxios.getUri(sentConfig())).toBe(`/api/t/${id}/status`);
+    },
+  );
 
   it("never follows a redirect or uses a proxy from the environment", () => {
     expect(apiAxios.defaults.maxRedirects).toBe(0);

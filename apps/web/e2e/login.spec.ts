@@ -11,6 +11,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { ORG_HOME_URL, openMenu } from "./support/shell";
 import { LOGIN_PHONES, type LoginPhones } from "./support/staff";
 
 // The staff login screen against the real Go API: codes are read from the API's DEVLOG_FILE,
@@ -119,10 +120,15 @@ test("signs in with the WhatsApp code, then signs out", async ({
   await codeField(page).fill(code);
   await page.getByRole("button", { name: "Masuk", exact: true }).click();
 
-  await expect(page).toHaveURL("/organizations");
-  await expect(page.getByText(`Masuk sebagai ${staff.name}`)).toBeVisible();
+  // A member of one organization goes straight in.
+  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Beranda" }),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: "Keluar" }).click();
+  const menu = await openMenu(page, testInfo);
+  await expect(menu.getByText(staff.name)).toBeVisible();
+  await menu.getByRole("button", { name: "Keluar" }).click();
   await expect(page).toHaveURL("/login");
   await expect(
     page.getByRole("heading", { level: 1, name: "Masuk" }),
@@ -149,10 +155,16 @@ test("returns to the next path after login, submitting with Enter", async ({
 
   const code = await waitForLoginCode(devlogFilePath(), offset, staff.phone);
   await codeField(page).fill(code);
+  // The login page loads `next` itself; the picker then sends a one-organization member on.
+  const loadsNext = page.waitForRequest(
+    (request) =>
+      request.isNavigationRequest() &&
+      new URL(request.url()).pathname + new URL(request.url()).search === next,
+  );
   await codeField(page).press("Enter");
 
-  await expect(page).toHaveURL(next);
-  await expect(page.getByText(`Masuk sebagai ${staff.name}`)).toBeVisible();
+  await loadsNext;
+  await expect(page).toHaveURL(ORG_HOME_URL);
   expect(outsideRequests).toEqual([]);
 });
 
@@ -240,8 +252,10 @@ test("a wrong code shows the API's error under the field; a new code works", asy
   );
   await codeField(page).fill(newCode);
   await page.getByRole("button", { name: "Masuk", exact: true }).click();
-  await expect(page).toHaveURL("/organizations");
-  await expect(page.getByText(`Masuk sebagai ${staff.name}`)).toBeVisible();
+  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Beranda" }),
+  ).toBeVisible();
   expect(outsideRequests).toEqual([]);
 });
 
