@@ -95,17 +95,25 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 		requireError(t, resp, body, http.StatusBadRequest, "invalid_json", "")
 	})
 
-	t.Run("updateLease takes billedFrom, and omitting it bills from the start date again", func(t *testing.T) {
+	t.Run("updateLease takes billedFrom, and omitting it keeps the stored one", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{
 			"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": "2026-11-15",
 		})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`)
 
-		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 900000})
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 950000})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
-		require.Contains(t, string(body), `"billedFrom":"2026-09-15"`)
+		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`, "a rent edit keeps the skipped months skipped")
 		require.Contains(t, string(body), `"enteredOn":"2026-11-02"`)
+
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": nil})
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`, "null keeps it too")
+
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": "2026-09-15"})
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"billedFrom":"2026-09-15"`, "sending the start date bills from it again")
 
 		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{
 			"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": "2026-12-15",
@@ -147,7 +155,9 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 	t.Run("a start date after the planned end answers 400 with the field", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": "2026-11-14"})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
-		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-11-20", "rentAmount": 900000})
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{
+			"startDate": "2026-11-20", "rentAmount": 900000, "billedFrom": "2026-11-20",
+		})
 		requireError(t, resp, body, http.StatusBadRequest, "invalid_input", "startDate")
 		resp, body = admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": nil})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))

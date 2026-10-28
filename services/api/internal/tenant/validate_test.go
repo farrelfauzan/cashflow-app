@@ -108,7 +108,7 @@ func TestValidTermsBilledFrom(t *testing.T) {
 		want       time.Time
 		wantField  string
 	}{
-		{"left out defaults to the start date", start, time.Time{}, start, ""},
+		{"left out stays zero for the service to fill in", start, time.Time{}, time.Time{}, ""},
 		{"the start date itself", start, start, start, ""},
 		{"a later anniversary", start, date(2026, 11, 15), date(2026, 11, 15), ""},
 		{"a time of day is dropped", start, time.Date(2026, 10, 15, 17, 0, 0, 0, time.UTC), date(2026, 10, 15), ""},

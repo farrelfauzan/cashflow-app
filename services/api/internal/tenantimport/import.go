@@ -281,8 +281,12 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 	switch {
 	case err == nil && current.TenantID == tn.ID:
 		row.Lease = Matched
+		billedFrom := in.terms.BilledFrom // an empty cell means the start date, as for a new lease
+		if billedFrom.IsZero() {
+			billedFrom = in.terms.StartDate
+		}
 		if current.RentAmount != in.terms.RentAmount || current.DepositAmount != in.terms.DepositAmount ||
-			!current.StartDate.Equal(in.terms.StartDate) || !current.BilledFrom.Equal(in.terms.BilledFrom) {
+			!current.StartDate.Equal(in.terms.StartDate) || !current.BilledFrom.Equal(billedFrom) {
 			row.Notes = append(row.Notes, "Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya.")
 		}
 		return nil

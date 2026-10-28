@@ -655,12 +655,39 @@ func TestUpdateLeaseBilledFrom(t *testing.T) {
 		return tenant.Terms{StartDate: day(2026, 9, 15), RentAmount: 900_000, BilledFrom: billedFrom}
 	}
 
-	t.Run("terms without billedFrom bill from the start date again", func(t *testing.T) {
+	t.Run("terms without billedFrom keep the stored one", func(t *testing.T) {
+		// An admin fixing only the rent must not undo the months skipped at entry.
 		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(time.Time{}))
 		require.NoError(t, err)
-		require.Equal(t, day(2026, 9, 15), updated.BilledFrom)
+		require.Equal(t, day(2026, 11, 15), updated.BilledFrom)
 		require.Equal(t, int64(900_000), updated.RentAmount)
 		require.Equal(t, day(2026, 11, 2), updated.EnteredOn, "entered_on never changes")
+	})
+
+	t.Run("sending the start date bills from it again", func(t *testing.T) {
+		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 9, 15)))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 9, 15), updated.BilledFrom)
+	})
+
+	t.Run("a new start date that no longer fits the kept value is refused on billedFrom", func(t *testing.T) {
+		_, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 11, 15)))
+		require.NoError(t, err)
+		moved := tenant.Terms{StartDate: day(2026, 9, 20), RentAmount: 900_000}
+		_, err = env.Tenants.UpdateLease(ctx, w.admin, lease.ID, moved)
+		requireField(t, err, "billedFrom")
+		got, err := env.Tenants.Get(ctx, w.admin, f.tn.ID)
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 9, 15), got.Leases[0].StartDate, "nothing changed")
+		require.Equal(t, day(2026, 11, 15), got.Leases[0].BilledFrom)
+
+		moved.BilledFrom = day(2026, 10, 20)
+		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, moved)
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 10, 20), updated.BilledFrom)
+		updated, err = env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 9, 15)))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 9, 15), updated.StartDate)
 	})
 
 	t.Run("a later anniversary within the bound is saved", func(t *testing.T) {
@@ -826,7 +853,8 @@ func TestUpdateLeaseStartDateAgainstPlannedEnd(t *testing.T) {
 	_, err = env.Tenants.SetPlannedEnd(ctx, w.admin, lease.ID, &planned)
 	require.NoError(t, err)
 	move := func(start time.Time) (tenant.Lease, error) {
-		return env.Tenants.UpdateLease(ctx, w.admin, lease.ID, tenant.Terms{StartDate: start, RentAmount: 850_000})
+		// A moved start needs a billing start that fits it; the stored one no longer does.
+		return env.Tenants.UpdateLease(ctx, w.admin, lease.ID, tenant.Terms{StartDate: start, RentAmount: 850_000, BilledFrom: start})
 	}
 
 	t.Run("a start date after the planned end is refused with its field, and the lease is unchanged", func(t *testing.T) {

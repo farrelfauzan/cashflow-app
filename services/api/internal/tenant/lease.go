@@ -68,7 +68,7 @@ type Terms struct {
 	// CollectorMemberID is a member id (not a staff user id); uuid.Nil means no collector.
 	CollectorMemberID uuid.UUID
 	// BilledFrom ("Mulai tagih dari") skips the periods the owner collected by hand. The zero
-	// time means the start date.
+	// time means the start date for a new lease and the stored value for an update.
 	BilledFrom time.Time
 }
 
@@ -106,6 +106,9 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 		return Lease{}, lookupError(err, "unitId", "Unit tidak ditemukan.")
 	}
 	enteredOn := today(s.clock)
+	if terms.BilledFrom.IsZero() {
+		terms.BilledFrom = terms.StartDate
+	}
 	if err := checkBilledFrom(terms, enteredOn); err != nil {
 		return Lease{}, err
 	}
@@ -150,8 +153,10 @@ func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID) (
 }
 
 // UpdateLease changes the terms of an active lease. Each change is audited; a new rent applies
-// from the next invoice. Terms without a BilledFrom bill from the start date again. Slice 2 adds
-// the rule that the start date and BilledFrom lock once the lease has an invoice.
+// from the next invoice. Terms without a BilledFrom keep the stored one, so an edit of another
+// term never undoes a skipped billing start; when the start date changes and the kept value no
+// longer fits it, the update is refused on billedFrom. Slice 2 adds the rule that the start date
+// and BilledFrom lock once the lease has an invoice.
 func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UUID, t Terms) (Lease, error) {
 	terms, err := ValidTerms(t)
 	if err != nil {
@@ -163,6 +168,9 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		current, err := s.loadActiveForChange(ctx, tx, q, p, id)
 		if err != nil {
 			return err
+		}
+		if terms.BilledFrom.IsZero() {
+			terms.BilledFrom = current.BilledFrom
 		}
 		if err := checkBilledFrom(terms, current.EnteredOn); err != nil {
 			return err
@@ -235,10 +243,13 @@ func checkPlannedEnd(start, end, now time.Time) error {
 	return nil
 }
 
-// checkBilledFrom checks that "Mulai tagih dari" is no later than the first anniversary after
-// the later of the start date and the day the lease was entered, so an admin can skip at most
-// the periods up to the current one. ValidTerms has already checked it is an anniversary.
+// checkBilledFrom checks that "Mulai tagih dari" is an anniversary of the start date, and no
+// later than the first anniversary after the later of the start date and the day the lease was
+// entered, so an admin can skip at most the periods up to the current one.
 func checkBilledFrom(t Terms, enteredOn time.Time) error {
+	if err := checkAnniversary(t); err != nil {
+		return err
+	}
 	from := t.StartDate
 	if enteredOn.After(from) {
 		from = enteredOn
@@ -379,9 +390,10 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	return l
 }
 
-// ValidTerms checks lease terms and returns them with the dates as calendar days and BilledFrom
-// filled in (the start date when it was left out). Errors are *InputError. The latest allowed
-// BilledFrom depends on the day the lease is entered, so the service checks that.
+// ValidTerms checks lease terms and returns them with the dates as calendar days. Errors are
+// *InputError. A BilledFrom given must be an anniversary of the start date; a zero one is left
+// zero, for the service to fill in (the start date on create, the stored value on update), and
+// the latest allowed one depends on the day the lease was entered, so the service checks that.
 func ValidTerms(t Terms) (Terms, error) {
 	t.StartDate = calendarDay(t.StartDate)
 	t.BilledFrom = calendarDay(t.BilledFrom)
@@ -394,13 +406,18 @@ func ValidTerms(t Terms) (Terms, error) {
 		return t, &InputError{Field: "depositAmount", Message: "Deposit tidak boleh negatif."}
 	}
 	if t.BilledFrom.IsZero() {
-		t.BilledFrom = t.StartDate
+		return t, nil
 	}
+	return t, checkAnniversary(t)
+}
+
+// checkAnniversary checks that BilledFrom is the start date or one of its anniversaries.
+func checkAnniversary(t Terms) error {
 	if !IsAnniversary(t.StartDate, t.BilledFrom) {
-		return t, &InputError{Field: "billedFrom", Message: fmt.Sprintf(
+		return &InputError{Field: "billedFrom", Message: fmt.Sprintf(
 			"Mulai tagih harus jatuh pada tanggal tagih sewa ini (tanggal %d) dan tidak sebelum tanggal mulai.", t.StartDate.Day())}
 	}
-	return t, nil
+	return nil
 }
 
 // calendarDay keeps only the year, month and day of t, as midnight UTC, the way PostgreSQL
