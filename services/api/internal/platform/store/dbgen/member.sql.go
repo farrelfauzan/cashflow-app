@@ -188,7 +188,11 @@ func (q *Queries) GetActiveMembershipForUser(ctx context.Context, arg GetActiveM
 
 const getMembership = `-- name: GetMembership :one
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2
@@ -209,6 +213,7 @@ type GetMembershipRow struct {
 	FirstSignInAt        *time.Time
 	Phone                string
 	Name                 string
+	CollectorLeaseCount  int64
 }
 
 func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (GetMembershipRow, error) {
@@ -224,13 +229,56 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 		&i.FirstSignInAt,
 		&i.Phone,
 		&i.Name,
+		&i.CollectorLeaseCount,
 	)
 	return i, err
 }
 
+const listCollectorCandidates = `-- name: ListCollectorCandidates :many
+SELECT m.id, u.name,
+       EXISTS (SELECT 1 FROM role_assignment ra
+               WHERE ra.organization_id = m.organization_id AND ra.membership_id = m.id
+                 AND ra.builtin_role = 'karyawan') AS karyawan
+FROM membership m
+JOIN staff_user u ON u.id = m.staff_user_id
+WHERE m.organization_id = $1 AND m.status = 'active'
+ORDER BY karyawan DESC, u.name, m.id
+`
+
+type ListCollectorCandidatesRow struct {
+	ID       uuid.UUID
+	Name     string
+	Karyawan bool
+}
+
+// Active members a lease's collector can be picked from, karyawan first, then by name.
+func (q *Queries) ListCollectorCandidates(ctx context.Context, organizationID uuid.UUID) ([]ListCollectorCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listCollectorCandidates, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCollectorCandidatesRow
+	for rows.Next() {
+		var i ListCollectorCandidatesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Karyawan); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMembers = `-- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1
@@ -247,6 +295,7 @@ type ListMembersRow struct {
 	FirstSignInAt        *time.Time
 	Phone                string
 	Name                 string
+	CollectorLeaseCount  int64
 }
 
 func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]ListMembersRow, error) {
@@ -268,6 +317,7 @@ func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]
 			&i.FirstSignInAt,
 			&i.Phone,
 			&i.Name,
+			&i.CollectorLeaseCount,
 		); err != nil {
 			return nil, err
 		}

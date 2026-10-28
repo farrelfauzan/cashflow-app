@@ -9,6 +9,7 @@ export const NETWORK_ERROR_MESSAGE =
 // Codes the client produces itself, next to the API's own codes.
 export const UNKNOWN_ERROR_CODE = "unknown";
 export const NETWORK_ERROR_CODE = "network_error";
+export const INVALID_PATH_CODE = "invalid_path";
 
 type ApiErrorInit = {
   status: number;
@@ -92,6 +93,17 @@ export function unexpectedResponseError(status: number): ApiError {
   return new ApiError({
     status,
     code: UNKNOWN_ERROR_CODE,
+    message: GENERIC_ERROR_MESSAGE,
+  });
+}
+
+// A request whose path a value from a URL (an id, a tenant token) would have changed. It is
+// never sent; status 400 makes it look like the API's answer to a malformed id, so callers that
+// handle that (the org shell goes back to the picker) handle this too.
+export function invalidPathError(): ApiError {
+  return new ApiError({
+    status: 400,
+    code: INVALID_PATH_CODE,
     message: GENERIC_ERROR_MESSAGE,
   });
 }

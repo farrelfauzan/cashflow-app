@@ -105,6 +105,24 @@ func (s *Server) getOrgMe(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) listCollectorCandidates(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	candidates, err := s.Members.CollectorCandidates(r.Context(), p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	resp := apigen.CollectorCandidateList{Candidates: make([]apigen.CollectorCandidate, len(candidates))}
+	for i, c := range candidates {
+		resp.Candidates[i] = apigen.CollectorCandidate{MemberId: c.MemberID, Name: c.Name, Karyawan: c.Karyawan}
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFrom(r.Context())
 	if !ok {
@@ -229,7 +247,8 @@ func toAPIMember(m member.Member) apigen.Member {
 		CreatedAt: m.CreatedAt,
 		Roles:     make([]apigen.RoleRef, len(m.Roles)),
 
-		FirstSignInAt: m.FirstSignInAt,
+		FirstSignInAt:       m.FirstSignInAt,
+		CollectorLeaseCount: m.CollectorLeaseCount,
 	}
 	if m.Invitation != nil {
 		out.Invitation = &apigen.Invitation{State: apigen.InvitationState(m.Invitation.State), LastSentAt: m.Invitation.LastSentAt}

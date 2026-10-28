@@ -162,7 +162,8 @@ func (q *Queries) GetActiveLeaseForUnit(ctx context.Context, arg GetActiveLeaseF
 
 const getLeaseDetail = `-- name: GetLeaseDetail :one
 SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
@@ -197,6 +198,7 @@ type GetLeaseDetailRow struct {
 	PropertyName         string
 	CollectorMemberID    uuid.NullUUID
 	CollectorName        *string
+	CollectorStatus      *string
 }
 
 func (q *Queries) GetLeaseDetail(ctx context.Context, arg GetLeaseDetailParams) (GetLeaseDetailRow, error) {
@@ -223,6 +225,7 @@ func (q *Queries) GetLeaseDetail(ctx context.Context, arg GetLeaseDetailParams) 
 		&i.PropertyName,
 		&i.CollectorMemberID,
 		&i.CollectorName,
+		&i.CollectorStatus,
 	)
 	return i, err
 }
@@ -254,7 +257,8 @@ func (q *Queries) GetTenant(ctx context.Context, arg GetTenantParams) (Tenant, e
 
 const listLeaseDetails = `-- name: ListLeaseDetails :many
 SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
@@ -285,6 +289,7 @@ type ListLeaseDetailsRow struct {
 	PropertyName         string
 	CollectorMemberID    uuid.NullUUID
 	CollectorName        *string
+	CollectorStatus      *string
 }
 
 // Every lease in the organization with its unit, property and collector, active first.
@@ -318,6 +323,7 @@ func (q *Queries) ListLeaseDetails(ctx context.Context, organizationID uuid.UUID
 			&i.PropertyName,
 			&i.CollectorMemberID,
 			&i.CollectorName,
+			&i.CollectorStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -331,7 +337,8 @@ func (q *Queries) ListLeaseDetails(ctx context.Context, organizationID uuid.UUID
 
 const listLeaseDetailsForTenant = `-- name: ListLeaseDetailsForTenant :many
 SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
@@ -367,6 +374,7 @@ type ListLeaseDetailsForTenantRow struct {
 	PropertyName         string
 	CollectorMemberID    uuid.NullUUID
 	CollectorName        *string
+	CollectorStatus      *string
 }
 
 func (q *Queries) ListLeaseDetailsForTenant(ctx context.Context, arg ListLeaseDetailsForTenantParams) ([]ListLeaseDetailsForTenantRow, error) {
@@ -399,6 +407,7 @@ func (q *Queries) ListLeaseDetailsForTenant(ctx context.Context, arg ListLeaseDe
 			&i.PropertyName,
 			&i.CollectorMemberID,
 			&i.CollectorName,
+			&i.CollectorStatus,
 		); err != nil {
 			return nil, err
 		}

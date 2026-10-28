@@ -6,14 +6,22 @@ WHERE organization_id = $1 AND staff_user_id = $2 AND status = 'active';
 
 -- name: GetMembership :one
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2;
 
 -- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1
@@ -93,3 +101,14 @@ UPDATE membership
 SET invitation_state = sqlc.arg(state)::text,
     invitation_last_sent_at = COALESCE(sqlc.narg(last_sent_at), invitation_last_sent_at)
 WHERE organization_id = $1 AND id = $2;
+
+-- name: ListCollectorCandidates :many
+-- Active members a lease's collector can be picked from, karyawan first, then by name.
+SELECT m.id, u.name,
+       EXISTS (SELECT 1 FROM role_assignment ra
+               WHERE ra.organization_id = m.organization_id AND ra.membership_id = m.id
+                 AND ra.builtin_role = 'karyawan') AS karyawan
+FROM membership m
+JOIN staff_user u ON u.id = m.staff_user_id
+WHERE m.organization_id = $1 AND m.status = 'active'
+ORDER BY karyawan DESC, u.name, m.id;

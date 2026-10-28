@@ -459,7 +459,7 @@ export const useCreateLease = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCreateLeaseMutationOptions(options), queryClient);
     }
     /**
- * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice. A start date after the lease's planned end date is refused (field startDate); change the planned end date first.
+ * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice. A start date after the lease's planned end date is refused (field startDate); change the planned end date first. Sending the lease's current collector keeps them even when they have been disabled; any other collector must be an active member.
  * @summary Change the terms of an active lease (needs lease:manage; audited)
  */
 export const updateLease = (

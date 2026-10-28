@@ -1,44 +1,33 @@
-import { ArrowLeftRight, Building2, House, Users, UserCog } from "lucide-react";
-import Link from "next/link";
-import type { ReactNode } from "react";
-
 import { LogoutButton } from "@/components/client/auth/logout-button";
 import { OrgNavLink } from "@/components/client/shell/org-nav-link";
+import { OrgSwitchSelect } from "@/components/client/shell/org-switch-select";
+import type { OrgSwitchOption } from "@/components/client/shell/type";
 import { OrgTile } from "@/components/server/organization/org-tile";
-import type { OrgMenuItem } from "@/lib/organization/org-menu";
 
-export type OrgNavItem = {
-  key: OrgMenuItem["key"];
-  label: string;
-  href: string;
-};
+import type { OrgNavItem } from "./type";
+import { ORG_NAV_ICONS } from "./utils";
 
 type OrgNavProps = {
   organizationName: string;
   roles: string;
   userName: string;
-  canSwitch: boolean;
-  switchHref: string;
+  currentOrgId: string;
+  // The member's organizations; "Ganti usaha" shows only when there are several.
+  organizations: readonly OrgSwitchOption[];
   items: readonly OrgNavItem[];
 };
 
-const ICONS: Record<OrgNavItem["key"], ReactNode> = {
-  home: <House aria-hidden="true" className="size-5" />,
-  properties: <Building2 aria-hidden="true" className="size-5" />,
-  tenants: <Users aria-hidden="true" className="size-5" />,
-  members: <UserCog aria-hidden="true" className="size-5" />,
-};
-
-// The side menu (board Members.dc.html): the organization and the member's roles, "Ganti
-// usaha" for a member of several organizations, the sections they may open, and who is signed
-// in with "Keluar". The same content fills the phone's menu sheet, where the header leaves room
-// for the sheet's close button.
+// The side menu (board Members.dc.html): the organization and the member's roles, the sections
+// they may open, then "Ganti usaha" for a member of several organizations (a select above the
+// footer, moved there on the user's request) and who is signed in with "Keluar". The same
+// content fills the phone's menu sheet, where the header leaves room for the sheet's close
+// button.
 export function OrgNav({
   organizationName,
   roles,
   userName,
-  canSwitch,
-  switchHref,
+  currentOrgId,
+  organizations,
   items,
 }: OrgNavProps) {
   return (
@@ -63,26 +52,26 @@ export function OrgNav({
           )}
         </div>
       </div>
-      {canSwitch && (
-        <Link
-          href={switchHref}
-          className="mb-2.5 flex min-h-11 items-center gap-2 rounded-[10px] px-2.5 text-[15px] font-semibold text-primary hover:bg-accent/60"
-        >
-          <ArrowLeftRight aria-hidden="true" className="size-[18px]" />
-          Ganti usaha
-        </Link>
-      )}
       <ul className="flex flex-col gap-0.5">
-        {items.map((item) => (
-          <li key={item.key}>
-            <OrgNavLink href={item.href} exact={item.key === "home"}>
-              {ICONS[item.key]}
-              {item.label}
-            </OrgNavLink>
-          </li>
-        ))}
+        {items.map((item) => {
+          const Icon = ORG_NAV_ICONS[item.key];
+          return (
+            <li key={item.key}>
+              <OrgNavLink href={item.href} exact={item.key === "home"}>
+                <Icon aria-hidden="true" className="size-5" />
+                {item.label}
+              </OrgNavLink>
+            </li>
+          );
+        })}
       </ul>
       <div className="flex-1" />
+      {organizations.length > 1 && (
+        <OrgSwitchSelect
+          currentOrgId={currentOrgId}
+          organizations={organizations}
+        />
+      )}
       <div className="flex flex-col gap-0.5 border-t px-1 pt-3">
         <span className="truncate px-2 text-[15px] font-semibold">
           {userName}

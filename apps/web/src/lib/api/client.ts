@@ -13,6 +13,7 @@ import { apiEnvironment } from "#api-environment";
 import {
   ApiError,
   apiErrorFromResponse,
+  invalidPathError,
   networkError,
   unexpectedResponseError,
 } from "./errors";
@@ -86,6 +87,18 @@ async function rejectResponse(error: unknown): Promise<never> {
   throw apiError;
 }
 
+// Generated paths interpolate path values unencoded, and those values often come from the page's
+// URL (`/o/[orgId]`, `/t/[token]`), already decoded. A value like `../auth/me?x=` would move the
+// call, with the session cookie, to another API path. URL parsing treats `%2e` as a dot and `\`
+// as a slash, and deletes tabs and newlines before it reads the path (`.<tab>.` is `..`), so
+// those count too: control characters are refused outright. Query parameters travel in
+// `params`, never in `url`.
+const PATH_ESCAPE = /(^|\/)(\.|%2e){1,2}(\/|$)|[?#\\\x00-\x1f\x7f]/i;
+
+function isSafePath(url: string | undefined): boolean {
+  return url === undefined || !PATH_ESCAPE.test(url);
+}
+
 apiAxios.interceptors.request.use(prepareRequest);
 apiAxios.interceptors.response.use(parseResponse, rejectResponse);
 
@@ -95,12 +108,14 @@ export async function apiRequest<T>(
   config: AxiosRequestConfig,
   options?: AxiosRequestConfig,
 ): Promise<T> {
-  const response = await apiAxios.request<T>({
+  const request: AxiosRequestConfig = {
     ...config,
     ...options,
     // A caller's extra header never drops a generated one (Content-Type).
     headers: { ...config.headers, ...options?.headers },
-  });
+  };
+  if (!isSafePath(request.url)) throw invalidPathError();
+  const response = await apiAxios.request<T>(request);
   return response.data;
 }
 

@@ -326,11 +326,21 @@ func AccessTo(p Principal, action string) Access {
 }
 
 func accessTo(policies []namedPolicy, action string) Access {
+	resource, _, _ := strings.Cut(action, ":")
+	orgWide := orgWideResources[resource]
 	access := AccessDeny
 	blocked := false
 	for _, np := range policies {
 		for _, st := range np.policy.Statement {
 			if !st.matchesAction(action) {
+				continue
+			}
+			if np.property != uuid.Nil && orgWide {
+				// The records never have a property, so the limit is never met: an Allow never
+				// grants, and a Deny always denies because missing data fails closed.
+				if st.Effect == Deny && st.Condition == nil && st.everyResource() {
+					blocked = true
+				}
 				continue
 			}
 			unconditional := st.Condition == nil && st.everyResource() && np.property == uuid.Nil
