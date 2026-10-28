@@ -16,6 +16,8 @@ import (
 const (
 	OrgGriya   = "Griya Sejahtera"
 	OrgAnggrek = "Kost Putri Anggrek"
+	// OrgBulanan is the big one: enough rows to fill several pages of every list.
+	OrgBulanan = "Kos Bulanan Sejahtera"
 )
 
 // staffSpec is one staff member. Grants with an empty Property hold for the whole organization.
@@ -222,5 +224,6 @@ func demoOrgs(c clock.Clock) []orgSpec {
 				}},
 			},
 		},
+		bulananOrg(),
 	}
 }

@@ -1,10 +1,12 @@
 "use client";
 
+import { useAbility } from "@casl/react";
 import { useMemo, useState } from "react";
 
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
 import { useListTenants } from "@/lib/api/generated/tenants/tenants";
+import type { AppAbility } from "@/lib/capabilities";
 import { jakartaToday } from "@/lib/format/date";
 import type { TenantFilters as Filters } from "./type";
 import {
@@ -12,7 +14,6 @@ import {
   flaggedCount,
   LOADING_TEXT,
   NO_FILTERS,
-  NO_PERMISSIONS,
   propertyOptions,
   tenantPermissions,
   tenantRow,
@@ -51,10 +52,7 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
   );
   const properties = useMemo(() => propertyOptions(all ?? []), [all]);
 
-  const permissions =
-    orgMe.data === undefined
-      ? NO_PERMISSIONS
-      : tenantPermissions(orgMe.data.capabilities);
+  const permissions = tenantPermissions(useAbility<AppAbility>());
   const failed = orgMe.isError ? orgMe.error : tenants.error;
   const flagged = all === undefined ? 0 : flaggedCount(all);
 

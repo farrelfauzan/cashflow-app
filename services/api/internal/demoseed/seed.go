@@ -1,4 +1,4 @@
-// Package demoseed fills a development database with two demo organizations: their staff,
+// Package demoseed fills a development database with three demo organizations: their staff,
 // properties, units, tenants and leases. cmd/admin runs it as "seed-demo", and only in
 // development.
 //

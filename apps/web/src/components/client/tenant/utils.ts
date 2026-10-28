@@ -1,9 +1,9 @@
 import { ApiError } from "@/lib/api/errors";
-import type { Capability, Lease, Tenant } from "@/lib/api/generated/model";
+import type { Lease, Tenant } from "@/lib/api/generated/model";
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
 import { formatRupiah } from "@/lib/format/rupiah";
-import { canSee } from "@/lib/capabilities";
+import type { AppAbility } from "@/lib/capabilities";
 
 import type {
   ChipTone,
@@ -35,8 +35,6 @@ export const NO_FILTERS: TenantFilters = {
   status: "all",
   flaggedOnly: false,
 };
-
-export const NO_PERMISSIONS: TenantPermissions = { canManageLeases: false };
 
 export const STATUS_FILTER_OPTIONS: readonly FilterOption[] = [
   { value: "active", label: "Aktif" },
@@ -169,12 +167,10 @@ export function tenantsSubtitle(organizationName: string): string {
     : `Semua penyewa ${organizationName} dan sewanya.`;
 }
 
-// Tenant controls: which controls show, from the signed-in member's capabilities (getOrgMe),
+// Tenant controls: which controls show, from the member's ability (getOrgMe's capabilities),
 // never from role names. Hiding is visibility only; the API checks every request.
-export function tenantPermissions(
-  capabilities: readonly Capability[],
-): TenantPermissions {
-  return { canManageLeases: canSee(capabilities, "lease:manage") };
+export function tenantPermissions(ability: AppAbility): TenantPermissions {
+  return { canManageLeases: ability.can("manage", "lease") };
 }
 
 // Search: a query made only of digits and phone punctuation is a phone number, compared as

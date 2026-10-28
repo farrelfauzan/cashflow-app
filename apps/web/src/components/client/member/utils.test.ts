@@ -6,6 +6,7 @@ import {
   networkError,
 } from "@/lib/api/errors";
 import type { Capability, Member, RoleRef } from "@/lib/api/generated/model";
+import { createAppAbility } from "@/lib/capabilities";
 
 import type { MemberPermissions, RoleFormState } from "./type";
 import {
@@ -82,7 +83,7 @@ describe("member controls", () => {
       },
       { name: "actions the API does not list", capabilities: [], want: NONE },
     ])("reads $name", ({ capabilities, want }) => {
-      expect(memberPermissions(capabilities)).toEqual(want);
+      expect(memberPermissions(createAppAbility(capabilities))).toEqual(want);
     });
   });
 
