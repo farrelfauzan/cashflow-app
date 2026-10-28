@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getMe } from "@/lib/api/generated/auth/auth";
-import { orgPath } from "@/lib/organization/org-menu";
+import { orgPath } from "@/lib/org-path";
 
 import { NoOrganization } from "./no-organization";
 import { OrganizationChoiceList } from "./organization-choice-list";

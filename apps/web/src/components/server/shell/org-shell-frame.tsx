@@ -2,12 +2,11 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { getMe } from "@/lib/api/generated/auth/auth";
-import { orgPath, visibleOrgMenu } from "@/lib/organization/org-menu";
-import { roleSummary } from "@/lib/organization/role-summary";
+import { orgPath } from "@/lib/org-path";
 
 import { MobileHeader } from "./mobile-header";
 import { OrgNav } from "./org-nav";
-import { loadOrgMe, PICKER_PATH } from "./utils";
+import { loadOrgMe, PICKER_PATH, roleSummary, visibleOrgMenu } from "./utils";
 
 type OrgShellFrameProps = {
   params: Promise<{ orgId: string }>;
