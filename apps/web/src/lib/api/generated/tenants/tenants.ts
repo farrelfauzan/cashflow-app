@@ -42,7 +42,7 @@ import type {
   TenantList
 } from '../model';
 
-import { apiFetch } from '../../client';
+import { apiRequest } from '../../client';
 import type { ErrorType , BodyType } from '../../client';
 import { apiQueryKey } from '../../query-key';
 
@@ -66,29 +66,21 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export const getListTenantsUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/tenants`
-}
-
 /**
  * A tenant is visible through any of their leases: a karyawan sees the tenants whose lease names them as collector, a member limited to a property sees the tenants with a lease there, and only those leases. Tenants without a lease are visible only to members with tenant:read for the whole organization.
  * @summary Tenants the member may see, with their leases (needs tenant:read)
  */
-export const listTenants = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<TenantList> => {
-
-  return apiFetch<TenantList>(getListTenantsUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const listTenants = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<TenantList>(
+      {url: `/orgs/${orgId}/tenants`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -97,7 +89,7 @@ export const getListTenantsQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/tenants` });
 
 
-export const useListTenantsQueryOptions = <TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useListTenantsQueryOptions = <TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -106,7 +98,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenants>>> = ({ signal }) => listTenants(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenants>>> = ({ signal }) => listTenants(orgId, requestOptions, signal);
 
 
 
@@ -126,7 +118,7 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
           TError,
           Awaited<ReturnType<typeof listTenants>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
@@ -136,11 +128,11 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
           TError,
           Awaited<ReturnType<typeof listTenants>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -148,7 +140,7 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
  */
 
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -164,43 +156,23 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
 
 
 
-export const getCreateTenantUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/tenants`
-}
-
 /**
  * @summary Add a tenant (needs tenant:manage for the whole organization)
  */
-export const createTenant = async (orgId: string,
-    tenantInput: TenantInput, options?: Parameters<typeof apiFetch>[1]): Promise<Tenant> => {
+export const createTenant = (
+    orgId: string,
+    tenantInput: BodyType<TenantInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Tenant>(getCreateTenantUrl(orgId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(tenantInput)
-  }
-);}
 
+      return apiRequest<Tenant>(
+      {url: `/orgs/${orgId}/tenants`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: tenantInput, signal
+    },
+      options);
+    }
 
 
 
@@ -208,7 +180,7 @@ return apiFetch<Tenant>(getCreateTenantUrl(orgId),
 export const getCreateTenantMutationKey = () => ['createTenant'] as const;
 
 export const getCreateTenantMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext> => {
 
 const mutationKey = getCreateTenantMutationKey();
@@ -243,7 +215,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add a tenant (needs tenant:manage for the whole organization)
  */
 export const useCreateTenant = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createTenant>>,
         TError,
@@ -252,30 +224,21 @@ export const useCreateTenant = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getCreateTenantMutationOptions(options), queryClient);
     }
-    export const getGetTenantUrl = (orgId: string,
-    tenantId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/tenants/${tenantId}`
-}
-
-/**
+    /**
  * @summary One tenant with the leases the member may see (needs tenant:read)
  */
-export const getTenant = async (orgId: string,
-    tenantId: string, options?: Parameters<typeof apiFetch>[1]): Promise<Tenant> => {
-
-  return apiFetch<Tenant>(getGetTenantUrl(orgId,tenantId),
-  {
-    ...options,
-    method: 'GET'
+export const getTenant = (
+    orgId: string,
+    tenantId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<Tenant>(
+      {url: `/orgs/${orgId}/tenants/${tenantId}`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -286,7 +249,7 @@ export const getGetTenantQueryKey = (orgId: string,
 
 
 export const useGetTenantQueryOptions = <TData = Awaited<ReturnType<typeof getTenant>>, TError = ErrorType<ErrorResponse>>(orgId: string,
-    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenant>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenant>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -295,7 +258,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTenant>>> = ({ signal }) => getTenant(orgId,tenantId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTenant>>> = ({ signal }) => getTenant(orgId,tenantId, requestOptions, signal);
 
 
 
@@ -316,7 +279,7 @@ export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TErr
           TError,
           Awaited<ReturnType<typeof getTenant>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TError = ErrorType<ErrorResponse>>(
@@ -327,12 +290,12 @@ export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TErr
           TError,
           Awaited<ReturnType<typeof getTenant>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenant>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenant>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -341,7 +304,7 @@ export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TErr
 
 export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenant>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenant>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -357,46 +320,25 @@ export function useGetTenant<TData = Awaited<ReturnType<typeof getTenant>>, TErr
 
 
 
-export const getUpdateTenantUrl = (orgId: string,
-    tenantId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/tenants/${tenantId}`
-}
-
 /**
  * A member limited to some properties may change a tenant only when every active lease of that tenant is in their properties.
  * @summary Change a tenant's name, number or note (needs tenant:manage)
  */
-export const updateTenant = async (orgId: string,
+export const updateTenant = (
+    orgId: string,
     tenantId: string,
-    tenantInput: TenantInput, options?: Parameters<typeof apiFetch>[1]): Promise<Tenant> => {
+    tenantInput: BodyType<TenantInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Tenant>(getUpdateTenantUrl(orgId,tenantId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(tenantInput)
-  }
-);}
 
+      return apiRequest<Tenant>(
+      {url: `/orgs/${orgId}/tenants/${tenantId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: tenantInput, signal
+    },
+      options);
+    }
 
 
 
@@ -404,7 +346,7 @@ return apiFetch<Tenant>(getUpdateTenantUrl(orgId,tenantId),
 export const getUpdateTenantMutationKey = () => ['updateTenant'] as const;
 
 export const getUpdateTenantMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTenant>>, TError,UpdateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTenant>>, TError,UpdateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateTenant>>, TError,UpdateTenantMutationVariables, TContext> => {
 
 const mutationKey = getUpdateTenantMutationKey();
@@ -439,7 +381,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Change a tenant's name, number or note (needs tenant:manage)
  */
 export const useUpdateTenant = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTenant>>, TError,UpdateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTenant>>, TError,UpdateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateTenant>>,
         TError,
@@ -448,43 +390,23 @@ export const useUpdateTenant = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getUpdateTenantMutationOptions(options), queryClient);
     }
-    export const getCreateLeaseUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/leases`
-}
-
-/**
+    /**
  * @summary Rent a unit to a tenant (needs lease:manage on the unit's property)
  */
-export const createLease = async (orgId: string,
-    leaseInput: LeaseInput, options?: Parameters<typeof apiFetch>[1]): Promise<Lease> => {
+export const createLease = (
+    orgId: string,
+    leaseInput: BodyType<LeaseInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Lease>(getCreateLeaseUrl(orgId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(leaseInput)
-  }
-);}
 
+      return apiRequest<Lease>(
+      {url: `/orgs/${orgId}/leases`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: leaseInput, signal
+    },
+      options);
+    }
 
 
 
@@ -492,7 +414,7 @@ return apiFetch<Lease>(getCreateLeaseUrl(orgId),
 export const getCreateLeaseMutationKey = () => ['createLease'] as const;
 
 export const getCreateLeaseMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLease>>, TError,CreateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLease>>, TError,CreateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createLease>>, TError,CreateLeaseMutationVariables, TContext> => {
 
 const mutationKey = getCreateLeaseMutationKey();
@@ -527,7 +449,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Rent a unit to a tenant (needs lease:manage on the unit's property)
  */
 export const useCreateLease = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLease>>, TError,CreateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLease>>, TError,CreateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createLease>>,
         TError,
@@ -536,46 +458,25 @@ export const useCreateLease = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getCreateLeaseMutationOptions(options), queryClient);
     }
-    export const getUpdateLeaseUrl = (orgId: string,
-    leaseId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/leases/${leaseId}`
-}
-
-/**
+    /**
  * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice. A start date after the lease's planned end date is refused (field startDate); change the planned end date first. Sending the lease's current collector keeps them even when they have been disabled; any other collector must be an active member.
  * @summary Change the terms of an active lease (needs lease:manage; audited)
  */
-export const updateLease = async (orgId: string,
+export const updateLease = (
+    orgId: string,
     leaseId: string,
-    leaseTerms: LeaseTerms, options?: Parameters<typeof apiFetch>[1]): Promise<Lease> => {
+    leaseTerms: BodyType<LeaseTerms>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Lease>(getUpdateLeaseUrl(orgId,leaseId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(leaseTerms)
-  }
-);}
 
+      return apiRequest<Lease>(
+      {url: `/orgs/${orgId}/leases/${leaseId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: leaseTerms, signal
+    },
+      options);
+    }
 
 
 
@@ -583,7 +484,7 @@ return apiFetch<Lease>(getUpdateLeaseUrl(orgId,leaseId),
 export const getUpdateLeaseMutationKey = () => ['updateLease'] as const;
 
 export const getUpdateLeaseMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLease>>, TError,UpdateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLease>>, TError,UpdateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateLease>>, TError,UpdateLeaseMutationVariables, TContext> => {
 
 const mutationKey = getUpdateLeaseMutationKey();
@@ -618,7 +519,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Change the terms of an active lease (needs lease:manage; audited)
  */
 export const useUpdateLease = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLease>>, TError,UpdateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLease>>, TError,UpdateLeaseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateLease>>,
         TError,
@@ -627,46 +528,25 @@ export const useUpdateLease = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getUpdateLeaseMutationOptions(options), queryClient);
     }
-    export const getSetLeasePlannedEndUrl = (orgId: string,
-    leaseId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/leases/${leaseId}/planned-end`
-}
-
-/**
+    /**
  * The planned end date ("Rencana keluar") is the tenant's last day, set when they say they will not continue. It must be on or after today in Asia/Jakarta and not before the start date; null clears it. It can change until the move-out, which clears it. From slice 2, no invoice is generated for a period that starts after it, and setting it cancels an invoice already generated for such a period (that also needs correction:create); today it is only stored.
  * @summary Set, change or clear an active lease's planned end date (needs lease:manage; audited)
  */
-export const setLeasePlannedEnd = async (orgId: string,
+export const setLeasePlannedEnd = (
+    orgId: string,
     leaseId: string,
-    leasePlannedEnd: LeasePlannedEnd, options?: Parameters<typeof apiFetch>[1]): Promise<Lease> => {
+    leasePlannedEnd: BodyType<LeasePlannedEnd>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Lease>(getSetLeasePlannedEndUrl(orgId,leaseId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(leasePlannedEnd)
-  }
-);}
 
+      return apiRequest<Lease>(
+      {url: `/orgs/${orgId}/leases/${leaseId}/planned-end`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: leasePlannedEnd, signal
+    },
+      options);
+    }
 
 
 
@@ -674,7 +554,7 @@ return apiFetch<Lease>(getSetLeasePlannedEndUrl(orgId,leaseId),
 export const getSetLeasePlannedEndMutationKey = () => ['setLeasePlannedEnd'] as const;
 
 export const getSetLeasePlannedEndMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext> => {
 
 const mutationKey = getSetLeasePlannedEndMutationKey();
@@ -709,7 +589,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Set, change or clear an active lease's planned end date (needs lease:manage; audited)
  */
 export const useSetLeasePlannedEnd = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setLeasePlannedEnd>>,
         TError,
@@ -718,46 +598,25 @@ export const useSetLeasePlannedEnd = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getSetLeasePlannedEndMutationOptions(options), queryClient);
     }
-    export const getMoveOutUrl = (orgId: string,
-    leaseId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/leases/${leaseId}/move-out`
-}
-
-/**
+    /**
  * The end date is the last day of the lease: not before the start date and not after today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same way, with the end date equal to its start date; it will never be invoiced. The unit is free for a new lease right away, and any planned end date is cleared. What happens to arrears is settled in slice 2.
  * @summary End a lease on a date (needs lease:manage; audited)
  */
-export const moveOut = async (orgId: string,
+export const moveOut = (
+    orgId: string,
     leaseId: string,
-    moveOutBody: MoveOut, options?: Parameters<typeof apiFetch>[1]): Promise<Lease> => {
+    moveOutBody: BodyType<MoveOut>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Lease>(getMoveOutUrl(orgId,leaseId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(moveOutBody)
-  }
-);}
 
+      return apiRequest<Lease>(
+      {url: `/orgs/${orgId}/leases/${leaseId}/move-out`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: moveOutBody, signal
+    },
+      options);
+    }
 
 
 
@@ -765,7 +624,7 @@ return apiFetch<Lease>(getMoveOutUrl(orgId,leaseId),
 export const getMoveOutMutationKey = () => ['moveOut'] as const;
 
 export const getMoveOutMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveOut>>, TError,MoveOutMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveOut>>, TError,MoveOutMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof moveOut>>, TError,MoveOutMutationVariables, TContext> => {
 
 const mutationKey = getMoveOutMutationKey();
@@ -800,7 +659,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary End a lease on a date (needs lease:manage; audited)
  */
 export const useMoveOut = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveOut>>, TError,MoveOutMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveOut>>, TError,MoveOutMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof moveOut>>,
         TError,
@@ -809,46 +668,25 @@ export const useMoveOut = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getMoveOutMutationOptions(options), queryClient);
     }
-    export const getSetLeaseChargesUrl = (orgId: string,
-    leaseId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/leases/${leaseId}/charges`
-}
-
-/**
+    /**
  * Replaces the whole set at once: charge types left out are removed, and an empty list removes every extra. Each charge type appears at most once, must belong to the organization and must not be metered (metered amounts are recorded per month instead). Like a rent change, the new amounts apply from the next invoice.
  * @summary Replace the fixed extra charges of an active lease (needs lease:manage; audited)
  */
-export const setLeaseCharges = async (orgId: string,
+export const setLeaseCharges = (
+    orgId: string,
     leaseId: string,
-    leaseChargesInput: LeaseChargesInput, options?: Parameters<typeof apiFetch>[1]): Promise<Lease> => {
+    leaseChargesInput: BodyType<LeaseChargesInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Lease>(getSetLeaseChargesUrl(orgId,leaseId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(leaseChargesInput)
-  }
-);}
 
+      return apiRequest<Lease>(
+      {url: `/orgs/${orgId}/leases/${leaseId}/charges`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: leaseChargesInput, signal
+    },
+      options);
+    }
 
 
 
@@ -856,7 +694,7 @@ return apiFetch<Lease>(getSetLeaseChargesUrl(orgId,leaseId),
 export const getSetLeaseChargesMutationKey = () => ['setLeaseCharges'] as const;
 
 export const getSetLeaseChargesMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext> => {
 
 const mutationKey = getSetLeaseChargesMutationKey();
@@ -891,7 +729,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Replace the fixed extra charges of an active lease (needs lease:manage; audited)
  */
 export const useSetLeaseCharges = <TError = ErrorType<Error | ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setLeaseCharges>>,
         TError,
@@ -900,28 +738,20 @@ export const useSetLeaseCharges = <TError = ErrorType<Error | ErrorResponse>,
       > => {
       return useMutation(getSetLeaseChargesMutationOptions(options), queryClient);
     }
-    export const getListChargeTypesUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/charge-types`
-}
-
-/**
+    /**
  * @summary The organization's kinds of extra charge, by name (needs lease:manage, for the whole organization or limited to properties)
  */
-export const listChargeTypes = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<ChargeTypeList> => {
-
-  return apiFetch<ChargeTypeList>(getListChargeTypesUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const listChargeTypes = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<ChargeTypeList>(
+      {url: `/orgs/${orgId}/charge-types`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -930,7 +760,7 @@ export const getListChargeTypesQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/charge-types` });
 
 
-export const useListChargeTypesQueryOptions = <TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useListChargeTypesQueryOptions = <TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -939,7 +769,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChargeTypes>>> = ({ signal }) => listChargeTypes(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChargeTypes>>> = ({ signal }) => listChargeTypes(orgId, requestOptions, signal);
 
 
 
@@ -959,7 +789,7 @@ export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeT
           TError,
           Awaited<ReturnType<typeof listChargeTypes>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
@@ -969,11 +799,11 @@ export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeT
           TError,
           Awaited<ReturnType<typeof listChargeTypes>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -981,7 +811,7 @@ export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeT
  */
 
 export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -997,43 +827,23 @@ export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeT
 
 
 
-export const getCreateChargeTypeUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/charge-types`
-}
-
 /**
  * @summary Add a kind of extra charge (needs lease:manage for the whole organization; audited)
  */
-export const createChargeType = async (orgId: string,
-    chargeTypeInput: ChargeTypeInput, options?: Parameters<typeof apiFetch>[1]): Promise<ChargeType> => {
+export const createChargeType = (
+    orgId: string,
+    chargeTypeInput: BodyType<ChargeTypeInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<ChargeType>(getCreateChargeTypeUrl(orgId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(chargeTypeInput)
-  }
-);}
 
+      return apiRequest<ChargeType>(
+      {url: `/orgs/${orgId}/charge-types`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: chargeTypeInput, signal
+    },
+      options);
+    }
 
 
 
@@ -1041,7 +851,7 @@ return apiFetch<ChargeType>(getCreateChargeTypeUrl(orgId),
 export const getCreateChargeTypeMutationKey = () => ['createChargeType'] as const;
 
 export const getCreateChargeTypeMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext> => {
 
 const mutationKey = getCreateChargeTypeMutationKey();
@@ -1076,7 +886,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add a kind of extra charge (needs lease:manage for the whole organization; audited)
  */
 export const useCreateChargeType = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createChargeType>>,
         TError,
@@ -1085,56 +895,29 @@ export const useCreateChargeType = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getCreateChargeTypeMutationOptions(options), queryClient);
     }
-    export const getImportTenantsUrl = (orgId: string,
-    params?: ImportTenantsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/orgs/${orgId}/imports/tenants?${stringifiedParams}` : `/orgs/${orgId}/imports/tenants`
-}
-
-/**
+    /**
  * Needs tenant:manage and lease:manage for the whole organization, plus property:manage or unit:manage for each property or unit a row creates; a denial stops the whole import.
  * The first line names the columns, separated by commas or semicolons, in any order: property, unit, tenant_name, phone, rent, start_date, and optionally deposit, property_kind (kos, kontrakan, ruko, other; new properties default to other) and bill_from ("Mulai tagih dari", an anniversary of the start date, as on createLease; empty bills from the start date). Indonesian names work too (properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan, jenis_properti, mulai_tagih). Other columns are ignored. Rent is due on the day of the start date; the due_day (jatuh_tempo) column of older templates is not used, and a row whose due day differs from its start date's day gets a note saying so. Amounts are whole rupiah ("850000", "850.000" or "Rp850.000"). Dates are 2026-10-01 or 01/10/2026 (day first).
  * Properties match by name, units by label inside their property, tenants by phone; anything missing is created. A row whose unit already has an active lease for the same tenant is reported as matched and left unchanged (differing terms come back as a note), so running the same file twice is safe; an active lease for another tenant is an error. A phone already stored under a different name is an error too: one phone is one tenant. Amounts take dots only as thousands separators; anything after a decimal point other than zeros is refused.
  * With dryRun (the default) nothing is saved and every row comes back with its errors. With dryRun=false everything is saved in one transaction, but only when no row has an error; otherwise nothing is saved and committed is false. At most 2000 rows and 1 MiB.
  * @summary Import properties, units, tenants and leases from a CSV file (needs tenant:manage and lease:manage for the whole organization)
  */
-export const importTenants = async (orgId: string,
-    importTenantsBody: string,
-    params?: ImportTenantsParams, options?: Parameters<typeof apiFetch>[1]): Promise<ImportResult> => {
+export const importTenants = (
+    orgId: string,
+    importTenantsBody: BodyType<string>,
+    params?: ImportTenantsParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<ImportResult>(getImportTenantsUrl(orgId,params),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'text/csv', ...getHeaders(options?.headers) },
-    body: JSON.stringify(importTenantsBody)
-  }
-);}
 
+      return apiRequest<ImportResult>(
+      {url: `/orgs/${orgId}/imports/tenants`, method: 'POST',
+      headers: {'Content-Type': 'text/csv', },
+      data: importTenantsBody,
+        params, signal
+    },
+      options);
+    }
 
 
 
@@ -1142,7 +925,7 @@ return apiFetch<ImportResult>(getImportTenantsUrl(orgId,params),
 export const getImportTenantsMutationKey = () => ['importTenants'] as const;
 
 export const getImportTenantsMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importTenants>>, TError,ImportTenantsMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importTenants>>, TError,ImportTenantsMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof importTenants>>, TError,ImportTenantsMutationVariables, TContext> => {
 
 const mutationKey = getImportTenantsMutationKey();
@@ -1177,7 +960,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Import properties, units, tenants and leases from a CSV file (needs tenant:manage and lease:manage for the whole organization)
  */
 export const useImportTenants = <TError = ErrorType<Error | ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importTenants>>, TError,ImportTenantsMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importTenants>>, TError,ImportTenantsMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof importTenants>>,
         TError,
@@ -1186,29 +969,21 @@ export const useImportTenants = <TError = ErrorType<Error | ErrorResponse>,
       > => {
       return useMutation(getImportTenantsMutationOptions(options), queryClient);
     }
-    export const getGetTenantImportTemplateUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/imports/tenants/template`
-}
-
-/**
+    /**
  * A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The header row uses the Indonesian column names (properti, jenis_properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, mulai_tagih, jaminan), followed by two example rows. The example rows only show the format: the import refuses them by their phone numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
  * @summary Download a CSV template for the tenant import (needs tenant:manage and lease:manage for the whole organization)
  */
-export const getTenantImportTemplate = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<string> => {
-
-  return apiFetch<string>(getGetTenantImportTemplateUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const getTenantImportTemplate = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<string>(
+      {url: `/orgs/${orgId}/imports/tenants/template`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -1217,7 +992,7 @@ export const getGetTenantImportTemplateQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/imports/tenants/template` });
 
 
-export const useGetTenantImportTemplateQueryOptions = <TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useGetTenantImportTemplateQueryOptions = <TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1226,7 +1001,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTenantImportTemplate>>> = ({ signal }) => getTenantImportTemplate(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTenantImportTemplate>>> = ({ signal }) => getTenantImportTemplate(orgId, requestOptions, signal);
 
 
 
@@ -1246,7 +1021,7 @@ export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof get
           TError,
           Awaited<ReturnType<typeof getTenantImportTemplate>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
@@ -1256,11 +1031,11 @@ export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof get
           TError,
           Awaited<ReturnType<typeof getTenantImportTemplate>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -1268,7 +1043,7 @@ export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof get
  */
 
 export function useGetTenantImportTemplate<TData = Awaited<ReturnType<typeof getTenantImportTemplate>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getTenantImportTemplate>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 

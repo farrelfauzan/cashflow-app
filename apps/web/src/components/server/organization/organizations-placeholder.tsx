@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 
+import { LogoutButton } from "@/components/client/auth/logout-button";
 import { Card } from "@/components/ui/card";
 
 import { OrganizationList } from "./organization-list";
@@ -17,6 +18,8 @@ export function OrganizationsPlaceholder() {
         >
           <OrganizationList />
         </Suspense>
+        {/* Until the app shell (W4) has a place for it. */}
+        <LogoutButton />
       </Card>
     </main>
   );
