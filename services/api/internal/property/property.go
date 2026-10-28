@@ -17,6 +17,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 const (
@@ -59,8 +60,10 @@ type Property struct {
 	Kind      string
 	Address   string
 	UnitCount int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// OccupiedUnitCount is how many of the units have an active lease.
+	OccupiedUnitCount int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // PropertyInput is the input for creating or changing a property.
@@ -77,8 +80,20 @@ type Unit struct {
 	Label      string
 	// DefaultRent is the usual monthly rent in rupiah, or nil when none is set.
 	DefaultRent *int64
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Occupied is true while the unit has an active lease, a booking that has not started yet
+	// included.
+	Occupied bool
+	// CurrentTenant is the tenant of the active lease, or nil when the unit is free or the
+	// principal may not read that tenant.
+	CurrentTenant *UnitTenant
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+// UnitTenant is the tenant of a unit's active lease.
+type UnitTenant struct {
+	ID   uuid.UUID
+	Name string
 }
 
 // UnitInput is the input for creating or changing a unit.
@@ -117,7 +132,8 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Property, erro
 		for _, r := range rows {
 			if all || authz.Allowed(p, propertyRequest(authz.ActionPropertyRead, r.ID)) {
 				out = append(out, Property{
-					ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address, UnitCount: r.UnitCount,
+					ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address,
+					UnitCount: r.UnitCount, OccupiedUnitCount: r.OccupiedUnitCount,
 					CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 				})
 			}
@@ -183,7 +199,8 @@ func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, i
 			return propertyWriteError(err)
 		}
 		out = Property{
-			ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address, UnitCount: current.UnitCount,
+			ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address,
+			UnitCount: current.UnitCount, OccupiedUnitCount: current.OccupiedUnitCount,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 		return nil
@@ -209,7 +226,7 @@ func (s *Service) ListUnits(ctx context.Context, p authz.Principal, propertyID u
 		}
 		out = make([]Unit, len(rows))
 		for i, r := range rows {
-			out[i] = toUnit(r)
+			out[i] = toOccupiedUnit(p, r.Unit, r.Occupied, r.LeaseTenantID, r.LeaseTenantName, r.CollectorStaffUserID)
 		}
 		return nil
 	})
@@ -251,7 +268,8 @@ func (s *Service) CreateUnitTx(ctx context.Context, tx pgx.Tx, p authz.Principal
 }
 
 // FindByName returns the property with this name, ignoring case, or ErrNotFound. It does no
-// permission check: the caller has authorized the change it is part of.
+// permission check: the caller has authorized the change it is part of. It does not fill
+// OccupiedUnitCount.
 func FindByName(ctx context.Context, tx pgx.Tx, org uuid.UUID, name string) (Property, error) {
 	r, err := dbgen.New(tx).FindPropertyByName(ctx, dbgen.FindPropertyByNameParams{OrganizationID: org, Name: strings.TrimSpace(name)})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -264,7 +282,7 @@ func FindByName(ctx context.Context, tx pgx.Tx, org uuid.UUID, name string) (Pro
 }
 
 // FindUnit returns the unit with this label in a property, ignoring case, or ErrNotFound. It
-// does no permission check.
+// does no permission check and does not fill the occupancy fields.
 func FindUnit(ctx context.Context, tx pgx.Tx, org, propertyID uuid.UUID, label string) (Unit, error) {
 	r, err := dbgen.New(tx).FindUnitByLabel(ctx, dbgen.FindUnitByLabelParams{
 		OrganizationID: org, PropertyID: propertyID, Label: strings.TrimSpace(label),
@@ -303,7 +321,11 @@ func (s *Service) UpdateUnit(ctx context.Context, p authz.Principal, id uuid.UUI
 		if err != nil {
 			return unitWriteError(err)
 		}
-		out = toUnit(r)
+		occ, err := q.GetUnitOccupancy(ctx, dbgen.GetUnitOccupancyParams{OrganizationID: p.OrganizationID, ID: id})
+		if err != nil {
+			return fmt.Errorf("loading unit occupancy: %w", err)
+		}
+		out = toOccupiedUnit(p, r, occ.Occupied, occ.LeaseTenantID, occ.LeaseTenantName, occ.CollectorStaffUserID)
 		return nil
 	})
 	return out, err
@@ -338,6 +360,19 @@ func propertyRequest(action string, id uuid.UUID) authz.Request {
 
 func unitRequest(action string, propertyID, id uuid.UUID) authz.Request {
 	return authz.Request{Action: action, Resource: authz.Resource{Type: "unit", ID: id.String(), PropertyID: propertyID}}
+}
+
+// toOccupiedUnit is toUnit plus the unit's occupancy. The tenant is shown only when p may read
+// it through the active lease, the check the tenant list makes per record; it is a filter, so
+// it is not audited. A role with unit:read but no tenant:read sees occupied only.
+func toOccupiedUnit(p authz.Principal, r dbgen.Unit, occupied bool, tenantID uuid.NullUUID, tenantName *string, collector uuid.NullUUID) Unit {
+	u := toUnit(r)
+	u.Occupied = occupied
+	if occupied && tenantID.Valid && tenantName != nil &&
+		authz.Allowed(p, tenant.ReadViaLease(tenantID.UUID, r.PropertyID, collector.UUID)) {
+		u.CurrentTenant = &UnitTenant{ID: tenantID.UUID, Name: *tenantName}
+	}
+	return u
 }
 
 func toUnit(r dbgen.Unit) Unit {

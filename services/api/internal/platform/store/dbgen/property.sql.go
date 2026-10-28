@@ -136,7 +136,9 @@ func (q *Queries) FindUnitByLabel(ctx context.Context, arg FindUnitByLabelParams
 }
 
 const getProperty = `-- name: GetProperty :one
-SELECT p.id, p.organization_id, p.name, p.kind, p.address, p.created_at, p.updated_at, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count
+SELECT p.id, p.organization_id, p.name, p.kind, p.address, p.created_at, p.updated_at, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count,
+       (SELECT count(*) FROM unit u JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
+        WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS occupied_unit_count
 FROM property p
 WHERE p.organization_id = $1 AND p.id = $2
 `
@@ -147,14 +149,15 @@ type GetPropertyParams struct {
 }
 
 type GetPropertyRow struct {
-	ID             uuid.UUID
-	OrganizationID uuid.UUID
-	Name           string
-	Kind           string
-	Address        string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	UnitCount      int64
+	ID                uuid.UUID
+	OrganizationID    uuid.UUID
+	Name              string
+	Kind              string
+	Address           string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	UnitCount         int64
+	OccupiedUnitCount int64
 }
 
 func (q *Queries) GetProperty(ctx context.Context, arg GetPropertyParams) (GetPropertyRow, error) {
@@ -169,6 +172,7 @@ func (q *Queries) GetProperty(ctx context.Context, arg GetPropertyParams) (GetPr
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UnitCount,
+		&i.OccupiedUnitCount,
 	)
 	return i, err
 }
@@ -198,23 +202,68 @@ func (q *Queries) GetUnit(ctx context.Context, arg GetUnitParams) (Unit, error) 
 	return i, err
 }
 
+const getUnitOccupancy = `-- name: GetUnitOccupancy :one
+SELECT u.id, u.organization_id, u.property_id, u.label, u.default_rent, u.created_at, u.updated_at, l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
+       (l.id IS NOT NULL)::boolean AS occupied
+FROM unit u
+LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
+LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_id
+WHERE u.organization_id = $1 AND u.id = $2
+`
+
+type GetUnitOccupancyParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetUnitOccupancyRow struct {
+	Unit                 Unit
+	LeaseTenantID        uuid.NullUUID
+	CollectorStaffUserID uuid.NullUUID
+	LeaseTenantName      *string
+	Occupied             bool
+}
+
+// One unit with its active lease, if any (see ListUnits).
+func (q *Queries) GetUnitOccupancy(ctx context.Context, arg GetUnitOccupancyParams) (GetUnitOccupancyRow, error) {
+	row := q.db.QueryRow(ctx, getUnitOccupancy, arg.OrganizationID, arg.ID)
+	var i GetUnitOccupancyRow
+	err := row.Scan(
+		&i.Unit.ID,
+		&i.Unit.OrganizationID,
+		&i.Unit.PropertyID,
+		&i.Unit.Label,
+		&i.Unit.DefaultRent,
+		&i.Unit.CreatedAt,
+		&i.Unit.UpdatedAt,
+		&i.LeaseTenantID,
+		&i.CollectorStaffUserID,
+		&i.LeaseTenantName,
+		&i.Occupied,
+	)
+	return i, err
+}
+
 const listProperties = `-- name: ListProperties :many
 
-SELECT p.id, p.organization_id, p.name, p.kind, p.address, p.created_at, p.updated_at, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count
+SELECT p.id, p.organization_id, p.name, p.kind, p.address, p.created_at, p.updated_at, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count,
+       (SELECT count(*) FROM unit u JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
+        WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS occupied_unit_count
 FROM property p
 WHERE p.organization_id = $1
 ORDER BY p.name COLLATE natural_sort, p.id
 `
 
 type ListPropertiesRow struct {
-	ID             uuid.UUID
-	OrganizationID uuid.UUID
-	Name           string
-	Kind           string
-	Address        string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	UnitCount      int64
+	ID                uuid.UUID
+	OrganizationID    uuid.UUID
+	Name              string
+	Kind              string
+	Address           string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	UnitCount         int64
+	OccupiedUnitCount int64
 }
 
 // Runs in an organization scope (store.WithOrgTx).
@@ -236,6 +285,7 @@ func (q *Queries) ListProperties(ctx context.Context, organizationID uuid.UUID) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UnitCount,
+			&i.OccupiedUnitCount,
 		); err != nil {
 			return nil, err
 		}
@@ -248,9 +298,13 @@ func (q *Queries) ListProperties(ctx context.Context, organizationID uuid.UUID) 
 }
 
 const listUnits = `-- name: ListUnits :many
-SELECT id, organization_id, property_id, label, default_rent, created_at, updated_at FROM unit
-WHERE organization_id = $1 AND property_id = $2
-ORDER BY label COLLATE natural_sort, id
+SELECT u.id, u.organization_id, u.property_id, u.label, u.default_rent, u.created_at, u.updated_at, l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
+       (l.id IS NOT NULL)::boolean AS occupied
+FROM unit u
+LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
+LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_id
+WHERE u.organization_id = $1 AND u.property_id = $2
+ORDER BY u.label COLLATE natural_sort, u.id
 `
 
 type ListUnitsParams struct {
@@ -258,23 +312,37 @@ type ListUnitsParams struct {
 	PropertyID     uuid.UUID
 }
 
-func (q *Queries) ListUnits(ctx context.Context, arg ListUnitsParams) ([]Unit, error) {
+type ListUnitsRow struct {
+	Unit                 Unit
+	LeaseTenantID        uuid.NullUUID
+	CollectorStaffUserID uuid.NullUUID
+	LeaseTenantName      *string
+	Occupied             bool
+}
+
+// Each unit with its active lease, if any. A partial unique index allows one active lease per
+// unit, so the join adds no rows.
+func (q *Queries) ListUnits(ctx context.Context, arg ListUnitsParams) ([]ListUnitsRow, error) {
 	rows, err := q.db.Query(ctx, listUnits, arg.OrganizationID, arg.PropertyID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Unit
+	var items []ListUnitsRow
 	for rows.Next() {
-		var i Unit
+		var i ListUnitsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.OrganizationID,
-			&i.PropertyID,
-			&i.Label,
-			&i.DefaultRent,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Unit.ID,
+			&i.Unit.OrganizationID,
+			&i.Unit.PropertyID,
+			&i.Unit.Label,
+			&i.Unit.DefaultRent,
+			&i.Unit.CreatedAt,
+			&i.Unit.UpdatedAt,
+			&i.LeaseTenantID,
+			&i.CollectorStaffUserID,
+			&i.LeaseTenantName,
+			&i.Occupied,
 		); err != nil {
 			return nil, err
 		}

@@ -66,6 +66,24 @@ func (e ImportRowStatus) Valid() bool {
 	}
 }
 
+// Defines values for ImportWarningCode.
+const (
+	NoBillFromColumn ImportWarningCode = "no_bill_from_column"
+	OldDueDayColumn  ImportWarningCode = "old_due_day_column"
+)
+
+// Valid indicates whether the value is a known member of the ImportWarningCode enum.
+func (e ImportWarningCode) Valid() bool {
+	switch e {
+	case NoBillFromColumn:
+		return true
+	case OldDueDayColumn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvitationState.
 const (
 	NotSent InvitationState = "not_sent"
@@ -231,6 +249,9 @@ type ImportResult struct {
 	DryRun    bool          `json:"dryRun"`
 	Rows      []ImportRow   `json:"rows"`
 	Summary   ImportSummary `json:"summary"`
+
+	// Warnings Things about the file as a whole worth a look that are not errors. Empty when there are none; a dry run and a commit return the same ones.
+	Warnings []ImportWarning `json:"warnings"`
 }
 
 // ImportRow defines model for ImportRow.
@@ -242,11 +263,20 @@ type ImportRow struct {
 	Line int `json:"line"`
 
 	// Notes Things worth a look that are not errors, such as an existing lease whose terms differ from the row.
-	Notes    []string        `json:"notes"`
-	Property *ImportAction   `json:"property,omitempty"`
-	Status   ImportRowStatus `json:"status"`
-	Tenant   *ImportAction   `json:"tenant,omitempty"`
-	Unit     *ImportAction   `json:"unit,omitempty"`
+	Notes    []string      `json:"notes"`
+	Property *ImportAction `json:"property,omitempty"`
+
+	// PropertyName The properti cell as read from the file, trimmed; empty when the cell is empty.
+	PropertyName string          `json:"propertyName"`
+	Status       ImportRowStatus `json:"status"`
+	Tenant       *ImportAction   `json:"tenant,omitempty"`
+
+	// TenantName The nama_penyewa cell as read from the file, trimmed; empty when the cell is empty.
+	TenantName string        `json:"tenantName"`
+	Unit       *ImportAction `json:"unit,omitempty"`
+
+	// UnitLabel The kamar cell as read from the file, trimmed; empty when the cell is empty.
+	UnitLabel string `json:"unitLabel"`
 
 	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
 	Values *ImportRowValues `json:"values,omitempty"`
@@ -289,6 +319,18 @@ type ImportSummary struct {
 	TenantsCreated    int `json:"tenantsCreated"`
 	UnitsCreated      int `json:"unitsCreated"`
 }
+
+// ImportWarning defines model for ImportWarning.
+type ImportWarning struct {
+	// Code old_due_day_column: the file has the older jatuh_tempo (due_day) column, which is ignored. no_bill_from_column: the file has no mulai_tagih (bill_from) column, so every row bills from its start date.
+	Code ImportWarningCode `json:"code"`
+
+	// Message In Bahasa Indonesia, safe to show to the user.
+	Message string `json:"message"`
+}
+
+// ImportWarningCode old_due_day_column: the file has the older jatuh_tempo (due_day) column, which is ignored. no_bill_from_column: the file has no mulai_tagih (bill_from) column, so every row bills from its start date.
+type ImportWarningCode string
 
 // Invitation defines model for Invitation.
 type Invitation struct {
@@ -510,8 +552,11 @@ type Property struct {
 	Id        openapi_types.UUID `json:"id"`
 	Kind      PropertyKind       `json:"kind"`
 	Name      string             `json:"name"`
-	UnitCount int64              `json:"unitCount"`
-	UpdatedAt time.Time          `json:"updatedAt"`
+
+	// OccupiedUnitCount How many of the property's units have an active lease, a booking that has not started yet included. It counts units, not who may see their tenants, so it is the same for every member who can read the property.
+	OccupiedUnitCount int64     `json:"occupiedUnitCount"`
+	UnitCount         int64     `json:"unitCount"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // PropertyInput defines model for PropertyInput.
@@ -607,12 +652,16 @@ type TenantList struct {
 
 // Unit defines model for Unit.
 type Unit struct {
-	CreatedAt   time.Time          `json:"createdAt"`
-	DefaultRent *int64             `json:"defaultRent,omitempty"`
-	Id          openapi_types.UUID `json:"id"`
-	Label       string             `json:"label"`
-	PropertyId  openapi_types.UUID `json:"propertyId"`
-	UpdatedAt   time.Time          `json:"updatedAt"`
+	CreatedAt     time.Time          `json:"createdAt"`
+	CurrentTenant *UnitTenant        `json:"currentTenant,omitempty"`
+	DefaultRent   *int64             `json:"defaultRent,omitempty"`
+	Id            openapi_types.UUID `json:"id"`
+	Label         string             `json:"label"`
+
+	// Occupied True while the unit has an active lease, a booking that has not started yet included. False for a free unit and for one whose lease has ended.
+	Occupied   bool               `json:"occupied"`
+	PropertyId openapi_types.UUID `json:"propertyId"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
 }
 
 // UnitInput defines model for UnitInput.
@@ -631,6 +680,12 @@ type UnitInput struct {
 // UnitList defines model for UnitList.
 type UnitList struct {
 	Units []Unit `json:"units"`
+}
+
+// UnitTenant defines model for UnitTenant.
+type UnitTenant struct {
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
 }
 
 // User defines model for User.

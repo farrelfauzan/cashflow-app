@@ -149,13 +149,17 @@ func propertyInput(body apigen.PropertyInput) property.PropertyInput {
 func toAPIProperty(p property.Property) apigen.Property {
 	return apigen.Property{
 		Id: p.ID, Name: p.Name, Kind: apigen.PropertyKind(p.Kind), Address: p.Address,
-		UnitCount: p.UnitCount, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		UnitCount: p.UnitCount, OccupiedUnitCount: p.OccupiedUnitCount, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }
 
 func toAPIUnit(u property.Unit) apigen.Unit {
-	return apigen.Unit{
-		Id: u.ID, PropertyId: u.PropertyID, Label: u.Label, DefaultRent: u.DefaultRent,
+	out := apigen.Unit{
+		Id: u.ID, PropertyId: u.PropertyID, Label: u.Label, DefaultRent: u.DefaultRent, Occupied: u.Occupied,
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
+	if u.CurrentTenant != nil {
+		out.CurrentTenant = &apigen.UnitTenant{Id: u.CurrentTenant.ID, Name: u.CurrentTenant.Name}
+	}
+	return out
 }
