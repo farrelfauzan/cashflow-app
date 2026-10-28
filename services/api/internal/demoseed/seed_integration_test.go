@@ -5,6 +5,7 @@ package demoseed_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,7 +129,9 @@ func TestSeedDemo(t *testing.T) {
 	require.NoError(t, err)
 	b, err := env.Orgs.FindForMember(ctx, "0812-0002-0002", demoseed.OrgAnggrek)
 	require.NoError(t, err)
-	before := snapshot(t, env, a.OrganizationID, b.OrganizationID)
+	c, err := env.Orgs.FindForMember(ctx, "0812-0009-0027", demoseed.OrgBulanan)
+	require.NoError(t, err)
+	before := snapshot(t, env, a.OrganizationID, b.OrganizationID, c.OrganizationID)
 
 	t.Run("running it again creates and changes nothing", func(t *testing.T) {
 		second, err := demoseed.Run(ctx, deps(env), env.Clock)
@@ -139,7 +142,10 @@ func TestSeedDemo(t *testing.T) {
 		a2, err := env.Orgs.FindForMember(ctx, "0812-0001-0002", demoseed.OrgGriya)
 		require.NoError(t, err)
 		require.Equal(t, a, a2)
-		require.Equal(t, before, snapshot(t, env, a.OrganizationID, b.OrganizationID))
+		c2, err := env.Orgs.FindForMember(ctx, "0812-0009-0027", demoseed.OrgBulanan)
+		require.NoError(t, err)
+		require.Equal(t, c, c2)
+		require.Equal(t, before, snapshot(t, env, a.OrganizationID, b.OrganizationID, c.OrganizationID))
 	})
 
 	t.Run("the counts match the demo contents", func(t *testing.T) {
@@ -160,10 +166,19 @@ func TestSeedDemo(t *testing.T) {
 		require.Zero(t, gb["lease_charge"].Rows)
 		require.Positive(t, ga["audit_log"].Rows, "the snapshot covers the audit log too")
 		require.Equal(t, 7, ga["staff_user"].Rows, "an organization scope sees its own members' users")
+
+		gc := before[c.OrganizationID]
+		require.Equal(t, 27, gc["membership"].Rows)
+		require.Equal(t, 25, gc["property"].Rows)
+		require.Equal(t, 95, gc["unit"].Rows)
+		require.Equal(t, 45, gc["tenant"].Rows)
+		require.Equal(t, 42, gc["lease"].Rows, "33 running, 5 booked and 4 ended leases")
+		require.Zero(t, gc["charge_type"].Rows)
+		require.Equal(t, 27, gc["staff_user"].Rows)
 	})
 
 	t.Run("the login list has every member with E.164 phones", func(t *testing.T) {
-		require.Len(t, first.Logins, 11)
+		require.Len(t, first.Logins, 38)
 		var disabled []string
 		for _, l := range first.Logins {
 			require.Regexp(t, `^\+62\d+$`, l.Phone)
@@ -172,7 +187,13 @@ func TestSeedDemo(t *testing.T) {
 				disabled = append(disabled, l.Organization+"/"+l.Name)
 			}
 		}
-		require.Equal(t, []string{"Griya Sejahtera/Mas Agus Setiawan"}, disabled)
+		require.ElementsMatch(t, []string{
+			"Griya Sejahtera/Mas Agus Setiawan",
+			"Kos Bulanan Sejahtera/Mas Bayu Firmansyah",
+			"Kos Bulanan Sejahtera/Mas Eko Susilo",
+			"Kos Bulanan Sejahtera/Mas Imam Santoso",
+			"Kos Bulanan Sejahtera/Mbak Nia Ramadhani",
+		}, disabled)
 		limits := map[string][]string{}
 		for _, l := range first.Logins {
 			if len(l.PropertyLimits) > 0 {
@@ -180,8 +201,11 @@ func TestSeedDemo(t *testing.T) {
 			}
 		}
 		require.Equal(t, map[string][]string{
-			"Griya Sejahtera/Mbak Sari Wulandari": {"Admin: Kos Melati"},
-			"Griya Sejahtera/Mas Joko Prasetyo":   {"Admin: Kontrakan Mawar"},
+			"Griya Sejahtera/Mbak Sari Wulandari":       {"Admin: Kos Melati"},
+			"Griya Sejahtera/Mas Joko Prasetyo":         {"Admin: Kontrakan Mawar"},
+			"Kos Bulanan Sejahtera/Mbak Lestari Anjani": {"Admin: Kontrakan Seturan"},
+			"Kos Bulanan Sejahtera/Bu Retno Handayani":  {"Admin: Kos Sejahtera Utama"},
+			"Kos Bulanan Sejahtera/Mas Bayu Firmansyah": {"Admin: Ruko Condongcatur"},
 		}, limits)
 	})
 
@@ -242,7 +266,7 @@ func TestSeedDemo(t *testing.T) {
 		for _, o := range orgs {
 			got = append(got, o.ID)
 		}
-		require.ElementsMatch(t, []uuid.UUID{a.OrganizationID, b.OrganizationID}, got)
+		require.ElementsMatch(t, []uuid.UUID{a.OrganizationID, b.OrganizationID}, got, "not Kos Bulanan Sejahtera")
 		require.Equal(t, []string{authz.RoleAdmin}, roleKeys(env.Principal(t, a.OrganizationID, hendra)))
 		require.Equal(t, []string{authz.RoleSupervisor}, roleKeys(env.Principal(t, b.OrganizationID, hendra)))
 	})
@@ -366,6 +390,108 @@ func TestSeedDemo(t *testing.T) {
 			})
 			require.NoError(t, err)
 		}
+	})
+
+	t.Run("Kos Bulanan Sejahtera has volume for several pages", func(t *testing.T) {
+		adminC := env.Principal(t, c.OrganizationID, c.UserID)
+
+		props, err := env.Properties.List(ctx, adminC)
+		require.NoError(t, err)
+		require.Len(t, props, 25)
+		lower := map[string]bool{}
+		for _, p := range props {
+			require.False(t, lower[strings.ToLower(p.Name)], "duplicate property name %s", p.Name)
+			lower[strings.ToLower(p.Name)] = true
+		}
+		require.True(t, lower["kos melati 2"] && lower["ruko cempaka"], "small properties with searchable names")
+		bigUnits, err := env.Properties.ListUnits(ctx, adminC, propertyID(t, env, adminC, "Kos Sejahtera Utama"))
+		require.NoError(t, err)
+		require.Len(t, bigUnits, 30)
+
+		members, err := env.Members.List(ctx, adminC)
+		require.NoError(t, err)
+		require.Len(t, members, 27)
+		var disabled int
+		byPhone := map[string]member.Member{}
+		for _, m := range members {
+			byPhone[m.Phone] = m
+			if m.Status == member.StatusDisabled {
+				disabled++
+			}
+		}
+		require.Equal(t, 4, disabled)
+
+		tenantsC, err := env.Tenants.List(ctx, adminC)
+		require.NoError(t, err)
+		require.Len(t, tenantsC, 45)
+		today := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC) // the test clock
+		var active, booked, ended, none, flagged int
+		for _, tn := range tenantsC {
+			switch {
+			case len(tn.Leases) == 0:
+				none++
+			case tn.Leases[0].Status == tenant.StatusEnded:
+				ended++
+			case tn.Leases[0].StartDate.After(today):
+				booked++
+			default:
+				active++
+			}
+			for _, l := range tn.Leases {
+				if l.Status == tenant.StatusActive && l.CollectorMemberID != uuid.Nil && !l.CollectorActive {
+					flagged++
+				}
+			}
+		}
+		require.Equal(t, [5]int{33, 5, 4, 3, 3}, [5]int{active, booked, ended, none, flagged})
+
+		eko, imam := byPhone["+6281200090008"], byPhone["+6281200090012"]
+		require.Equal(t, "Mas Eko Susilo", eko.Name)
+		require.Equal(t, "Mas Imam Santoso", imam.Name)
+		require.Equal(t, member.StatusDisabled, eko.Status)
+		require.Equal(t, member.StatusDisabled, imam.Status)
+		require.Equal(t, int64(2), eko.CollectorLeaseCount)
+		require.Equal(t, int64(1), imam.CollectorLeaseCount)
+		require.Equal(t, []string{"Kos Sejahtera Utama/Kamar 7"}, leaseUnits(find(t, tenantsC, "Gita Savitri")))
+		require.False(t, find(t, tenantsC, "Gita Savitri").Leases[0].CollectorActive)
+	})
+
+	t.Run("Lestari is limited to Kontrakan Seturan in Kos Bulanan Sejahtera", func(t *testing.T) {
+		members, err := env.Members.List(ctx, env.Principal(t, c.OrganizationID, c.UserID))
+		require.NoError(t, err)
+		var lestari member.Member
+		for _, m := range members {
+			if m.Phone == "+6281200090028" {
+				lestari = m
+			}
+		}
+		require.Equal(t, "Mbak Lestari Anjani", lestari.Name)
+		var got []member.RoleRef
+		for _, r := range lestari.Roles {
+			got = append(got, member.RoleRef{Key: r.Key, PropertyID: r.PropertyID})
+		}
+		require.Equal(t, []member.RoleRef{{
+			Key: authz.RoleAdmin, PropertyID: propertyID(t, env, env.Principal(t, c.OrganizationID, c.UserID), "Kontrakan Seturan"),
+		}}, got)
+
+		orgs, err := env.Auth.Organizations(ctx, lestari.UserID)
+		require.NoError(t, err)
+		require.Len(t, orgs, 1, "only Kos Bulanan Sejahtera")
+
+		seen, err := env.Tenants.List(ctx, env.Principal(t, c.OrganizationID, lestari.UserID))
+		require.NoError(t, err)
+		// Seven running leases and Mulyadi's booking; Novita's ended lease is not listed.
+		require.Equal(t, []string{
+			"Fitriani Nur Hasanah", "Gunawan Santoso", "Heri Setiawan", "Irfan Hakim", "Jumiati",
+			"Kurniawan Adi", "Laila Fitria", "Mulyadi",
+		}, names(seen))
+		for _, tn := range seen {
+			for _, l := range tn.Leases {
+				require.Equal(t, "Kontrakan Seturan", l.PropertyName, tn.Name)
+			}
+		}
+		require.Contains(t, names(seen), "Heri Setiawan", "his collector Imam has left")
+		require.NotContains(t, names(seen), "Andi Pratama")
 	})
 
 	// Last: it moves Eko out, which the subtests above rely on.
