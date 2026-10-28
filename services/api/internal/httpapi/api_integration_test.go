@@ -254,6 +254,12 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		resp, body = admin.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String()+"/units", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Len(t, decode[apigen.UnitList](t, body).Units, 1)
+
+		resp, body = admin.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String(), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		got := decode[apigen.Property](t, body)
+		require.Equal(t, melati.Id, got.Id)
+		require.Equal(t, int64(1), got.UnitCount)
 	})
 
 	t.Run("conflicts and bad input name the field", func(t *testing.T) {
@@ -276,6 +282,11 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		resp, _ = admin.do(http.MethodPut, orgPath+"/units/"+uuid.NewString(), apigen.UnitInput{Label: "Kamar 1"})
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 		resp, _ = admin.do(http.MethodGet, orgPath+"/properties/not-a-uuid/units", nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		resp, body = admin.do(http.MethodGet, orgPath+"/properties/"+uuid.NewString(), nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.Equal(t, "not_found", decode[apigen.Error](t, body).Error.Code)
+		resp, _ = admin.do(http.MethodGet, orgPath+"/properties/not-a-uuid", nil)
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 
@@ -327,6 +338,11 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		resp, _ = limited.do(http.MethodGet, orgPath+"/members", nil)
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
+		resp, _ = limited.do(http.MethodGet, orgPath+"/properties/"+mawar.Id.String(), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, body = limited.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String(), nil)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+		require.Contains(t, string(body), `"code":"forbidden"`)
 		resp, _ = limited.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String()+"/units", nil)
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 		resp, _ = limited.do(http.MethodPut, orgPath+"/units/"+unit.Id.String(), apigen.UnitInput{Label: "Kamar 13"})

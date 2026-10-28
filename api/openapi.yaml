@@ -392,6 +392,19 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrgId"
       - $ref: "#/components/parameters/PropertyId"
+    get:
+      tags: [properties]
+      operationId: getProperty
+      summary: One property with its unit counts (needs property:read on it)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Property" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
     put:
       tags: [properties]
       operationId: updateProperty
