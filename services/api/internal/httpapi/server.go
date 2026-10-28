@@ -91,6 +91,7 @@ func New(d Deps) *Server {
 			r.Route("/orgs/{orgID}", func(r chi.Router) {
 				r.Use(s.requireMember)
 				r.Get("/me", s.getOrgMe)
+				r.Get("/collector-candidates", s.listCollectorCandidates)
 				r.Get("/members", s.listMembers)
 				r.Post("/members", s.inviteMember)
 				r.Put("/members/{memberID}/roles", s.setMemberRoles)
