@@ -1,6 +1,7 @@
-import { PendingSection } from "@/components/server/shell/pending-section";
+import { TenantsScreen } from "@/components/server/tenant/tenants-screen";
 
-// Built in W7 from its board.
-export default function TenantsPage() {
-  return <PendingSection title="Penyewa" />;
+export default function TenantsPage({
+  params,
+}: PageProps<"/o/[orgId]/tenants">) {
+  return <TenantsScreen params={params} />;
 }
