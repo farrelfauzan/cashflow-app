@@ -147,8 +147,8 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 func (s *Service) OwnRoles(ctx context.Context, p authz.Principal) ([]RoleRef, error) {
 	var out []RoleRef
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
-		m, err := load(ctx, dbgen.New(tx), p.OrganizationID, p.MembershipID)
-		out = m.Roles
+		var err error
+		out, err = membershipRoles(ctx, dbgen.New(tx), p.OrganizationID, p.MembershipID)
 		return err
 	})
 	return out, err
@@ -567,22 +567,31 @@ func load(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) (M
 	if err != nil {
 		return Member{}, fmt.Errorf("loading member: %w", err)
 	}
+	roles, err := membershipRoles(ctx, q, org, membershipID)
+	if err != nil {
+		return Member{}, err
+	}
+	return Member{
+		ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt,
+		Invitation: invitationFrom(r.InvitationState, r.InvitationLastSentAt), FirstSignInAt: r.FirstSignInAt,
+		CollectorLeaseCount: r.CollectorLeaseCount, Roles: roles,
+	}, nil
+}
+
+// membershipRoles reads one membership's roles, sorted for display.
+func membershipRoles(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) ([]RoleRef, error) {
 	rows, err := q.ListRoleAssignmentsForMembership(ctx, dbgen.ListRoleAssignmentsForMembershipParams{
 		OrganizationID: org, MembershipID: membershipID,
 	})
 	if err != nil {
-		return Member{}, fmt.Errorf("loading member roles: %w", err)
+		return nil, fmt.Errorf("loading member roles: %w", err)
 	}
-	m := Member{
-		ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt,
-		Invitation: invitationFrom(r.InvitationState, r.InvitationLastSentAt), FirstSignInAt: r.FirstSignInAt,
-		CollectorLeaseCount: r.CollectorLeaseCount,
-	}
+	var roles []RoleRef
 	for _, row := range rows {
-		m.Roles = append(m.Roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID, row.PropertyName))
+		roles = append(roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID, row.PropertyName))
 	}
-	sortRoles(m.Roles)
-	return m, nil
+	sortRoles(roles)
+	return roles, nil
 }
 
 func rolesByMembership(ctx context.Context, q *dbgen.Queries, org uuid.UUID) (map[uuid.UUID][]RoleRef, error) {
