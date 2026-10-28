@@ -67,7 +67,7 @@ export const getGetOrgMeUrl = (orgId: string,) => {
 }
 
 /**
- * Capabilities are for showing or hiding controls. The server checks every request regardless. "conditional" means allowed on some records, such as a karyawan's own assigned tenants.
+ * Capabilities are for showing or hiding controls. The server checks every request regardless. "conditional" means allowed on some records, such as a karyawan's own assigned tenants. The first call by a member records their firstSignInAt in this organization; later calls leave it unchanged. The web app makes this call when the member opens the organization.
  * @summary The signed-in member's roles and what they may do in this organization
  */
 export const getOrgMe = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<OrgMeResponse> => {
@@ -263,6 +263,7 @@ export const getInviteMemberUrl = (orgId: string,) => {
 
 /**
  * Each role can be limited to one property with propertyId, as in setMemberRoles. The member and every role are created together, so the member never holds a broader role than the one asked for. A role limited to a property grants nothing on organization-wide records, so a member whose roles are all limited to properties cannot invite anyone.
+ * After the member is created, the invitation is sent once over WhatsApp: who invited them, the organization, the role and a link to the login page (no token in it; the member signs in with the usual WhatsApp code). A failed or rate-limited send never undoes the invite: the answer is still 201, with invitation.state not_sent, and resendMemberInvitation sends it again. A number that is already a member answers 409 already_member and sends nothing.
  * @summary Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
  */
 export const inviteMember = async (orgId: string,
@@ -297,7 +298,7 @@ return apiFetch<Member>(getInviteMemberUrl(orgId),
 
 export const getInviteMemberMutationKey = () => ['inviteMember'] as const;
 
-export const getInviteMemberMutationOptions = <TError = ErrorType<ErrorResponse>,
+export const getInviteMemberMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext> => {
 
@@ -326,13 +327,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type InviteMemberMutationResult = NonNullable<Awaited<ReturnType<typeof inviteMember>>>
     export type InviteMemberMutationBody = BodyType<InviteMember>
-    export type InviteMemberMutationError = ErrorType<ErrorResponse>
+    export type InviteMemberMutationError = ErrorType<ErrorResponse | Error>
     export type InviteMemberMutationVariables = {orgId: string;data: BodyType<InviteMember>}
 
     /**
  * @summary Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
  */
-export const useInviteMember = <TError = ErrorType<ErrorResponse>,
+export const useInviteMember = <TError = ErrorType<ErrorResponse | Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof inviteMember>>,
@@ -341,6 +342,82 @@ export const useInviteMember = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getInviteMemberMutationOptions(options), queryClient);
+    }
+    export const getResendMemberInvitationUrl = (orgId: string,
+    memberId: string,) => {
+
+
+
+
+  return `/orgs/${orgId}/members/${memberId}/invitation`
+}
+
+/**
+ * Sends the same invitation as inviteMember and returns the member with the new invitation state. Members who were never invited (the organization's founders) have nothing to resend. WhatsApp sends from one number shared by every organization, so invitation sends, first sends included, are limited to 20 per organization per hour and 3 per WhatsApp number per 24 hours.
+ * @summary Send a member's WhatsApp invitation again (needs member:invite)
+ */
+export const resendMemberInvitation = async (orgId: string,
+    memberId: string, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
+
+  return apiFetch<Member>(getResendMemberInvitationUrl(orgId,memberId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getResendMemberInvitationMutationKey = () => ['resendMemberInvitation'] as const;
+
+export const getResendMemberInvitationMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext> => {
+
+const mutationKey = getResendMemberInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resendMemberInvitation>>, ResendMemberInvitationMutationVariables> = (props) => {
+          const {orgId,memberId} = props ?? {};
+
+          return  resendMemberInvitation(orgId,memberId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResendMemberInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof resendMemberInvitation>>>
+
+    export type ResendMemberInvitationMutationError = ErrorType<ErrorResponse | Error>
+    export type ResendMemberInvitationMutationVariables = {orgId: string;memberId: string}
+
+    /**
+ * @summary Send a member's WhatsApp invitation again (needs member:invite)
+ */
+export const useResendMemberInvitation = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resendMemberInvitation>>,
+        TError,
+        ResendMemberInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResendMemberInvitationMutationOptions(options), queryClient);
     }
     export const getSetMemberRolesUrl = (orgId: string,
     memberId: string,) => {

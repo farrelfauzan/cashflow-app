@@ -4,6 +4,7 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { Invitation } from './invitation';
 import type { MemberStatus } from './memberStatus';
 import type { RoleRef } from './roleRef';
 
@@ -15,4 +16,11 @@ export interface Member {
   status: MemberStatus;
   roles: RoleRef[];
   createdAt: string;
+  /** The WhatsApp invitation, or null for a member who was never invited (the organization's founders). */
+  invitation: Invitation | null;
+  /**
+     * When the member first opened this organization after signing in (their first getOrgMe here); null until they have. Each organization sees only its own, so it never reveals that a number belongs to another organization.
+     * @nullable
+     */
+  firstSignInAt: string | null;
 }
