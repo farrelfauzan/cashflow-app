@@ -40,9 +40,9 @@ export async function loadOrgMe(orgId: string) {
 }
 
 // The side menu inside an organization. An item shows when the member's ability (from
-// getOrgMe's capabilities) grants its permission, on every record or on some ("conditional"). Never by role name:
-// a custom role or a property limit changes what shows without touching this list. Hiding is
-// visibility only; the API checks every request.
+// getOrgMe's capabilities) grants its permission, on every record or on some ("conditional").
+// Never by role name: a custom role or a property limit changes what shows without touching this
+// list. Hiding is visibility only; the API checks every request.
 export const ORG_MENU: readonly OrgMenuItem[] = [
   { key: "home", label: "Beranda", segment: "", permission: null },
   {
