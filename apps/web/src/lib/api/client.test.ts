@@ -157,6 +157,8 @@ describe("apiRequest request", () => {
     { name: "a half-encoded parent segment", id: ".%2e" },
     { name: "a backslash", id: "..\\auth" },
     { name: "a fragment", id: "org-1#x" },
+    { name: "a tab between two dots", id: ".\t." },
+    { name: "a newline between two dots", id: ".\n./auth" },
   ])("never sends a path value with $name", async ({ id }) => {
     const error = await caught(apiRequest({ url: `/orgs/${id}/me` }));
 
