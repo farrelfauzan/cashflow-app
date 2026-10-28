@@ -298,6 +298,11 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due 15 Nov), and so on, with a full
   first month and no proration. A start on the 29th to 31st is due on the last day of shorter
   months, always counted from the start date (31 Jan, 28 Feb, 31 Mar).
+- A new lease's first invoice is generated as soon as the lease is saved (the daily run is the
+  safety net). A lease entered while already running is first invoiced on its first anniversary
+  on or after the day it is entered; months before that are never invoiced by the app. The start
+  date can change only until the lease's first invoice exists. An invoice belongs to the month
+  of its due date (dashboard filters, "Tagihan November").
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are
