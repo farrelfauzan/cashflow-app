@@ -1,5 +1,5 @@
-import { OrganizationsPlaceholder } from "@/components/server/organization/organizations-placeholder";
+import { OrganizationPicker } from "@/components/server/organization/organization-picker";
 
 export default function OrganizationsPage() {
-  return <OrganizationsPlaceholder />;
+  return <OrganizationPicker />;
 }

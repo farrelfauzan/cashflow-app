@@ -23,9 +23,30 @@ export const HENDRA: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "hendra.json"),
 };
 
+// Admin limited to Kos Melati, in Griya Sejahtera only: one organization, so the picker goes
+// straight in. Signed in by the setup project only.
+export const SARI: SeededStaff = {
+  phone: "0812-0001-0004",
+  name: "Mbak Sari Wulandari",
+  organizations: ["Griya Sejahtera"],
+  storageState: join(__dirname, "..", ".auth", "sari.json"),
+};
+
+// Karyawan in Kost Putri Anggrek only: sees only the tenants assigned to him. Signed in by the
+// setup project only.
+export const RUDI: SeededStaff = {
+  phone: "0812-0002-0003",
+  name: "Mas Rudi Hartanto",
+  organizations: ["Kost Putri Anggrek"],
+  storageState: join(__dirname, "..", ".auth", "rudi.json"),
+};
+
+// Every member the setup project signs in once per run.
+export const SETUP_STAFF: readonly SeededStaff[] = [HENDRA, SARI, RUDI];
+
 // A seeded member the login spec signs in through the UI. Each is used by one test in one
 // project only, so parallel tests and reruns never share a phone's limits (3 code requests and
-// 10 verifies per 15 minutes). None of them is HENDRA, whom the setup project signs in.
+// 10 verifies per 15 minutes). None of them is signed in by the setup project (SETUP_STAFF).
 export type SeededMember = Pick<SeededStaff, "phone" | "name">;
 
 export type LoginPhones = {
@@ -50,7 +71,7 @@ export const LOGIN_PHONES: Record<"ipad" | "phone", LoginPhones> = {
     rateLimited: "0812-9000-0201",
   },
   phone: {
-    signIn: { phone: "0812-0001-0004", name: "Mbak Sari Wulandari" },
+    signIn: { phone: "0812-0002-0002", name: "Mbak Wulan Sari" },
     signInWithNext: { phone: "0812-0001-0005", name: "Mas Joko Prasetyo" },
     wrongCode: { phone: "0812-0002-0001", name: "Ibu Lestari Handayani" },
     unregistered: "0812-9000-0102",
