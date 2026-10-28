@@ -5,7 +5,7 @@ import type {
   Unit,
 } from "@/lib/api/generated/model";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
-import { canSee } from "@/lib/organization/org-menu";
+import { canSee } from "@/lib/capabilities";
 
 import type {
   PropertyFormErrors,
