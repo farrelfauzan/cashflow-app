@@ -12,7 +12,8 @@ import {
 import { resendError } from "@/lib/member/member-errors";
 import { cn } from "@/lib/utils";
 
-const RESENT_MESSAGE = "Undangan sudah dikirim ulang.";
+import type { Outcome } from "./type";
+import { RESENT_MESSAGE } from "./utils";
 
 type ResendInvitationButtonProps = {
   orgId: string;
@@ -21,8 +22,6 @@ type ResendInvitationButtonProps = {
   label: string;
   className?: string;
 };
-
-type Outcome = { message: string; failed: boolean };
 
 // Sends a member's WhatsApp invitation again and says how it went. Either way the list loads
 // again, since a failed send also changes the invitation's state. A number that cannot receive

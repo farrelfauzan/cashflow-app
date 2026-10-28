@@ -17,6 +17,7 @@ import type { PropertyNames } from "@/lib/member/role-labels";
 import { InviteMemberForm } from "./invite-member-form";
 import { InviteResult } from "./invite-result";
 import { MemberAccessForm } from "./member-access-form";
+import type { OpenPanel } from "./type";
 
 type MemberPanelProps = {
   orgId: string;
@@ -29,8 +30,6 @@ type MemberPanelProps = {
   onPanelChange: (panel: MemberPanelState) => void;
   onNotice: (notice: string) => void;
 };
-
-type OpenPanel = Exclude<MemberPanelState, { kind: "closed" }>;
 
 // The side panel of the members screen (board Members.dc.html): from the right on iPad, the
 // whole screen on the phone. One panel at a time; its save button is its primary action.

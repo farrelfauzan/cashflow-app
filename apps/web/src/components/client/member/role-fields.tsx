@@ -8,16 +8,11 @@ import {
   SCOPED_ROLES,
   type RoleFormErrors,
   type RoleFormState,
-  type ScopedRoleKey,
 } from "@/lib/member/role-form";
 
 import { ScopedRoleField } from "./scoped-role-field";
 import { SupervisorRoleRow } from "./supervisor-role-row";
-
-const LABELS: Record<ScopedRoleKey, string> = {
-  admin: "Admin",
-  karyawan: "Karyawan",
-};
+import { SCOPED_ROLE_LABELS } from "./utils";
 
 type RoleFieldsProps = {
   // "edit" shows the member's Supervisor role, which cannot change; "invite" says why there
@@ -61,7 +56,7 @@ export function RoleFields({
       {SCOPED_ROLES.map((key) => (
         <ScopedRoleField
           key={key}
-          label={LABELS[key]}
+          label={SCOPED_ROLE_LABELS[key]}
           value={value[key]}
           onChange={(next) => onChange({ ...value, [key]: next })}
           properties={properties}

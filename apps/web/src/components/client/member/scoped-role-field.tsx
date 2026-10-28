@@ -9,6 +9,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { Property } from "@/lib/api/generated/model";
 import { toggleProperty, type ScopedRoleState } from "@/lib/member/role-form";
 
+import { ROLE_OPTION_CLASS } from "./utils";
+
 type ScopedRoleFieldProps = {
   // "Admin" or "Karyawan".
   label: string;
@@ -18,9 +20,6 @@ type ScopedRoleFieldProps = {
   error: string | undefined;
   disabled: boolean;
 };
-
-// Each row is a whole label, so the touch target is at least 44px tall.
-const OPTION_CLASS = "min-h-11 gap-2.5 text-base leading-normal font-normal";
 
 // One role in the form: whether the member has it, and where (the whole organization, or the
 // properties ticked below).
@@ -66,7 +65,7 @@ export function ScopedRoleField({
             disabled={disabled}
             className="gap-0"
           >
-            <Label htmlFor={`${id}-organization`} className={OPTION_CLASS}>
+            <Label htmlFor={`${id}-organization`} className={ROLE_OPTION_CLASS}>
               <RadioGroupItem
                 id={`${id}-organization`}
                 value="organization"
@@ -74,7 +73,7 @@ export function ScopedRoleField({
               />
               Seluruh usaha
             </Label>
-            <Label htmlFor={`${id}-properties`} className={OPTION_CLASS}>
+            <Label htmlFor={`${id}-properties`} className={ROLE_OPTION_CLASS}>
               <RadioGroupItem
                 id={`${id}-properties`}
                 value="properties"
@@ -99,7 +98,7 @@ export function ScopedRoleField({
                   <Label
                     key={property.id}
                     htmlFor={`${id}-${property.id}`}
-                    className={OPTION_CLASS}
+                    className={ROLE_OPTION_CLASS}
                   >
                     <Checkbox
                       id={`${id}-${property.id}`}

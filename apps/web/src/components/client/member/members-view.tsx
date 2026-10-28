@@ -18,6 +18,7 @@ import { canSee } from "@/lib/organization/org-menu";
 import { MemberList } from "./member-list";
 import { MemberPanel } from "./member-panel";
 import { MembersHeader } from "./members-header";
+import { NO_PERMISSIONS } from "./utils";
 
 type MembersViewProps = {
   orgId: string;
@@ -25,8 +26,6 @@ type MembersViewProps = {
   // "Arti tiap peran", rendered on the server.
   roleGuide: ReactNode;
 };
-
-const NO_PERMISSIONS = { canInvite: false, canManage: false };
 
 // The members screen: the list, and the panels that change it. What shows comes from the
 // signed-in member's capabilities (getOrgMe); after every change the list query is invalidated

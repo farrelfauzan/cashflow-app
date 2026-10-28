@@ -23,16 +23,13 @@ import {
 } from "@/lib/member/role-form";
 
 import { RoleFields } from "./role-fields";
-
-const EMPTY_NAME_MESSAGE = "Isi nama anggota.";
-const EMPTY_PHONE_MESSAGE = "Isi nomor WhatsApp.";
-// The API's limit (InviteMember.name maxLength).
-const NAME_MAX_LENGTH = 100;
-
-const INPUT_CLASS =
-  "h-13 rounded-xl border-[1.5px] bg-card px-3.5 text-[17px] aria-invalid:border-2";
-
-type TextFieldErrors = Partial<Record<"name" | "phone", string>>;
+import type { TextFieldErrors } from "./type";
+import {
+  EMPTY_NAME_MESSAGE,
+  EMPTY_PHONE_MESSAGE,
+  INPUT_CLASS,
+  NAME_MAX_LENGTH,
+} from "./utils";
 
 type InviteMemberFormProps = {
   orgId: string;
