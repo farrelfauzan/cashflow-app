@@ -19,6 +19,12 @@ export interface Lease {
   startDate: string;
   /** Last day of the lease, set by move-out. */
   endDate?: string;
+  /** The day the lease was saved, in Asia/Jakarta, set by the server. A lease whose start date is before it was entered late: from slice 2 its past periods are due on this day. */
+  enteredOn: string;
+  /** "Mulai tagih dari": the first period the app invoices, an anniversary of the start date. It equals the start date unless the admin skipped periods the owner collected by hand. */
+  billedFrom: string;
+  /** "Rencana keluar": the tenant's planned last day, set with setLeasePlannedEnd. Missing when none is set; cleared by move-out. */
+  plannedEndDate?: string;
   /** Monthly rent in rupiah. */
   rentAmount: number;
   /** Deposit held, in rupiah. */

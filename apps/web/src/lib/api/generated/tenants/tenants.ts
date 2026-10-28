@@ -34,6 +34,7 @@ import type {
   Lease,
   LeaseChargesInput,
   LeaseInput,
+  LeasePlannedEnd,
   LeaseTerms,
   MoveOut,
   Tenant,
@@ -458,7 +459,7 @@ export const useCreateLease = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCreateLeaseMutationOptions(options), queryClient);
     }
     /**
- * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice.
+ * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice. A start date after the lease's planned end date is refused (field startDate); change the planned end date first.
  * @summary Change the terms of an active lease (needs lease:manage; audited)
  */
 export const updateLease = (
@@ -528,7 +529,77 @@ export const useUpdateLease = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getUpdateLeaseMutationOptions(options), queryClient);
     }
     /**
- * The end date is the last day of the lease: not before the start date and not after today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same way, with the end date equal to its start date; it will never be invoiced. The unit is free for a new lease right away. What happens to arrears is settled in slice 2.
+ * The planned end date ("Rencana keluar") is the tenant's last day, set when they say they will not continue. It must be on or after today in Asia/Jakarta and not before the start date; null clears it. It can change until the move-out, which clears it. From slice 2, no invoice is generated for a period that starts after it, and setting it cancels an invoice already generated for such a period (that also needs correction:create); today it is only stored.
+ * @summary Set, change or clear an active lease's planned end date (needs lease:manage; audited)
+ */
+export const setLeasePlannedEnd = (
+    orgId: string,
+    leaseId: string,
+    leasePlannedEnd: BodyType<LeasePlannedEnd>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<Lease>(
+      {url: `/orgs/${orgId}/leases/${leaseId}/planned-end`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: leasePlannedEnd, signal
+    },
+      options);
+    }
+
+
+
+
+export const getSetLeasePlannedEndMutationKey = () => ['setLeasePlannedEnd'] as const;
+
+export const getSetLeasePlannedEndMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext> => {
+
+const mutationKey = getSetLeasePlannedEndMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setLeasePlannedEnd>>, SetLeasePlannedEndMutationVariables> = (props) => {
+          const {orgId,leaseId,data} = props ?? {};
+
+          return  setLeasePlannedEnd(orgId,leaseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetLeasePlannedEndMutationResult = NonNullable<Awaited<ReturnType<typeof setLeasePlannedEnd>>>
+    export type SetLeasePlannedEndMutationBody = BodyType<LeasePlannedEnd>
+    export type SetLeasePlannedEndMutationError = ErrorType<ErrorResponse | Error>
+    export type SetLeasePlannedEndMutationVariables = {orgId: string;leaseId: string;data: BodyType<LeasePlannedEnd>}
+
+    /**
+ * @summary Set, change or clear an active lease's planned end date (needs lease:manage; audited)
+ */
+export const useSetLeasePlannedEnd = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeasePlannedEnd>>, TError,SetLeasePlannedEndMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setLeasePlannedEnd>>,
+        TError,
+        SetLeasePlannedEndMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetLeasePlannedEndMutationOptions(options), queryClient);
+    }
+    /**
+ * The end date is the last day of the lease: not before the start date and not after today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same way, with the end date equal to its start date; it will never be invoiced. The unit is free for a new lease right away, and any planned end date is cleared. What happens to arrears is settled in slice 2.
  * @summary End a lease on a date (needs lease:manage; audited)
  */
 export const moveOut = (
@@ -826,7 +897,7 @@ export const useCreateChargeType = <TError = ErrorType<ErrorResponse | Error>,
     }
     /**
  * Needs tenant:manage and lease:manage for the whole organization, plus property:manage or unit:manage for each property or unit a row creates; a denial stops the whole import.
- * The first line names the columns, separated by commas or semicolons, in any order: property, unit, tenant_name, phone, rent, start_date, and optionally deposit and property_kind (kos, kontrakan, ruko, other; new properties default to other). Indonesian names work too (properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan, jenis_properti). Other columns are ignored. Rent is due on the day of the start date; the due_day (jatuh_tempo) column of older templates is not used, and a row whose due day differs from its start date's day gets a note saying so. Amounts are whole rupiah ("850000", "850.000" or "Rp850.000"). Dates are 2026-10-01 or 01/10/2026 (day first).
+ * The first line names the columns, separated by commas or semicolons, in any order: property, unit, tenant_name, phone, rent, start_date, and optionally deposit, property_kind (kos, kontrakan, ruko, other; new properties default to other) and bill_from ("Mulai tagih dari", an anniversary of the start date, as on createLease; empty bills from the start date). Indonesian names work too (properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan, jenis_properti, mulai_tagih). Other columns are ignored. Rent is due on the day of the start date; the due_day (jatuh_tempo) column of older templates is not used, and a row whose due day differs from its start date's day gets a note saying so. Amounts are whole rupiah ("850000", "850.000" or "Rp850.000"). Dates are 2026-10-01 or 01/10/2026 (day first).
  * Properties match by name, units by label inside their property, tenants by phone; anything missing is created. A row whose unit already has an active lease for the same tenant is reported as matched and left unchanged (differing terms come back as a note), so running the same file twice is safe; an active lease for another tenant is an error. A phone already stored under a different name is an error too: one phone is one tenant. Amounts take dots only as thousands separators; anything after a decimal point other than zeros is refused.
  * With dryRun (the default) nothing is saved and every row comes back with its errors. With dryRun=false everything is saved in one transaction, but only when no row has an error; otherwise nothing is saved and committed is false. At most 2000 rows and 1 MiB.
  * @summary Import properties, units, tenants and leases from a CSV file (needs tenant:manage and lease:manage for the whole organization)
@@ -899,7 +970,7 @@ export const useImportTenants = <TError = ErrorType<Error | ErrorResponse>,
       return useMutation(getImportTenantsMutationOptions(options), queryClient);
     }
     /**
- * A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The header row uses the Indonesian column names (properti, jenis_properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan), followed by two example rows. The example rows only show the format: the import refuses them by their phone numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
+ * A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The header row uses the Indonesian column names (properti, jenis_properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, mulai_tagih, jaminan), followed by two example rows. The example rows only show the format: the import refuses them by their phone numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
  * @summary Download a CSV template for the tenant import (needs tenant:manage and lease:manage for the whole organization)
  */
 export const getTenantImportTemplate = (
