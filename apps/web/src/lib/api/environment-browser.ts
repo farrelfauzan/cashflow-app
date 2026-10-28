@@ -1,5 +1,6 @@
 import {
   isLoginPath,
+  isTenantPagePath,
   loginPathWithNext,
   safeNextPath,
 } from "@/lib/auth/next-path";
@@ -21,9 +22,11 @@ async function getRequestEnvironment(): Promise<RequestEnvironment> {
 }
 
 // The session is missing, expired or revoked: drop every cached answer and go to login, then
-// back to this page.
+// back to this page. Tenant pages have no login and their path holds the token, so they stay
+// put and show the error.
 async function handleUnauthorized(): Promise<void> {
   clearQueryCache();
+  if (isTenantPagePath(window.location.pathname)) return;
   const path = safeNextPath(
     `${window.location.pathname}${window.location.search}`,
   );

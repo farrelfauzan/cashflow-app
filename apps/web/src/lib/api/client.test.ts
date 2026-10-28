@@ -170,6 +170,22 @@ describe("apiFetch on 401", () => {
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
   });
 
+  it("stays on a tenant page and keeps its token out of any URL", async () => {
+    location.pathname = "/t/secret-token";
+    location.search = "";
+    const queryClient = getQueryClient();
+    queryClient.setQueryData(["user", "/me", {}], { name: "Siti Rahayu" });
+    respond(jsonError("unauthenticated", "Sesi berakhir. Masuk lagi."), {
+      status: 401,
+    });
+
+    const error = await caught(apiFetch("/t/secret-token/status"));
+
+    expect(error.status).toBe(401);
+    expect(location.assign).not.toHaveBeenCalled();
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
+
   it("does not navigate when already on the login page", async () => {
     location.pathname = "/login";
     location.search = "?next=%2Forganizations";

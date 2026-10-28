@@ -35,6 +35,17 @@ export function safeNextPath(value: string | null | undefined): string | null {
   return path;
 }
 
+// Tenant payment pages (/t/<token>). The token in the path is the tenant's access, so such a path
+// never goes into `next` (or any other query string), and tenants are never sent to staff login.
+export function isTenantPagePath(path: string): boolean {
+  return (
+    path === "/t" ||
+    path.startsWith("/t/") ||
+    path.startsWith("/t?") ||
+    path.startsWith("/t#")
+  );
+}
+
 export function isLoginPath(path: string): boolean {
   return (
     path === LOGIN_PATH ||
@@ -44,9 +55,11 @@ export function isLoginPath(path: string): boolean {
   );
 }
 
-// "/login?next=<path>" for a safe path, plain "/login" otherwise.
+// "/login?next=<path>" for a safe staff path, plain "/login" otherwise.
 export function loginPathWithNext(next: string | null | undefined): string {
   const path = safeNextPath(next);
-  if (path === null || isLoginPath(path)) return LOGIN_PATH;
+  if (path === null || isLoginPath(path) || isTenantPagePath(path)) {
+    return LOGIN_PATH;
+  }
   return `${LOGIN_PATH}?${new URLSearchParams({ next: path }).toString()}`;
 }

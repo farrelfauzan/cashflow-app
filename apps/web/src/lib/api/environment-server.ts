@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import {
   isLoginPath,
+  isTenantPagePath,
   loginPathWithNext,
   safeNextPath,
 } from "@/lib/auth/next-path";
@@ -27,10 +28,10 @@ async function getRequestEnvironment(): Promise<RequestEnvironment> {
 // The session is missing, expired or revoked: back to login, then to this page. redirect()
 // throws, so rendering stops here. Without a known path (a route src/proxy.ts does not cover)
 // or on the login page itself there is no redirect, which avoids a loop; the caller gets the
-// ApiError instead.
+// ApiError instead. Tenant pages (outside the matcher anyway) never redirect.
 async function handleUnauthorized(): Promise<void> {
   const path = safeNextPath((await headers()).get(REQUEST_PATH_HEADER));
-  if (path === null || isLoginPath(path)) return;
+  if (path === null || isLoginPath(path) || isTenantPagePath(path)) return;
   redirect(loginPathWithNext(path));
 }
 

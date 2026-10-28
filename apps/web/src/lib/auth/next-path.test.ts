@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isLoginPath,
+  isTenantPagePath,
   LOGIN_PATH,
   loginPathWithNext,
   safeNextPath,
@@ -80,6 +81,20 @@ describe("isLoginPath", () => {
   });
 });
 
+describe("isTenantPagePath", () => {
+  it.each([
+    { input: "/t", want: true },
+    { input: "/t/secret-token", want: true },
+    { input: "/t/secret-token?paid=1", want: true },
+    { input: "/t?x=1", want: true },
+    { input: "/tenants", want: false },
+    { input: "/o/org-1/t/x", want: false },
+    { input: "/", want: false },
+  ])("$input is $want", ({ input, want }) => {
+    expect(isTenantPagePath(input)).toBe(want);
+  });
+});
+
 describe("loginPathWithNext", () => {
   it.each([
     {
@@ -93,6 +108,12 @@ describe("loginPathWithNext", () => {
       want: "/login?next=%2Forganizations",
     },
     { name: "the login page", input: "/login", want: LOGIN_PATH },
+    { name: "a tenant page", input: "/t/secret-token", want: LOGIN_PATH },
+    {
+      name: "a tenant page with a query",
+      input: "/t/secret-token?status=1",
+      want: LOGIN_PATH,
+    },
     {
       name: "the login page with next",
       input: "/login?next=%2Fo",
