@@ -227,6 +227,102 @@ export const useCreateProperty = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCreatePropertyMutationOptions(options), queryClient);
     }
     /**
+ * @summary One property with its unit counts (needs property:read on it)
+ */
+export const getProperty = (
+    orgId: string,
+    propertyId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<Property>(
+      {url: `/orgs/${orgId}/properties/${propertyId}`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetPropertyQueryKey = (orgId: string,
+    propertyId: string,) =>
+    apiQueryKey({ orgId,propertyId }, { url: `/orgs/${orgId}/properties/${propertyId}` });
+
+
+export const useGetPropertyQueryOptions = <TData = Awaited<ReturnType<typeof getProperty>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProperty>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,propertyId }, { url: `/orgs/${orgId}/properties/${propertyId}`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProperty>>> = ({ signal }) => getProperty(orgId,propertyId, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && propertyId !== null && propertyId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProperty>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPropertyQueryResult = NonNullable<Awaited<ReturnType<typeof getProperty>>>
+export type GetPropertyQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetProperty<TData = Awaited<ReturnType<typeof getProperty>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    propertyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProperty>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProperty>>,
+          TError,
+          Awaited<ReturnType<typeof getProperty>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProperty<TData = Awaited<ReturnType<typeof getProperty>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProperty>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProperty>>,
+          TError,
+          Awaited<ReturnType<typeof getProperty>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProperty<TData = Awaited<ReturnType<typeof getProperty>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProperty>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary One property with its unit counts (needs property:read on it)
+ */
+
+export function useGetProperty<TData = Awaited<ReturnType<typeof getProperty>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProperty>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetPropertyQueryOptions(orgId,propertyId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
  * @summary Change a property's name, kind or address (needs property:manage on it)
  */
 export const updateProperty = (
