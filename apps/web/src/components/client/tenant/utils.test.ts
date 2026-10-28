@@ -388,6 +388,11 @@ describe("readTenantFilters", () => {
   it.each([
     { name: "a blank search", query: "q=%20%20" },
     { name: "an empty property", query: "propertyId=" },
+    { name: "a property that is not an id", query: "propertyId=abc" },
+    {
+      name: "a property id cut short",
+      query: "propertyId=66666666-6666-4666-8666-66666666",
+    },
     { name: "an unknown status", query: "status=deleted" },
     { name: "a status in another case", query: "status=Active" },
     { name: "the status 'all'", query: "status=all" },

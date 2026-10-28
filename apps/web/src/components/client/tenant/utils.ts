@@ -189,14 +189,18 @@ export function tenantPermissions(ability: AppAbility): TenantPermissions {
   return { canManageLeases: ability.can("manage", "lease") };
 }
 
-// The tenant filters in the URL. A status outside the API's list, a blank property or any
-// collectorDisabled other than "true" counts as not set, so a hand-edited URL never makes the API
-// answer 400.
+// A property id as the API parses it; anything else (a link cut short in a chat) is not one.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The tenant filters in the URL. A status outside the API's list, a property that is not an id
+// or any collectorDisabled other than "true" counts as not set, so a hand-edited URL never makes
+// the API answer 400.
 export function readTenantFilters(params: URLSearchParams): TenantListFilters {
   const propertyId = params.get(PROPERTY_PARAM) ?? "";
   return {
     q: searchQuery(readSearch(params)),
-    propertyId: propertyId === "" ? undefined : propertyId,
+    propertyId: UUID_PATTERN.test(propertyId) ? propertyId : undefined,
     status: readChoice(params, STATUS_PARAM, TENANT_STATUSES),
     collectorDisabled:
       params.get(COLLECTOR_DISABLED_PARAM) === "true" ? true : undefined,

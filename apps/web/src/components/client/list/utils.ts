@@ -124,6 +124,9 @@ export const SORT_PARAM = "sort";
 // How long the search waits after the last key before it asks the API.
 export const SEARCH_DELAY_MS = 300;
 
+// The API refuses a longer search (in characters, not UTF-16 units).
+export const MAX_SEARCH_LENGTH = 100;
+
 // The API allows pages up to this number; a larger one in the URL is not a page.
 const MAX_PAGE = 1_000_000;
 
@@ -150,9 +153,13 @@ export function readSearch(params: URLSearchParams): string {
   return params.get(SEARCH_PARAM) ?? "";
 }
 
-// What the API gets for a search: the trimmed text, or nothing for a blank one.
+// What the API gets for a search: the trimmed text, cut to the API's limit, or nothing for a blank
+// one. A longer search from a link still lists what its start matches instead of an error.
 export function searchQuery(search: string): string | undefined {
-  const q = search.trim();
+  const q = Array.from(search.trim())
+    .slice(0, MAX_SEARCH_LENGTH)
+    .join("")
+    .trim();
   return q === "" ? undefined : q;
 }
 

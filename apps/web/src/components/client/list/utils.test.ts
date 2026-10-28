@@ -283,6 +283,13 @@ describe("readSearch and searchQuery", () => {
     expect(searchQuery(search)).toBe("Gita");
   });
 
+  it("cuts a search to the API's 100 characters, counting characters", () => {
+    expect(searchQuery("a".repeat(150))).toBe("a".repeat(100));
+    // Each emoji is two UTF-16 units but one character for the API.
+    expect(searchQuery("🏠".repeat(120))).toBe("🏠".repeat(100));
+    expect(searchQuery(`${"a".repeat(99)} b`)).toBe("a".repeat(99));
+  });
+
   it("sends nothing for a missing or blank search", () => {
     expect(readSearch(params(""))).toBe("");
     expect(searchQuery("")).toBeUndefined();

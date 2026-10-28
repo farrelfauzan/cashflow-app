@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 import { useEffect, useEffectEvent, useState } from "react";
 
 import { Input } from "@/components/ui/input";
-import { SEARCH_DELAY_MS } from "./utils";
+import { MAX_SEARCH_LENGTH, SEARCH_DELAY_MS } from "./utils";
 
 type ListSearchFieldProps = {
   // The search in the URL.
@@ -56,6 +56,7 @@ export function ListSearchField({
       <Input
         type="search"
         autoComplete="off"
+        maxLength={MAX_SEARCH_LENGTH}
         aria-label={label}
         placeholder={label}
         value={text}
