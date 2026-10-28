@@ -14,6 +14,7 @@ const base: Member = {
   createdAt: "2026-10-27T03:00:00Z",
   invitation: { state: "sent", lastSentAt: "2026-10-27T03:00:05Z" },
   firstSignInAt: null,
+  collectorLeaseCount: 0,
 };
 
 describe("memberStatusView", () => {
@@ -83,6 +84,24 @@ describe("memberStatusView", () => {
         firstSignInAt: "2026-10-27T04:00:00Z",
       },
       want: { label: "Nonaktif", tone: "disabled", note: null },
+    },
+    {
+      name: "a disabled member who still collects from tenants",
+      member: { ...base, status: "disabled", collectorLeaseCount: 3 },
+      want: {
+        label: "Nonaktif",
+        tone: "disabled",
+        note: { text: "3 penyewa belum punya penagih", tone: "warning" },
+      },
+    },
+    {
+      name: "an active collector, with no flag",
+      member: {
+        ...base,
+        firstSignInAt: "2026-10-27T04:00:00Z",
+        collectorLeaseCount: 2,
+      },
+      want: { label: "Aktif", tone: "active", note: null },
     },
   ])("shows $name", ({ member, want }) => {
     expect(memberStatusView(member)).toEqual(want);

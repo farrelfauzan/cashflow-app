@@ -21,6 +21,7 @@ const invited: Member = {
   createdAt: "2026-10-27T03:00:00Z",
   invitation: { state: "sent", lastSentAt: "2026-10-27T03:00:05Z" },
   firstSignInAt: null,
+  collectorLeaseCount: 0,
 };
 
 const ALL: MemberPermissions = { canInvite: true, canManage: true };
