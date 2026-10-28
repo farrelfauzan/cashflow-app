@@ -3,8 +3,8 @@ export type OrgMenuItem = {
   label: string;
   // Below /o/<orgId>; "" is the organization's home.
   segment: string;
-  // null: every member sees it.
-  action: string | null;
+  // CASL's [verb, resource] for the API's "resource:verb"; null: every member sees it.
+  permission: readonly [verb: string, resource: string] | null;
 };
 
 // One section in the org menu, as OrgNav renders it.

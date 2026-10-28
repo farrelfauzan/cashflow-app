@@ -1,18 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { Capability, Property, Unit } from "@/lib/api/generated/model";
+import { createAppAbility } from "@/lib/capabilities";
 
 import type { PropertyPermissions } from "./type";
 import {
   BAD_RENT_MESSAGE,
-  canDoEverywhere,
   checkPropertyForm,
   checkUnitForm,
   defaultRentText,
   EMPTY_PROPERTY_NAME_MESSAGE,
   EMPTY_UNIT_LABEL_MESSAGE,
   NO_KIND_MESSAGE,
-  NO_PROPERTY_PERMISSIONS,
   NO_RENT_TEXT,
   occupancyText,
   propertiesReadOnly,
@@ -25,24 +24,12 @@ import {
   unitsReadOnly,
 } from "./utils";
 
-describe("canDoEverywhere", () => {
-  it.each<{ name: string; access: Capability["access"]; want: boolean }>([
-    { name: "allow", access: "allow", want: true },
-    { name: "conditional", access: "conditional", want: false },
-    { name: "deny", access: "deny", want: false },
-  ])("is $want for $name", ({ access, want }) => {
-    expect(
-      canDoEverywhere(
-        [{ action: "property:manage", access }],
-        "property:manage",
-      ),
-    ).toBe(want);
-  });
-
-  it("treats an action missing from the list as denied", () => {
-    expect(canDoEverywhere([], "property:manage")).toBe(false);
-  });
-});
+const NO_PROPERTY_PERMISSIONS: PropertyPermissions = {
+  canAddProperty: false,
+  canEditProperty: false,
+  canManageUnits: false,
+  seesOnlyAssigned: false,
+};
 
 function capabilities(
   entries: Record<string, Capability["access"]>,
@@ -125,20 +112,24 @@ describe("propertyPermissions", () => {
       want: NO_PROPERTY_PERMISSIONS,
     },
   ])("reads $name", ({ capabilities: given, want }) => {
-    expect(propertyPermissions(given)).toEqual(want);
+    expect(propertyPermissions(createAppAbility(given))).toEqual(want);
   });
 });
 
 describe("read-only screens", () => {
   const admin = propertyPermissions(
-    capabilities({
-      "property:read": "allow",
-      "property:manage": "allow",
-      "unit:manage": "allow",
-    }),
+    createAppAbility(
+      capabilities({
+        "property:read": "allow",
+        "property:manage": "allow",
+        "unit:manage": "allow",
+      }),
+    ),
   );
   const unitsOnly = propertyPermissions(
-    capabilities({ "property:read": "allow", "unit:manage": "allow" }),
+    createAppAbility(
+      capabilities({ "property:read": "allow", "unit:manage": "allow" }),
+    ),
   );
 
   it("is read-only for the list when the member cannot edit a property", () => {

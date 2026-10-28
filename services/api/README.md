@@ -48,10 +48,10 @@ sends it again.
 
 ### Demo data (development only)
 
-To get a realistic database without typing it in, seed two demo organizations (Griya Sejahtera
-and Kost Putri Anggrek) with their staff, properties, units, tenants and leases. From
-`services/api`, with `DATABASE_URL` pointing at your local database (the app role, as for
-`create-org`):
+To get a realistic database without typing it in, seed three demo organizations (Griya
+Sejahtera, Kost Putri Anggrek and Kos Bulanan Sejahtera) with their staff, properties, units,
+tenants and leases. From `services/api`, with `DATABASE_URL` pointing at your local database
+(the app role, as for `create-org`):
 
 ```bash
 APP_ENV=development go run ./cmd/admin seed-demo
@@ -68,6 +68,12 @@ the tenant list show "1 penyewa belum punya penagih". That needs a database seed
 (`make dev-reset`, `make dev-up`, `make migrate`, then `seed-demo`; the reset also removes the
 GOWA WhatsApp link): a rerun leaves an existing lease as it is, so on a database seeded before
 Agus was added, Eko's lease keeps no collector and the flag does not show.
+
+Kos Bulanan Sejahtera is the volume organization, for trying pagination: 27 members (4 of them
+disabled, 2 still collecting on running leases), 25 properties, 95 units (30 in Kos Sejahtera
+Utama) and 45 tenants, some with a booked lease (starting in June or July 2027), some moved out
+and some with no lease. Sign in as Pak Dimas Prakoso (0812-0009-0027, Admin of the whole
+organization) or as Mbak Lestari Anjani (0812-0009-0028, Admin of Kontrakan Seturan only).
 
 ### Login codes for end-to-end tests (development only)
 

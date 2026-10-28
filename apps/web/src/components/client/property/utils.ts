@@ -1,11 +1,6 @@
-import type {
-  Capability,
-  Property,
-  PropertyKind,
-  Unit,
-} from "@/lib/api/generated/model";
+import type { Property, PropertyKind, Unit } from "@/lib/api/generated/model";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
-import { canSee } from "@/lib/capabilities";
+import { everywhere, type AppAbility } from "@/lib/capabilities";
 
 import type {
   PropertyFormErrors,
@@ -40,39 +35,20 @@ export const ONLY_ASSIGNED_NOTE =
 
 export const LOADING_TEXT = "Memuat…";
 
-// True only when the member may do `action` on every record ("allow"), not just on some
-// ("conditional", for example a role limited to some properties). For controls the API accepts
-// only for the whole organization, like adding a property.
-export function canDoEverywhere(
-  capabilities: readonly Capability[],
-  action: string,
-): boolean {
-  return capabilities.find((c) => c.action === action)?.access === "allow";
-}
-
-// Which property and unit controls show, from the signed-in member's capabilities (getOrgMe),
-// never from role names. "conditional" shows the control and lets the API decide per property.
-// Hiding is visibility only; the API checks every request.
-
-export function propertyPermissions(
-  capabilities: readonly Capability[],
-): PropertyPermissions {
+// Which property and unit controls show, from the member's ability (getOrgMe's capabilities),
+// never from role names. "conditional" shows the control and lets the API decide per property;
+// adding a property needs `property:manage` for the whole organization. Hiding is visibility
+// only; the API checks every request.
+export function propertyPermissions(ability: AppAbility): PropertyPermissions {
   return {
-    canAddProperty: canDoEverywhere(capabilities, "property:manage"),
-    canEditProperty: canSee(capabilities, "property:manage"),
-    canManageUnits: canSee(capabilities, "unit:manage"),
+    canAddProperty: ability.can("manage", everywhere("property")),
+    canEditProperty: ability.can("manage", "property"),
+    canManageUnits: ability.can("manage", "unit"),
     seesOnlyAssigned:
-      canSee(capabilities, "property:read") &&
-      !canDoEverywhere(capabilities, "property:read"),
+      ability.can("read", "property") &&
+      !ability.can("read", everywhere("property")),
   };
 }
-
-export const NO_PROPERTY_PERMISSIONS: PropertyPermissions = {
-  canAddProperty: false,
-  canEditProperty: false,
-  canManageUnits: false,
-  seesOnlyAssigned: false,
-};
 
 // The list of properties changes nothing for this member.
 export function propertiesReadOnly(permissions: PropertyPermissions): boolean {
