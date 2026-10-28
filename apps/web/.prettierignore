@@ -6,7 +6,7 @@ node_modules/
 pnpm-lock.yaml
 next-env.d.ts
 
-# Generated code (the Orval API client arrives in W2)
+# Generated code (the Orval API client, `pnpm gen`)
 src/lib/api/generated/
 
 # Test output

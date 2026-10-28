@@ -28,6 +28,8 @@ jobs:
           cache-dependency-path: apps/web/pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
+      - name: Generated API client is current
+        run: pnpm gen:check
       - name: Lint
         run: pnpm lint
       - name: Type check
