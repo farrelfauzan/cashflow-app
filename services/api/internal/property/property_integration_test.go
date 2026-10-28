@@ -61,7 +61,7 @@ func TestPropertiesAndUnits(t *testing.T) {
 		_, err = env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Ruko Godean", Kind: property.KindRuko})
 		require.NoError(t, err)
 
-		props, err := env.Properties.List(ctx, admin)
+		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kos Melati 2", "Kos Melati 11", "Ruko Godean"}, names(props), "numbers sort naturally")
 	})
@@ -99,12 +99,12 @@ func TestPropertiesAndUnits(t *testing.T) {
 				kamar2 = u
 			}
 		}
-		units, err := env.Properties.ListUnits(ctx, admin, melati.ID)
+		units, err := env.AllUnits(ctx, admin, melati.ID)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kamar 1", "Kamar 2", "Kamar 11"}, labels(units))
 		require.Equal(t, int64(850_000), *units[0].DefaultRent)
 
-		props, err := env.Properties.List(ctx, admin)
+		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		for _, p := range props {
 			if p.ID == melati.ID {
@@ -117,7 +117,7 @@ func TestPropertiesAndUnits(t *testing.T) {
 		_, err := env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: "kamar 2"})
 		require.ErrorIs(t, err, property.ErrLabelTaken)
 
-		props, err := env.Properties.List(ctx, admin)
+		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		ruko := props[len(props)-1]
 		_, err = env.Properties.CreateUnit(ctx, admin, ruko.ID, property.UnitInput{Label: "Kamar 2"})
@@ -175,10 +175,10 @@ func TestPropertiesAndUnits(t *testing.T) {
 	})
 
 	t.Run("the supervisor reads but never writes", func(t *testing.T) {
-		props, err := env.Properties.List(ctx, supervisor)
+		props, err := env.AllProperties(ctx, supervisor)
 		require.NoError(t, err)
 		require.Len(t, props, 3)
-		_, err = env.Properties.ListUnits(ctx, supervisor, melati.ID)
+		_, err = env.AllUnits(ctx, supervisor, melati.ID)
 		require.NoError(t, err)
 
 		_, err = env.Properties.Create(ctx, supervisor, property.PropertyInput{Name: "Kos Baru", Kind: property.KindKos})
@@ -188,7 +188,7 @@ func TestPropertiesAndUnits(t *testing.T) {
 	})
 
 	t.Run("a karyawan cannot list properties, and the attempt is audited", func(t *testing.T) {
-		_, err := env.Properties.List(ctx, karyawan)
+		_, err := env.AllProperties(ctx, karyawan)
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		audit := env.AuditLog(t, o.ID)
 		require.Equal(t, "deny", audit[0].Decision)
@@ -232,7 +232,7 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 	limited := env.Principal(t, o.ID, sari.UserID)
 
 	t.Run("she sees only Kos Melati", func(t *testing.T) {
-		props, err := env.Properties.List(ctx, limited)
+		props, err := env.AllProperties(ctx, limited)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kos Melati"}, names(props))
 	})
@@ -247,7 +247,7 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 	})
 
 	t.Run("she cannot touch Kontrakan Mawar", func(t *testing.T) {
-		_, err := env.Properties.ListUnits(ctx, limited, mawar.ID)
+		_, err := env.AllUnits(ctx, limited, mawar.ID)
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		_, err = env.Properties.CreateUnit(ctx, limited, mawar.ID, property.UnitInput{Label: "Rumah B"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
@@ -260,7 +260,7 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 	t.Run("she cannot add properties or manage members", func(t *testing.T) {
 		_, err := env.Properties.Create(ctx, limited, property.PropertyInput{Name: "Kos Baru", Kind: property.KindKos})
 		require.ErrorIs(t, err, authz.ErrForbidden)
-		_, err = env.Members.List(ctx, limited)
+		_, err = env.AllMembers(ctx, limited)
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
 
@@ -295,7 +295,7 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, m.Roles, 2)
 
-		props, err := env.Properties.List(ctx, env.Principal(t, o.ID, sari.UserID))
+		props, err := env.AllProperties(ctx, env.Principal(t, o.ID, sari.UserID))
 		require.NoError(t, err)
 		require.Len(t, props, 2)
 	})
@@ -325,13 +325,13 @@ func TestPropertiesStayInsideTheirOrganization(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("A's admin sees only A's properties", func(t *testing.T) {
-		props, err := env.Properties.List(ctx, adminA)
+		props, err := env.AllProperties(ctx, adminA)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Melati"}, names(props))
 	})
 
 	t.Run("B's records do not exist for A, even with the right ids", func(t *testing.T) {
-		_, err := env.Properties.ListUnits(ctx, adminA, propB.ID)
+		_, err := env.AllUnits(ctx, adminA, propB.ID)
 		require.ErrorIs(t, err, property.ErrNotFound)
 		_, err = env.Properties.CreateUnit(ctx, adminA, propB.ID, property.UnitInput{Label: "Rumah 2"})
 		require.ErrorIs(t, err, property.ErrNotFound)
@@ -462,7 +462,7 @@ func TestUnitOccupancy(t *testing.T) {
 	rent("Siti Aminah", "0812-6410-0005", rumahA, day(2026, 10, 1), uuid.Nil)
 
 	t.Run("an occupied unit shows its tenant, a free or ended one does not", func(t *testing.T) {
-		got, err := env.Properties.ListUnits(ctx, admin, melati.ID)
+		got, err := env.AllUnits(ctx, admin, melati.ID)
 		require.NoError(t, err)
 		byLabel := unitsByLabel(got)
 
@@ -478,7 +478,7 @@ func TestUnitOccupancy(t *testing.T) {
 	})
 
 	t.Run("a booked lease that has not started counts as occupied", func(t *testing.T) {
-		got, err := env.Properties.ListUnits(ctx, admin, melati.ID)
+		got, err := env.AllUnits(ctx, admin, melati.ID)
 		require.NoError(t, err)
 		kamar4 := unitsByLabel(got)["Kamar 4"]
 		require.True(t, kamar4.Occupied)
@@ -487,7 +487,7 @@ func TestUnitOccupancy(t *testing.T) {
 	})
 
 	t.Run("the occupied unit count is right on list and update", func(t *testing.T) {
-		props, err := env.Properties.List(ctx, admin)
+		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		require.Equal(t, int64(2), occupiedCount(t, props, melati.ID))
 		require.Equal(t, int64(1), occupiedCount(t, props, mawar.ID))
@@ -519,7 +519,7 @@ func TestUnitOccupancy(t *testing.T) {
 	})
 
 	t.Run("the supervisor sees every tenant", func(t *testing.T) {
-		got, err := env.Properties.ListUnits(ctx, supervisor, melati.ID)
+		got, err := env.AllUnits(ctx, supervisor, melati.ID)
 		require.NoError(t, err)
 		require.NotNil(t, unitsByLabel(got)["Kamar 4"].CurrentTenant)
 	})
@@ -531,14 +531,14 @@ func TestUnitOccupancy(t *testing.T) {
 		require.NoError(t, err)
 		limited := env.Principal(t, o.ID, sari.UserID)
 
-		got, err := env.Properties.ListUnits(ctx, limited, melati.ID)
+		got, err := env.AllUnits(ctx, limited, melati.ID)
 		require.NoError(t, err)
 		byLabel := unitsByLabel(got)
 		require.NotNil(t, byLabel["Kamar 1"].CurrentTenant)
 		require.Equal(t, "Rina Wulandari", byLabel["Kamar 1"].CurrentTenant.Name)
 		require.NotNil(t, byLabel["Kamar 4"].CurrentTenant, "a booked lease counts too")
 
-		props, err := env.Properties.List(ctx, limited)
+		props, err := env.AllProperties(ctx, limited)
 		require.NoError(t, err)
 		require.Len(t, props, 1)
 		require.Equal(t, int64(2), props[0].OccupiedUnitCount)
@@ -559,10 +559,10 @@ func TestUnitOccupancy(t *testing.T) {
 		env.GrantCustomRole(t, o.ID, hendra.ID, "Pembaca Unit", readOnlyUnits)
 		reader := env.Principal(t, o.ID, hendra.UserID)
 
-		_, err = env.Tenants.List(ctx, reader)
+		_, err = env.AllTenants(ctx, reader)
 		require.ErrorIs(t, err, authz.ErrForbidden, "the role really cannot read tenants")
 
-		got, err := env.Properties.ListUnits(ctx, reader, melati.ID)
+		got, err := env.AllUnits(ctx, reader, melati.ID)
 		require.NoError(t, err)
 		byLabel := unitsByLabel(got)
 		require.True(t, byLabel["Kamar 1"].Occupied)
@@ -570,14 +570,14 @@ func TestUnitOccupancy(t *testing.T) {
 		require.True(t, byLabel["Kamar 4"].Occupied)
 		require.Nil(t, byLabel["Kamar 4"].CurrentTenant)
 
-		props, err := env.Properties.List(ctx, reader)
+		props, err := env.AllProperties(ctx, reader)
 		require.NoError(t, err)
 		require.Equal(t, int64(2), occupiedCount(t, props, melati.ID))
 	})
 
 	t.Run("a karyawan who may read units sees only the tenants they collect from", func(t *testing.T) {
 		env.GrantCustomRole(t, o.ID, karyawan.MembershipID, "Pembaca Unit Lapangan", readOnlyUnits)
-		got, err := env.Properties.ListUnits(ctx, env.Principal(t, o.ID, o.Karyawan.UserID), melati.ID)
+		got, err := env.AllUnits(ctx, env.Principal(t, o.ID, o.Karyawan.UserID), melati.ID)
 		require.NoError(t, err)
 		byLabel := unitsByLabel(got)
 		require.NotNil(t, byLabel["Kamar 1"].CurrentTenant, "Rina's lease names this karyawan as collector")
@@ -601,11 +601,11 @@ func TestUnitOccupancy(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		props, err := env.Properties.List(ctx, otherAdmin)
+		props, err := env.AllProperties(ctx, otherAdmin)
 		require.NoError(t, err)
 		require.Equal(t, int64(3), occupiedCount(t, props, prop.ID))
 
-		mine, err := env.Properties.List(ctx, admin)
+		mine, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		require.Equal(t, int64(2), occupiedCount(t, mine, melati.ID), "unchanged by the other organization")
 		require.Equal(t, int64(1), occupiedCount(t, mine, mawar.ID))

@@ -28,6 +28,7 @@ import type {
   Error,
   ErrorResponse,
   InviteMember,
+  ListMembersParams,
   Member,
   MemberList,
   OrgMeResponse,
@@ -240,16 +241,19 @@ export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof lis
 
 
 /**
- * @summary Every member of the organization (needs member:read)
+ * Paginated (see the Page parameters). q matches the name, or the WhatsApp number when it is made of digits and phone punctuation (at least 3 digits; 0812, 62812 and +62 812 all match 0812-...).
+ * @summary One page of the organization's members (needs member:read)
  */
 export const listMembers = (
     orgId: string,
+    params?: ListMembersParams,
  options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
 ) => {
 
 
       return apiRequest<MemberList>(
-      {url: `/orgs/${orgId}/members`, method: 'GET', signal
+      {url: `/orgs/${orgId}/members`, method: 'GET',
+        params, signal
     },
       options);
     }
@@ -257,20 +261,22 @@ export const listMembers = (
 
 
 
-export const getListMembersQueryKey = (orgId: string,) =>
-    apiQueryKey({ orgId }, { url: `/orgs/${orgId}/members` });
+export const getListMembersQueryKey = (orgId: string,
+    params?: ListMembersParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/members` });
 
 
-export const useListMembersQueryOptions = <TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+export const useListMembersQueryOptions = <TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  apiQueryKey({ orgId }, { url: `/orgs/${orgId}/members`, queryOptions });
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/members`, queryOptions });
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembers>>> = ({ signal }) => listMembers(orgId, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembers>>> = ({ signal }) => listMembers(orgId,params, requestOptions, signal);
 
 
 
@@ -284,7 +290,8 @@ export type ListMembersQueryError = ErrorType<ErrorResponse>
 
 
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>> & Pick<
+ orgId: string,
+    params: undefined |  ListMembersParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listMembers>>,
           TError,
@@ -294,7 +301,8 @@ export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, 
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>> & Pick<
+ orgId: string,
+    params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listMembers>>,
           TError,
@@ -304,19 +312,21 @@ export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, 
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ orgId: string,
+    params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Every member of the organization (needs member:read)
+ * @summary One page of the organization's members (needs member:read)
  */
 
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ orgId: string,
+    params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = useListMembersQueryOptions(orgId,options)
+  const queryOptions = useListMembersQueryOptions(orgId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

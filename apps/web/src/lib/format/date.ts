@@ -13,6 +13,19 @@ const calendarDateParts = new Intl.DateTimeFormat("id-ID", {
   year: "numeric",
 });
 
+const calendarDayMonthParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "UTC",
+  day: "numeric",
+  month: "short",
+});
+
+const jakartaDayParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: JAKARTA,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 const jakartaDateTimeParts = new Intl.DateTimeFormat("id-ID", {
   timeZone: JAKARTA,
   day: "numeric",
@@ -47,16 +60,12 @@ function part(
   return value;
 }
 
-/**
- * Formats an API calendar date (`"2026-10-25"`) as `"25 Okt 2026"`.
- *
- * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
- */
-export function formatDate(date: string): string {
+// Reads `YYYY-MM-DD` as midnight UTC, so formatting it in UTC never moves the day.
+function calendarDateToUtc(date: string, caller: string): Date {
   const match = CALENDAR_DATE.exec(date);
   if (!match) {
     throw new RangeError(
-      `formatDate expects YYYY-MM-DD, got ${JSON.stringify(date)}`,
+      `${caller} expects YYYY-MM-DD, got ${JSON.stringify(date)}`,
     );
   }
   const [year, month, day] = [
@@ -70,10 +79,48 @@ export function formatDate(date: string): string {
     utc.getUTCMonth() !== month - 1 ||
     utc.getUTCDate() !== day
   ) {
-    throw new RangeError(`formatDate got a date that does not exist: ${date}`);
+    throw new RangeError(`${caller} got a date that does not exist: ${date}`);
   }
-  const parts = calendarDateParts.formatToParts(utc);
+  return utc;
+}
+
+/**
+ * Formats an API calendar date (`"2026-10-25"`) as `"25 Okt 2026"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatDate(date: string): string {
+  const parts = calendarDateParts.formatToParts(
+    calendarDateToUtc(date, "formatDate"),
+  );
   return `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
+}
+
+/**
+ * Formats an API calendar date without its year, for short notes: `"2026-12-05"` gives
+ * `"5 Des"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatDayMonth(date: string): string {
+  const parts = calendarDayMonthParts.formatToParts(
+    calendarDateToUtc(date, "formatDayMonth"),
+  );
+  return `${part(parts, "day")} ${part(parts, "month")}`;
+}
+
+/**
+ * The calendar day it is in Jakarta at this instant, as `YYYY-MM-DD`:
+ * `2026-10-27T18:30:00Z` gives `"2026-10-28"`. Dates from the API compare with it as strings.
+ *
+ * @throws RangeError when `now` is an invalid Date.
+ */
+export function jakartaToday(now: Date): string {
+  if (Number.isNaN(now.getTime())) {
+    throw new RangeError("jakartaToday got an invalid date");
+  }
+  const parts = jakartaDayParts.formatToParts(now);
+  return `${part(parts, "year")}-${part(parts, "month")}-${part(parts, "day")}`;
 }
 
 /**

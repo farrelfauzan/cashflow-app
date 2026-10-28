@@ -44,7 +44,7 @@ func requireDenied(t *testing.T, env *testenv.Env, org, actor uuid.UUID, action,
 
 func statusOf(t *testing.T, env *testenv.Env, p authz.Principal, membershipID uuid.UUID) string {
 	t.Helper()
-	members, err := env.Members.List(context.Background(), p)
+	members, err := env.AllMembers(context.Background(), p)
 	require.NoError(t, err)
 	for _, m := range members {
 		if m.ID == membershipID {
@@ -281,7 +281,7 @@ func TestSetRolesKeepsAnAdmin(t *testing.T) {
 		require.NoError(t, err)
 		m, err := env.Members.SetRoles(ctx, admin, rina.ID, []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}})
 		require.NoError(t, err)
-		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID}}, m.Roles)
+		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID, PropertyName: melati.Name}}, m.Roles)
 	})
 }
 

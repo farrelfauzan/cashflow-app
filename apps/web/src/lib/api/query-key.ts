@@ -6,7 +6,9 @@
 //
 // `url` is the resolved request path without the /api prefix (`/orgs/<id>/members`); `params`
 // holds every other input Orval passes (other path parameters and query parameters), so two
-// requests that differ in any input never share a key.
+// requests that differ in any input never share a key. An undefined input is left out, so the
+// key built without query parameters (getListPropertiesQueryKey(orgId)) partially matches every
+// page and filter of that list, and invalidating it refreshes them all.
 
 const ORG_PATH = /^\/orgs\/([^/?#]+)(?:[/?#]|$)/;
 
@@ -20,14 +22,25 @@ export function apiQueryKey(
 ): ApiQueryKey {
   const orgId = ORG_PATH.exec(context.url)?.[1];
   if (orgId === undefined) {
-    return ["user", context.url, { ...properties }];
+    return ["user", context.url, definedInputs(properties, () => true)];
   }
+  return [
+    "org",
+    orgId,
+    context.url,
+    definedInputs(properties, (name) => name !== "orgId"),
+  ];
+}
 
+function definedInputs(
+  properties: Record<string, unknown>,
+  keep: (name: string) => boolean,
+): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(properties)) {
-    if (name !== "orgId") params[name] = value;
+    if (value !== undefined && keep(name)) params[name] = value;
   }
-  return ["org", orgId, context.url, params];
+  return params;
 }
 
 // The prefix that matches every query of one organization.

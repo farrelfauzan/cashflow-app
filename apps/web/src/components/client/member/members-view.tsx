@@ -1,5 +1,6 @@
 "use client";
 
+import { useAbility } from "@casl/react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
@@ -10,9 +11,9 @@ import {
   useListMembers,
 } from "@/lib/api/generated/members/members";
 import { useListProperties } from "@/lib/api/generated/properties/properties";
-import { memberPermissions, propertyNames, NO_PERMISSIONS } from "./utils";
+import { memberPermissions, propertyNames } from "./utils";
 import type { MemberPanelState } from "./type";
-import { canSee } from "@/lib/capabilities";
+import type { AppAbility } from "@/lib/capabilities";
 
 import { MemberList } from "./member-list";
 import { MemberPanel } from "./member-panel";
@@ -34,22 +35,18 @@ export function MembersView({
   roleGuide,
 }: MembersViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const members = useListMembers(orgId);
-  const capabilities = orgMe.data?.capabilities;
-  const properties = useListProperties(orgId, {
-    query: {
-      enabled:
-        capabilities !== undefined && canSee(capabilities, "property:read"),
-    },
-  });
+  const members = useListMembers(orgId, { pageSize: 100 });
+  const ability = useAbility<AppAbility>();
+  const properties = useListProperties(
+    orgId,
+    { pageSize: 100 },
+    { query: { enabled: ability.can("read", "property") } },
+  );
   const [panel, setPanel] = useState<MemberPanelState>({ kind: "closed" });
   // A short confirmation after a panel closes, announced to screen readers.
   const [notice, setNotice] = useState("");
 
-  const permissions =
-    capabilities === undefined
-      ? NO_PERMISSIONS
-      : memberPermissions(capabilities);
+  const permissions = memberPermissions(ability);
   const names = useMemo(
     () => propertyNames(properties.data?.properties ?? []),
     [properties.data],

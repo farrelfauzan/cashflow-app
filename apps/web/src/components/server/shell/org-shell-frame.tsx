@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { OrgAbilityProvider } from "@/components/client/shell/org-ability-provider";
 import { getMe } from "@/lib/api/generated/auth/auth";
+import { createAppAbility } from "@/lib/capabilities";
 import { orgPath } from "@/lib/org-path";
 
 import { MobileHeader } from "./mobile-header";
@@ -26,11 +28,13 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
       userName={me.user.name}
       currentOrgId={orgId}
       organizations={me.organizations.map(({ id, name }) => ({ id, name }))}
-      items={visibleOrgMenu(orgMe.capabilities).map((item) => ({
-        key: item.key,
-        label: item.label,
-        href: orgPath(orgId, item.segment),
-      }))}
+      items={visibleOrgMenu(createAppAbility(orgMe.capabilities)).map(
+        (item) => ({
+          key: item.key,
+          label: item.label,
+          href: orgPath(orgId, item.segment),
+        }),
+      )}
     />
   );
 
@@ -48,7 +52,13 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
         {nav}
       </MobileHeader>
       <main className="flex min-w-0 flex-1 flex-col px-4 pt-5 pb-6 md:px-8 md:py-[30px]">
-        {children}
+        <OrgAbilityProvider
+          key={orgId}
+          orgId={orgId}
+          capabilities={orgMe.capabilities}
+        >
+          {children}
+        </OrgAbilityProvider>
       </main>
     </div>
   );

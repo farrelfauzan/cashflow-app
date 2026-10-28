@@ -1,13 +1,14 @@
 "use client";
 
+import { useAbility } from "@casl/react";
 import { useState } from "react";
 
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
 import { useListProperties } from "@/lib/api/generated/properties/properties";
+import type { AppAbility } from "@/lib/capabilities";
 import {
   LOADING_TEXT,
-  NO_PROPERTY_PERMISSIONS,
   ONLY_ASSIGNED_NOTE,
   READ_ONLY_NOTE,
   propertiesReadOnly,
@@ -33,15 +34,12 @@ export function PropertiesView({
   organizationName,
 }: PropertiesViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const properties = useListProperties(orgId);
+  const properties = useListProperties(orgId, { pageSize: 100 });
   const [panel, setPanel] = useState<PropertyPanelState>({ kind: "closed" });
   // A short confirmation after a panel closes, announced to screen readers.
   const [notice, setNotice] = useState("");
 
-  const permissions =
-    orgMe.data === undefined
-      ? NO_PROPERTY_PERMISSIONS
-      : propertyPermissions(orgMe.data.capabilities);
+  const permissions = propertyPermissions(useAbility<AppAbility>());
   const failed = orgMe.isError ? orgMe.error : properties.error;
 
   function openPanel(next: PropertyPanelState) {

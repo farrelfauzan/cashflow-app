@@ -135,6 +135,7 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		me := decode[apigen.OrgMeResponse](t, body)
 		require.Equal(t, "admin", me.Roles[0].Key)
+		require.Nil(t, me.Roles[0].PropertyName, "an organization-wide role names no property")
 		access := map[string]apigen.CapabilityAccess{}
 		for _, c := range me.Capabilities {
 			access[c.Action] = c.Access
@@ -300,6 +301,7 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		require.Len(t, sari.Roles, 1)
 		require.Equal(t, "admin", sari.Roles[0].Key)
 		require.Equal(t, mawar.Id, *sari.Roles[0].PropertyId)
+		require.Equal(t, mawar.Name, *sari.Roles[0].PropertyName, "the role names its property")
 
 		limited.signIn(env, "0812 1515 9999")
 
@@ -313,6 +315,7 @@ func TestPropertiesOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		me := decode[apigen.OrgMeResponse](t, body)
 		require.Equal(t, mawar.Id, *me.Roles[0].PropertyId)
+		require.Equal(t, mawar.Name, *me.Roles[0].PropertyName, "/me names the property too")
 		access := map[string]apigen.CapabilityAccess{}
 		for _, c := range me.Capabilities {
 			access[c.Action] = c.Access

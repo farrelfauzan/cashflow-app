@@ -5,7 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Member } from './member';
+import type { PageInfo } from './pageInfo';
 
-export interface MemberList {
+export type MemberList = PageInfo & {
+  items: Member[];
+  /**
+     * The same rows as items. Kept until the web reads items; then removed.
+     * @deprecated
+     */
   members: Member[];
-}
+};

@@ -8,8 +8,8 @@ import {
 
 import { ApiError } from "@/lib/api/errors";
 import { getOrgMe } from "@/lib/api/generated/members/members";
-import type { Capability, RoleRef } from "@/lib/api/generated/model";
-import { canSee } from "@/lib/capabilities";
+import type { RoleRef } from "@/lib/api/generated/model";
+import type { AppAbility } from "@/lib/capabilities";
 
 import type { OrgMenuItem, OrgNavItem } from "./type";
 
@@ -39,37 +39,35 @@ export async function loadOrgMe(orgId: string) {
   }
 }
 
-// The side menu inside an organization. An item shows when the member's capabilities from
-// getOrgMe allow its action, or allow it on some records ("conditional"). Never by role name:
-// a custom role or a property limit changes what shows without touching this list. Hiding is
-// visibility only; the API checks every request.
+// The side menu inside an organization. An item shows when the member's ability (from
+// getOrgMe's capabilities) grants its permission, on every record or on some ("conditional").
+// Never by role name: a custom role or a property limit changes what shows without touching this
+// list. Hiding is visibility only; the API checks every request.
 export const ORG_MENU: readonly OrgMenuItem[] = [
-  { key: "home", label: "Beranda", segment: "", action: null },
+  { key: "home", label: "Beranda", segment: "", permission: null },
   {
     key: "properties",
     label: "Properti",
     segment: "properties",
-    action: "property:read",
+    permission: ["read", "property"],
   },
   {
     key: "tenants",
     label: "Penyewa",
     segment: "tenants",
-    action: "tenant:read",
+    permission: ["read", "tenant"],
   },
   {
     key: "members",
     label: "Anggota tim",
     segment: "members",
-    action: "member:read",
+    permission: ["read", "member"],
   },
 ];
 
-export function visibleOrgMenu(
-  capabilities: readonly Capability[],
-): OrgMenuItem[] {
+export function visibleOrgMenu(ability: AppAbility): OrgMenuItem[] {
   return ORG_MENU.filter(
-    (item) => item.action === null || canSee(capabilities, item.action),
+    (item) => item.permission === null || ability.can(...item.permission),
   );
 }
 

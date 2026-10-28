@@ -1,4 +1,4 @@
-// Package demoseed fills a development database with two demo organizations: their staff,
+// Package demoseed fills a development database with three demo organizations: their staff,
 // properties, units, tenants and leases. cmd/admin runs it as "seed-demo", and only in
 // development.
 //
@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
@@ -249,7 +250,7 @@ func (s *seeder) ensureCharges(ctx context.Context, tenantID, leaseID uuid.UUID,
 // limits in one call, so a member is created with exactly their roles or not at all. An existing
 // member keeps their roles.
 func (s *seeder) ensureMembers(ctx context.Context) error {
-	existing, err := s.d.Members.List(ctx, s.p)
+	existing, err := s.allMembers(ctx)
 	if err != nil {
 		return err
 	}
@@ -412,9 +413,18 @@ func (s *seeder) ensureEndedLease(ctx context.Context, tenantID uuid.UUID, ls le
 	return nil
 }
 
+// allMembers is every member of the organization, by name.
+func (s *seeder) allMembers(ctx context.Context) ([]member.Member, error) {
+	return listing.All(func(pg listing.Page) (listing.Result[member.Member], error) {
+		return s.d.Members.List(ctx, s.p, member.ListQuery{Page: pg})
+	})
+}
+
 // logins lists the organization's members as they are now, with role and property names.
 func (s *seeder) logins(ctx context.Context) ([]Login, error) {
-	props, err := s.d.Properties.List(ctx, s.p)
+	props, err := listing.All(func(pg listing.Page) (listing.Result[property.Property], error) {
+		return s.d.Properties.List(ctx, s.p, property.ListQuery{Page: pg})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +432,7 @@ func (s *seeder) logins(ctx context.Context) ([]Login, error) {
 	for _, p := range props {
 		propName[p.ID] = p.Name
 	}
-	members, err := s.d.Members.List(ctx, s.p)
+	members, err := s.allMembers(ctx)
 	if err != nil {
 		return nil, err
 	}

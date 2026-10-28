@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
@@ -52,8 +53,9 @@ type RoleRef struct {
 	Name    string
 	Builtin bool
 	// PropertyID is the property the role is limited to, or uuid.Nil for the whole
-	// organization.
-	PropertyID uuid.UUID
+	// organization. PropertyName is that property's name, for showing the role.
+	PropertyID   uuid.UUID
+	PropertyName string
 }
 
 // RoleGrant is a built-in role to hold, optionally limited to one property.
@@ -110,16 +112,59 @@ func NewService(st *store.Store, az *authz.Service, inv Invitations) *Service {
 	return &Service{store: st, authz: az, inv: inv}
 }
 
-// List returns every member of the principal's organization.
-func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error) {
-	var out []Member
+// ListQuery filters, orders and pages List. Zero values filter nothing.
+type ListQuery struct {
+	Page   listing.Page // the zero Page is listing.FirstPage
+	Search listing.Search
+	// Status is StatusActive or StatusDisabled.
+	Status string
+	// CollectorDisabled keeps disabled members who are still collector of an active lease.
+	CollectorDisabled bool
+	// Sort is name (the default), -name, createdAt or -createdAt.
+	Sort string
+}
+
+var listSorts = map[string]bool{"name": true, "-name": true, "createdAt": true, "-createdAt": true}
+
+// List returns one page of the organization's members.
+func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (listing.Result[Member], error) {
+	if lq.Page == (listing.Page{}) {
+		lq.Page = listing.FirstPage
+	}
+	if lq.Sort == "" {
+		lq.Sort = "name"
+	}
+	if !listSorts[lq.Sort] {
+		return listing.Result[Member]{}, &InputError{Field: "sort", Message: "Urutan tidak dikenal."}
+	}
+	if lq.Status != "" && lq.Status != StatusActive && lq.Status != StatusDisabled {
+		return listing.Result[Member]{}, &InputError{Field: "status", Message: "Status tidak dikenal."}
+	}
+	out := listing.Result[Member]{Page: lq.Page, Items: []Member{}}
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		req := authz.Request{Action: authz.ActionMemberRead, Resource: authz.Resource{Type: "member"}}
 		if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
 			return err
 		}
 		q := dbgen.New(tx)
-		rows, err := q.ListMembers(ctx, p.OrganizationID)
+		args := dbgen.ListMemberPageParams{
+			OrganizationID: p.OrganizationID,
+			Q:              lq.Search.Text, PhoneNational: lq.Search.PhoneNational, PhoneDigits: lq.Search.PhoneDigits,
+			CollectorDisabled: lq.CollectorDisabled,
+			Sort:              lq.Sort, PageLimit: lq.Page.Limit(), PageOffset: lq.Page.Offset(),
+		}
+		if lq.Status != "" {
+			args.Status = &lq.Status
+		}
+		var err error
+		out.Total, err = q.CountMemberPage(ctx, dbgen.CountMemberPageParams{
+			OrganizationID: args.OrganizationID, Q: args.Q, PhoneNational: args.PhoneNational,
+			PhoneDigits: args.PhoneDigits, Status: args.Status, CollectorDisabled: args.CollectorDisabled,
+		})
+		if err != nil {
+			return fmt.Errorf("counting members: %w", err)
+		}
+		rows, err := q.ListMemberPage(ctx, args)
 		if err != nil {
 			return fmt.Errorf("listing members: %w", err)
 		}
@@ -127,16 +172,30 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 		if err != nil {
 			return err
 		}
-		out = make([]Member, len(rows))
-		for i, r := range rows {
-			out[i] = Member{
+		for _, r := range rows {
+			out.Items = append(out.Items, Member{
 				ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone,
 				Status: r.Status, CreatedAt: r.CreatedAt, Roles: roles[r.ID],
 				Invitation:    invitationFrom(r.InvitationState, r.InvitationLastSentAt),
 				FirstSignInAt: r.FirstSignInAt, CollectorLeaseCount: r.CollectorLeaseCount,
-			}
+			})
 		}
 		return nil
+	})
+	if err != nil {
+		return listing.Result[Member]{}, err
+	}
+	return out, nil
+}
+
+// OwnRoles returns the principal's own roles in their organization, with property names, for
+// GET /orgs/{orgId}/me. Everyone may read their own roles, so it checks no permission.
+func (s *Service) OwnRoles(ctx context.Context, p authz.Principal) ([]RoleRef, error) {
+	var out []RoleRef
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		var err error
+		out, err = membershipRoles(ctx, dbgen.New(tx), p.OrganizationID, p.MembershipID)
+		return err
 	})
 	return out, err
 }
@@ -554,22 +613,31 @@ func load(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) (M
 	if err != nil {
 		return Member{}, fmt.Errorf("loading member: %w", err)
 	}
+	roles, err := membershipRoles(ctx, q, org, membershipID)
+	if err != nil {
+		return Member{}, err
+	}
+	return Member{
+		ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt,
+		Invitation: invitationFrom(r.InvitationState, r.InvitationLastSentAt), FirstSignInAt: r.FirstSignInAt,
+		CollectorLeaseCount: r.CollectorLeaseCount, Roles: roles,
+	}, nil
+}
+
+// membershipRoles reads one membership's roles, sorted for display.
+func membershipRoles(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) ([]RoleRef, error) {
 	rows, err := q.ListRoleAssignmentsForMembership(ctx, dbgen.ListRoleAssignmentsForMembershipParams{
 		OrganizationID: org, MembershipID: membershipID,
 	})
 	if err != nil {
-		return Member{}, fmt.Errorf("loading member roles: %w", err)
+		return nil, fmt.Errorf("loading member roles: %w", err)
 	}
-	m := Member{
-		ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt,
-		Invitation: invitationFrom(r.InvitationState, r.InvitationLastSentAt), FirstSignInAt: r.FirstSignInAt,
-		CollectorLeaseCount: r.CollectorLeaseCount,
-	}
+	var roles []RoleRef
 	for _, row := range rows {
-		m.Roles = append(m.Roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID))
+		roles = append(roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID, row.PropertyName))
 	}
-	sortRoles(m.Roles)
-	return m, nil
+	sortRoles(roles)
+	return roles, nil
 }
 
 func rolesByMembership(ctx context.Context, q *dbgen.Queries, org uuid.UUID) (map[uuid.UUID][]RoleRef, error) {
@@ -579,7 +647,7 @@ func rolesByMembership(ctx context.Context, q *dbgen.Queries, org uuid.UUID) (ma
 	}
 	out := map[uuid.UUID][]RoleRef{}
 	for _, r := range rows {
-		out[r.MembershipID] = append(out[r.MembershipID], roleRef(r.BuiltinRole, r.RoleID, r.RoleName, r.PropertyID))
+		out[r.MembershipID] = append(out[r.MembershipID], roleRef(r.BuiltinRole, r.RoleID, r.RoleName, r.PropertyID, r.PropertyName))
 	}
 	for _, roles := range out {
 		sortRoles(roles)
@@ -594,18 +662,24 @@ func sortRoles(roles []RoleRef) {
 		func(r RoleRef) string { return r.Name + "/" + r.PropertyID.String() })
 }
 
-func roleRef(builtin *string, roleID uuid.NullUUID, roleName *string, propertyID uuid.NullUUID) RoleRef {
-	if builtin != nil {
+func roleRef(builtin *string, roleID uuid.NullUUID, roleName *string, propertyID uuid.NullUUID, propertyName *string) RoleRef {
+	ref := RoleRef{PropertyID: propertyID.UUID}
+	if propertyName != nil {
+		ref.PropertyName = *propertyName
+	}
+	switch {
+	case builtin != nil:
+		ref.Key, ref.Name, ref.Builtin = *builtin, *builtin, true
 		if r, ok := authz.BuiltinRole(*builtin); ok {
-			return RoleRef{Key: r.Key, Name: r.Name, Builtin: true, PropertyID: propertyID.UUID}
+			ref.Key, ref.Name = r.Key, r.Name
 		}
-		return RoleRef{Key: *builtin, Name: *builtin, Builtin: true, PropertyID: propertyID.UUID}
+	default:
+		ref.Key = "custom:" + roleID.UUID.String()
+		if roleName != nil {
+			ref.Name = *roleName
+		}
 	}
-	name := ""
-	if roleName != nil {
-		name = *roleName
-	}
-	return RoleRef{Key: "custom:" + roleID.UUID.String(), Name: name, PropertyID: propertyID.UUID}
+	return ref
 }
 
 func validName(raw string) (string, error) {

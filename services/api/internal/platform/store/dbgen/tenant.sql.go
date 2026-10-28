@@ -12,6 +12,74 @@ import (
 	"github.com/google/uuid"
 )
 
+const countTenantPage = `-- name: CountTenantPage :one
+WITH vl AS (
+    SELECT l.tenant_id, l.status, l.start_date, u.property_id, u.label,
+           (l.status = 'active' AND m.status = 'disabled') AS collector_disabled
+    FROM lease l
+    JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+    LEFT JOIN membership m ON m.organization_id = l.organization_id AND m.staff_user_id = l.collector_staff_user_id
+    WHERE l.organization_id = $7
+      AND ($8::boolean OR l.id = ANY($9::uuid[]))
+), vt AS (
+    SELECT t.id, t.organization_id, t.name, t.phone, t.note, t.created_at, t.updated_at,
+           CASE
+               WHEN EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id AND vl.status = 'active' AND vl.start_date <= $10::date) THEN 'active'
+               WHEN EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id AND vl.status = 'active') THEN 'upcoming'
+               WHEN EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id) THEN 'ended'
+               ELSE 'none'
+           END::text AS lease_status,
+           CASE WHEN t.phone LIKE '+62%' THEN '0' || substr(t.phone, 4) ELSE t.phone END AS national_phone
+    FROM tenant t
+    WHERE t.organization_id = $7
+      AND ($8::boolean OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id))
+)
+SELECT count(*)
+FROM vt
+WHERE ($1::text IS NULL
+       OR vt.name ILIKE $1
+       OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = vt.id AND vl.label ILIKE $1)
+       OR vt.national_phone LIKE $2::text
+       OR vt.national_phone LIKE $3::text)
+  AND ($4::uuid IS NULL
+       OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = vt.id AND vl.property_id = $4))
+  AND ($5::text IS NULL OR vt.lease_status = $5)
+  AND (NOT $6::boolean
+       OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = vt.id AND vl.collector_disabled))
+`
+
+type CountTenantPageParams struct {
+	Q                 *string
+	PhoneNational     *string
+	PhoneDigits       *string
+	PropertyID        uuid.NullUUID
+	LeaseStatus       *string
+	CollectorDisabled bool
+	OrganizationID    uuid.UUID
+	OrgWide           bool
+	LeaseIds          []uuid.UUID
+	Today             time.Time
+}
+
+// Every tenant ListTenantPage would return on any page: keep the WHERE the same.
+func (q *Queries) CountTenantPage(ctx context.Context, arg CountTenantPageParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenantPage,
+		arg.Q,
+		arg.PhoneNational,
+		arg.PhoneDigits,
+		arg.PropertyID,
+		arg.LeaseStatus,
+		arg.CollectorDisabled,
+		arg.OrganizationID,
+		arg.OrgWide,
+		arg.LeaseIds,
+		arg.Today,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createLease = `-- name: CreateLease :exec
 INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount,
                    collector_staff_user_id, entered_on, billed_from)
@@ -231,6 +299,7 @@ func (q *Queries) GetLeaseDetail(ctx context.Context, arg GetLeaseDetailParams) 
 }
 
 const getTenant = `-- name: GetTenant :one
+
 SELECT id, organization_id, name, phone, note, created_at, updated_at FROM tenant
 WHERE organization_id = $1 AND id = $2
 `
@@ -240,6 +309,7 @@ type GetTenantParams struct {
 	ID             uuid.UUID
 }
 
+// Runs in an organization scope (store.WithOrgTx).
 func (q *Queries) GetTenant(ctx context.Context, arg GetTenantParams) (Tenant, error) {
 	row := q.db.QueryRow(ctx, getTenant, arg.OrganizationID, arg.ID)
 	var i Tenant
@@ -253,86 +323,6 @@ func (q *Queries) GetTenant(ctx context.Context, arg GetTenantParams) (Tenant, e
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const listLeaseDetails = `-- name: ListLeaseDetails :many
-SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name,
-       m.status AS collector_status
-FROM lease l
-JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
-JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
-LEFT JOIN membership m ON m.organization_id = l.organization_id AND m.staff_user_id = l.collector_staff_user_id
-LEFT JOIN staff_user su ON su.id = l.collector_staff_user_id
-WHERE l.organization_id = $1
-ORDER BY l.status, l.start_date DESC, l.id
-`
-
-type ListLeaseDetailsRow struct {
-	ID                   uuid.UUID
-	OrganizationID       uuid.UUID
-	UnitID               uuid.UUID
-	TenantID             uuid.UUID
-	StartDate            time.Time
-	EndDate              *time.Time
-	RentAmount           int64
-	DepositAmount        int64
-	Status               string
-	CollectorStaffUserID uuid.NullUUID
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	EnteredOn            time.Time
-	BilledFrom           time.Time
-	PlannedEndDate       *time.Time
-	UnitLabel            string
-	PropertyID           uuid.UUID
-	PropertyName         string
-	CollectorMemberID    uuid.NullUUID
-	CollectorName        *string
-	CollectorStatus      *string
-}
-
-// Every lease in the organization with its unit, property and collector, active first.
-func (q *Queries) ListLeaseDetails(ctx context.Context, organizationID uuid.UUID) ([]ListLeaseDetailsRow, error) {
-	rows, err := q.db.Query(ctx, listLeaseDetails, organizationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListLeaseDetailsRow
-	for rows.Next() {
-		var i ListLeaseDetailsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrganizationID,
-			&i.UnitID,
-			&i.TenantID,
-			&i.StartDate,
-			&i.EndDate,
-			&i.RentAmount,
-			&i.DepositAmount,
-			&i.Status,
-			&i.CollectorStaffUserID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.EnteredOn,
-			&i.BilledFrom,
-			&i.PlannedEndDate,
-			&i.UnitLabel,
-			&i.PropertyID,
-			&i.PropertyName,
-			&i.CollectorMemberID,
-			&i.CollectorName,
-			&i.CollectorStatus,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listLeaseDetailsForTenant = `-- name: ListLeaseDetailsForTenant :many
@@ -419,23 +409,227 @@ func (q *Queries) ListLeaseDetailsForTenant(ctx context.Context, arg ListLeaseDe
 	return items, nil
 }
 
-const listTenants = `-- name: ListTenants :many
-
-SELECT id, organization_id, name, phone, note, created_at, updated_at FROM tenant
-WHERE organization_id = $1
-ORDER BY name, id
+const listLeaseDetailsForTenants = `-- name: ListLeaseDetailsForTenants :many
+SELECT l.id, l.organization_id, l.unit_id, l.tenant_id, l.start_date, l.end_date, l.rent_amount, l.deposit_amount, l.status, l.collector_staff_user_id, l.created_at, l.updated_at, l.entered_on, l.billed_from, l.planned_end_date, u.label AS unit_label, u.property_id, p.name AS property_name,
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
+LEFT JOIN membership m ON m.organization_id = l.organization_id AND m.staff_user_id = l.collector_staff_user_id
+LEFT JOIN staff_user su ON su.id = l.collector_staff_user_id
+WHERE l.organization_id = $1 AND l.tenant_id = ANY($2::uuid[])
+ORDER BY l.status, l.start_date DESC, l.id
 `
 
-// Runs in an organization scope (store.WithOrgTx).
-func (q *Queries) ListTenants(ctx context.Context, organizationID uuid.UUID) ([]Tenant, error) {
-	rows, err := q.db.Query(ctx, listTenants, organizationID)
+type ListLeaseDetailsForTenantsParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+}
+
+type ListLeaseDetailsForTenantsRow struct {
+	ID                   uuid.UUID
+	OrganizationID       uuid.UUID
+	UnitID               uuid.UUID
+	TenantID             uuid.UUID
+	StartDate            time.Time
+	EndDate              *time.Time
+	RentAmount           int64
+	DepositAmount        int64
+	Status               string
+	CollectorStaffUserID uuid.NullUUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	EnteredOn            time.Time
+	BilledFrom           time.Time
+	PlannedEndDate       *time.Time
+	UnitLabel            string
+	PropertyID           uuid.UUID
+	PropertyName         string
+	CollectorMemberID    uuid.NullUUID
+	CollectorName        *string
+	CollectorStatus      *string
+}
+
+// The leases of some tenants with their unit, property and collector, active first.
+func (q *Queries) ListLeaseDetailsForTenants(ctx context.Context, arg ListLeaseDetailsForTenantsParams) ([]ListLeaseDetailsForTenantsRow, error) {
+	rows, err := q.db.Query(ctx, listLeaseDetailsForTenants, arg.OrganizationID, arg.TenantIds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Tenant
+	var items []ListLeaseDetailsForTenantsRow
 	for rows.Next() {
-		var i Tenant
+		var i ListLeaseDetailsForTenantsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.UnitID,
+			&i.TenantID,
+			&i.StartDate,
+			&i.EndDate,
+			&i.RentAmount,
+			&i.DepositAmount,
+			&i.Status,
+			&i.CollectorStaffUserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EnteredOn,
+			&i.BilledFrom,
+			&i.PlannedEndDate,
+			&i.UnitLabel,
+			&i.PropertyID,
+			&i.PropertyName,
+			&i.CollectorMemberID,
+			&i.CollectorName,
+			&i.CollectorStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLeaseScopes = `-- name: ListLeaseScopes :many
+SELECT l.id, l.tenant_id, l.status, u.property_id, l.collector_staff_user_id
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE l.organization_id = $1
+`
+
+type ListLeaseScopesRow struct {
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	Status               string
+	PropertyID           uuid.UUID
+	CollectorStaffUserID uuid.NullUUID
+}
+
+// What decides who may see each lease, for every lease in the organization.
+func (q *Queries) ListLeaseScopes(ctx context.Context, organizationID uuid.UUID) ([]ListLeaseScopesRow, error) {
+	rows, err := q.db.Query(ctx, listLeaseScopes, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLeaseScopesRow
+	for rows.Next() {
+		var i ListLeaseScopesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Status,
+			&i.PropertyID,
+			&i.CollectorStaffUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantPage = `-- name: ListTenantPage :many
+WITH vl AS (
+    SELECT l.tenant_id, l.status, l.start_date, u.property_id, u.label,
+           (l.status = 'active' AND m.status = 'disabled') AS collector_disabled
+    FROM lease l
+    JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+    LEFT JOIN membership m ON m.organization_id = l.organization_id AND m.staff_user_id = l.collector_staff_user_id
+    WHERE l.organization_id = $10
+      AND ($11::boolean OR l.id = ANY($12::uuid[]))
+), vt AS (
+    SELECT t.id, t.organization_id, t.name, t.phone, t.note, t.created_at, t.updated_at,
+           CASE
+               WHEN EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id AND vl.status = 'active' AND vl.start_date <= $13::date) THEN 'active'
+               WHEN EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id AND vl.status = 'active') THEN 'upcoming'
+               WHEN EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id) THEN 'ended'
+               ELSE 'none'
+           END::text AS lease_status,
+           CASE WHEN t.phone LIKE '+62%' THEN '0' || substr(t.phone, 4) ELSE t.phone END AS national_phone
+    FROM tenant t
+    WHERE t.organization_id = $10
+      AND ($11::boolean OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id))
+)
+SELECT vt.id, vt.organization_id, vt.name, vt.phone, vt.note, vt.created_at, vt.updated_at
+FROM vt
+WHERE ($1::text IS NULL
+       OR vt.name ILIKE $1
+       OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = vt.id AND vl.label ILIKE $1)
+       OR vt.national_phone LIKE $2::text
+       OR vt.national_phone LIKE $3::text)
+  AND ($4::uuid IS NULL
+       OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = vt.id AND vl.property_id = $4))
+  AND ($5::text IS NULL OR vt.lease_status = $5)
+  AND (NOT $6::boolean
+       OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = vt.id AND vl.collector_disabled))
+ORDER BY CASE WHEN $7::text = 'name' THEN vt.name END,
+         CASE WHEN $7::text = '-name' THEN vt.name END DESC,
+         CASE WHEN $7::text = 'createdAt' THEN vt.created_at END,
+         CASE WHEN $7::text = '-createdAt' THEN vt.created_at END DESC,
+         vt.id
+LIMIT $9 OFFSET $8
+`
+
+type ListTenantPageParams struct {
+	Q                 *string
+	PhoneNational     *string
+	PhoneDigits       *string
+	PropertyID        uuid.NullUUID
+	LeaseStatus       *string
+	CollectorDisabled bool
+	Sort              string
+	PageOffset        int32
+	PageLimit         int32
+	OrganizationID    uuid.UUID
+	OrgWide           bool
+	LeaseIds          []uuid.UUID
+	Today             time.Time
+}
+
+type ListTenantPageRow struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	Name           string
+	Phone          string
+	Note           string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// One page of the tenants matching the filters. With org_wide every tenant and lease is
+// visible; otherwise only the leases in lease_ids and the tenants with one of them. Filters
+// look only at visible leases. CountTenantPage has the same WHERE: change both together.
+func (q *Queries) ListTenantPage(ctx context.Context, arg ListTenantPageParams) ([]ListTenantPageRow, error) {
+	rows, err := q.db.Query(ctx, listTenantPage,
+		arg.Q,
+		arg.PhoneNational,
+		arg.PhoneDigits,
+		arg.PropertyID,
+		arg.LeaseStatus,
+		arg.CollectorDisabled,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.OrganizationID,
+		arg.OrgWide,
+		arg.LeaseIds,
+		arg.Today,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTenantPageRow
+	for rows.Next() {
+		var i ListTenantPageRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAbility } from "@casl/react";
 import { useState } from "react";
 
 import { toFormError } from "@/lib/api/form-error";
@@ -8,9 +9,9 @@ import {
   useListProperties,
   useListUnits,
 } from "@/lib/api/generated/properties/properties";
+import type { AppAbility } from "@/lib/capabilities";
 import {
   LOADING_TEXT,
-  NO_PROPERTY_PERMISSIONS,
   READ_ONLY_NOTE,
   propertyPermissions,
   unitsReadOnly,
@@ -39,13 +40,18 @@ export function PropertyUnitsView({
   organizationName,
 }: PropertyUnitsViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const properties = useListProperties(orgId);
+  const properties = useListProperties(orgId, { pageSize: 100 });
   const property = properties.data?.properties.find(
     (candidate) => candidate.id === propertyId,
   );
-  const units = useListUnits(orgId, propertyId, {
-    query: { enabled: property !== undefined },
-  });
+  const units = useListUnits(
+    orgId,
+    propertyId,
+    { pageSize: 100 },
+    {
+      query: { enabled: property !== undefined },
+    },
+  );
   const [propertyPanel, setPropertyPanel] = useState<PropertyPanelState>({
     kind: "closed",
   });
@@ -55,10 +61,7 @@ export function PropertyUnitsView({
   // A short confirmation after a panel closes, announced to screen readers.
   const [notice, setNotice] = useState("");
 
-  const permissions =
-    orgMe.data === undefined
-      ? NO_PROPERTY_PERMISSIONS
-      : propertyPermissions(orgMe.data.capabilities);
+  const permissions = propertyPermissions(useAbility<AppAbility>());
   const failed = orgMe.isError ? orgMe.error : properties.error;
 
   function openPropertyPanel(next: PropertyPanelState) {

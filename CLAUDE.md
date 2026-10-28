@@ -79,6 +79,11 @@ summarizes, reminds and reports.
   input, rejects unknown JSON fields, and answers errors as `{"error":{"code","message","field"}}`
   with Indonesian messages; clients branch on `code`. Zod in the browser is only for friendly
   form messages.
+- **Lists** (decision 28): every list that can grow takes `page` (from 1) and `pageSize`
+  (default 20, max 100) and answers `{items, page, pageSize, total}`, in a fixed order with the
+  id breaking ties. Search (`q`), filters and `sort` run on the server, each from a whitelist
+  (an unknown value is a 400); `total` counts only what the caller may see. Small bounded lists
+  (charge types, collector candidates) stay plain arrays.
 - **Routing**: Caddy on one domain. `/api/*` and `/webhooks/*` go to the Go API, everything
   else to Next.js, so there is no CORS. `Referrer-Policy: no-referrer` on `/t/*`.
 - **Data access**: sqlc over pgx v5, no ORM. Every query runs inside one of two scopes, set

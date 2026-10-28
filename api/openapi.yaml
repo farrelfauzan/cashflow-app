@@ -134,13 +134,33 @@ paths:
     get:
       tags: [members]
       operationId: listMembers
-      summary: Every member of the organization (needs member:read)
+      summary: One page of the organization's members (needs member:read)
+      description: >
+        Paginated (see the Page parameters). q matches the name, or the WhatsApp number when it
+        is made of digits and phone punctuation (at least 3 digits; 0812, 62812 and +62 812 all
+        match 0812-...).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, disabled] }
+        - name: collectorDisabled
+          in: query
+          description: true keeps only disabled members who are still collector of an active lease.
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          description: By name (the default) or when the member was added; a leading - reverses it.
+          schema: { type: string, enum: [name, -name, createdAt, -createdAt], default: name }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MemberList" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -321,16 +341,25 @@ paths:
     get:
       tags: [properties]
       operationId: listProperties
-      summary: Properties the member may see (needs property:read)
+      summary: One page of the properties the member may see (needs property:read)
       description: >
-        A member whose roles are limited to some properties gets only those. Sorted by name,
+        A member whose roles are limited to some properties gets only those, and total counts
+        only those. Paginated (see the Page parameters); q matches the name. Sorted by name,
         with numbers in natural order.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: sort
+          in: query
+          schema: { type: string, enum: [name, -name], default: name }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PropertyList" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -395,14 +424,24 @@ paths:
     get:
       tags: [properties]
       operationId: listUnits
-      summary: Units of one property (needs unit:read on that property)
-      description: Sorted by label, with numbers in natural order ("Kamar 2" before "Kamar 11").
+      summary: One page of a property's units (needs unit:read on that property)
+      description: >
+        Paginated (see the Page parameters); q matches the label. Sorted by label, with numbers
+        in natural order ("Kamar 2" before "Kamar 11").
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: sort
+          in: query
+          schema: { type: string, enum: [label, -label], default: label }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UnitList" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -474,13 +513,44 @@ paths:
         A tenant is visible through any of their leases: a karyawan sees the tenants whose lease
         names them as collector, a member limited to a property sees the tenants with a lease
         there, and only those leases. Tenants without a lease are visible only to members with
-        tenant:read for the whole organization.
+        tenant:read for the whole organization. Filters, q and total see only what the member
+        may see: the visible tenants and, for each, their visible leases.
+
+        Paginated (see the Page parameters). q matches the name, the unit label of a lease, or
+        the WhatsApp number when q is made of digits and phone punctuation (at least 3 digits;
+        0812, 62812 and +62 812 all match 0812-...).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: propertyId
+          in: query
+          description: Keeps tenants with a lease in this property.
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          description: >
+            The status of the tenant's first lease: active (started and running), upcoming
+            (booked ahead: it starts after today, Asia/Jakarta), ended (every lease ended), none
+            (no lease).
+          schema: { type: string, enum: [active, upcoming, ended, none] }
+        - name: collectorDisabled
+          in: query
+          description: >
+            true keeps only tenants with an active lease whose collector is disabled (the
+            "belum punya penagih" flag).
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          description: By name (the default) or when the tenant was added; a leading - reverses it.
+          schema: { type: string, enum: [name, -name, createdAt, -createdAt], default: name }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TenantList" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -874,6 +944,23 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    # Every list that can grow is paginated with Page and PageSize and answers a Page with its
+    # items. Out-of-range values, an unknown sort or an unknown filter value are a 400
+    # invalid_input naming the parameter in field.
+    Page:
+      name: page
+      in: query
+      description: The page to return, from 1. A page past the last has no items.
+      schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Search:
+      name: q
+      in: query
+      description: Search text, ignoring case; empty means no search.
+      schema: { type: string, maxLength: 100 }
 
   responses:
     Error:
@@ -959,6 +1046,10 @@ components:
           type: string
           format: uuid
           description: Set when the role is limited to this property; absent means the whole organization.
+        propertyName:
+          type: string
+          description: The name of the property in propertyId, set with it, so a role reads "Admin · Kos Melati" without the property list.
+          example: Kos Melati
 
     Capability:
       type: object
@@ -1065,13 +1156,29 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CollectorCandidate" }
 
-    MemberList:
+    PageInfo:
       type: object
-      required: [members]
+      description: "One page of a list. Rows are in a fixed order, ties broken by id, so pages never overlap or skip."
+      required: [page, pageSize, total]
       properties:
-        members:
-          type: array
-          items: { $ref: "#/components/schemas/Member" }
+        page: { type: integer, description: "The page returned, from 1." }
+        pageSize: { type: integer }
+        total: { type: integer, description: "Every row matching the filters that the member may see, on all pages." }
+
+    MemberList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items, members]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Member" }
+            members:
+              type: array
+              deprecated: true
+              description: The same rows as items. Kept until the web reads items; then removed.
+              items: { $ref: "#/components/schemas/Member" }
 
     InviteMember:
       type: object
@@ -1135,12 +1242,19 @@ components:
         updatedAt: { type: string, format: date-time }
 
     PropertyList:
-      type: object
-      required: [properties]
-      properties:
-        properties:
-          type: array
-          items: { $ref: "#/components/schemas/Property" }
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items, properties]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Property" }
+            properties:
+              type: array
+              deprecated: true
+              description: The same rows as items. Kept until the web reads items; then removed.
+              items: { $ref: "#/components/schemas/Property" }
 
     UnitInput:
       type: object
@@ -1190,12 +1304,19 @@ components:
         updatedAt: { type: string, format: date-time }
 
     UnitList:
-      type: object
-      required: [units]
-      properties:
-        units:
-          type: array
-          items: { $ref: "#/components/schemas/Unit" }
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items, units]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Unit" }
+            units:
+              type: array
+              deprecated: true
+              description: The same rows as items. Kept until the web reads items; then removed.
+              items: { $ref: "#/components/schemas/Unit" }
 
     TenantInput:
       type: object
@@ -1224,12 +1345,19 @@ components:
         updatedAt: { type: string, format: date-time }
 
     TenantList:
-      type: object
-      required: [tenants]
-      properties:
-        tenants:
-          type: array
-          items: { $ref: "#/components/schemas/Tenant" }
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items, tenants]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Tenant" }
+            tenants:
+              type: array
+              deprecated: true
+              description: The same rows as items. Kept until the web reads items; then removed.
+              items: { $ref: "#/components/schemas/Tenant" }
 
     LeaseStatus:
       type: string

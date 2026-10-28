@@ -21,7 +21,7 @@ import (
 // memberByID finds a member in the organization's list, as the members screen sees it.
 func memberByID(t *testing.T, env *testenv.Env, p authz.Principal, id uuid.UUID) member.Member {
 	t.Helper()
-	members, err := env.Members.List(context.Background(), p)
+	members, err := env.AllMembers(context.Background(), p)
 	require.NoError(t, err)
 	for _, m := range members {
 		if m.ID == id {
@@ -60,7 +60,7 @@ func TestInviteSendsTheInvitation(t *testing.T) {
 	karyawan := env.Principal(t, o.ID, o.Karyawan.UserID)
 
 	t.Run("founders were never invited", func(t *testing.T) {
-		members, err := env.Members.List(ctx, admin)
+		members, err := env.AllMembers(ctx, admin)
 		require.NoError(t, err)
 		require.Len(t, members, 3)
 		for _, m := range members {

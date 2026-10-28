@@ -12,6 +12,57 @@ import (
 	"github.com/google/uuid"
 )
 
+const countPropertyPage = `-- name: CountPropertyPage :one
+SELECT count(*)
+FROM property p
+WHERE p.organization_id = $1
+  AND ($2::boolean OR p.id = ANY($3::uuid[]))
+  AND ($4::text IS NULL OR p.name ILIKE $4)
+`
+
+type CountPropertyPageParams struct {
+	OrganizationID uuid.UUID
+	OrgWide        bool
+	PropertyIds    []uuid.UUID
+	Q              *string
+}
+
+// Every property ListPropertyPage would return on any page: keep the WHERE the same.
+func (q *Queries) CountPropertyPage(ctx context.Context, arg CountPropertyPageParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPropertyPage,
+		arg.OrganizationID,
+		arg.OrgWide,
+		arg.PropertyIds,
+		arg.Q,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUnits = `-- name: CountUnits :one
+SELECT count(*)
+FROM unit u
+LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
+LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_id
+WHERE u.organization_id = $1 AND u.property_id = $2
+  AND ($3::text IS NULL OR u.label ILIKE $3)
+`
+
+type CountUnitsParams struct {
+	OrganizationID uuid.UUID
+	PropertyID     uuid.UUID
+	Q              *string
+}
+
+// Every unit ListUnits would return on any page: keep the WHERE the same.
+func (q *Queries) CountUnits(ctx context.Context, arg CountUnitsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnits, arg.OrganizationID, arg.PropertyID, arg.Q)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createProperty = `-- name: CreateProperty :one
 INSERT INTO property (id, organization_id, name, kind, address)
 VALUES ($1, $2, $3, $4, $5)
@@ -244,17 +295,57 @@ func (q *Queries) GetUnitOccupancy(ctx context.Context, arg GetUnitOccupancyPara
 	return i, err
 }
 
-const listProperties = `-- name: ListProperties :many
+const listPropertyIDs = `-- name: ListPropertyIDs :many
 
+SELECT id FROM property WHERE organization_id = $1
+`
+
+// Runs in an organization scope (store.WithOrgTx).
+func (q *Queries) ListPropertyIDs(ctx context.Context, organizationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listPropertyIDs, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPropertyPage = `-- name: ListPropertyPage :many
 SELECT p.id, p.organization_id, p.name, p.kind, p.address, p.created_at, p.updated_at, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count,
        (SELECT count(*) FROM unit u JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
         WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS occupied_unit_count
 FROM property p
 WHERE p.organization_id = $1
-ORDER BY p.name COLLATE natural_sort, p.id
+  AND ($2::boolean OR p.id = ANY($3::uuid[]))
+  AND ($4::text IS NULL OR p.name ILIKE $4)
+ORDER BY CASE WHEN $5::text = 'name' THEN p.name END COLLATE natural_sort,
+         CASE WHEN $5::text = '-name' THEN p.name END COLLATE natural_sort DESC,
+         p.id
+LIMIT $7 OFFSET $6
 `
 
-type ListPropertiesRow struct {
+type ListPropertyPageParams struct {
+	OrganizationID uuid.UUID
+	OrgWide        bool
+	PropertyIds    []uuid.UUID
+	Q              *string
+	Sort           string
+	PageOffset     int32
+	PageLimit      int32
+}
+
+type ListPropertyPageRow struct {
 	ID                uuid.UUID
 	OrganizationID    uuid.UUID
 	Name              string
@@ -266,16 +357,25 @@ type ListPropertiesRow struct {
 	OccupiedUnitCount int64
 }
 
-// Runs in an organization scope (store.WithOrgTx).
-func (q *Queries) ListProperties(ctx context.Context, organizationID uuid.UUID) ([]ListPropertiesRow, error) {
-	rows, err := q.db.Query(ctx, listProperties, organizationID)
+// One page of the properties matching the filters: every one with org_wide, otherwise those in
+// property_ids. CountPropertyPage has the same WHERE: change both together.
+func (q *Queries) ListPropertyPage(ctx context.Context, arg ListPropertyPageParams) ([]ListPropertyPageRow, error) {
+	rows, err := q.db.Query(ctx, listPropertyPage,
+		arg.OrganizationID,
+		arg.OrgWide,
+		arg.PropertyIds,
+		arg.Q,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPropertiesRow
+	var items []ListPropertyPageRow
 	for rows.Next() {
-		var i ListPropertiesRow
+		var i ListPropertyPageRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
@@ -304,12 +404,20 @@ FROM unit u
 LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
 LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_id
 WHERE u.organization_id = $1 AND u.property_id = $2
-ORDER BY u.label COLLATE natural_sort, u.id
+  AND ($3::text IS NULL OR u.label ILIKE $3)
+ORDER BY CASE WHEN $4::text = 'label' THEN u.label END COLLATE natural_sort,
+         CASE WHEN $4::text = '-label' THEN u.label END COLLATE natural_sort DESC,
+         u.id
+LIMIT $6 OFFSET $5
 `
 
 type ListUnitsParams struct {
 	OrganizationID uuid.UUID
 	PropertyID     uuid.UUID
+	Q              *string
+	Sort           string
+	PageOffset     int32
+	PageLimit      int32
 }
 
 type ListUnitsRow struct {
@@ -320,10 +428,18 @@ type ListUnitsRow struct {
 	Occupied             bool
 }
 
-// Each unit with its active lease, if any. A partial unique index allows one active lease per
-// unit, so the join adds no rows.
+// One page of a property's units, each with its active lease, if any. A partial unique index
+// allows one active lease per unit, so the join adds no rows. CountUnits has the same WHERE:
+// change both together.
 func (q *Queries) ListUnits(ctx context.Context, arg ListUnitsParams) ([]ListUnitsRow, error) {
-	rows, err := q.db.Query(ctx, listUnits, arg.OrganizationID, arg.PropertyID)
+	rows, err := q.db.Query(ctx, listUnits,
+		arg.OrganizationID,
+		arg.PropertyID,
+		arg.Q,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
