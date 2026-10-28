@@ -10,6 +10,8 @@
  */
 export interface ImportRowValues {
   startDate: string;
+  /** Mulai tagih dari; the start date when the cell is empty. */
+  billedFrom: string;
   /** Monthly rent in rupiah. */
   rentAmount: number;
   /** Deposit in rupiah; 0 when the cell is empty. */
