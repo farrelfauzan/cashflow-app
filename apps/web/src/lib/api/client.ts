@@ -35,6 +35,8 @@ export const apiAxios = axios.create({
   // from the environment, and never follow a redirect with it. The browser ignores both.
   proxy: false,
   maxRedirects: 0,
+  // An absolute url from a caller never replaces the base URL, so the cookie only goes to the API.
+  allowAbsoluteUrls: false,
 });
 
 // Request: where the call goes and the one credential it carries. In the browser that is the

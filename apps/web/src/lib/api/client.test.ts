@@ -129,6 +129,25 @@ describe("apiRequest request", () => {
     );
   });
 
+  it.each([
+    {
+      name: "an absolute url",
+      url: "https://example.com/x",
+      sent: "/api/https://example.com/x",
+    },
+    {
+      name: "a protocol-relative url",
+      url: "//example.com/x",
+      sent: "/api/example.com/x",
+    },
+  ])("keeps $name under the API's base URL", async ({ url, sent }) => {
+    respond("{}", 200);
+
+    await apiRequest({ url: "/me" }, { url });
+
+    expect(apiAxios.getUri(sentConfig())).toBe(sent);
+  });
+
   it("never follows a redirect or uses a proxy from the environment", () => {
     expect(apiAxios.defaults.maxRedirects).toBe(0);
     expect(apiAxios.defaults.proxy).toBe(false);
