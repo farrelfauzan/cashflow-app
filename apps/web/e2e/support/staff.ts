@@ -41,8 +41,33 @@ export const RUDI: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "rudi.json"),
 };
 
+// Admin of the whole of Kos Bulanan Sejahtera, the organization seeded with enough rows to span
+// pages: 27 members, 25 properties, 30 units in Kos Sejahtera Utama and 45 tenants. Signed in by
+// the setup project only.
+export const DIMAS: SeededStaff = {
+  phone: "0812-0009-0027",
+  name: "Pak Dimas Prakoso",
+  organizations: ["Kos Bulanan Sejahtera"],
+  storageState: join(__dirname, "..", ".auth", "dimas.json"),
+};
+
+// Admin limited to Kontrakan Seturan in Kos Bulanan Sejahtera: the pages and totals count only
+// the 8 tenants she may see. Signed in by the setup project only.
+export const LESTARI: SeededStaff = {
+  phone: "0812-0009-0028",
+  name: "Mbak Lestari Anjani",
+  organizations: ["Kos Bulanan Sejahtera"],
+  storageState: join(__dirname, "..", ".auth", "lestari.json"),
+};
+
 // Every member the setup project signs in once per run.
-export const SETUP_STAFF: readonly SeededStaff[] = [HENDRA, SARI, RUDI];
+export const SETUP_STAFF: readonly SeededStaff[] = [
+  HENDRA,
+  SARI,
+  RUDI,
+  DIMAS,
+  LESTARI,
+];
 
 // A seeded member the login spec signs in through the UI. Each is used by one test in one
 // project only, so parallel tests and reruns never share a phone's limits (3 code requests and

@@ -1,3 +1,5 @@
+import type { ListTenantsStatus } from "@/lib/api/generated/model";
+
 // Tenant status: what a lease (or a tenant without one) is, from the lease's status and dates.
 export type StatusTone = "active" | "upcoming" | "ended" | "none";
 
@@ -18,16 +20,15 @@ export type TenantPermissions = {
   canManageLeases: boolean;
 };
 
-// Tenant filters: what the list is narrowed to, in the browser.
-export type StatusFilter = "all" | StatusTone;
-
-export type TenantFilters = {
-  search: string;
-  // A property id, or "all".
-  propertyId: string;
-  status: StatusFilter;
+// Tenant filters: what the API narrows the list to, read from the URL. Each is undefined when it
+// is not set, so the request and its query key leave it out.
+export type TenantListFilters = {
+  // The trimmed search.
+  q: string | undefined;
+  propertyId: string | undefined;
+  status: ListTenantsStatus | undefined;
   // Only tenants flagged "Belum punya penagih" (set by the banner's "Tampilkan").
-  flaggedOnly: boolean;
+  collectorDisabled: true | undefined;
 };
 
 export type FilterOption = {

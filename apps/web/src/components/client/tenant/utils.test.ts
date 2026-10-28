@@ -1,32 +1,35 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
-import type { Capability, Lease, Tenant } from "@/lib/api/generated/model";
+import type {
+  Capability,
+  Lease,
+  Property,
+  Tenant,
+} from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
-import type { TenantFilters } from "./type";
+import type { TenantListFilters } from "./type";
 import {
   billedNote,
+  CLEAR_FILTERS,
   extraLeasesText,
-  filterTenants,
-  flaggedCount,
+  filterParam,
   isFiltering,
   isFlagged,
   isNotFound,
   leaseStatusView,
   leaseView,
-  matchesSearch,
-  NO_FILTERS,
   orderedLeases,
   previousDay,
+  propertyFilterOptions,
   propertyText,
-  propertyOptions,
+  readTenantFilters,
   tenantPermissions,
   tenantRow,
   tenantsSubtitle,
   tenantStatusView,
   unitText,
-  toStatusFilter,
 } from "./utils";
 
 const TODAY = "2026-10-28";
@@ -228,14 +231,6 @@ describe("flagged tenants", () => {
   ])("$name: $want", ({ tenant: t, want }) => {
     expect(isFlagged(t)).toBe(want);
   });
-
-  it("counts them", () => {
-    const flagged = tenant({
-      leases: [lease({ collector: DISABLED_COLLECTOR })],
-    });
-    expect(flaggedCount([flagged, tenant(), flagged])).toBe(2);
-    expect(flaggedCount([])).toBe(0);
-  });
 });
 
 describe("extraLeasesText", () => {
@@ -357,179 +352,69 @@ describe("tenantPermissions", () => {
   });
 });
 
-describe("matchesSearch", () => {
-  const t = tenant({
-    name: "Eko Prasetyo",
-    phone: "+6281200010003",
-    leases: [
-      lease({ unitLabel: "Rumah A" }),
-      lease({ id: "y", unitLabel: "Kamar 12" }),
-    ],
+describe("readTenantFilters", () => {
+  const read = (query: string) => readTenantFilters(new URLSearchParams(query));
+  const none: TenantListFilters = {
+    q: undefined,
+    propertyId: undefined,
+    status: undefined,
+    collectorDisabled: undefined,
+  };
+
+  it("reads nothing from an empty URL", () => {
+    expect(read("")).toEqual(none);
   });
+
+  it("reads every filter", () => {
+    expect(
+      read(
+        `q=%20rina%20&propertyId=${MAWAR.propertyId}&status=upcoming&collectorDisabled=true&page=2`,
+      ),
+    ).toEqual({
+      q: "rina",
+      propertyId: MAWAR.propertyId,
+      status: "upcoming",
+      collectorDisabled: true,
+    });
+  });
+
+  it.each(["active", "upcoming", "ended", "none"])(
+    "reads the status %s",
+    (status) => {
+      expect(read(`status=${status}`).status).toBe(status);
+    },
+  );
 
   it.each([
-    { name: "an empty query", search: "", want: true },
-    { name: "only spaces", search: "   ", want: true },
-    { name: "part of the name", search: "prase", want: true },
-    { name: "the name in other letters", search: "EKO", want: true },
-    { name: "a unit label", search: "rumah a", want: true },
-    { name: "the label of another lease", search: "kamar 12", want: true },
-    { name: "a number with the leading 0", search: "0812 0001", want: true },
-    { name: "a number with dashes", search: "0812-0001-0003", want: true },
-    { name: "a number with +62", search: "+62 812 0001", want: true },
-    {
-      name: "a number with 62 and no plus",
-      search: "6281200010003",
-      want: true,
-    },
-    { name: "the middle of a number", search: "0001 0003", want: true },
-    { name: "a number that is not theirs", search: "0812 9999", want: false },
-    { name: "too few digits", search: "08", want: false },
-    { name: "a word that is not there", search: "tegalrejo", want: false },
-    { name: "digits inside a longer text", search: "kamar 1203", want: false },
-    { name: "a property name", search: "melati", want: false },
-  ])("$name: $want", ({ search, want }) => {
-    expect(matchesSearch(t, search)).toBe(want);
-  });
-
-  // 0812-6234-5678: "6234" is part of the number, not +62 followed by 34.
-  it.each([
-    {
-      name: "digits starting with 62 inside the number",
-      search: "6234",
-      want: true,
-    },
-    { name: "the same with +62", search: "+62 812 6234", want: true },
-    { name: "62 alone is too short", search: "62", want: false },
-  ])("$name: $want", ({ search, want }) => {
-    const sixtyTwo = tenant({ phone: "+6281262345678", leases: [] });
-    expect(matchesSearch(sixtyTwo, search)).toBe(want);
-  });
-});
-
-describe("filterTenants", () => {
-  const rina = tenant({
-    id: "a",
-    name: "Rina Wulandari",
-    phone: "+6281300010001",
-    leases: [
-      lease({ collector: ACTIVE_COLLECTOR }),
-      lease({ id: "r2", unitLabel: "Rumah B", ...MAWAR }),
-    ],
-  });
-  const eko = tenant({
-    id: "b",
-    name: "Eko Prasetyo",
-    phone: "+6281300010005",
-    leases: [
-      lease({
-        id: "e1",
-        unitLabel: "Rumah A",
-        ...MAWAR,
-        collector: DISABLED_COLLECTOR,
-      }),
-    ],
-  });
-  const dewi = tenant({
-    id: "c",
-    name: "Dewi Anggraini",
-    phone: "+6281300010004",
-    leases: [lease({ id: "d1", status: "ended", endDate: "2026-09-30" })],
-  });
-  const fajar = tenant({
-    id: "d",
-    name: "Fajar Nugroho",
-    phone: "+6281300010007",
-    leases: [lease({ id: "f1", startDate: "2026-11-01" })],
-  });
-  const anton = tenant({ id: "e", name: "Anton Wijaya", leases: [] });
-  const all = [rina, eko, dewi, fajar, anton];
-
-  const names = (filters: Partial<TenantFilters>) =>
-    filterTenants(all, { ...NO_FILTERS, ...filters }, TODAY).map((t) => t.name);
-
-  it("keeps everyone without filters", () => {
-    expect(names({})).toHaveLength(5);
-  });
-
-  it.each<{ name: string; filters: Partial<TenantFilters>; want: string[] }>([
-    {
-      name: "a search",
-      filters: { search: "eko" },
-      want: ["Eko Prasetyo"],
-    },
-    {
-      name: "a phone search",
-      filters: { search: "0813 0001 0004" },
-      want: ["Dewi Anggraini"],
-    },
-    {
-      name: "a property: any lease there counts",
-      filters: { propertyId: MAWAR.propertyId },
-      want: ["Rina Wulandari", "Eko Prasetyo"],
-    },
-    {
-      name: "the status Aktif",
-      filters: { status: "active" },
-      want: ["Rina Wulandari", "Eko Prasetyo"],
-    },
-    {
-      name: "the status Belum mulai",
-      filters: { status: "upcoming" },
-      want: ["Fajar Nugroho"],
-    },
-    {
-      name: "the status Sudah keluar",
-      filters: { status: "ended" },
-      want: ["Dewi Anggraini"],
-    },
-    {
-      name: "the status Tanpa sewa",
-      filters: { status: "none" },
-      want: ["Anton Wijaya"],
-    },
-    {
-      name: "flagged only",
-      filters: { flaggedOnly: true },
-      want: ["Eko Prasetyo"],
-    },
-    {
-      name: "a search and a property together",
-      filters: { search: "rina", propertyId: MAWAR.propertyId },
-      want: ["Rina Wulandari"],
-    },
-    {
-      name: "filters that exclude each other",
-      filters: { search: "dewi", status: "active" },
-      want: [],
-    },
-  ])("narrows by $name", ({ filters, want }) => {
-    expect(names(filters)).toEqual(want);
+    { name: "a blank search", query: "q=%20%20" },
+    { name: "an empty property", query: "propertyId=" },
+    { name: "an unknown status", query: "status=deleted" },
+    { name: "a status in another case", query: "status=Active" },
+    { name: "the status 'all'", query: "status=all" },
+    { name: "collectorDisabled=false", query: "collectorDisabled=false" },
+    { name: "collectorDisabled=1", query: "collectorDisabled=1" },
+    { name: "an empty collectorDisabled", query: "collectorDisabled=" },
+  ])("counts $name as not set", ({ query }) => {
+    expect(read(query)).toEqual(none);
   });
 });
 
 describe("isFiltering", () => {
-  it.each<{ name: string; filters: TenantFilters; want: boolean }>([
-    { name: "no filters", filters: NO_FILTERS, want: false },
-    {
-      name: "spaces in the search",
-      filters: { ...NO_FILTERS, search: "  " },
-      want: false,
-    },
-    { name: "a search", filters: { ...NO_FILTERS, search: "a" }, want: true },
-    {
-      name: "a property",
-      filters: { ...NO_FILTERS, propertyId: "p" },
-      want: true,
-    },
-    {
-      name: "a status",
-      filters: { ...NO_FILTERS, status: "ended" },
-      want: true,
-    },
+  const none: TenantListFilters = {
+    q: undefined,
+    propertyId: undefined,
+    status: undefined,
+    collectorDisabled: undefined,
+  };
+
+  it.each<{ name: string; filters: TenantListFilters; want: boolean }>([
+    { name: "no filters", filters: none, want: false },
+    { name: "a search", filters: { ...none, q: "a" }, want: true },
+    { name: "a property", filters: { ...none, propertyId: "p" }, want: true },
+    { name: "a status", filters: { ...none, status: "ended" }, want: true },
     {
       name: "flagged only",
-      filters: { ...NO_FILTERS, flaggedOnly: true },
+      filters: { ...none, collectorDisabled: true },
       want: true,
     },
   ])("$name: $want", ({ filters, want }) => {
@@ -537,34 +422,55 @@ describe("isFiltering", () => {
   });
 });
 
-describe("propertyOptions", () => {
-  it("lists each property of the leases once, by name", () => {
-    const options = propertyOptions([
-      tenant({ leases: [lease(), lease({ id: "y", ...MAWAR })] }),
-      tenant({ leases: [lease({ id: "z" })] }),
-      tenant({ leases: [] }),
-    ]);
-    expect(options).toEqual([
+describe("CLEAR_FILTERS", () => {
+  it("removes the search and every filter, and keeps the page size", () => {
+    const params = new URLSearchParams(
+      "q=rina&propertyId=p&status=ended&collectorDisabled=true&pageSize=50",
+    );
+    for (const [name, value] of Object.entries(CLEAR_FILTERS)) {
+      expect(value).toBeNull();
+      params.delete(name);
+    }
+    expect(params.toString()).toBe("pageSize=50");
+  });
+});
+
+describe("filterParam", () => {
+  it.each([
+    { value: "all", want: null },
+    { value: "active", want: "active" },
+    { value: MAWAR.propertyId, want: MAWAR.propertyId },
+  ])("turns '$value' into $want", ({ value, want }) => {
+    expect(filterParam(value, "all")).toBe(want);
+  });
+});
+
+describe("propertyFilterOptions", () => {
+  const property = (id: string, name: string): Property => ({
+    id,
+    name,
+    kind: "kos",
+    address: "",
+    unitCount: 0,
+    occupiedUnitCount: 0,
+    createdAt: "2026-10-28T03:00:00Z",
+    updatedAt: "2026-10-28T03:00:00Z",
+  });
+
+  it("offers each property by id and name, in the API's order", () => {
+    expect(
+      propertyFilterOptions([
+        property(MAWAR.propertyId, "Kontrakan Mawar"),
+        property("44444444-4444-4444-8444-444444444444", "Kos Melati"),
+      ]),
+    ).toEqual([
       { value: MAWAR.propertyId, label: "Kontrakan Mawar" },
       { value: "44444444-4444-4444-8444-444444444444", label: "Kos Melati" },
     ]);
   });
 
-  it("is empty without leases", () => {
-    expect(propertyOptions([tenant({ leases: [] })])).toEqual([]);
-  });
-});
-
-describe("toStatusFilter", () => {
-  it.each([
-    { value: "active", want: "active" },
-    { value: "upcoming", want: "upcoming" },
-    { value: "ended", want: "ended" },
-    { value: "none", want: "none" },
-    { value: "all", want: "all" },
-    { value: "bogus", want: "all" },
-  ])("turns '$value' into $want", ({ value, want }) => {
-    expect(toStatusFilter(value)).toBe(want);
+  it("is empty without properties", () => {
+    expect(propertyFilterOptions([])).toEqual([]);
   });
 });
 

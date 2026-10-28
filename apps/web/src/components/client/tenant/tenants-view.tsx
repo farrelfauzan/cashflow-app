@@ -1,20 +1,31 @@
 "use client";
 
 import { useAbility } from "@casl/react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { ListPagination } from "@/components/client/list/list-pagination";
+import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
+import { useListUrl } from "@/components/client/list/use-list-url";
+import {
+  PAGE_SIZE_PARAM,
+  readPage,
+  readPageSize,
+  readSearch,
+} from "@/components/client/list/utils";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
+import { useListProperties } from "@/lib/api/generated/properties/properties";
 import { useListTenants } from "@/lib/api/generated/tenants/tenants";
 import type { AppAbility } from "@/lib/capabilities";
 import { jakartaToday } from "@/lib/format/date";
-import type { TenantFilters as Filters } from "./type";
 import {
-  filterTenants,
-  flaggedCount,
+  CLEAR_FILTERS,
+  COLLECTOR_DISABLED_PARAM,
+  isFiltering,
   LOADING_TEXT,
-  NO_FILTERS,
-  propertyOptions,
+  propertyFilterOptions,
+  readTenantFilters,
   tenantPermissions,
   tenantRow,
 } from "./utils";
@@ -32,29 +43,59 @@ type TenantsViewProps = {
   organizationName: string;
 };
 
-// The tenant list: every tenant the member may see, with the lease they live in. The list is not
-// paginated, so search, filters and the flag count run here in the browser. Read-only: what shows
-// beyond that (the banner) comes from the member's capabilities (getOrgMe).
+// The tenant list: one page of the tenants the member may see, with the lease they live in. The
+// page, size, search and filters live in the URL and the API applies them. Read-only: what shows
+// beyond that (the banner, the property filter) comes from the member's capabilities (getOrgMe).
 export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const tenants = useListTenants(orgId, { pageSize: 100 });
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const ability = useAbility<AppAbility>();
+  const permissions = tenantPermissions(ability);
+
+  const url = useListUrl();
+  const page = readPage(url.searchParams);
+  const pageSize = readPageSize(url.searchParams);
+  const search = readSearch(url.searchParams);
+  const filters = readTenantFilters(url.searchParams);
+  const tenants = useListTenants(
+    orgId,
+    { page, pageSize, ...filters },
+    { query: { placeholderData: keepPreviousData } },
+  );
+  useLastPageRedirect(url, page, pageSize, tenants.data);
+
+  // The banner's count: every flagged tenant, whatever the list is narrowed to.
+  const flagged = useListTenants(
+    orgId,
+    { collectorDisabled: true, pageSize: 1 },
+    { query: { enabled: permissions.canManageLeases } },
+  );
+  const flaggedTotal = flagged.data?.total ?? 0;
+
+  // The property filter's choices. Hidden when the member cannot read properties or they fail.
+  const canReadProperties = ability.can("read", "property");
+  const properties = useListProperties(
+    orgId,
+    { pageSize: 100 },
+    { query: { enabled: canReadProperties } },
+  );
+  const propertyItems = properties.data?.items;
+  const propertyOptions = useMemo(
+    () =>
+      !canReadProperties || propertyItems === undefined
+        ? null
+        : propertyFilterOptions(propertyItems),
+    [canReadProperties, propertyItems],
+  );
+
   // "Today" in Jakarta, read once when the screen opens; the utils take it as an argument.
   const [today] = useState(() => jakartaToday(new Date()));
-
-  const all = tenants.data?.tenants;
+  const items = tenants.data?.items;
   const rows = useMemo(
-    () =>
-      all === undefined
-        ? []
-        : filterTenants(all, filters, today).map((t) => tenantRow(t, today)),
-    [all, filters, today],
+    () => (items === undefined ? [] : items.map((t) => tenantRow(t, today))),
+    [items, today],
   );
-  const properties = useMemo(() => propertyOptions(all ?? []), [all]);
 
-  const permissions = tenantPermissions(useAbility<AppAbility>());
   const failed = orgMe.isError ? orgMe.error : tenants.error;
-  const flagged = all === undefined ? 0 : flaggedCount(all);
 
   return (
     <div className="flex flex-col gap-4 md:gap-[22px]">
@@ -68,29 +109,46 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
             void tenants.refetch();
           }}
         />
-      ) : orgMe.data === undefined || all === undefined ? (
+      ) : orgMe.data === undefined || tenants.data === undefined ? (
         <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>
-      ) : all.length === 0 ? (
+      ) : tenants.data.total === 0 && !isFiltering(filters) ? (
         <TenantsEmpty />
       ) : (
         <>
-          {permissions.canManageLeases && flagged > 0 && (
+          {permissions.canManageLeases && flaggedTotal > 0 && (
             <TenantFlagBanner
-              count={flagged}
-              showing={filters.flaggedOnly}
-              onShow={() => setFilters({ ...filters, flaggedOnly: true })}
+              count={flaggedTotal}
+              showing={filters.collectorDisabled === true}
+              onShow={() => url.change({ [COLLECTOR_DISABLED_PARAM]: "true" })}
             />
           )}
           <TenantFilters
+            search={search}
             filters={filters}
-            properties={properties}
-            onChange={setFilters}
+            properties={propertyOptions}
+            onChange={url.change}
           />
-          {rows.length === 0 ? (
-            <TenantsNoResults onReset={() => setFilters(NO_FILTERS)} />
-          ) : (
-            <TenantList orgId={orgId} rows={rows} />
-          )}
+          <div
+            aria-busy={tenants.isPlaceholderData}
+            className="flex flex-col gap-4 aria-busy:opacity-60"
+          >
+            {tenants.data.total === 0 ? (
+              <TenantsNoResults onReset={() => url.change(CLEAR_FILTERS)} />
+            ) : (
+              <>
+                <TenantList orgId={orgId} rows={rows} />
+                <ListPagination
+                  page={page}
+                  pageSize={pageSize}
+                  total={tenants.data.total}
+                  hrefFor={url.hrefFor}
+                  onPageSizeChange={(size) =>
+                    url.change({ [PAGE_SIZE_PARAM]: size })
+                  }
+                />
+              </>
+            )}
+          </div>
         </>
       )}
     </div>
