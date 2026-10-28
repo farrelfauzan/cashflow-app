@@ -64,7 +64,10 @@ deletes existing data. When it finishes it prints the login list to stdout: phon
 organization, roles, property limit and status of every demo member. Sign in with any active
 one's phone as above. One member, Mas Agus Setiawan in Griya Sejahtera, is disabled on purpose
 and cannot sign in: he stays the collector on Eko Prasetyo's lease, so the members screen and
-the tenant list show "1 penyewa belum punya penagih".
+the tenant list show "1 penyewa belum punya penagih". That needs a database seeded from empty
+(`make dev-reset`, `make dev-up`, `make migrate`, then `seed-demo`; the reset also removes the
+GOWA WhatsApp link): a rerun leaves an existing lease as it is, so on a database seeded before
+Agus was added, Eko's lease keeps no collector and the flag does not show.
 
 ### Login codes for end-to-end tests (development only)
 
