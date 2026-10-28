@@ -281,7 +281,7 @@ func TestSetRolesKeepsAnAdmin(t *testing.T) {
 		require.NoError(t, err)
 		m, err := env.Members.SetRoles(ctx, admin, rina.ID, []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}})
 		require.NoError(t, err)
-		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID}}, m.Roles)
+		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID, PropertyName: melati.Name}}, m.Roles)
 	})
 }
 

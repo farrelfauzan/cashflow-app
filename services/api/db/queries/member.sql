@@ -77,16 +77,20 @@ ON CONFLICT (organization_id, staff_user_id) DO NOTHING
 RETURNING *;
 
 -- name: ListRoleAssignmentsForMembership :many
-SELECT ra.id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name, r.policy AS role_policy
+SELECT ra.id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name, r.policy AS role_policy,
+       p.name AS property_name
 FROM role_assignment ra
 LEFT JOIN role r ON r.id = ra.role_id
+LEFT JOIN property p ON p.organization_id = ra.organization_id AND p.id = ra.property_id
 WHERE ra.organization_id = $1 AND ra.membership_id = $2
 ORDER BY ra.created_at, ra.id;
 
 -- name: ListOrgRoleAssignments :many
-SELECT ra.membership_id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name
+SELECT ra.membership_id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name,
+       p.name AS property_name
 FROM role_assignment ra
 LEFT JOIN role r ON r.id = ra.role_id
+LEFT JOIN property p ON p.organization_id = ra.organization_id AND p.id = ra.property_id
 WHERE ra.organization_id = $1
 ORDER BY ra.created_at, ra.id;
 

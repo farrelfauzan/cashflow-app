@@ -11,4 +11,6 @@ export interface RoleRef {
   builtin: boolean;
   /** Set when the role is limited to this property; absent means the whole organization. */
   propertyId?: string;
+  /** The name of the property in propertyId, set with it, so a role reads "Admin · Kos Melati" without the property list. */
+  propertyName?: string;
 }

@@ -245,7 +245,7 @@ func TestInviteWithRoleGrants(t *testing.T) {
 			Roles: []member.RoleGrant{{Role: authz.RoleAdmin, PropertyID: melati.ID}},
 		})
 		require.NoError(t, err)
-		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID}}, m.Roles,
+		require.Equal(t, []member.RoleRef{{Key: authz.RoleAdmin, Name: "Admin", Builtin: true, PropertyID: melati.ID, PropertyName: melati.Name}}, m.Roles,
 			"exactly the limited grant, never the role for the whole organization")
 
 		limited = env.Principal(t, o.ID, m.UserID)

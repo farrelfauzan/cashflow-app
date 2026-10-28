@@ -776,6 +776,11 @@ type RoleRef struct {
 
 	// PropertyId Set when the role is limited to this property; absent means the whole organization.
 	PropertyId *openapi_types.UUID `json:"propertyId,omitempty"`
+
+	// PropertyName The name of the property in propertyId, set with it, so a role reads "Admin · Kos Melati" without the property list.
+	//
+	// Example: Kos Melati
+	PropertyName *string `json:"propertyName,omitempty"`
 }
 
 // SetMemberStatus defines model for SetMemberStatus.
