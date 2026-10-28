@@ -91,6 +91,11 @@ func run() error {
 	az := authz.NewService(st, clk, log)
 	props := property.NewService(st, az)
 	tenants := tenant.NewService(st, az, clk)
+	imports := tenantimport.NewService(st, az, props, tenants)
+	members := member.NewService(st, az)
+	cookieSecure := cfg.CookieSecure()
+	allowedOrigins := cfg.Origins()
+	docsSpecPath := cfg.DocsSpecPath()
 
 	members := member.NewService(st, az, member.Invitations{
 		Messenger: msg, Limiter: limiter, Clock: clk, Log: log, LoginURL: cfg.LoginURL(),
@@ -104,13 +109,13 @@ func run() error {
 		Members:        members,
 		Properties:     props,
 		Tenants:        tenants,
-		Imports:        tenantimport.NewService(st, az, props, tenants),
-		CookieSecure:   cfg.CookieSecure(),
-		AllowedOrigins: cfg.Origins(),
-		DocsSpecPath:   cfg.DocsSpecPath(),
+		Imports:        imports,
+		CookieSecure:   cookieSecure,
+		AllowedOrigins: allowedOrigins,
+		DocsSpecPath:   docsSpecPath,
 	})
-	if path := cfg.DocsSpecPath(); path != "" {
-		log.Info("API docs at /docs", "spec", path)
+	if docsSpecPath != "" {
+		log.Info("API docs at /docs", "spec", docsSpecPath)
 	}
 	log.Info("api starting", "addr", cfg.HTTPAddr)
 	return srv.Run(ctx, cfg.HTTPAddr)
