@@ -1,6 +1,7 @@
-import { PendingSection } from "@/components/server/shell/pending-section";
+import { PropertiesScreen } from "@/components/server/property/properties-screen";
 
-// Built in W6 from its board.
-export default function PropertiesPage() {
-  return <PendingSection title="Properti" />;
+export default function PropertiesPage({
+  params,
+}: PageProps<"/o/[orgId]/properties">) {
+  return <PropertiesScreen params={params} />;
 }
