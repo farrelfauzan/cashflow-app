@@ -16,20 +16,21 @@ func TestParseFile(t *testing.T) {
 
 	t.Run("canonical header with commas", func(t *testing.T) {
 		t.Parallel()
-		recs, err := parseFile([]byte("property,unit,tenant_name,phone,rent,due_day,start_date\n" +
-			"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,5,2026-10-01\n"))
+		recs, err := parseFile([]byte("property,unit,tenant_name,phone,rent,start_date\n" +
+			"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,2026-10-01\n"))
 		require.NoError(t, err)
 		require.Len(t, recs, 1)
 		require.Equal(t, 2, recs[0].Line)
 		require.Equal(t, "Kamar 1", recs[0].get(colUnit))
+		require.Equal(t, "2026-10-01", recs[0].get(colStartDate))
 	})
 
 	t.Run("Excel in an Indonesian locale: byte order mark, semicolons, Indonesian headers, any order", func(t *testing.T) {
 		t.Parallel()
-		data := "\xef\xbb\xbfNo;Nama Penyewa;No WA;Properti;Kamar;Sewa;Jatuh Tempo;Tanggal Mulai;Jaminan;Jenis Properti\r\n" +
-			"1;Rina Wulandari;0812 1111 2222;Kos Melati;Kamar 1;Rp850.000;5;01/10/2026;850.000;kos\r\n" +
-			";;;;;;;;;\r\n" +
-			"2;Budi;0812 1111 3333;Kos Melati;Kamar 2;850000;10;1/10/2026;;\r\n"
+		data := "\xef\xbb\xbfNo;Nama Penyewa;No WA;Properti;Kamar;Sewa;Tanggal Mulai;Jaminan;Jenis Properti\r\n" +
+			"1;Rina Wulandari;0812 1111 2222;Kos Melati;Kamar 1;Rp850.000;01/10/2026;850.000;kos\r\n" +
+			";;;;;;;;\r\n" +
+			"2;Budi;0812 1111 3333;Kos Melati;Kamar 2;850000;1/10/2026;;\r\n"
 		recs, err := parseFile([]byte(data))
 		require.NoError(t, err)
 		require.Len(t, recs, 2, "the blank row is skipped")
@@ -39,13 +40,50 @@ func TestParseFile(t *testing.T) {
 		require.Equal(t, 4, recs[1].Line, "line numbers count the skipped row")
 	})
 
+	t.Run("an older template with a due day column still imports, with a note when the day differs", func(t *testing.T) {
+		t.Parallel()
+		const differs = "Jatuh tempo kini mengikuti tanggal mulai (tanggal 1); kolom jatuh_tempo tidak dipakai."
+		tests := []struct {
+			name      string
+			data      string
+			wantNotes []string
+		}{
+			{"due_day header, another day", "property,unit,tenant_name,phone,rent,due_day,start_date\n" +
+				"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,5,2026-10-01\n", []string{differs}},
+			{"Jatuh Tempo header, another day", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;5;2026-10-01\n", []string{differs}},
+			{"the start date's day", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;01;2026-10-01\n", nil},
+			{"an empty due day", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;;2026-10-01\n", nil},
+			{"a due day that is not a number", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;awal bulan;2026-10-01\n", []string{differs}},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				recs, err := parseFile([]byte(tc.data))
+				require.NoError(t, err)
+				require.Len(t, recs, 1)
+				require.Equal(t, "Kos Melati", recs[0].get(colProperty))
+				require.Equal(t, "Kamar 1", recs[0].get(colUnit))
+				require.Equal(t, "850000", recs[0].get(colRent))
+				require.Equal(t, "2026-10-01", recs[0].get(colStartDate))
+				var row Row
+				check(recs[0], &row)
+				require.Empty(t, row.Errors)
+				require.Equal(t, tc.wantNotes, row.Notes)
+			})
+		}
+	})
+
 	fileErrors := map[string]string{
 		"empty file":      "",
-		"header only":     "property,unit,tenant_name,phone,rent,due_day,start_date\n",
+		"header only":     "property,unit,tenant_name,phone,rent,start_date\n",
 		"missing columns": "property,unit,tenant_name\nKos,K1,Rina\n",
-		"repeated column": "property,properti,unit,tenant_name,phone,rent,due_day,start_date\n",
-		"broken quoting":  "property,unit,tenant_name,phone,rent,due_day,start_date\n\"Kos,K1,Rina,0812,1,1,2026-10-01\n",
-		"more than 2000":  "property,unit,tenant_name,phone,rent,due_day,start_date\n" + strings.Repeat("Kos,K1,Rina,0812,1,1,2026-10-01\n", MaxRows+1),
+		"repeated column": "property,properti,unit,tenant_name,phone,rent,start_date\n",
+		"broken quoting":  "property,unit,tenant_name,phone,rent,start_date\n\"Kos,K1,Rina,0812,1,2026-10-01\n",
+		"more than 2000":  "property,unit,tenant_name,phone,rent,start_date\n" + strings.Repeat("Kos,K1,Rina,0812,1,2026-10-01\n", MaxRows+1),
 	}
 	for name, data := range fileErrors {
 		t.Run(name, func(t *testing.T) {
@@ -60,7 +98,7 @@ func TestParseFile(t *testing.T) {
 	t.Run("the missing columns are named", func(t *testing.T) {
 		t.Parallel()
 		_, err := parseFile([]byte("property,unit,tenant_name\n"))
-		require.ErrorContains(t, err, "phone, rent, due_day, start_date")
+		require.ErrorContains(t, err, "phone, rent, start_date")
 	})
 }
 
@@ -115,7 +153,7 @@ func TestCheckReportsEveryProblemInARow(t *testing.T) {
 	t.Parallel()
 	rec := record{Line: 7, Values: map[string]string{
 		colProperty: "", colUnit: "Kamar 1", colTenantName: "Rina", colPhone: "12345",
-		colRent: "850rb", colDueDay: "31", colStartDate: "2026-10-01",
+		colRent: "850rb", colStartDate: "2026-10-01",
 	}}
 	var row Row
 	check(rec, &row)
@@ -124,8 +162,7 @@ func TestCheckReportsEveryProblemInARow(t *testing.T) {
 		cols = append(cols, e.Column)
 		require.NotEmpty(t, e.Message)
 	}
-	require.ElementsMatch(t, []string{colProperty, colPhone, colRent}, cols,
-		"due_day is checked with the other lease terms once the amounts parse")
+	require.ElementsMatch(t, []string{colProperty, colPhone, colRent}, cols)
 
 	rec.Values[colRent] = "850.000"
 	row = Row{}
@@ -134,7 +171,7 @@ func TestCheckReportsEveryProblemInARow(t *testing.T) {
 	for _, e := range row.Errors {
 		cols = append(cols, e.Column)
 	}
-	require.ElementsMatch(t, []string{colProperty, colPhone, colDueDay}, cols, fmt.Sprint(row.Errors))
+	require.ElementsMatch(t, []string{colProperty, colPhone}, cols, fmt.Sprint(row.Errors))
 }
 
 func TestTemplateReadsBackWithOnlyTheExampleError(t *testing.T) {

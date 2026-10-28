@@ -40,7 +40,6 @@ type leaseSpec struct {
 	Property, Unit string
 	Start          time.Time // calendar day (midnight UTC)
 	Rent           int64
-	DueDay         int
 	Deposit        int64
 	Collector      string    // phone of the collecting member; "" means none
 	MovedOut       time.Time // last day of an ended lease; zero for a lease that is still running
@@ -150,39 +149,39 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			Tenants: []tenantSpec{
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
 					{
-						Property: propKosMelati, Unit: "Kamar 1", Start: day(2026, 7, 1), Rent: 850_000, DueDay: 5, Deposit: 850_000, Collector: dimas,
+						Property: propKosMelati, Unit: "Kamar 1", Start: day(2026, 7, 1), Rent: 850_000, Deposit: 850_000, Collector: dimas,
 						Charges: []chargeSpec{{Type: chargeWiFi, Amount: 50_000}},
 					},
-					{Property: propMawar, Unit: "Rumah B", Start: day(2026, 8, 1), Rent: 1_500_000, DueDay: 5},
+					{Property: propMawar, Unit: "Rumah B", Start: day(2026, 8, 1), Rent: 1_500_000},
 				}},
 				{Name: "Budi Santoso", Phone: "0813-0001-0002", Leases: []leaseSpec{
 					{
-						Property: propKosMelati, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 900_000, DueDay: 10, Collector: dimas,
+						Property: propKosMelati, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 900_000, Collector: dimas,
 						Charges: []chargeSpec{{Type: chargeWiFi, Amount: 50_000}},
 					},
 				}},
 				{Name: "Citra Lestari", Phone: "0813-0001-0003", Leases: []leaseSpec{
-					{Property: propKosMelati, Unit: "Kamar 3", Start: day(2026, 8, 15), Rent: 850_000, DueDay: 1, Collector: joko},
+					{Property: propKosMelati, Unit: "Kamar 3", Start: day(2026, 8, 15), Rent: 850_000, Collector: joko},
 				}},
 				{Name: "Dewi Anggraini", Phone: "0813-0001-0004", Leases: []leaseSpec{
 					// The spec fixes only the move-out; the start and terms are the unit's usual ones.
 					{
-						Property: propKosMelati, Unit: "Kamar 4", Start: day(2026, 4, 1), Rent: 850_000, DueDay: 5,
+						Property: propKosMelati, Unit: "Kamar 4", Start: day(2026, 4, 1), Rent: 850_000,
 						MovedOut: day(2026, 9, 30),
 					},
 				}},
 				{Name: "Eko Prasetyo", Phone: "0813-0001-0005", Leases: []leaseSpec{
-					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Rent: 1_500_000, DueDay: 15},
+					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Rent: 1_500_000},
 				}},
 				{Name: "Toko Sumber Rejeki (Pak Agus)", Phone: "0813-0001-0006", Leases: []leaseSpec{
 					{
-						Property: propRuko, Unit: "Ruko 1", Start: day(2026, 1, 1), Rent: 4_500_000, DueDay: 1, Collector: joko,
+						Property: propRuko, Unit: "Ruko 1", Start: day(2026, 1, 1), Rent: 4_500_000, Collector: joko,
 						Charges: []chargeSpec{{Type: chargeParkir, Amount: 100_000}, {Type: chargeKebersihan, Amount: 50_000}},
 					},
 				}},
 				{Name: "Fajar Nugroho", Phone: "0813-0001-0007", Leases: []leaseSpec{
 					// A booking: it starts on the first day of next month.
-					{Property: propKosMelati, Unit: "Kamar 5", Start: firstOfNextMonth(c), Rent: 850_000, DueDay: 1},
+					{Property: propKosMelati, Unit: "Kamar 5", Start: firstOfNextMonth(c), Rent: 850_000},
 				}},
 			},
 		},
@@ -205,14 +204,14 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			},
 			Tenants: []tenantSpec{
 				{Name: "Ayu Lestari", Phone: "0813-0002-0001", Leases: []leaseSpec{
-					{Property: propAnggrek, Unit: "Kamar 1", Start: day(2026, 8, 1), Rent: 750_000, DueDay: 3, Collector: rudi},
+					{Property: propAnggrek, Unit: "Kamar 1", Start: day(2026, 8, 1), Rent: 750_000, Collector: rudi},
 				}},
 				{Name: "Nadia Putri", Phone: "0813-0002-0002", Leases: []leaseSpec{
-					{Property: propAnggrek, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 750_000, DueDay: 3},
+					{Property: propAnggrek, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 750_000},
 				}},
 				// The same phone as Rina in Griya Sejahtera: a separate tenant record here.
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
-					{Property: propAnggrek, Unit: "Kamar 3", Start: day(2026, 10, 1), Rent: 800_000, DueDay: 20},
+					{Property: propAnggrek, Unit: "Kamar 3", Start: day(2026, 10, 1), Rent: 800_000},
 				}},
 			},
 		},

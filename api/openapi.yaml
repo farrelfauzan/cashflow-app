@@ -718,10 +718,13 @@ paths:
         unit:manage for each property or unit a row creates; a denial stops the whole import.
 
         The first line names the columns, separated by commas or semicolons, in any order:
-        property, unit, tenant_name, phone, rent, due_day, start_date, and optionally deposit and
+        property, unit, tenant_name, phone, rent, start_date, and optionally deposit and
         property_kind (kos, kontrakan, ruko, other; new properties default to other). Indonesian
-        names work too (properti, kamar, nama_penyewa, no_wa, sewa, jatuh_tempo, tanggal_mulai,
-        jaminan, jenis_properti). Amounts are whole rupiah ("850000", "850.000" or "Rp850.000").
+        names work too (properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan,
+        jenis_properti). Other columns are ignored. Rent is due on the day of the start date; the
+        due_day (jatuh_tempo) column of older templates is not used, and a row whose due day
+        differs from its start date's day gets a note saying so.
+        Amounts are whole rupiah ("850000", "850.000" or "Rp850.000").
         Dates are 2026-10-01 or 01/10/2026 (day first).
 
         Properties match by name, units by label inside their property, tenants by phone; anything
@@ -771,7 +774,7 @@ paths:
         A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens
         it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The
         header row uses the Indonesian column names (properti, jenis_properti, kamar,
-        nama_penyewa, no_wa, sewa, jatuh_tempo, tanggal_mulai, jaminan), followed by two example
+        nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan), followed by two example
         rows. The example rows only show the format: the import refuses them by their phone
         numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in
         the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
@@ -1119,7 +1122,7 @@ components:
 
     Lease:
       type: object
-      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, rentAmount, dueDay, depositAmount, status, charges, createdAt, updatedAt]
+      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, rentAmount, depositAmount, status, charges, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
@@ -1127,10 +1130,14 @@ components:
         unitLabel: { type: string }
         propertyId: { type: string, format: uuid }
         propertyName: { type: string }
-        startDate: { type: string, format: date }
+        startDate:
+          type: string
+          format: date
+          description: >
+            First day of the lease. Rent is billed in advance on this day of every month (the
+            last day of a shorter month when it is the 29th to 31st).
         endDate: { type: string, format: date, description: "Last day of the lease, set by move-out." }
         rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
-        dueDay: { type: integer, format: int32, description: "Day of the month rent is due, 1 to 28." }
         depositAmount: { type: integer, format: int64, description: "Deposit held, in rupiah." }
         status: { $ref: "#/components/schemas/LeaseStatus" }
         collector: { $ref: "#/components/schemas/Collector" }
@@ -1202,11 +1209,10 @@ components:
 
     LeaseTerms:
       type: object
-      required: [startDate, rentAmount, dueDay]
+      required: [startDate, rentAmount]
       properties:
-        startDate: { type: string, format: date, example: "2026-11-01" }
+        startDate: { type: string, format: date, example: "2026-11-15", description: "Also the day of the month rent is due." }
         rentAmount: { type: integer, format: int64, minimum: 1, example: 1250000 }
-        dueDay: { type: integer, format: int32, minimum: 1, maximum: 28, example: 5 }
         depositAmount: { type: integer, format: int64, minimum: 0, description: Defaults to 0. }
         collectorMemberId:
           type: string
@@ -1264,13 +1270,12 @@ components:
       type: object
       description: >
         The lease terms as the API read them from the row, so a dry run shows exactly what will be
-        saved (for example a date read day first). Missing when the row's rent, deposit, due day or
-        start date could not be read.
-      required: [startDate, rentAmount, dueDay, depositAmount]
+        saved (for example a date read day first). Missing when the row's rent, deposit or start
+        date could not be read.
+      required: [startDate, rentAmount, depositAmount]
       properties:
         startDate: { type: string, format: date }
         rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
-        dueDay: { type: integer, format: int32 }
         depositAmount: { type: integer, format: int64, description: "Deposit in rupiah; 0 when the cell is empty." }
 
     ImportSummary:

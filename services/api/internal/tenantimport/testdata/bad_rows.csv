@@ -1,7 +1,7 @@
-property,unit,tenant_name,phone,rent,due_day,start_date,deposit
-Kos Melati,Kamar 1,Rina Wulandari,0812-8100-5001,850.000,5,2026-09-01,850.000
-Kos Melati,Kamar 2,Budi Santoso,12345,900.000,10,2026-10-01,
-Kos Melati,Kamar 3,Citra Lestari,0812-8100-5003,850rb,1,2026-10-15,
-Kos Melati,Kamar 4,Dewi Anggraini,0812-8100-5005,800.000,31,2026-10-15,
-Kos Melati,Kamar 5,Eko Prasetyo,0812-8100-5006,800.000,1,1 Oktober 2026,
-Kos Melati,Kamar 1,Fajar Nugroho,0812-8100-5007,850.000,5,2026-10-01,
+property,unit,tenant_name,phone,rent,start_date,deposit
+Kos Melati,Kamar 1,Rina Wulandari,0812-8100-5001,850.000,2026-09-01,850.000
+Kos Melati,Kamar 2,Budi Santoso,12345,900.000,2026-10-01,
+Kos Melati,Kamar 3,Citra Lestari,0812-8100-5003,850rb,2026-10-15,
+Kos Melati,Kamar 4,Dewi Anggraini,0812-8100-5005,800.000,2026-10-15,abc
+Kos Melati,Kamar 5,Eko Prasetyo,0812-8100-5006,800.000,1 Oktober 2026,
+Kos Melati,Kamar 1,Fajar Nugroho,0812-8100-5007,850.000,2026-10-01,

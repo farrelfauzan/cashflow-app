@@ -340,7 +340,7 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 	case !errors.Is(err, tenant.ErrNotFound):
 		return uuid.Nil, err
 	}
-	terms := tenant.Terms{StartDate: ls.Start, RentAmount: ls.Rent, DueDay: ls.DueDay, DepositAmount: ls.Deposit}
+	terms := tenant.Terms{StartDate: ls.Start, RentAmount: ls.Rent, DepositAmount: ls.Deposit}
 	if ls.Collector != "" {
 		number, err := phone.Normalize(ls.Collector)
 		if err != nil {

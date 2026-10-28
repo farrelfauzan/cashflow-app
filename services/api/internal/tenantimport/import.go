@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,7 +52,6 @@ type Row struct {
 type Values struct {
 	StartDate     time.Time
 	Rent, Deposit int64
-	DueDay        int
 }
 
 // OK reports whether the row has no errors.
@@ -187,17 +187,16 @@ func check(rec record, row *Row) input {
 	if !ok {
 		fail(colDeposit, "Jaminan harus angka rupiah, contoh 850000 atau 850.000.")
 	}
-	dueDay, ok := parseDay(rec.get(colDueDay))
-	if !ok {
-		fail(colDueDay, "Tanggal jatuh tempo harus angka 1 sampai 28.")
-	}
 	start, ok := parseDate(rec.get(colStartDate))
 	if !ok {
 		fail(colStartDate, "Tanggal mulai harus seperti 2026-10-01 atau 01/10/2026.")
 	}
 	parsed := len(row.Errors) == 0
 	if parsed {
-		row.Values = &Values{StartDate: start, Rent: rent, Deposit: deposit, DueDay: dueDay}
+		row.Values = &Values{StartDate: start, Rent: rent, Deposit: deposit}
+	}
+	if note, ok := oldDueDayNote(rec.get(colOldDueDay), start); ok {
+		row.Notes = append(row.Notes, note)
 	}
 
 	var in input
@@ -221,7 +220,7 @@ func check(rec record, row *Row) input {
 	}
 	if parsed {
 		if in.terms, err = tenant.ValidTerms(tenant.Terms{
-			StartDate: start, RentAmount: rent, DueDay: dueDay, DepositAmount: deposit,
+			StartDate: start, RentAmount: rent, DepositAmount: deposit,
 		}); err != nil {
 			addInputError(row, err)
 		}
@@ -273,7 +272,7 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 	switch {
 	case err == nil && current.TenantID == tn.ID:
 		row.Lease = Matched
-		if current.RentAmount != in.terms.RentAmount || current.DueDay != in.terms.DueDay ||
+		if current.RentAmount != in.terms.RentAmount ||
 			current.DepositAmount != in.terms.DepositAmount || !current.StartDate.Equal(in.terms.StartDate) {
 			row.Notes = append(row.Notes, "Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya.")
 		}
@@ -322,7 +321,7 @@ var (
 	propertyColumns = map[string]string{"name": colProperty, "kind": colPropertyKind, "label": colUnit, "defaultRent": colRent}
 	tenantColumns   = map[string]string{
 		"name": colTenantName, "phone": colPhone, "startDate": colStartDate, "rentAmount": colRent,
-		"dueDay": colDueDay, "depositAmount": colDeposit,
+		"depositAmount": colDeposit,
 	}
 )
 
@@ -358,4 +357,16 @@ func (s *Summary) add(row Row) {
 	if row.Lease == Matched {
 		s.LeasesMatched++
 	}
+}
+
+// oldDueDayNote warns when an older template's due day differs from the start date's day, since
+// rent is now due on the start date's day and the old column is not used.
+func oldDueDayNote(cell string, start time.Time) (string, bool) {
+	if cell == "" || start.IsZero() {
+		return "", false
+	}
+	if day, err := strconv.Atoi(cell); err == nil && day == start.Day() {
+		return "", false
+	}
+	return fmt.Sprintf("Jatuh tempo kini mengikuti tanggal mulai (tanggal %d); kolom jatuh_tempo tidak dipakai.", start.Day()), true
 }

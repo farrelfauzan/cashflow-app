@@ -40,7 +40,6 @@ type Lease struct {
 	StartDate            time.Time
 	EndDate              *time.Time
 	RentAmount           int64
-	DueDay               int16
 	DepositAmount        int64
 	Status               string
 	CollectorStaffUserID uuid.NullUUID
