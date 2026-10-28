@@ -94,6 +94,18 @@ test.describe("member of two organizations", () => {
       page.getByRole("heading", { level: 1, name: "Pilih usaha" }),
     ).toBeVisible();
   });
+
+  // The API client refuses the id before any request (client.test.ts); here the link ends on
+  // the picker like any malformed id.
+  test("a link whose id would leave the organization's API path goes back to the picker", async ({
+    page,
+  }) => {
+    await page.goto("/o/..%2Fauth%2Fme%3Fx%3D");
+    await expect(page).toHaveURL("/organizations");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Pilih usaha" }),
+    ).toBeVisible();
+  });
 });
 
 test.describe("member of one organization", () => {
