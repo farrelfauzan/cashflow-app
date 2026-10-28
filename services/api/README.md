@@ -128,7 +128,8 @@ one (staging has its own number too).
    - The API log has `login code sent` with a `staff_user_id` and never the code itself.
    - Not linked (or session lost): the request answers 503 `whatsapp_unavailable` and the log
      has `whatsapp unavailable` naming `the WhatsApp session is not connected`. Re-link in step 2.
-   - Wrong `GOWA_USERNAME` or `GOWA_PASSWORD`: the log says the server rejected the credentials.
+   - Wrong `GOWA_USERNAME` or `GOWA_PASSWORD`: the request answers 500 `internal`, and the log has
+     `request failed` with "the server rejected our credentials; check GOWA_USERNAME and GOWA_PASSWORD".
    - Limits, not failures: 3 code requests per phone per 15 minutes, 5 tries per code.
      An unregistered phone gets the same answer as a registered one, but no message.
 7. Stop: end `make api-run` (and the web), then `make wa-down`. This keeps the link. To unlink,
