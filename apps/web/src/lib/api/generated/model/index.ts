@@ -7,6 +7,9 @@
 
 export * from './capability';
 export * from './capabilityAccess';
+export * from './chargeType';
+export * from './chargeTypeInput';
+export * from './chargeTypeList';
 export * from './collector';
 export * from './error';
 export * from './errorError';
@@ -21,6 +24,9 @@ export * from './importSummary';
 export * from './importTenantsParams';
 export * from './inviteMember';
 export * from './lease';
+export * from './leaseCharge';
+export * from './leaseChargeInput';
+export * from './leaseChargesInput';
 export * from './leaseInput';
 export * from './leaseStatus';
 export * from './leaseTerms';

@@ -24,11 +24,15 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ChargeType,
+  ChargeTypeInput,
+  ChargeTypeList,
   Error,
   ErrorResponse,
   ImportResult,
   ImportTenantsParams,
   Lease,
+  LeaseChargesInput,
   LeaseInput,
   LeaseTerms,
   MoveOut,
@@ -712,6 +716,282 @@ export const useMoveOut = <TError = ErrorType<ErrorResponse | Error>,
         TContext
       > => {
       return useMutation(getMoveOutMutationOptions(options), queryClient);
+    }
+    export const getSetLeaseChargesUrl = (orgId: string,
+    leaseId: string,) => {
+
+
+
+
+  return `/orgs/${orgId}/leases/${leaseId}/charges`
+}
+
+/**
+ * Replaces the whole set at once: charge types left out are removed, and an empty list removes every extra. Each charge type appears at most once, must belong to the organization and must not be metered (metered amounts are recorded per month instead). Like a rent change, the new amounts apply from the next invoice.
+ * @summary Replace the fixed extra charges of an active lease (needs lease:manage; audited)
+ */
+export const setLeaseCharges = async (orgId: string,
+    leaseId: string,
+    leaseChargesInput: LeaseChargesInput, options?: Parameters<typeof apiFetch>[1]): Promise<Lease> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<Lease>(getSetLeaseChargesUrl(orgId,leaseId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(leaseChargesInput)
+  }
+);}
+
+
+
+
+
+export const getSetLeaseChargesMutationKey = () => ['setLeaseCharges'] as const;
+
+export const getSetLeaseChargesMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext> => {
+
+const mutationKey = getSetLeaseChargesMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setLeaseCharges>>, SetLeaseChargesMutationVariables> = (props) => {
+          const {orgId,leaseId,data} = props ?? {};
+
+          return  setLeaseCharges(orgId,leaseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetLeaseChargesMutationResult = NonNullable<Awaited<ReturnType<typeof setLeaseCharges>>>
+    export type SetLeaseChargesMutationBody = BodyType<LeaseChargesInput>
+    export type SetLeaseChargesMutationError = ErrorType<Error | ErrorResponse>
+    export type SetLeaseChargesMutationVariables = {orgId: string;leaseId: string;data: BodyType<LeaseChargesInput>}
+
+    /**
+ * @summary Replace the fixed extra charges of an active lease (needs lease:manage; audited)
+ */
+export const useSetLeaseCharges = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setLeaseCharges>>,
+        TError,
+        SetLeaseChargesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetLeaseChargesMutationOptions(options), queryClient);
+    }
+    export const getListChargeTypesUrl = (orgId: string,) => {
+
+
+
+
+  return `/orgs/${orgId}/charge-types`
+}
+
+/**
+ * @summary The organization's kinds of extra charge, by name (needs lease:manage, for the whole organization or limited to properties)
+ */
+export const listChargeTypes = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<ChargeTypeList> => {
+
+  return apiFetch<ChargeTypeList>(getListChargeTypesUrl(orgId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListChargeTypesQueryKey = (orgId: string,) =>
+    apiQueryKey({ orgId }, { url: `/orgs/${orgId}/charge-types` });
+
+
+export const useListChargeTypesQueryOptions = <TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId }, { url: `/orgs/${orgId}/charge-types`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChargeTypes>>> = ({ signal }) => listChargeTypes(orgId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListChargeTypesQueryResult = NonNullable<Awaited<ReturnType<typeof listChargeTypes>>>
+export type ListChargeTypesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listChargeTypes>>,
+          TError,
+          Awaited<ReturnType<typeof listChargeTypes>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listChargeTypes>>,
+          TError,
+          Awaited<ReturnType<typeof listChargeTypes>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The organization's kinds of extra charge, by name (needs lease:manage, for the whole organization or limited to properties)
+ */
+
+export function useListChargeTypes<TData = Awaited<ReturnType<typeof listChargeTypes>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChargeTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListChargeTypesQueryOptions(orgId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCreateChargeTypeUrl = (orgId: string,) => {
+
+
+
+
+  return `/orgs/${orgId}/charge-types`
+}
+
+/**
+ * @summary Add a kind of extra charge (needs lease:manage for the whole organization; audited)
+ */
+export const createChargeType = async (orgId: string,
+    chargeTypeInput: ChargeTypeInput, options?: Parameters<typeof apiFetch>[1]): Promise<ChargeType> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<ChargeType>(getCreateChargeTypeUrl(orgId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(chargeTypeInput)
+  }
+);}
+
+
+
+
+
+export const getCreateChargeTypeMutationKey = () => ['createChargeType'] as const;
+
+export const getCreateChargeTypeMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext> => {
+
+const mutationKey = getCreateChargeTypeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createChargeType>>, CreateChargeTypeMutationVariables> = (props) => {
+          const {orgId,data} = props ?? {};
+
+          return  createChargeType(orgId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateChargeTypeMutationResult = NonNullable<Awaited<ReturnType<typeof createChargeType>>>
+    export type CreateChargeTypeMutationBody = BodyType<ChargeTypeInput>
+    export type CreateChargeTypeMutationError = ErrorType<ErrorResponse | Error>
+    export type CreateChargeTypeMutationVariables = {orgId: string;data: BodyType<ChargeTypeInput>}
+
+    /**
+ * @summary Add a kind of extra charge (needs lease:manage for the whole organization; audited)
+ */
+export const useCreateChargeType = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChargeType>>, TError,CreateChargeTypeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createChargeType>>,
+        TError,
+        CreateChargeTypeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateChargeTypeMutationOptions(options), queryClient);
     }
     export const getImportTenantsUrl = (orgId: string,
     params?: ImportTenantsParams,) => {

@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Collector } from './collector';
+import type { LeaseCharge } from './leaseCharge';
 import type { LeaseStatus } from './leaseStatus';
 
 export interface Lease {
@@ -25,6 +26,8 @@ export interface Lease {
   depositAmount: number;
   status: LeaseStatus;
   collector?: Collector;
+  /** Fixed monthly extras on top of rent, by name. Always present, empty when none. */
+  charges: LeaseCharge[];
   createdAt: string;
   updatedAt: string;
 }
