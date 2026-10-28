@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { orgPath } from "@/lib/organization/org-menu";
+import { orgPath } from "@/lib/org-path";
 
 import type { OrgSwitchOption } from "./type";
 

@@ -1,6 +1,6 @@
 import { cn } from "cn";
 
-import { orgInitials } from "@/lib/organization/org-initials";
+import { orgInitials } from "./utils";
 
 type OrgTileProps = {
   name: string;

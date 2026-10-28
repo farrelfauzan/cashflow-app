@@ -8,7 +8,7 @@ import type {
   RoleGrant,
   RoleRef,
 } from "@/lib/api/generated/model";
-import { canSee } from "@/lib/organization/org-menu";
+import { canSee } from "@/lib/capabilities";
 
 import type {
   MemberPermissions,

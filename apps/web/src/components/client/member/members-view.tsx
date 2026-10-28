@@ -12,7 +12,7 @@ import {
 import { useListProperties } from "@/lib/api/generated/properties/properties";
 import { memberPermissions, propertyNames, NO_PERMISSIONS } from "./utils";
 import type { MemberPanelState } from "./type";
-import { canSee } from "@/lib/organization/org-menu";
+import { canSee } from "@/lib/capabilities";
 
 import { MemberList } from "./member-list";
 import { MemberPanel } from "./member-panel";
