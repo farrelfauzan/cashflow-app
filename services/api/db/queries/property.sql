@@ -1,12 +1,30 @@
 -- Runs in an organization scope (store.WithOrgTx).
 
--- name: ListProperties :many
+-- name: ListPropertyIDs :many
+SELECT id FROM property WHERE organization_id = $1;
+
+-- name: ListPropertyPage :many
+-- One page of the properties matching the filters: every one with org_wide, otherwise those in
+-- property_ids. CountPropertyPage has the same WHERE: change both together.
 SELECT p.*, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count,
        (SELECT count(*) FROM unit u JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
         WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS occupied_unit_count
 FROM property p
-WHERE p.organization_id = $1
-ORDER BY p.name COLLATE natural_sort, p.id;
+WHERE p.organization_id = @organization_id
+  AND (@org_wide::boolean OR p.id = ANY(@property_ids::uuid[]))
+  AND (sqlc.narg('q')::text IS NULL OR p.name ILIKE sqlc.narg('q'))
+ORDER BY CASE WHEN @sort::text = 'name' THEN p.name END COLLATE natural_sort,
+         CASE WHEN @sort::text = '-name' THEN p.name END COLLATE natural_sort DESC,
+         p.id
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPropertyPage :one
+-- Every property ListPropertyPage would return on any page: keep the WHERE the same.
+SELECT count(*)
+FROM property p
+WHERE p.organization_id = @organization_id
+  AND (@org_wide::boolean OR p.id = ANY(@property_ids::uuid[]))
+  AND (sqlc.narg('q')::text IS NULL OR p.name ILIKE sqlc.narg('q'));
 
 -- name: GetProperty :one
 SELECT p.*, (SELECT count(*) FROM unit u WHERE u.organization_id = p.organization_id AND u.property_id = p.id) AS unit_count,
@@ -26,15 +44,29 @@ WHERE organization_id = $1 AND id = $2
 RETURNING *;
 
 -- name: ListUnits :many
--- Each unit with its active lease, if any. A partial unique index allows one active lease per
--- unit, so the join adds no rows.
+-- One page of a property's units, each with its active lease, if any. A partial unique index
+-- allows one active lease per unit, so the join adds no rows. CountUnits has the same WHERE:
+-- change both together.
 SELECT sqlc.embed(u), l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
        (l.id IS NOT NULL)::boolean AS occupied
 FROM unit u
 LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
 LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_id
-WHERE u.organization_id = $1 AND u.property_id = $2
-ORDER BY u.label COLLATE natural_sort, u.id;
+WHERE u.organization_id = @organization_id AND u.property_id = @property_id
+  AND (sqlc.narg('q')::text IS NULL OR u.label ILIKE sqlc.narg('q'))
+ORDER BY CASE WHEN @sort::text = 'label' THEN u.label END COLLATE natural_sort,
+         CASE WHEN @sort::text = '-label' THEN u.label END COLLATE natural_sort DESC,
+         u.id
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountUnits :one
+-- Every unit ListUnits would return on any page: keep the WHERE the same.
+SELECT count(*)
+FROM unit u
+LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
+LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_id
+WHERE u.organization_id = @organization_id AND u.property_id = @property_id
+  AND (sqlc.narg('q')::text IS NULL OR u.label ILIKE sqlc.narg('q'));
 
 -- name: GetUnit :one
 SELECT * FROM unit

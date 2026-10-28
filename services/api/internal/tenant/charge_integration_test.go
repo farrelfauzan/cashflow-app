@@ -104,7 +104,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"Parkir", "Wi-Fi"}, chargeNames(leaseByID(t, tn, lease.ID).Charges))
 
-		list, err := env.Tenants.List(ctx, w.karyawan)
+		list, err := env.AllTenants(ctx, w.karyawan)
 		require.NoError(t, err)
 		require.Len(t, list, 1)
 		require.Equal(t, []string{"Parkir", "Wi-Fi"}, chargeNames(list[0].Leases[0].Charges), "the collector reads them too")

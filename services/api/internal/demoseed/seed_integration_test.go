@@ -187,14 +187,14 @@ func TestSeedDemo(t *testing.T) {
 
 	adminA := env.Principal(t, a.OrganizationID, a.UserID)
 	adminB := env.Principal(t, b.OrganizationID, b.UserID)
-	tenantsA, err := env.Tenants.List(ctx, adminA)
+	tenantsA, err := env.AllTenants(ctx, adminA)
 	require.NoError(t, err)
-	tenantsB, err := env.Tenants.List(ctx, adminB)
+	tenantsB, err := env.AllTenants(ctx, adminB)
 	require.NoError(t, err)
 
 	t.Run("the limited admin sees only Kos Melati's tenants", func(t *testing.T) {
 		sari := env.Principal(t, a.OrganizationID, env.UserID(t, "0812-0001-0004"))
-		got, err := env.Tenants.List(ctx, sari)
+		got, err := env.AllTenants(ctx, sari)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Budi Santoso", "Citra Lestari", "Fajar Nugroho", "Rina Wulandari"}, names(got))
 		require.Equal(t, []string{"Kos Melati/Kamar 1"}, leaseUnits(find(t, got, "Rina Wulandari")))
@@ -202,14 +202,14 @@ func TestSeedDemo(t *testing.T) {
 
 	t.Run("Dimas sees only the tenants he collects from", func(t *testing.T) {
 		dimas := env.Principal(t, a.OrganizationID, env.UserID(t, "0812-0001-0003"))
-		got, err := env.Tenants.List(ctx, dimas)
+		got, err := env.AllTenants(ctx, dimas)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Budi Santoso", "Rina Wulandari"}, names(got))
 		require.Equal(t, []string{"Kos Melati/Kamar 1"}, leaseUnits(find(t, got, "Rina Wulandari")))
 	})
 
 	t.Run("Joko is karyawan everywhere and admin of Kontrakan Mawar", func(t *testing.T) {
-		members, err := env.Members.List(ctx, adminA)
+		members, err := env.AllMembers(ctx, adminA)
 		require.NoError(t, err)
 		mawar := propertyID(t, env, adminA, "Kontrakan Mawar")
 		var joko member.Member
@@ -229,7 +229,7 @@ func TestSeedDemo(t *testing.T) {
 		}, got)
 
 		p := env.Principal(t, a.OrganizationID, joko.UserID)
-		seen, err := env.Tenants.List(ctx, p)
+		seen, err := env.AllTenants(ctx, p)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Citra Lestari", "Eko Prasetyo", "Rina Wulandari", "Toko Sumber Rejeki (Pak Agus)"}, names(seen))
 	})
@@ -248,7 +248,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("Agus is disabled and still collects from Eko", func(t *testing.T) {
-		members, err := env.Members.List(ctx, adminA)
+		members, err := env.AllMembers(ctx, adminA)
 		require.NoError(t, err)
 		var agus member.Member
 		for _, m := range members {
@@ -400,7 +400,7 @@ func roleKeys(p authz.Principal) []string {
 
 func propertyID(t *testing.T, env *testenv.Env, p authz.Principal, name string) uuid.UUID {
 	t.Helper()
-	props, err := env.Properties.List(context.Background(), p)
+	props, err := env.AllProperties(context.Background(), p)
 	require.NoError(t, err)
 	for _, pr := range props {
 		if pr.Name == name {

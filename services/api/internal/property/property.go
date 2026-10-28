@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -113,34 +114,92 @@ func NewService(st *store.Store, az *authz.Service) *Service {
 	return &Service{store: st, authz: az}
 }
 
-// List returns the properties the principal may read: all of them, or only those their roles
-// are limited to.
-func (s *Service) List(ctx context.Context, p authz.Principal) ([]Property, error) {
-	var out []Property
-	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+// ListQuery filters, orders and pages List. Zero values filter nothing.
+type ListQuery struct {
+	Page   listing.Page // the zero Page is listing.FirstPage
+	Search listing.Search
+	// Sort is name (the default) or -name, numbers in natural order.
+	Sort string
+}
+
+// UnitQuery filters, orders and pages ListUnits. Zero values filter nothing.
+type UnitQuery struct {
+	Page   listing.Page // the zero Page is listing.FirstPage
+	Search listing.Search
+	// Sort is label (the default) or -label, numbers in natural order.
+	Sort string
+}
+
+// List returns one page of the properties the principal may read: all of them, or only those
+// their roles are limited to. The total counts only those.
+func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (listing.Result[Property], error) {
+	page, sort, err := checkQuery(lq.Page, lq.Sort, "name")
+	if err != nil {
+		return listing.Result[Property]{}, err
+	}
+	out := listing.Result[Property]{Page: page, Items: []Property{}}
+	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		all, err := s.authz.AuthorizeList(ctx, tx, p, authz.Request{
 			Action: authz.ActionPropertyRead, Resource: authz.Resource{Type: "property"},
 		})
 		if err != nil {
 			return err
 		}
-		rows, err := dbgen.New(tx).ListProperties(ctx, p.OrganizationID)
+		q := dbgen.New(tx)
+		args := dbgen.ListPropertyPageParams{
+			OrganizationID: p.OrganizationID, OrgWide: all, PropertyIds: []uuid.UUID{}, Q: lq.Search.Text,
+			Sort: sort, PageLimit: page.Limit(), PageOffset: page.Offset(),
+		}
+		if !all {
+			ids, err := q.ListPropertyIDs(ctx, p.OrganizationID)
+			if err != nil {
+				return fmt.Errorf("listing property ids: %w", err)
+			}
+			for _, id := range ids {
+				if authz.Allowed(p, propertyRequest(authz.ActionPropertyRead, id)) {
+					args.PropertyIds = append(args.PropertyIds, id)
+				}
+			}
+		}
+		out.Total, err = q.CountPropertyPage(ctx, dbgen.CountPropertyPageParams{
+			OrganizationID: args.OrganizationID, OrgWide: args.OrgWide, PropertyIds: args.PropertyIds, Q: args.Q,
+		})
+		if err != nil {
+			return fmt.Errorf("counting properties: %w", err)
+		}
+		rows, err := q.ListPropertyPage(ctx, args)
 		if err != nil {
 			return fmt.Errorf("listing properties: %w", err)
 		}
-		out = make([]Property, 0, len(rows))
 		for _, r := range rows {
-			if all || authz.Allowed(p, propertyRequest(authz.ActionPropertyRead, r.ID)) {
-				out = append(out, Property{
-					ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address,
-					UnitCount: r.UnitCount, OccupiedUnitCount: r.OccupiedUnitCount,
-					CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-				})
-			}
+			out.Items = append(out.Items, Property{
+				ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address,
+				UnitCount: r.UnitCount, OccupiedUnitCount: r.OccupiedUnitCount,
+				CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			})
 		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return listing.Result[Property]{}, err
+	}
+	return out, nil
+}
+
+// checkQuery fills in the default page and sort, and refuses a sort other than by def,
+// ascending or descending.
+func checkQuery(page listing.Page, sort, def string) (listing.Page, string, error) {
+	if page == (listing.Page{}) {
+		page = listing.FirstPage
+	}
+	switch sort {
+	case "":
+		sort = def
+	case def, "-" + def:
+	default:
+		return page, sort, &InputError{Field: "sort", Message: "Urutan tidak dikenal."}
+	}
+	return page, sort, nil
 }
 
 // Create adds a property. It needs property:manage for the whole organization, so a member
@@ -208,10 +267,14 @@ func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, i
 	return out, err
 }
 
-// ListUnits returns the units of one property.
-func (s *Service) ListUnits(ctx context.Context, p authz.Principal, propertyID uuid.UUID) ([]Unit, error) {
-	var out []Unit
-	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+// ListUnits returns one page of the units of one property.
+func (s *Service) ListUnits(ctx context.Context, p authz.Principal, propertyID uuid.UUID, uq UnitQuery) (listing.Result[Unit], error) {
+	page, sort, err := checkQuery(uq.Page, uq.Sort, "label")
+	if err != nil {
+		return listing.Result[Unit]{}, err
+	}
+	out := listing.Result[Unit]{Page: page, Items: []Unit{}}
+	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		if _, err := getProperty(ctx, q, p.OrganizationID, propertyID); err != nil {
 			return err
@@ -220,17 +283,28 @@ func (s *Service) ListUnits(ctx context.Context, p authz.Principal, propertyID u
 		if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
 			return err
 		}
-		rows, err := q.ListUnits(ctx, dbgen.ListUnitsParams{OrganizationID: p.OrganizationID, PropertyID: propertyID})
+		out.Total, err = q.CountUnits(ctx, dbgen.CountUnitsParams{
+			OrganizationID: p.OrganizationID, PropertyID: propertyID, Q: uq.Search.Text,
+		})
+		if err != nil {
+			return fmt.Errorf("counting units: %w", err)
+		}
+		rows, err := q.ListUnits(ctx, dbgen.ListUnitsParams{
+			OrganizationID: p.OrganizationID, PropertyID: propertyID, Q: uq.Search.Text,
+			Sort: sort, PageLimit: page.Limit(), PageOffset: page.Offset(),
+		})
 		if err != nil {
 			return fmt.Errorf("listing units: %w", err)
 		}
-		out = make([]Unit, len(rows))
-		for i, r := range rows {
-			out[i] = toOccupiedUnit(p, r.Unit, r.Occupied, r.LeaseTenantID, r.LeaseTenantName, r.CollectorStaffUserID)
+		for _, r := range rows {
+			out.Items = append(out.Items, toOccupiedUnit(p, r.Unit, r.Occupied, r.LeaseTenantID, r.LeaseTenantName, r.CollectorStaffUserID))
 		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return listing.Result[Unit]{}, err
+	}
+	return out, nil
 }
 
 // CreateUnit adds a unit to a property.

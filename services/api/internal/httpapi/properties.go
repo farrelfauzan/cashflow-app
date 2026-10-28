@@ -16,16 +16,22 @@ func (s *Server) listProperties(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errMissingContext)
 		return
 	}
-	props, err := s.Properties.List(r.Context(), p)
+	lp, ok := s.readListParams(w, r)
+	if !ok {
+		return
+	}
+	res, err := s.Properties.List(r.Context(), p, property.ListQuery{Page: lp.page, Search: lp.search, Sort: lp.sort})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	resp := apigen.PropertyList{Properties: make([]apigen.Property, len(props))}
-	for i, prop := range props {
-		resp.Properties[i] = toAPIProperty(prop)
+	items := make([]apigen.Property, len(res.Items))
+	for i, prop := range res.Items {
+		items[i] = toAPIProperty(prop)
 	}
-	s.writeJSON(w, http.StatusOK, resp)
+	s.writeJSON(w, http.StatusOK, apigen.PropertyList{
+		Items: items, Properties: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+	})
 }
 
 func (s *Server) createProperty(w http.ResponseWriter, r *http.Request) {
@@ -80,16 +86,22 @@ func (s *Server) listUnits(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	units, err := s.Properties.ListUnits(r.Context(), p, propertyID)
+	lp, ok := s.readListParams(w, r)
+	if !ok {
+		return
+	}
+	res, err := s.Properties.ListUnits(r.Context(), p, propertyID, property.UnitQuery{Page: lp.page, Search: lp.search, Sort: lp.sort})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	resp := apigen.UnitList{Units: make([]apigen.Unit, len(units))}
-	for i, u := range units {
-		resp.Units[i] = toAPIUnit(u)
+	items := make([]apigen.Unit, len(res.Items))
+	for i, u := range res.Items {
+		items[i] = toAPIUnit(u)
 	}
-	s.writeJSON(w, http.StatusOK, resp)
+	s.writeJSON(w, http.StatusOK, apigen.UnitList{
+		Items: items, Units: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+	})
 }
 
 func (s *Server) createUnit(w http.ResponseWriter, r *http.Request) {
