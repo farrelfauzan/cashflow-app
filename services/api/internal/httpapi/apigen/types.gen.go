@@ -209,6 +209,21 @@ type Collector struct {
 	Name     string             `json:"name"`
 }
 
+// CollectorCandidate defines model for CollectorCandidate.
+type CollectorCandidate struct {
+	// Karyawan True when the member holds the karyawan role, anywhere in the organization.
+	Karyawan bool `json:"karyawan"`
+
+	// MemberId The value for LeaseTerms.collectorMemberId.
+	MemberId openapi_types.UUID `json:"memberId"`
+	Name     string             `json:"name"`
+}
+
+// CollectorCandidateList defines model for CollectorCandidateList.
+type CollectorCandidateList struct {
+	Candidates []CollectorCandidate `json:"candidates"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
