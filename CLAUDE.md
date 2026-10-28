@@ -316,8 +316,11 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   ("Rencana keluar", the tenant's last day). No invoice is generated for a period that starts
   after it, and one already generated is cancelled by a correction with the reason "sewa tidak
   diperpanjang"; its reminders stop, while older debt and its reminders stay. Money already paid
-  on a cancelled invoice goes back through FIFO and the rest becomes credit. A period the tenant
-  started is billed in full, with no proration and no refund unless an admin approves one.
+  on a cancelled invoice goes back through FIFO and the rest becomes credit. Setting the date
+  checks `correction:create` as well as `lease:manage` when it cancels or restores an invoice.
+  A move-out cancels, the same way, any invoice for a period that starts after its end date,
+  before the arrears rule applies. A period the tenant started is billed in full, with no
+  proration and no refund unless an admin approves one.
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are
