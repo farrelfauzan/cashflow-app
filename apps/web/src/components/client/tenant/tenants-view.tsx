@@ -36,7 +36,7 @@ type TenantsViewProps = {
 // beyond that (the banner) comes from the member's capabilities (getOrgMe).
 export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const tenants = useListTenants(orgId);
+  const tenants = useListTenants(orgId, { pageSize: 100 });
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   // "Today" in Jakarta, read once when the screen opens; the utils take it as an argument.
   const [today] = useState(() => jakartaToday(new Date()));
