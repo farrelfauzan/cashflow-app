@@ -20,7 +20,6 @@ async function getRequestEnvironment(): Promise<RequestEnvironment> {
   const session = (await cookies()).get(SESSION_COOKIE)?.value;
   return {
     origin: apiInternalUrl(),
-    credentials: "omit",
     headers: session ? { Cookie: `${SESSION_COOKIE}=${session}` } : {},
   };
 }

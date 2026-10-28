@@ -30,6 +30,7 @@ export * from './leaseCharge';
 export * from './leaseChargeInput';
 export * from './leaseChargesInput';
 export * from './leaseInput';
+export * from './leasePlannedEnd';
 export * from './leaseStatus';
 export * from './leaseTerms';
 export * from './loginCodeRequest';

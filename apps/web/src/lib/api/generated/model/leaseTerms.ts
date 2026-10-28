@@ -17,4 +17,6 @@ export interface LeaseTerms {
   depositAmount?: number;
   /** The member (Member.id) who collects from this tenant. Leave it out for none. */
   collectorMemberId?: string;
+  /** "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be an anniversary of the start date (the start date itself, or the same day a whole number of months later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first anniversary after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom. */
+  billedFrom?: string;
 }
