@@ -32,8 +32,7 @@ export function TenantFlagBanner({
           {flagBannerTitle(count)}
         </span>
         <p className="text-[15px] leading-normal text-foreground/85 md:text-base">
-          Penagih mereka sudah dinonaktifkan. Buka sewa penyewa itu, lalu pilih
-          penagih baru.
+          Penagih mereka sudah dinonaktifkan.
         </p>
       </div>
       <Button

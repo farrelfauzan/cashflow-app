@@ -79,9 +79,22 @@ export function leaseStatusView(lease: Lease, today: string): StatusView {
   return { label: "Aktif", detail: null, tone: "active" };
 }
 
-// The tenant's status is their first lease's (the API sends active leases first).
+// A tenant's leases in the order the screens show them: running ones, then ones booked ahead,
+// then ended ones, keeping the API's order (newest start first) within each. The API calls a
+// lease booked ahead active too, so its order alone could put it before the one the tenant lives
+// in now.
+export function orderedLeases(
+  leases: readonly Lease[],
+  today: string,
+): Lease[] {
+  const rank = (lease: Lease) =>
+    lease.status === "ended" ? 2 : lease.startDate > today ? 1 : 0;
+  return [...leases].sort((a, b) => rank(a) - rank(b));
+}
+
+// The tenant's status is the status of the lease their row shows.
 export function tenantStatusView(tenant: Tenant, today: string): StatusView {
-  const first = tenant.leases[0];
+  const first = orderedLeases(tenant.leases, today)[0];
   if (first === undefined) {
     return { label: "Tanpa sewa", detail: null, tone: "none" };
   }
@@ -113,7 +126,7 @@ export function extraLeasesText(leaseCount: number): string | null {
 }
 
 export function tenantRow(tenant: Tenant, today: string): TenantRowView {
-  const first = tenant.leases[0];
+  const first = orderedLeases(tenant.leases, today)[0];
   return {
     id: tenant.id,
     name: tenant.name,
@@ -185,15 +198,17 @@ export function matchesSearch(tenant: Tenant, search: string): boolean {
     return true;
   }
   if (!PHONE_QUERY.test(query)) return false;
-  const digits = nationalDigits(query);
+  // Digits that start with 62 may be the country code or just part of the number: try both.
+  const typed = query.replace(/\D/g, "");
+  const phone = nationalDigits(tenant.phone);
   return (
-    digits.length >= PHONE_MIN_DIGITS &&
-    nationalDigits(tenant.phone).includes(digits)
+    typed.length >= PHONE_MIN_DIGITS &&
+    (phone.includes(nationalDigits(query)) || phone.includes(typed))
   );
 }
 
 // The property filter keeps a tenant with a lease in that property, whichever lease is first;
-// the status filter follows the status the row shows (the first lease's).
+// the status filter follows the status the row shows.
 export function filterTenants(
   tenants: readonly Tenant[],
   filters: TenantFilters,

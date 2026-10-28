@@ -184,9 +184,7 @@ test.describe("Admin of the whole organization", () => {
       hasText: "1 penyewa belum punya penagih",
     });
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText(
-      "Penagih mereka sudah dinonaktifkan. Buka sewa penyewa itu, lalu pilih penagih baru.",
-    );
+    await expect(banner).toContainText("Penagih mereka sudah dinonaktifkan.");
     const show = banner.getByRole("button", {
       name: "Tampilkan penyewa yang belum punya penagih",
     });

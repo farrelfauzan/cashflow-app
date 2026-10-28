@@ -16,6 +16,7 @@ import {
   leaseView,
   matchesSearch,
   NO_FILTERS,
+  orderedLeases,
   previousDay,
   propertyText,
   propertyOptions,
@@ -117,15 +118,66 @@ describe("leaseStatusView", () => {
   });
 });
 
+describe("orderedLeases", () => {
+  const running = lease({ id: "running" });
+  const older = lease({ id: "older", startDate: "2026-01-05" });
+  const ahead = lease({ id: "ahead", startDate: "2026-12-01", ...MAWAR });
+  const ended = lease({ id: "ended", status: "ended", endDate: "2026-09-30" });
+
+  it.each([
+    {
+      name: "a lease booked ahead after the running one, whatever the API order",
+      leases: [ahead, running],
+      want: ["running", "ahead"],
+    },
+    {
+      name: "an ended lease last",
+      leases: [ended, ahead, running],
+      want: ["running", "ahead", "ended"],
+    },
+    {
+      name: "the API's order within the running leases",
+      leases: [running, older],
+      want: ["running", "older"],
+    },
+    { name: "no leases", leases: [], want: [] },
+  ])("$name", ({ leases, want }) => {
+    expect(orderedLeases(leases, TODAY).map((l) => l.id)).toEqual(want);
+  });
+
+  it("does not change the API's array", () => {
+    const leases = [ahead, running];
+    orderedLeases(leases, TODAY);
+    expect(leases.map((l) => l.id)).toEqual(["ahead", "running"]);
+  });
+});
+
 describe("tenantStatusView", () => {
-  it("follows the first lease", () => {
+  it("follows the running lease before an ended one", () => {
     const t = tenant({
       leases: [
         lease({ status: "ended", endDate: "2026-09-30" }),
         lease({ id: "x" }),
       ],
     });
-    expect(tenantStatusView(t, TODAY).tone).toBe("ended");
+    expect(tenantStatusView(t, TODAY).tone).toBe("active");
+  });
+
+  it("follows the running lease before one booked ahead", () => {
+    const t = tenant({
+      leases: [lease({ id: "x", startDate: "2026-12-01" }), lease()],
+    });
+    expect(tenantStatusView(t, TODAY).tone).toBe("active");
+  });
+
+  it("is 'Belum mulai' when the only lease left is booked ahead", () => {
+    const t = tenant({
+      leases: [
+        lease({ status: "ended", endDate: "2026-09-30" }),
+        lease({ id: "x", startDate: "2026-12-01" }),
+      ],
+    });
+    expect(tenantStatusView(t, TODAY).tone).toBe("upcoming");
   });
 
   it("is 'Tanpa sewa' without leases", () => {
@@ -197,6 +249,30 @@ describe("extraLeasesText", () => {
 });
 
 describe("tenantRow", () => {
+  it("shows the lease the tenant lives in, not one booked ahead that the API sends first", () => {
+    const row = tenantRow(
+      tenant({
+        leases: [
+          lease({
+            id: "y",
+            unitLabel: "Rumah B",
+            startDate: "2026-12-01",
+            ...MAWAR,
+          }),
+          lease({ collector: ACTIVE_COLLECTOR }),
+        ],
+      }),
+      TODAY,
+    );
+    expect(row).toMatchObject({
+      unit: "Kamar 1",
+      property: "Kos Melati",
+      collector: "Mas Dimas Saputra",
+      extraLeases: "+1\u00a0sewa\u00a0lain",
+      status: { tone: "active" },
+    });
+  });
+
   it("shows the first lease, its collector and the other leases", () => {
     const row = tenantRow(
       tenant({
@@ -311,6 +387,20 @@ describe("matchesSearch", () => {
     { name: "a property name", search: "melati", want: false },
   ])("$name: $want", ({ search, want }) => {
     expect(matchesSearch(t, search)).toBe(want);
+  });
+
+  // 0812-6234-5678: "6234" is part of the number, not +62 followed by 34.
+  it.each([
+    {
+      name: "digits starting with 62 inside the number",
+      search: "6234",
+      want: true,
+    },
+    { name: "the same with +62", search: "+62 812 6234", want: true },
+    { name: "62 alone is too short", search: "62", want: false },
+  ])("$name: $want", ({ search, want }) => {
+    const sixtyTwo = tenant({ phone: "+6281262345678", leases: [] });
+    expect(matchesSearch(sixtyTwo, search)).toBe(want);
   });
 });
 

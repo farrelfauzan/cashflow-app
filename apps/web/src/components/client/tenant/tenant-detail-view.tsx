@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetTenant } from "@/lib/api/generated/tenants/tenants";
 import { jakartaToday } from "@/lib/format/date";
-import { isNotFound, leaseView, LOADING_TEXT } from "./utils";
+import { isNotFound, leaseView, LOADING_TEXT, orderedLeases } from "./utils";
 
 import { LeaseCard } from "./lease-card";
 import { NoLeaseCard } from "./no-lease-card";
@@ -19,7 +19,8 @@ type TenantDetailViewProps = {
 };
 
 // "Penyewa dan sewanya": one tenant and a card for each lease the member may see, read-only.
-// The API answers 404 for a tenant that does not exist and for one the member may not see.
+// The API answers 404 for a tenant that does not exist and 403 for one the member may not see;
+// both read "Penyewa tidak ditemukan".
 export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const tenant = useGetTenant(orgId, tenantId);
   const [today] = useState(() => jakartaToday(new Date()));
@@ -47,7 +48,7 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
       {tenant.data.leases.length === 0 ? (
         <NoLeaseCard />
       ) : (
-        tenant.data.leases.map((lease) => (
+        orderedLeases(tenant.data.leases, today).map((lease) => (
           <LeaseCard key={lease.id} lease={leaseView(lease, today)} />
         ))
       )}

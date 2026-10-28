@@ -31,7 +31,7 @@ type TenantsViewProps = {
   organizationName: string;
 };
 
-// The tenant list: every tenant the member may see, with their first lease. The list is not
+// The tenant list: every tenant the member may see, with the lease they live in. The list is not
 // paginated, so search, filters and the flag count run here in the browser. Read-only: what shows
 // beyond that (the banner) comes from the member's capabilities (getOrgMe).
 export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
