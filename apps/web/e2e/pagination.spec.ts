@@ -1,6 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { trackOutsideRequests } from "./support/page-checks";
+import {
+  attachFullPageScreenshot,
+  trackOutsideRequests,
+} from "./support/page-checks";
 import { ORG_HOME_URL } from "./support/shell";
 import { DIMAS, LESTARI } from "./support/staff";
 
@@ -73,7 +76,7 @@ test.describe("Admin of the whole organization", () => {
 
   test("pages through the tenants, and reload and back keep the page", async ({
     page,
-  }) => {
+  }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
     await openScreen(page, "tenants", "Penyewa");
     await expectRange(page, 1, 20, 45);
@@ -88,6 +91,15 @@ test.describe("Admin of the whole organization", () => {
 
     await page.reload();
     await expectRange(page, 21, 40, 45);
+    await attachFullPageScreenshot(page, testInfo, "tenants-page-2");
+    const barShot = testInfo.outputPath(
+      `pagination-bar-${testInfo.project.name}.png`,
+    );
+    await pageBar(page).screenshot({ path: barShot });
+    await testInfo.attach("pagination-bar", {
+      path: barShot,
+      contentType: "image/png",
+    });
 
     await step(page, "Berikutnya").click();
     await expectRange(page, 41, 45, 45);
@@ -158,8 +170,13 @@ test.describe("Admin of the whole organization", () => {
     await expectRange(page, 1, 5, 5);
     await expect(rows(page, "Daftar penyewa")).toHaveCount(5);
 
+    // Mulyadi is booked into Rumah 8 of Kontrakan Seturan from June 2027.
     await chooseOption(page, "Filter properti", "Kontrakan Seturan");
     await expect(page).toHaveURL(/[?&]propertyId=/);
+    await expect(rows(page, "Daftar penyewa")).toHaveCount(1);
+    await expect(rows(page, "Daftar penyewa")).toContainText("Mulyadi");
+
+    await searchField(page).fill("gita");
     await expect(
       page.getByText("Tidak ada penyewa yang cocok").filter({ visible: true }),
     ).toBeVisible();
@@ -168,7 +185,8 @@ test.describe("Admin of the whole organization", () => {
       .getByRole("button", { name: "Hapus pencarian" })
       .filter({ visible: true })
       .click();
-    await expect(page).not.toHaveURL(/[?&](status|propertyId)=/);
+    await expect(page).not.toHaveURL(/[?&](status|propertyId|q)=/);
+    await expect(searchField(page)).toHaveValue("");
     await expectRange(page, 1, 20, 45);
   });
 
@@ -200,17 +218,19 @@ test.describe("Admin of the whole organization", () => {
 
   test("pages through the members, the properties and one property's units", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openScreen(page, "members", "Anggota tim");
     await expectRange(page, 1, 20, 27);
     await step(page, "Berikutnya").click();
     await expectRange(page, 21, 27, 27);
     await expect(rows(page, "Daftar anggota")).toHaveCount(7);
+    await attachFullPageScreenshot(page, testInfo, "members-page-2");
 
     await openScreen(page, "properties", "Properti");
     await expectRange(page, 1, 20, 25);
     await step(page, "Berikutnya").click();
     await expectRange(page, 21, 25, 25);
+    await attachFullPageScreenshot(page, testInfo, "properties-page-2");
 
     await page.goBack();
     await expectRange(page, 1, 20, 25);
@@ -225,6 +245,7 @@ test.describe("Admin of the whole organization", () => {
     await expectRange(page, 1, 20, 30);
     await step(page, "Berikutnya").click();
     await expectRange(page, 21, 30, 30);
+    await attachFullPageScreenshot(page, testInfo, "units-page-2");
   });
 });
 
