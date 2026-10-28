@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toFormError } from "@/lib/api/form-error";
 import { useRequestLoginCode } from "@/lib/api/generated/auth/auth";
 
-const EMPTY_PHONE_MESSAGE = "Isi nomor WhatsApp Anda.";
+import { EMPTY_PHONE_MESSAGE } from "./utils";
 
 type LoginPhoneStepProps = {
   phone: string;

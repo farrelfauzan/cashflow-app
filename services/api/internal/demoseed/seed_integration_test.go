@@ -144,7 +144,7 @@ func TestSeedDemo(t *testing.T) {
 
 	t.Run("the counts match the demo contents", func(t *testing.T) {
 		ga, gb := before[a.OrganizationID], before[b.OrganizationID]
-		require.Equal(t, 6, ga["membership"].Rows)
+		require.Equal(t, 7, ga["membership"].Rows)
 		require.Equal(t, 3, ga["property"].Rows)
 		require.Equal(t, 10, ga["unit"].Rows)
 		require.Equal(t, 7, ga["tenant"].Rows)
@@ -159,15 +159,20 @@ func TestSeedDemo(t *testing.T) {
 		require.Zero(t, gb["charge_type"].Rows)
 		require.Zero(t, gb["lease_charge"].Rows)
 		require.Positive(t, ga["audit_log"].Rows, "the snapshot covers the audit log too")
-		require.Equal(t, 6, ga["staff_user"].Rows, "an organization scope sees its own members' users")
+		require.Equal(t, 7, ga["staff_user"].Rows, "an organization scope sees its own members' users")
 	})
 
 	t.Run("the login list has every member with E.164 phones", func(t *testing.T) {
-		require.Len(t, first.Logins, 10)
+		require.Len(t, first.Logins, 11)
+		var disabled []string
 		for _, l := range first.Logins {
 			require.Regexp(t, `^\+62\d+$`, l.Phone)
 			require.NotEmpty(t, l.Roles)
+			if l.Disabled {
+				disabled = append(disabled, l.Organization+"/"+l.Name)
+			}
 		}
+		require.Equal(t, []string{"Griya Sejahtera/Mas Agus Setiawan"}, disabled)
 		limits := map[string][]string{}
 		for _, l := range first.Logins {
 			if len(l.PropertyLimits) > 0 {
@@ -240,6 +245,25 @@ func TestSeedDemo(t *testing.T) {
 		require.ElementsMatch(t, []uuid.UUID{a.OrganizationID, b.OrganizationID}, got)
 		require.Equal(t, []string{authz.RoleAdmin}, roleKeys(env.Principal(t, a.OrganizationID, hendra)))
 		require.Equal(t, []string{authz.RoleSupervisor}, roleKeys(env.Principal(t, b.OrganizationID, hendra)))
+	})
+
+	t.Run("Agus is disabled and still collects from Eko", func(t *testing.T) {
+		members, err := env.Members.List(ctx, adminA)
+		require.NoError(t, err)
+		var agus member.Member
+		for _, m := range members {
+			if m.Phone == "+6281200010006" {
+				agus = m
+			}
+		}
+		require.Equal(t, "Mas Agus Setiawan", agus.Name)
+		require.Equal(t, member.StatusDisabled, agus.Status)
+		require.Equal(t, int64(1), agus.CollectorLeaseCount, "the flag: 1 penyewa belum punya penagih")
+
+		eko := find(t, tenantsA, "Eko Prasetyo")
+		require.Len(t, eko.Leases, 1)
+		require.Equal(t, agus.ID, eko.Leases[0].CollectorMemberID)
+		require.False(t, eko.Leases[0].CollectorActive)
 	})
 
 	t.Run("Dewi has moved out and Fajar's booking starts next month", func(t *testing.T) {
@@ -341,6 +365,27 @@ func TestSeedDemo(t *testing.T) {
 				return nil
 			})
 			require.NoError(t, err)
+		}
+	})
+
+	// Last: it moves Eko out, which the subtests above rely on.
+	t.Run("a lease recreated on a rerun gets no disabled collector", func(t *testing.T) {
+		eko := find(t, tenantsA, "Eko Prasetyo")
+		_, err := env.Tenants.MoveOut(ctx, adminA, eko.Leases[0].ID, time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC))
+		require.NoError(t, err)
+		res, err := demoseed.Run(ctx, deps(env), env.Clock)
+		require.NoError(t, err)
+		require.Len(t, res.Notes, 1)
+		require.Contains(t, res.Notes[0], "Kontrakan Mawar Rumah A: collector")
+		require.Contains(t, res.Notes[0], "is disabled; lease created without a collector")
+
+		again, err := env.Tenants.Get(ctx, adminA, eko.ID)
+		require.NoError(t, err)
+		require.Len(t, again.Leases, 2)
+		for _, l := range again.Leases {
+			if l.Status == tenant.StatusActive {
+				require.Equal(t, uuid.Nil, l.CollectorMemberID)
+			}
 		}
 	})
 }
