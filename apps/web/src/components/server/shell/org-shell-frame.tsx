@@ -25,8 +25,8 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
       organizationName={organization.name}
       roles={roleSummary(orgMe.roles)}
       userName={me.user.name}
-      canSwitch={me.organizations.length > 1}
-      switchHref={PICKER_PATH}
+      currentOrgId={orgId}
+      organizations={me.organizations.map(({ id, name }) => ({ id, name }))}
       items={visibleOrgMenu(orgMe.capabilities).map((item) => ({
         key: item.key,
         label: item.label,
