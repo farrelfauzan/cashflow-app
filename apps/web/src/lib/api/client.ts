@@ -1,5 +1,12 @@
 // The API client: Orval's mutator for every generated function and hook, and the only place in
-// the app that calls fetch. Never log request bodies, cookies or tokens here.
+// the app that creates or calls axios. Never log request bodies, cookies or tokens here.
+
+import axios, {
+  AxiosError,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from "axios";
 
 import { apiEnvironment } from "#api-environment";
 
@@ -14,60 +21,85 @@ import {
 // to it.
 export const API_BASE_PATH = "/api";
 
-function isAbortError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name: unknown }).name === "AbortError"
-  );
+// The one axios instance. axios keeps no cache of its own, so API answers are never cached
+// outside TanStack Query, on the server or in the browser.
+export const apiAxios = axios.create({
+  headers: { Accept: "application/json" },
+  // The body arrives as raw text and is parsed in the response interceptor, so an error body
+  // that is not the API's JSON (an HTML page from a proxy) can never reach a screen.
+  responseType: "text",
+  transformResponse: [],
+  // Repeated query parameters as `a=1&a=2`, the way the Go API reads them.
+  paramsSerializer: { indexes: null },
+  // Server side (Node's http adapter): never send the session cookie through an HTTP_PROXY
+  // from the environment, and never follow a redirect with it. The browser ignores both.
+  proxy: false,
+  maxRedirects: 0,
+});
+
+// Request: where the call goes and the one credential it carries. In the browser that is the
+// same-origin /api, with the HttpOnly cf_session cookie going along by itself (no token in
+// JavaScript, no Authorization header); on the server, API_INTERNAL_URL with the forwarded
+// cf_session cookie and nothing else from the incoming request.
+async function prepareRequest(
+  config: InternalAxiosRequestConfig,
+): Promise<InternalAxiosRequestConfig> {
+  const environment = await apiEnvironment.getRequestEnvironment();
+  config.baseURL = `${environment.origin}${API_BASE_PATH}`;
+  for (const [name, value] of Object.entries(environment.headers)) {
+    config.headers.set(name, value);
+  }
+  return config;
 }
 
-export async function apiFetch<T>(
-  url: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const environment = await apiEnvironment.getRequestEnvironment();
-
-  const headers = new Headers(options.headers);
-  headers.set("Accept", "application/json");
-  for (const [name, value] of Object.entries(environment.headers)) {
-    headers.set(name, value);
+// Response, 2xx: the parsed JSON body, or undefined for 204 and other empty bodies.
+function parseResponse(response: AxiosResponse<string>): AxiosResponse {
+  const body = response.data;
+  if (body === "" || body === undefined || body === null) {
+    return { ...response, data: undefined };
   }
-
-  let response: Response;
-  let body: string;
   try {
-    response = await fetch(`${environment.origin}${API_BASE_PATH}${url}`, {
-      ...options,
-      headers,
-      credentials: environment.credentials,
-      // API answers are per user and change with every write; TanStack Query does the caching.
-      cache: "no-store",
-    });
-    body = await response.text();
-  } catch (error) {
-    // A cancelled query must stay a cancellation for TanStack Query.
-    if (isAbortError(error)) throw error;
-    throw networkError();
-  }
-
-  if (!response.ok) {
-    const error = apiErrorFromResponse(response.status, body);
-    if (response.status === 401) {
-      await apiEnvironment.handleUnauthorized();
-    }
-    throw error;
-  }
-
-  // 204 and other empty bodies.
-  if (body === "") return undefined as T;
-  try {
-    return JSON.parse(body) as T;
+    return { ...response, data: JSON.parse(body) as unknown };
   } catch {
     // Non-JSON downloads (the CSV template) are links, not client calls.
     throw unexpectedResponseError(response.status);
   }
+}
+
+// Response, anything else: every non-2xx becomes the one ApiError, and a 401 goes through the
+// single 401 handler first. A cancelled query stays a cancellation for TanStack Query, and an
+// error raised before the request was sent (the browser client during server rendering) passes
+// through unchanged.
+async function rejectResponse(error: unknown): Promise<never> {
+  if (axios.isCancel(error) || !(error instanceof AxiosError)) throw error;
+
+  const { response } = error;
+  if (response === undefined) throw networkError();
+
+  const body = typeof response.data === "string" ? response.data : "";
+  const apiError = apiErrorFromResponse(response.status, body);
+  if (response.status === 401) {
+    await apiEnvironment.handleUnauthorized();
+  }
+  throw apiError;
+}
+
+apiAxios.interceptors.request.use(prepareRequest);
+apiAxios.interceptors.response.use(parseResponse, rejectResponse);
+
+// Orval's mutator: `config` is the generated request (url, method, params, data, headers,
+// signal), `options` what a caller adds through the generated `request` option.
+export async function apiRequest<T>(
+  config: AxiosRequestConfig,
+  options?: AxiosRequestConfig,
+): Promise<T> {
+  const response = await apiAxios.request<T>({
+    ...config,
+    ...options,
+    // A caller's extra header never drops a generated one (Content-Type).
+    headers: { ...config.headers, ...options?.headers },
+  });
+  return response.data;
 }
 
 // Orval's error type for every generated hook: always ApiError, whatever error bodies the spec
