@@ -234,6 +234,44 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 	return i, err
 }
 
+const listCollectorCandidates = `-- name: ListCollectorCandidates :many
+SELECT m.id, u.name,
+       EXISTS (SELECT 1 FROM role_assignment ra
+               WHERE ra.organization_id = m.organization_id AND ra.membership_id = m.id
+                 AND ra.builtin_role = 'karyawan') AS karyawan
+FROM membership m
+JOIN staff_user u ON u.id = m.staff_user_id
+WHERE m.organization_id = $1 AND m.status = 'active'
+ORDER BY karyawan DESC, u.name, m.id
+`
+
+type ListCollectorCandidatesRow struct {
+	ID       uuid.UUID
+	Name     string
+	Karyawan bool
+}
+
+// Active members a lease's collector can be picked from, karyawan first, then by name.
+func (q *Queries) ListCollectorCandidates(ctx context.Context, organizationID uuid.UUID) ([]ListCollectorCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listCollectorCandidates, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCollectorCandidatesRow
+	for rows.Next() {
+		var i ListCollectorCandidatesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Karyawan); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMembers = `-- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
        m.first_sign_in_at, u.phone, u.name,

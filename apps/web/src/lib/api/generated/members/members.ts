@@ -24,6 +24,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CollectorCandidateList,
   Error,
   ErrorResponse,
   InviteMember,
@@ -137,6 +138,96 @@ export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = useGetOrgMeQueryOptions(orgId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * For the collector picker on the lease form. A narrow exception to the rule that a role limited to some properties reads nothing organization-wide (decision 27, like decision 22 for charge types): any member who may manage some lease may list the candidates. Only active members, karyawan first, then by name, with their name and whether they hold the karyawan role; no phone numbers and no other roles. Listing writes no allowed audit row; a refusal is audited.
+ * @summary The active members a lease's collector can be picked from (needs lease:manage, for the whole organization or limited to properties)
+ */
+export const listCollectorCandidates = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<CollectorCandidateList>(
+      {url: `/orgs/${orgId}/collector-candidates`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListCollectorCandidatesQueryKey = (orgId: string,) =>
+    apiQueryKey({ orgId }, { url: `/orgs/${orgId}/collector-candidates` });
+
+
+export const useListCollectorCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId }, { url: `/orgs/${orgId}/collector-candidates`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCollectorCandidates>>> = ({ signal }) => listCollectorCandidates(orgId, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCollectorCandidatesQueryResult = NonNullable<Awaited<ReturnType<typeof listCollectorCandidates>>>
+export type ListCollectorCandidatesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCollectorCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof listCollectorCandidates>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCollectorCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof listCollectorCandidates>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The active members a lease's collector can be picked from (needs lease:manage, for the whole organization or limited to properties)
+ */
+
+export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListCollectorCandidatesQueryOptions(orgId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
