@@ -4,7 +4,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import { isPhone, menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
 import { HENDRA, SARI } from "./support/staff";
 
 // The organization picker against the real Go API: the session gate in src/proxy.ts, the
@@ -64,18 +64,36 @@ test.describe("member of two organizations", () => {
     await expect(page).toHaveURL(ORG_HOME_URL);
     const griya = page.url();
     let menu = await openMenu(page, testInfo);
-    await expect(menu.getByText("Griya Sejahtera")).toBeVisible();
+    // The menu header; the "Ganti usaha" select shows the name too.
+    await expect(menu.getByText("Griya Sejahtera").first()).toBeVisible();
     await expect(menu.getByText("Admin", { exact: true })).toBeVisible();
 
-    // Supervisor in Kost Putri Anggrek.
-    await menu.getByRole("link", { name: "Ganti usaha" }).click();
-    await expect(page).toHaveURL("/organizations");
-    await choices.getByText("Kost Putri Anggrek").click();
+    // Supervisor in Kost Putri Anggrek, through "Ganti usaha" above the footer.
+    const orgSwitch = menu.getByRole("combobox", { name: "Ganti usaha" });
+    await expect(orgSwitch).toHaveText("Griya Sejahtera");
+    const switchBox = await orgSwitch.boundingBox();
+    expect(switchBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const switchFont = await orgSwitch.evaluate((el) =>
+      parseFloat(getComputedStyle(el).fontSize),
+    );
+    expect(switchFont).toBeGreaterThanOrEqual(isPhone(testInfo) ? 14 : 16);
+    await orgSwitch.click();
+    const options = page.getByRole("option");
+    await expect(options).toHaveText(HENDRA.organizations);
+    for (const option of await options.all()) {
+      const box = await option.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await attachFullPageScreenshot(page, testInfo, "org-switch-open");
+    await options.filter({ hasText: "Kost Putri Anggrek" }).click();
+    await expect(page).not.toHaveURL(griya);
     await expect(page).toHaveURL(ORG_HOME_URL);
-    expect(page.url()).not.toBe(griya);
     menu = await openMenu(page, testInfo);
-    await expect(menu.getByText("Kost Putri Anggrek")).toBeVisible();
+    await expect(menu.getByText("Kost Putri Anggrek").first()).toBeVisible();
     await expect(menu.getByText("Supervisor", { exact: true })).toBeVisible();
+    await expect(
+      menu.getByRole("combobox", { name: "Ganti usaha" }),
+    ).toHaveText("Kost Putri Anggrek");
     await expect(menuSections(menu)).toHaveText([
       "Beranda",
       "Properti",
@@ -119,9 +137,9 @@ test.describe("member of one organization", () => {
     await expect(page).toHaveURL(ORG_HOME_URL);
     const menu = await openMenu(page, testInfo);
     await expect(menu.getByText("Griya Sejahtera")).toBeVisible();
-    await expect(menu.getByRole("link", { name: "Ganti usaha" })).toHaveCount(
-      0,
-    );
+    await expect(
+      menu.getByRole("combobox", { name: "Ganti usaha" }),
+    ).toHaveCount(0);
   });
 });
 
