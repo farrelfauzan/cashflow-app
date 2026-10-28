@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,8 +78,8 @@ func TestImport(t *testing.T) {
 		}
 		require.Equal(t, tenantimport.Matched, res.Rows[3].Tenant, "line 5 finds Rina from line 2")
 		require.Equal(t, &tenantimport.Values{
-			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Rent: 900_000,
-		}, res.Rows[1].Values, "the row shows the terms it would save: 01/10/2026 read day first, no deposit")
+			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), BilledFrom: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Rent: 900_000,
+		}, res.Rows[1].Values, "the row shows the terms it would save: 01/10/2026 read day first, billed from the start, no deposit")
 		require.Equal(t, counts{}, countAll(t, env, admin))
 		require.Len(t, env.AuditLog(t, o.ID), auditBefore, "the audit rows of a dry run roll back with it")
 	})
@@ -242,6 +243,13 @@ func TestTemplate(t *testing.T) {
 		require.Equal(t, counts{}, countAll(t, env, admin))
 	})
 
+	t.Run("the header has the mulai_tagih column after tanggal_mulai", func(t *testing.T) {
+		data, err := env.Imports.Template(ctx, admin)
+		require.NoError(t, err)
+		header := strings.SplitN(strings.TrimPrefix(string(data), "\xef\xbb\xbf"), "\r\n", 2)[0]
+		require.Equal(t, "properti;jenis_properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih;jaminan", header)
+	})
+
 	t.Run("the template filled in with real numbers imports in a dry run without errors", func(t *testing.T) {
 		data, err := env.Imports.Template(ctx, admin)
 		require.NoError(t, err)
@@ -251,6 +259,10 @@ func TestTemplate(t *testing.T) {
 		require.NoError(t, err)
 		require.Zero(t, res.Summary.RowsWithErrors, "%+v", res.Rows)
 		require.Equal(t, 2, res.Summary.LeasesCreated)
+		require.Equal(t, time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), res.Rows[0].Values.BilledFrom,
+			"the first example leaves mulai_tagih empty, so it bills from the start date")
+		require.Equal(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), res.Rows[1].Values.BilledFrom,
+			"the second example skips July to September, collected by hand")
 	})
 
 	t.Run("only those who may import may download it, and a refusal is audited", func(t *testing.T) {
@@ -260,5 +272,126 @@ func TestTemplate(t *testing.T) {
 		audit := env.AuditLog(t, o.ID)
 		require.Equal(t, "deny", audit[0].Decision)
 		require.Equal(t, "tenant:manage", audit[0].Action)
+	})
+}
+
+func TestImportBilledFrom(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // 2 November 2026
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812831")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+	d := func(y int, m time.Month, day int) time.Time { return time.Date(y, m, day, 0, 0, 0, 0, time.UTC) }
+
+	const header = "properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih\n"
+	csv := []byte(header +
+		"Kos Melati;Kamar 1;Rina Wulandari;0812-8310-5001;850.000;15/09/2026;15/10/2026\n" + // line 2
+		"Kos Melati;Kamar 2;Budi Santoso;0812-8310-5002;850.000;15/09/2026;\n" + // line 3
+		"Kos Melati;Kamar 3;Citra Lestari;0812-8310-5003;850.000;15/09/2026;besok pagi\n" + // line 4
+		"Kos Melati;Kamar 4;Dewi Anggraini;0812-8310-5004;850.000;15/09/2026;20/10/2026\n" + // line 5
+		"Kos Melati;Kamar 5;Eko Prasetyo;0812-8310-5005;850.000;15/09/2026;15/12/2026\n" + // line 6
+		"Kos Melati;Kamar 6;Fitri Handayani;0812-8310-5006;850.000;15/09/2026;15/08/2026\n" + // line 7
+		"Kos Melati;Kamar 7;Gunawan Wibowo;0812-8310-5007;850.000;01/12/2026;01/01/2027\n") // line 8
+
+	t.Run("a dry run shows the date read, and a row error names the bill_from column", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, csv, true)
+		require.NoError(t, err)
+		require.Equal(t, 7, res.Summary.Rows)
+		require.Equal(t, 4, res.Summary.RowsWithErrors)
+
+		require.True(t, res.Rows[0].OK(), "%v", res.Rows[0].Errors)
+		require.Equal(t, &tenantimport.Values{StartDate: d(2026, 9, 15), BilledFrom: d(2026, 10, 15), Rent: 850_000}, res.Rows[0].Values)
+
+		require.True(t, res.Rows[1].OK(), "%v", res.Rows[1].Errors)
+		require.Equal(t, &tenantimport.Values{StartDate: d(2026, 9, 15), BilledFrom: d(2026, 9, 15), Rent: 850_000}, res.Rows[1].Values,
+			"an empty cell bills from the start date")
+
+		require.Equal(t, []string{"bill_from"}, errorColumns(res.Rows[2]), "an unreadable date")
+		require.Nil(t, res.Rows[2].Values)
+		require.Equal(t, []string{"bill_from"}, errorColumns(res.Rows[3]), "not an anniversary of the start")
+		require.Equal(t, []string{"bill_from"}, errorColumns(res.Rows[4]), "past the bound, found while saving the lease")
+		require.Contains(t, res.Rows[4].Errors[0].Message, "15/11/2026")
+		require.Empty(t, res.Rows[4].Unit, "the row's records are rolled back with it")
+		require.Equal(t, []string{"bill_from"}, errorColumns(res.Rows[5]), "before the start date")
+
+		require.True(t, res.Rows[6].OK(), "%v", res.Rows[6].Errors)
+		require.Equal(t, d(2027, 1, 1), res.Rows[6].Values.BilledFrom, "a booking may skip its first period")
+		require.Equal(t, counts{}, countAll(t, env, admin))
+	})
+
+	t.Run("a commit with bad rows writes nothing", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, csv, false)
+		require.NoError(t, err)
+		require.False(t, res.Committed)
+		require.Equal(t, counts{}, countAll(t, env, admin))
+	})
+
+	good := []byte(header +
+		"Kos Melati;Kamar 1;Rina Wulandari;0812-8310-5001;850.000;15/09/2026;15/10/2026\n" +
+		"Kos Melati;Kamar 2;Budi Santoso;0812-8310-5002;850.000;15/09/2026;\n" +
+		"Kos Melati;Kamar 7;Gunawan Wibowo;0812-8310-5007;850.000;01/12/2026;01/01/2027\n")
+
+	t.Run("a commit saves billedFrom on the leases", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, good, false)
+		require.NoError(t, err)
+		require.True(t, res.Committed)
+		tenants, err := env.Tenants.List(ctx, admin)
+		require.NoError(t, err)
+		billedFrom := map[string]time.Time{}
+		for _, tn := range tenants {
+			require.Len(t, tn.Leases, 1)
+			billedFrom[tn.Name] = tn.Leases[0].BilledFrom
+			require.Equal(t, d(2026, 11, 2), tn.Leases[0].EnteredOn)
+		}
+		require.Equal(t, map[string]time.Time{
+			"Rina Wulandari": d(2026, 10, 15), "Budi Santoso": d(2026, 9, 15), "Gunawan Wibowo": d(2027, 1, 1),
+		}, billedFrom)
+	})
+
+	t.Run("running the same file again changes nothing and notes nothing", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, good, false)
+		require.NoError(t, err)
+		require.True(t, res.Committed)
+		require.Equal(t, tenantimport.Summary{Rows: 3, LeasesMatched: 3}, res.Summary)
+		for _, row := range res.Rows {
+			require.Empty(t, row.Notes)
+		}
+	})
+
+	t.Run("a matched lease with another mulai_tagih is noted, not changed", func(t *testing.T) {
+		data := []byte(header +
+			"Kos Melati;Kamar 1;Rina Wulandari;0812-8310-5001;850.000;15/09/2026;15/11/2026\n" +
+			"Kos Melati;Kamar 2;Budi Santoso;0812-8310-5002;850.000;15/09/2026;15/10/2026\n")
+		res, err := env.Imports.Run(ctx, admin, data, false)
+		require.NoError(t, err)
+		require.True(t, res.Committed)
+		for _, row := range res.Rows {
+			require.Equal(t, tenantimport.Matched, row.Lease)
+			require.Equal(t, []string{"Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya."}, row.Notes)
+		}
+		tenants, err := env.Tenants.List(ctx, admin)
+		require.NoError(t, err)
+		for _, tn := range tenants {
+			if tn.Name == "Rina Wulandari" {
+				require.Equal(t, d(2026, 10, 15), tn.Leases[0].BilledFrom, "the existing lease is untouched")
+			}
+		}
+	})
+
+	t.Run("the canonical column name and the other Indonesian spellings are read", func(t *testing.T) {
+		for _, head := range []string{
+			"property,unit,tenant_name,phone,rent,start_date,bill_from\n",
+			"properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;Mulai Ditagih\n",
+			"properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;Tagih Mulai\n",
+		} {
+			sep := ";"
+			if strings.Contains(head, ",") {
+				sep = ","
+			}
+			row := strings.Join([]string{"Kos Melati", "Kamar 9", "Hendra Gunadi", "0812-8310-5009", "850.000", "15/09/2026", "15/10/2026"}, sep)
+			res, err := env.Imports.Run(ctx, admin, []byte(head+row+"\n"), true)
+			require.NoError(t, err, head)
+			require.True(t, res.Rows[0].OK(), "%s: %v", head, res.Rows[0].Errors)
+			require.Equal(t, d(2026, 10, 15), res.Rows[0].Values.BilledFrom, head)
+		}
 	})
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -442,6 +443,7 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 		for name, params := range cases {
 			params.ID, params.OrganizationID = uuid.New(), a.org.ID
 			params.StartDate, params.RentAmount = day(2026, 10, 1), 1
+			params.EnteredOn, params.BilledFrom = day(2026, 11, 2), day(2026, 10, 1)
 			err := env.Store.WithOrgTx(ctx, a.org.ID, func(tx pgx.Tx) error {
 				return dbgen.New(tx).CreateLease(ctx, params)
 			})
@@ -541,4 +543,305 @@ func countAllowed(rows []dbgen.AuditLog, action string) int {
 		}
 	}
 	return n
+}
+
+// leaseFixture is a tenant plus a way to get a free unit for each lease a test creates.
+type leaseFixture struct {
+	env   *testenv.Env
+	w     world
+	tn    tenant.Tenant
+	units int
+}
+
+func newLeaseFixture(t *testing.T, env *testenv.Env, w world, phone string) *leaseFixture {
+	t.Helper()
+	tn, err := env.Tenants.Create(context.Background(), w.admin, tenant.Input{Name: "Siti Rahmawati", Phone: phone})
+	require.NoError(t, err)
+	return &leaseFixture{env: env, w: w, tn: tn}
+}
+
+// unit adds a new unit to Kos Melati.
+func (f *leaseFixture) unit(t *testing.T) property.Unit {
+	t.Helper()
+	f.units++
+	u, err := f.env.Properties.CreateUnit(context.Background(), f.w.admin, f.w.melati.ID,
+		property.UnitInput{Label: "Kamar " + string(rune('A'+f.units))})
+	require.NoError(t, err)
+	return u
+}
+
+// create rents a new unit to the tenant on the given terms.
+func (f *leaseFixture) create(t *testing.T, terms tenant.Terms) (tenant.Lease, error) {
+	t.Helper()
+	if terms.RentAmount == 0 {
+		terms.RentAmount = 850_000
+	}
+	return f.env.Tenants.CreateLease(context.Background(), f.w.admin, tenant.NewLease{
+		TenantID: f.tn.ID, UnitID: f.unit(t).ID, Terms: terms,
+	})
+}
+
+func TestLeaseEnteredOnIsTheJakartaDay(t *testing.T) {
+	env := testenv.New(t)
+	w := newWorld(t, env, "0812791")
+	f := newLeaseFixture(t, env, w, "0812-7910-5001")
+
+	// 00:30 on 3 November in Jakarta is still 17:30 on 2 November in UTC.
+	env.Clock.Set(time.Date(2026, 11, 3, 0, 30, 0, 0, clock.Jakarta))
+	lease, err := f.create(t, tenant.Terms{StartDate: day(2026, 10, 1)})
+	require.NoError(t, err)
+	require.Equal(t, day(2026, 11, 3), lease.EnteredOn)
+
+	got, err := env.Tenants.Get(context.Background(), w.admin, f.tn.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Leases, 1)
+	require.Equal(t, day(2026, 11, 3), got.Leases[0].EnteredOn, "the stored day, read back")
+}
+
+func TestCreateLeaseBilledFrom(t *testing.T) {
+	env := testenv.New(t) // 2 November 2026
+	w := newWorld(t, env, "0812792")
+	f := newLeaseFixture(t, env, w, "0812-7920-5001")
+
+	tests := []struct {
+		name           string
+		start          time.Time
+		billedFrom     time.Time // zero: left out
+		want           time.Time
+		wantErrorField string
+	}{
+		{"left out bills from the start date", day(2026, 9, 15), time.Time{}, day(2026, 9, 15), ""},
+		{"a late lease may skip to a past period", day(2026, 9, 15), day(2026, 10, 15), day(2026, 10, 15), ""},
+		{"a late lease may skip to the current period", day(2026, 9, 15), day(2026, 11, 15), day(2026, 11, 15), ""},
+		{"a late lease cannot skip past the current period", day(2026, 9, 15), day(2026, 12, 15), time.Time{}, "billedFrom"},
+		{"not an anniversary of the start", day(2026, 9, 15), day(2026, 10, 20), time.Time{}, "billedFrom"},
+		{"before the start date", day(2026, 9, 15), day(2026, 8, 15), time.Time{}, "billedFrom"},
+		{"a booking may bill from its start", day(2026, 12, 1), day(2026, 12, 1), day(2026, 12, 1), ""},
+		{"a booking may skip its first period", day(2026, 12, 1), day(2027, 1, 1), day(2027, 1, 1), ""},
+		{"a booking cannot skip two periods", day(2026, 12, 1), day(2027, 2, 1), time.Time{}, "billedFrom"},
+		{"a month-end start may bill from the clamped day", day(2026, 8, 31), day(2026, 11, 30), day(2026, 11, 30), ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lease, err := f.create(t, tenant.Terms{StartDate: tc.start, BilledFrom: tc.billedFrom})
+			if tc.wantErrorField != "" {
+				requireField(t, err, tc.wantErrorField)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, lease.BilledFrom)
+			require.Equal(t, day(2026, 11, 2), lease.EnteredOn)
+			require.Equal(t, tc.start, lease.StartDate)
+		})
+	}
+
+	t.Run("a refused lease is not saved", func(t *testing.T) {
+		got, err := env.Tenants.Get(context.Background(), w.admin, f.tn.ID)
+		require.NoError(t, err)
+		require.Len(t, got.Leases, 6, "only the six allowed cases above")
+	})
+}
+
+func TestUpdateLeaseBilledFrom(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // 2 November 2026
+	w := newWorld(t, env, "0812793")
+	f := newLeaseFixture(t, env, w, "0812-7930-5001")
+
+	lease, err := f.create(t, tenant.Terms{StartDate: day(2026, 9, 15), BilledFrom: day(2026, 11, 15)})
+	require.NoError(t, err)
+	require.Equal(t, day(2026, 11, 15), lease.BilledFrom)
+	terms := func(billedFrom time.Time) tenant.Terms {
+		return tenant.Terms{StartDate: day(2026, 9, 15), RentAmount: 900_000, BilledFrom: billedFrom}
+	}
+
+	t.Run("terms without billedFrom bill from the start date again", func(t *testing.T) {
+		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(time.Time{}))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 9, 15), updated.BilledFrom)
+		require.Equal(t, int64(900_000), updated.RentAmount)
+		require.Equal(t, day(2026, 11, 2), updated.EnteredOn, "entered_on never changes")
+	})
+
+	t.Run("a later anniversary within the bound is saved", func(t *testing.T) {
+		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 10, 15)))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 10, 15), updated.BilledFrom)
+	})
+
+	t.Run("a date that is not an anniversary is refused and nothing changes", func(t *testing.T) {
+		_, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 10, 20)))
+		requireField(t, err, "billedFrom")
+		got, err := env.Tenants.Get(ctx, w.admin, f.tn.ID)
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 10, 15), got.Leases[0].BilledFrom)
+	})
+
+	t.Run("the bound uses the stored entered_on, not today", func(t *testing.T) {
+		// A month later the current period is 15 Dec, but the lease was entered on 2 Nov, so
+		// the latest allowed day stays 15 Nov.
+		env.Clock.Set(time.Date(2026, 12, 3, 9, 0, 0, 0, clock.Jakarta))
+		t.Cleanup(func() { env.Clock.Set(time.Date(2026, 11, 2, 9, 0, 0, 0, clock.Jakarta)) })
+
+		_, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 12, 15)))
+		requireField(t, err, "billedFrom")
+		updated, err := env.Tenants.UpdateLease(ctx, w.admin, lease.ID, terms(day(2026, 11, 15)))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 11, 15), updated.BilledFrom)
+		require.Equal(t, day(2026, 11, 2), updated.EnteredOn)
+	})
+}
+
+func TestLeasePlannedEnd(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // 2 November 2026
+	w := newWorld(t, env, "0812794")
+	f := newLeaseFixture(t, env, w, "0812-7940-5001")
+
+	lease, err := f.create(t, tenant.Terms{StartDate: day(2026, 10, 1), CollectorMemberID: w.karyawanMemberID})
+	require.NoError(t, err)
+	require.Nil(t, lease.PlannedEndDate, "a new lease has none")
+	booking, err := f.create(t, tenant.Terms{StartDate: day(2026, 12, 10)})
+	require.NoError(t, err)
+
+	setDate := func(l tenant.Lease, d time.Time) (tenant.Lease, error) {
+		return env.Tenants.SetPlannedEnd(ctx, w.admin, l.ID, &d)
+	}
+	plannedEnd := func(t *testing.T, id uuid.UUID) *time.Time {
+		t.Helper()
+		got, err := env.Tenants.Get(ctx, w.admin, f.tn.ID)
+		require.NoError(t, err)
+		for _, l := range got.Leases {
+			if l.ID == id {
+				return l.PlannedEndDate
+			}
+		}
+		t.Fatalf("lease %s not found", id)
+		return nil
+	}
+
+	t.Run("an admin sets it, and it is audited", func(t *testing.T) {
+		updated, err := setDate(lease, day(2026, 11, 14))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 11, 14), *updated.PlannedEndDate)
+		require.Equal(t, tenant.StatusActive, updated.Status)
+		require.Equal(t, day(2026, 11, 14), *plannedEnd(t, lease.ID), "read back with the tenant")
+
+		audit := env.AuditLog(t, w.org.ID)
+		require.Equal(t, "allow", audit[0].Decision)
+		require.Equal(t, "lease:manage", audit[0].Action)
+		require.Equal(t, "property/"+w.melati.ID.String()+"/lease/"+lease.ID.String(), audit[0].Resource)
+	})
+
+	t.Run("a time of day is dropped", func(t *testing.T) {
+		updated, err := setDate(lease, time.Date(2026, 11, 20, 17, 0, 0, 0, time.UTC))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 11, 20), *updated.PlannedEndDate)
+	})
+
+	t.Run("it can change, and today is allowed", func(t *testing.T) {
+		updated, err := setDate(lease, day(2026, 11, 30))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 11, 30), *updated.PlannedEndDate)
+		updated, err = setDate(lease, day(2026, 11, 2))
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 11, 2), *updated.PlannedEndDate)
+		_, err = setDate(lease, day(2026, 11, 30))
+		require.NoError(t, err)
+	})
+
+	t.Run("a date before today is refused with its field, and the stored date stands", func(t *testing.T) {
+		_, err := setDate(lease, day(2026, 11, 1))
+		requireField(t, err, "plannedEndDate")
+		require.Equal(t, day(2026, 11, 30), *plannedEnd(t, lease.ID))
+	})
+
+	t.Run("a date before the start date is refused with its field", func(t *testing.T) {
+		_, err := setDate(booking, day(2026, 12, 5)) // after today, before the booking starts
+		requireField(t, err, "plannedEndDate")
+		require.Nil(t, plannedEnd(t, booking.ID))
+
+		updated, err := setDate(booking, day(2026, 12, 10))
+		require.NoError(t, err, "the start date itself is allowed")
+		require.Equal(t, day(2026, 12, 10), *updated.PlannedEndDate)
+	})
+
+	t.Run("a karyawan and the supervisor are denied, and the date stands", func(t *testing.T) {
+		for name, p := range map[string]authz.Principal{"karyawan": w.karyawan, "supervisor": w.supervisor} {
+			d := day(2026, 11, 20)
+			_, err := env.Tenants.SetPlannedEnd(ctx, p, lease.ID, &d)
+			require.ErrorIs(t, err, authz.ErrForbidden, name)
+			_, err = env.Tenants.SetPlannedEnd(ctx, p, lease.ID, nil)
+			require.ErrorIs(t, err, authz.ErrForbidden, name+" cannot clear it either")
+		}
+		require.Equal(t, day(2026, 11, 30), *plannedEnd(t, lease.ID))
+		audit := env.AuditLog(t, w.org.ID)
+		require.Equal(t, "deny", audit[0].Decision)
+		require.Equal(t, "lease:manage", audit[0].Action)
+	})
+
+	t.Run("an unknown lease is not found", func(t *testing.T) {
+		_, err := env.Tenants.SetPlannedEnd(ctx, w.admin, uuid.New(), nil)
+		require.ErrorIs(t, err, tenant.ErrNotFound)
+	})
+
+	t.Run("nil clears it", func(t *testing.T) {
+		updated, err := env.Tenants.SetPlannedEnd(ctx, w.admin, lease.ID, nil)
+		require.NoError(t, err)
+		require.Nil(t, updated.PlannedEndDate)
+		require.Nil(t, plannedEnd(t, lease.ID))
+
+		updated, err = env.Tenants.SetPlannedEnd(ctx, w.admin, lease.ID, nil)
+		require.NoError(t, err, "clearing a lease with none is fine")
+		require.Nil(t, updated.PlannedEndDate)
+	})
+
+	t.Run("move-out clears it", func(t *testing.T) {
+		_, err := setDate(lease, day(2026, 11, 14))
+		require.NoError(t, err)
+		ended, err := env.Tenants.MoveOut(ctx, w.admin, lease.ID, day(2026, 11, 2))
+		require.NoError(t, err)
+		require.Nil(t, ended.PlannedEndDate)
+		require.Nil(t, plannedEnd(t, lease.ID))
+	})
+
+	t.Run("an ended lease refuses it", func(t *testing.T) {
+		_, err := setDate(lease, day(2026, 11, 30))
+		require.ErrorIs(t, err, tenant.ErrLeaseEnded)
+		_, err = env.Tenants.SetPlannedEnd(ctx, w.admin, lease.ID, nil)
+		require.ErrorIs(t, err, tenant.ErrLeaseEnded)
+		require.Nil(t, plannedEnd(t, lease.ID))
+	})
+}
+
+func TestUpdateLeaseStartDateAgainstPlannedEnd(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // 2 November 2026
+	w := newWorld(t, env, "0812795")
+	f := newLeaseFixture(t, env, w, "0812-7950-5001")
+
+	lease, err := f.create(t, tenant.Terms{StartDate: day(2026, 10, 1)})
+	require.NoError(t, err)
+	planned := day(2026, 11, 14)
+	_, err = env.Tenants.SetPlannedEnd(ctx, w.admin, lease.ID, &planned)
+	require.NoError(t, err)
+	move := func(start time.Time) (tenant.Lease, error) {
+		return env.Tenants.UpdateLease(ctx, w.admin, lease.ID, tenant.Terms{StartDate: start, RentAmount: 850_000})
+	}
+
+	t.Run("a start date after the planned end is refused with its field, and the lease is unchanged", func(t *testing.T) {
+		_, err := move(day(2026, 11, 20))
+		requireField(t, err, "startDate")
+		got, err := env.Tenants.Get(ctx, w.admin, f.tn.ID)
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 10, 1), got.Leases[0].StartDate)
+		require.Equal(t, planned, *got.Leases[0].PlannedEndDate)
+	})
+
+	t.Run("a start date on the planned end is allowed", func(t *testing.T) {
+		updated, err := move(planned)
+		require.NoError(t, err)
+		require.Equal(t, planned, updated.StartDate)
+		require.Equal(t, planned, *updated.PlannedEndDate)
+	})
 }

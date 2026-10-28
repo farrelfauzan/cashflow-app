@@ -37,11 +37,19 @@ type Lease struct {
 	PropertyID   uuid.UUID
 	PropertyName string
 	// StartDate is the first day; rent is due on its day of every month (decision 24).
-	StartDate     time.Time
-	EndDate       *time.Time // last day, set by move-out
-	RentAmount    int64
-	DepositAmount int64
-	Status        string
+	StartDate time.Time
+	EndDate   *time.Time // last day, set by move-out
+	// EnteredOn is the Asia/Jakarta day the lease was saved. A start date before it means the
+	// lease was entered late.
+	EnteredOn time.Time
+	// BilledFrom ("Mulai tagih dari") is the first period the app invoices, an anniversary of
+	// the start date.
+	BilledFrom time.Time
+	// PlannedEndDate ("Rencana keluar") is the tenant's planned last day, or nil.
+	PlannedEndDate *time.Time
+	RentAmount     int64
+	DepositAmount  int64
+	Status         string
 	// Collector is the member who collects from this tenant, if any.
 	CollectorMemberID uuid.UUID
 	CollectorUserID   uuid.UUID
@@ -59,6 +67,9 @@ type Terms struct {
 	DepositAmount int64
 	// CollectorMemberID is a member id (not a staff user id); uuid.Nil means no collector.
 	CollectorMemberID uuid.UUID
+	// BilledFrom ("Mulai tagih dari") skips the periods the owner collected by hand. The zero
+	// time means the start date.
+	BilledFrom time.Time
 }
 
 // NewLease is the input for renting a unit to a tenant.
@@ -94,6 +105,10 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	if err != nil {
 		return Lease{}, lookupError(err, "unitId", "Unit tidak ditemukan.")
 	}
+	enteredOn := today(s.clock)
+	if err := checkBilledFrom(terms, enteredOn); err != nil {
+		return Lease{}, err
+	}
 	collector, err := collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID)
 	if err != nil {
 		return Lease{}, err
@@ -109,6 +124,7 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 		ID: id, OrganizationID: p.OrganizationID, UnitID: in.UnitID, TenantID: in.TenantID,
 		StartDate: terms.StartDate, RentAmount: terms.RentAmount,
 		DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
+		EnteredOn: enteredOn, BilledFrom: terms.BilledFrom,
 	})
 	if isUniqueViolation(err, "lease_one_active_per_unit") {
 		return Lease{}, ErrUnitOccupied
@@ -134,7 +150,8 @@ func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID) (
 }
 
 // UpdateLease changes the terms of an active lease. Each change is audited; a new rent applies
-// from the next invoice.
+// from the next invoice. Terms without a BilledFrom bill from the start date again. Slice 2 adds
+// the rule that the start date and BilledFrom lock once the lease has an invoice.
 func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UUID, t Terms) (Lease, error) {
 	terms, err := ValidTerms(t)
 	if err != nil {
@@ -143,8 +160,15 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 	var out Lease
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		if _, err := s.loadActiveForChange(ctx, tx, q, p, id); err != nil {
+		current, err := s.loadActiveForChange(ctx, tx, q, p, id)
+		if err != nil {
 			return err
+		}
+		if err := checkBilledFrom(terms, current.EnteredOn); err != nil {
+			return err
+		}
+		if current.PlannedEndDate != nil && current.PlannedEndDate.Before(terms.StartDate) {
+			return &InputError{Field: "startDate", Message: "Tanggal mulai tidak boleh setelah rencana keluar. Ubah rencana keluar dulu."}
 		}
 		collector, err := collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID)
 		if err != nil {
@@ -152,7 +176,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		}
 		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
 			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
-			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
+			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector, BilledFrom: terms.BilledFrom,
 		})
 		if err != nil {
 			return fmt.Errorf("updating lease: %w", err)
@@ -166,10 +190,70 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 	return out, err
 }
 
+// SetPlannedEnd sets, changes or clears (nil) an active lease's planned end date ("Rencana
+// keluar", decision 25): the tenant's last day, on or after today in Asia/Jakarta and not before
+// the start date. It needs lease:manage, which is audited. Slice 2 adds what the date triggers:
+// cancelling invoices for periods that start after it, which also needs correction:create.
+func (s *Service) SetPlannedEnd(ctx context.Context, p authz.Principal, id uuid.UUID, date *time.Time) (Lease, error) {
+	if date != nil {
+		d := calendarDay(*date)
+		date = &d
+	}
+	var out Lease
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		current, err := s.loadActiveForChange(ctx, tx, q, p, id)
+		if err != nil {
+			return err
+		}
+		if date != nil {
+			if err := checkPlannedEnd(current.StartDate, *date, today(s.clock)); err != nil {
+				return err
+			}
+		}
+		n, err := q.SetLeasePlannedEnd(ctx, dbgen.SetLeasePlannedEndParams{OrganizationID: p.OrganizationID, ID: id, PlannedEndDate: date})
+		if err != nil {
+			return fmt.Errorf("setting planned end date: %w", err)
+		}
+		if n == 0 {
+			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
+		}
+		out, err = loadLease(ctx, q, p.OrganizationID, id)
+		return err
+	})
+	return out, err
+}
+
+// checkPlannedEnd applies the planned end date rules.
+func checkPlannedEnd(start, end, now time.Time) error {
+	switch {
+	case end.Before(start):
+		return &InputError{Field: "plannedEndDate", Message: "Rencana keluar tidak boleh sebelum tanggal mulai sewa."}
+	case end.Before(now):
+		return &InputError{Field: "plannedEndDate", Message: "Rencana keluar tidak boleh sebelum hari ini."}
+	}
+	return nil
+}
+
+// checkBilledFrom checks that "Mulai tagih dari" is no later than the first anniversary after
+// the later of the start date and the day the lease was entered, so an admin can skip at most
+// the periods up to the current one. ValidTerms has already checked it is an anniversary.
+func checkBilledFrom(t Terms, enteredOn time.Time) error {
+	from := t.StartDate
+	if enteredOn.After(from) {
+		from = enteredOn
+	}
+	if latest := FirstAnniversaryAfter(t.StartDate, from); t.BilledFrom.After(latest) {
+		return &InputError{Field: "billedFrom", Message: "Mulai tagih paling lambat " + latest.Format("02/01/2006") + "."}
+	}
+	return nil
+}
+
 // MoveOut ends an active lease. endDate is the last day: not before the start and not after
 // today in Asia/Jakarta. A lease that has not started (a booking) is cancelled by ending it on
-// its start date. The unit is free for a new lease right away. What happens to arrears is an
-// organization setting applied in slice 2, when invoices exist.
+// its start date. The unit is free for a new lease right away, and the planned end date is
+// cleared. What happens to arrears is an organization setting applied in slice 2, when invoices
+// exist.
 func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, endDate time.Time) (Lease, error) {
 	endDate = calendarDay(endDate)
 	var out Lease
@@ -283,7 +367,8 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	l := Lease{
 		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, UnitLabel: r.UnitLabel,
 		PropertyID: r.PropertyID, PropertyName: r.PropertyName,
-		StartDate: r.StartDate, EndDate: r.EndDate, RentAmount: r.RentAmount,
+		StartDate: r.StartDate, EndDate: r.EndDate, EnteredOn: r.EnteredOn, BilledFrom: r.BilledFrom,
+		PlannedEndDate: r.PlannedEndDate, RentAmount: r.RentAmount,
 		DepositAmount: r.DepositAmount, Status: r.Status, Charges: []Charge{},
 		CollectorMemberID: r.CollectorMemberID.UUID, CollectorUserID: r.CollectorStaffUserID.UUID,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -294,10 +379,12 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	return l
 }
 
-// ValidTerms checks lease terms and returns them with the start date as a calendar day. Errors
-// are *InputError.
+// ValidTerms checks lease terms and returns them with the dates as calendar days and BilledFrom
+// filled in (the start date when it was left out). Errors are *InputError. The latest allowed
+// BilledFrom depends on the day the lease is entered, so the service checks that.
 func ValidTerms(t Terms) (Terms, error) {
 	t.StartDate = calendarDay(t.StartDate)
+	t.BilledFrom = calendarDay(t.BilledFrom)
 	switch {
 	case t.StartDate.IsZero():
 		return t, &InputError{Field: "startDate", Message: "Tanggal mulai sewa wajib diisi."}
@@ -305,6 +392,13 @@ func ValidTerms(t Terms) (Terms, error) {
 		return t, &InputError{Field: "rentAmount", Message: "Harga sewa harus lebih dari Rp0."}
 	case t.DepositAmount < 0:
 		return t, &InputError{Field: "depositAmount", Message: "Deposit tidak boleh negatif."}
+	}
+	if t.BilledFrom.IsZero() {
+		t.BilledFrom = t.StartDate
+	}
+	if !IsAnniversary(t.StartDate, t.BilledFrom) {
+		return t, &InputError{Field: "billedFrom", Message: fmt.Sprintf(
+			"Mulai tagih harus jatuh pada tanggal tagih sewa ini (tanggal %d) dan tidak sebelum tanggal mulai.", t.StartDate.Day())}
 	}
 	return t, nil
 }
