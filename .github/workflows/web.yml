@@ -3,9 +3,21 @@ name: web
 on:
   push:
     branches: [main]
-    paths: ["apps/web/**", "api/openapi.yaml", ".github/workflows/web.yml"]
+    paths:
+      - "apps/web/**"
+      - "api/openapi.yaml"
+      - ".github/workflows/web.yml"
+      # The e2e job runs against the real API, started from these.
+      - "services/api/**"
+      - "infra/compose.dev.yaml"
   pull_request:
-    paths: ["apps/web/**", "api/openapi.yaml", ".github/workflows/web.yml"]
+    paths:
+      - "apps/web/**"
+      - "api/openapi.yaml"
+      - ".github/workflows/web.yml"
+      # The e2e job runs against the real API, started from these.
+      - "services/api/**"
+      - "infra/compose.dev.yaml"
 
 permissions:
   contents: read
@@ -38,3 +50,95 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+
+  # Playwright at both sizes against the real Go API: throwaway PostgreSQL and Redis from the
+  # dev compose file, migrated and seeded with seed-demo, WhatsApp on devlog (nothing is sent).
+  # The login helper reads codes from DEVLOG_FILE.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: development
+      E2E_DIR: /tmp/cashflow-e2e
+      # The roles and passwords from services/api/db/init and infra/compose.dev.yaml.
+      MIGRATE_DATABASE_URL: postgres://cashflow_owner:owner-dev-password@127.0.0.1:5432/cashflow?sslmode=disable
+      DATABASE_URL: postgres://cashflow_app:cashflow_app_dev@127.0.0.1:5432/cashflow?sslmode=disable
+      REDIS_ADDR: 127.0.0.1:6379
+      HTTP_ADDR: 127.0.0.1:8080
+      AUTH_SECRET: e2e-only-auth-secret-not-used-anywhere-else
+      ALLOWED_ORIGINS: http://localhost:3000
+      WHATSAPP_PROVIDER: devlog
+      DEVLOG_FILE: /tmp/cashflow-e2e/devlog.jsonl
+      # 127.0.0.1, not localhost: Node may resolve localhost to ::1 first.
+      API_DEV_ORIGIN: http://127.0.0.1:8080
+      API_INTERNAL_URL: http://127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: apps/web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      # Compose rather than service containers: db/init (the app role) must be mounted, and
+      # service containers start before the checkout.
+      - name: Start PostgreSQL and Redis
+        run: |
+          docker compose -f infra/compose.dev.yaml up -d --wait postgres redis
+          # The healthcheck uses the socket, which also answers during the init restart; wait
+          # for TCP as well.
+          for i in $(seq 1 30); do
+            docker compose -f infra/compose.dev.yaml exec -T postgres \
+              pg_isready -h 127.0.0.1 -U cashflow_owner -d cashflow && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Build the API
+        working-directory: services/api
+        run: go build -trimpath -o bin/ ./cmd/...
+      - name: Migrate and seed
+        working-directory: services/api
+        run: |
+          ./bin/migrate
+          ./bin/admin seed-demo
+      - name: Start the API
+        working-directory: services/api
+        run: |
+          mkdir -p "$E2E_DIR"
+          nohup ./bin/api > "$E2E_DIR/api.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS "$API_DEV_ORIGIN/readyz" > /dev/null && exit 0
+            sleep 1
+          done
+          echo "The API did not become ready; see the api-log artifact."
+          exit 1
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        working-directory: apps/web
+        run: pnpm e2e
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+      # Holds the devlog lines, login codes included: throwaway codes for this job's database.
+      - name: Upload the API log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-log
+          path: /tmp/cashflow-e2e/api.log
+          retention-days: 7
