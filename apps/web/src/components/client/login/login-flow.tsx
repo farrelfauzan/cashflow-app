@@ -4,8 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import { LoginCodeStep } from "./login-code-step";
 import { LoginPhoneStep } from "./login-phone-step";
-
-type LoginStep = "phone" | "code";
+import type { LoginStep } from "./type";
 
 type LoginFlowProps = {
   // Checked on the server with postLoginPath: a safe staff path, never login or /t/...

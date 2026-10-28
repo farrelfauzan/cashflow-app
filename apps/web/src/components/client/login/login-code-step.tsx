@@ -16,8 +16,7 @@ import {
 import { isCompleteLoginCode, loginCodeDigits } from "@/lib/auth/login-code";
 import { clearQueryCache } from "@/lib/query/query-client";
 
-const CODE_FORMAT_MESSAGE = "Kode harus 6 angka.";
-const CODE_RESENT_MESSAGE = "Kode baru sudah dikirim.";
+import { CODE_FORMAT_MESSAGE, CODE_RESENT_MESSAGE } from "./utils";
 
 type LoginCodeStepProps = {
   // As the user typed it; the API normalizes it.
