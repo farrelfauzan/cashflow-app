@@ -1,17 +1,12 @@
-import { ArrowLeftRight, Building2, House, Users, UserCog } from "lucide-react";
+import { ArrowLeftRight } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
 
 import { LogoutButton } from "@/components/client/auth/logout-button";
 import { OrgNavLink } from "@/components/client/shell/org-nav-link";
 import { OrgTile } from "@/components/server/organization/org-tile";
-import type { OrgMenuItem } from "@/lib/organization/org-menu";
 
-export type OrgNavItem = {
-  key: OrgMenuItem["key"];
-  label: string;
-  href: string;
-};
+import type { OrgNavItem } from "./type";
+import { ORG_NAV_ICONS } from "./utils";
 
 type OrgNavProps = {
   organizationName: string;
@@ -20,13 +15,6 @@ type OrgNavProps = {
   canSwitch: boolean;
   switchHref: string;
   items: readonly OrgNavItem[];
-};
-
-const ICONS: Record<OrgNavItem["key"], ReactNode> = {
-  home: <House aria-hidden="true" className="size-5" />,
-  properties: <Building2 aria-hidden="true" className="size-5" />,
-  tenants: <Users aria-hidden="true" className="size-5" />,
-  members: <UserCog aria-hidden="true" className="size-5" />,
 };
 
 // The side menu (board Members.dc.html): the organization and the member's roles, "Ganti
@@ -73,14 +61,17 @@ export function OrgNav({
         </Link>
       )}
       <ul className="flex flex-col gap-0.5">
-        {items.map((item) => (
-          <li key={item.key}>
-            <OrgNavLink href={item.href} exact={item.key === "home"}>
-              {ICONS[item.key]}
-              {item.label}
-            </OrgNavLink>
-          </li>
-        ))}
+        {items.map((item) => {
+          const Icon = ORG_NAV_ICONS[item.key];
+          return (
+            <li key={item.key}>
+              <OrgNavLink href={item.href} exact={item.key === "home"}>
+                <Icon aria-hidden="true" className="size-5" />
+                {item.label}
+              </OrgNavLink>
+            </li>
+          );
+        })}
       </ul>
       <div className="flex-1" />
       <div className="flex flex-col gap-0.5 border-t px-1 pt-3">

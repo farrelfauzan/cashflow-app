@@ -1,38 +1,18 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { ApiError } from "@/lib/api/errors";
 import { getMe } from "@/lib/api/generated/auth/auth";
-import { getOrgMe } from "@/lib/api/generated/members/members";
 import { orgPath, visibleOrgMenu } from "@/lib/organization/org-menu";
 import { roleSummary } from "@/lib/organization/role-summary";
 
 import { MobileHeader } from "./mobile-header";
 import { OrgNav } from "./org-nav";
-
-const PICKER_PATH = "/organizations";
+import { loadOrgMe, PICKER_PATH } from "./utils";
 
 type OrgShellFrameProps = {
   params: Promise<{ orgId: string }>;
   children: ReactNode;
 };
-
-// getOrgMe answers 404 for an organization the user is not an active member of (and 400 for
-// an id that is not one); both go back to the picker, which lists only active memberships, so
-// this cannot loop. The call also records the member's first sign-in in this organization.
-async function loadOrgMe(orgId: string) {
-  try {
-    return await getOrgMe(orgId);
-  } catch (error) {
-    if (
-      error instanceof ApiError &&
-      (error.status === 404 || error.status === 400)
-    ) {
-      return null;
-    }
-    throw error;
-  }
-}
 
 export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
   const { orgId } = await params;
