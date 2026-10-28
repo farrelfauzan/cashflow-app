@@ -14,7 +14,6 @@
 export type RequestEnvironment = {
   // Prefix for `/api/...`: "" in the browser (same origin), API_INTERNAL_URL on the server.
   origin: string;
-  credentials: RequestCredentials;
   headers: Record<string, string>;
 };
 

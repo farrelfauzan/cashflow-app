@@ -13,19 +13,14 @@ export default defineConfig({
       target: "src/lib/api/generated/endpoints.ts",
       schemas: "src/lib/api/generated/model",
       client: "react-query",
-      httpClient: "fetch",
+      httpClient: "axios",
       // Removes files of deleted tags or schemas, so the output always matches the spec.
       clean: true,
       override: {
         // Every request goes through the one hand-written mutator.
         mutator: {
           path: "src/lib/api/client.ts",
-          name: "apiFetch",
-        },
-        fetch: {
-          // The mutator throws ApiError on any non-2xx, so functions return the success body
-          // alone instead of a {data, status, headers} envelope.
-          includeHttpResponseReturnType: false,
+          name: "apiRequest",
         },
         query: {
           version: 5,

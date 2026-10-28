@@ -34,7 +34,7 @@ import type {
   UnitList
 } from '../model';
 
-import { apiFetch } from '../../client';
+import { apiRequest } from '../../client';
 import type { ErrorType , BodyType } from '../../client';
 import { apiQueryKey } from '../../query-key';
 
@@ -58,29 +58,21 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export const getListPropertiesUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/properties`
-}
-
 /**
  * A member whose roles are limited to some properties gets only those. Sorted by name, with numbers in natural order.
  * @summary Properties the member may see (needs property:read)
  */
-export const listProperties = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<PropertyList> => {
-
-  return apiFetch<PropertyList>(getListPropertiesUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const listProperties = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<PropertyList>(
+      {url: `/orgs/${orgId}/properties`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -89,7 +81,7 @@ export const getListPropertiesQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/properties` });
 
 
-export const useListPropertiesQueryOptions = <TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useListPropertiesQueryOptions = <TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -98,7 +90,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProperties>>> = ({ signal }) => listProperties(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProperties>>> = ({ signal }) => listProperties(orgId, requestOptions, signal);
 
 
 
@@ -118,7 +110,7 @@ export function useListProperties<TData = Awaited<ReturnType<typeof listProperti
           TError,
           Awaited<ReturnType<typeof listProperties>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
@@ -128,11 +120,11 @@ export function useListProperties<TData = Awaited<ReturnType<typeof listProperti
           TError,
           Awaited<ReturnType<typeof listProperties>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -140,7 +132,7 @@ export function useListProperties<TData = Awaited<ReturnType<typeof listProperti
  */
 
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -156,43 +148,23 @@ export function useListProperties<TData = Awaited<ReturnType<typeof listProperti
 
 
 
-export const getCreatePropertyUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/properties`
-}
-
 /**
  * @summary Add a property (needs property:manage for the whole organization)
  */
-export const createProperty = async (orgId: string,
-    propertyInput: PropertyInput, options?: Parameters<typeof apiFetch>[1]): Promise<Property> => {
+export const createProperty = (
+    orgId: string,
+    propertyInput: BodyType<PropertyInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Property>(getCreatePropertyUrl(orgId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(propertyInput)
-  }
-);}
 
+      return apiRequest<Property>(
+      {url: `/orgs/${orgId}/properties`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: propertyInput, signal
+    },
+      options);
+    }
 
 
 
@@ -200,7 +172,7 @@ return apiFetch<Property>(getCreatePropertyUrl(orgId),
 export const getCreatePropertyMutationKey = () => ['createProperty'] as const;
 
 export const getCreatePropertyMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProperty>>, TError,CreatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProperty>>, TError,CreatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createProperty>>, TError,CreatePropertyMutationVariables, TContext> => {
 
 const mutationKey = getCreatePropertyMutationKey();
@@ -235,7 +207,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add a property (needs property:manage for the whole organization)
  */
 export const useCreateProperty = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProperty>>, TError,CreatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProperty>>, TError,CreatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createProperty>>,
         TError,
@@ -244,45 +216,24 @@ export const useCreateProperty = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getCreatePropertyMutationOptions(options), queryClient);
     }
-    export const getUpdatePropertyUrl = (orgId: string,
-    propertyId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/properties/${propertyId}`
-}
-
-/**
+    /**
  * @summary Change a property's name, kind or address (needs property:manage on it)
  */
-export const updateProperty = async (orgId: string,
+export const updateProperty = (
+    orgId: string,
     propertyId: string,
-    propertyInput: PropertyInput, options?: Parameters<typeof apiFetch>[1]): Promise<Property> => {
+    propertyInput: BodyType<PropertyInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Property>(getUpdatePropertyUrl(orgId,propertyId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(propertyInput)
-  }
-);}
 
+      return apiRequest<Property>(
+      {url: `/orgs/${orgId}/properties/${propertyId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: propertyInput, signal
+    },
+      options);
+    }
 
 
 
@@ -290,7 +241,7 @@ return apiFetch<Property>(getUpdatePropertyUrl(orgId,propertyId),
 export const getUpdatePropertyMutationKey = () => ['updateProperty'] as const;
 
 export const getUpdatePropertyMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProperty>>, TError,UpdatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProperty>>, TError,UpdatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateProperty>>, TError,UpdatePropertyMutationVariables, TContext> => {
 
 const mutationKey = getUpdatePropertyMutationKey();
@@ -325,7 +276,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Change a property's name, kind or address (needs property:manage on it)
  */
 export const useUpdateProperty = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProperty>>, TError,UpdatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProperty>>, TError,UpdatePropertyMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateProperty>>,
         TError,
@@ -334,31 +285,22 @@ export const useUpdateProperty = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getUpdatePropertyMutationOptions(options), queryClient);
     }
-    export const getListUnitsUrl = (orgId: string,
-    propertyId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/properties/${propertyId}/units`
-}
-
-/**
+    /**
  * Sorted by label, with numbers in natural order ("Kamar 2" before "Kamar 11").
  * @summary Units of one property (needs unit:read on that property)
  */
-export const listUnits = async (orgId: string,
-    propertyId: string, options?: Parameters<typeof apiFetch>[1]): Promise<UnitList> => {
-
-  return apiFetch<UnitList>(getListUnitsUrl(orgId,propertyId),
-  {
-    ...options,
-    method: 'GET'
+export const listUnits = (
+    orgId: string,
+    propertyId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<UnitList>(
+      {url: `/orgs/${orgId}/properties/${propertyId}/units`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -369,7 +311,7 @@ export const getListUnitsQueryKey = (orgId: string,
 
 
 export const useListUnitsQueryOptions = <TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -378,7 +320,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnits>>> = ({ signal }) => listUnits(orgId,propertyId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnits>>> = ({ signal }) => listUnits(orgId,propertyId, requestOptions, signal);
 
 
 
@@ -399,7 +341,7 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
           TError,
           Awaited<ReturnType<typeof listUnits>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
@@ -410,12 +352,12 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
           TError,
           Awaited<ReturnType<typeof listUnits>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -424,7 +366,7 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
 
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -440,45 +382,24 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
 
 
 
-export const getCreateUnitUrl = (orgId: string,
-    propertyId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/properties/${propertyId}/units`
-}
-
 /**
  * @summary Add a unit to a property (needs unit:manage on that property)
  */
-export const createUnit = async (orgId: string,
+export const createUnit = (
+    orgId: string,
     propertyId: string,
-    unitInput: UnitInput, options?: Parameters<typeof apiFetch>[1]): Promise<Unit> => {
+    unitInput: BodyType<UnitInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Unit>(getCreateUnitUrl(orgId,propertyId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(unitInput)
-  }
-);}
 
+      return apiRequest<Unit>(
+      {url: `/orgs/${orgId}/properties/${propertyId}/units`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: unitInput, signal
+    },
+      options);
+    }
 
 
 
@@ -486,7 +407,7 @@ return apiFetch<Unit>(getCreateUnitUrl(orgId,propertyId),
 export const getCreateUnitMutationKey = () => ['createUnit'] as const;
 
 export const getCreateUnitMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUnit>>, TError,CreateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUnit>>, TError,CreateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createUnit>>, TError,CreateUnitMutationVariables, TContext> => {
 
 const mutationKey = getCreateUnitMutationKey();
@@ -521,7 +442,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add a unit to a property (needs unit:manage on that property)
  */
 export const useCreateUnit = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUnit>>, TError,CreateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUnit>>, TError,CreateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createUnit>>,
         TError,
@@ -530,45 +451,24 @@ export const useCreateUnit = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getCreateUnitMutationOptions(options), queryClient);
     }
-    export const getUpdateUnitUrl = (orgId: string,
-    unitId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/units/${unitId}`
-}
-
-/**
+    /**
  * @summary Change a unit's label or default rent (needs unit:manage on its property)
  */
-export const updateUnit = async (orgId: string,
+export const updateUnit = (
+    orgId: string,
     unitId: string,
-    unitInput: UnitInput, options?: Parameters<typeof apiFetch>[1]): Promise<Unit> => {
+    unitInput: BodyType<UnitInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Unit>(getUpdateUnitUrl(orgId,unitId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(unitInput)
-  }
-);}
 
+      return apiRequest<Unit>(
+      {url: `/orgs/${orgId}/units/${unitId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: unitInput, signal
+    },
+      options);
+    }
 
 
 
@@ -576,7 +476,7 @@ return apiFetch<Unit>(getUpdateUnitUrl(orgId,unitId),
 export const getUpdateUnitMutationKey = () => ['updateUnit'] as const;
 
 export const getUpdateUnitMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUnit>>, TError,UpdateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUnit>>, TError,UpdateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateUnit>>, TError,UpdateUnitMutationVariables, TContext> => {
 
 const mutationKey = getUpdateUnitMutationKey();
@@ -611,7 +511,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Change a unit's label or default rent (needs unit:manage on its property)
  */
 export const useUpdateUnit = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUnit>>, TError,UpdateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUnit>>, TError,UpdateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateUnit>>,
         TError,
