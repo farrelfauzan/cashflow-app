@@ -63,7 +63,7 @@ func TestCollectorCandidates(t *testing.T) {
 		require.Equal(t, want, candidateNames(got))
 		require.Len(t, env.AuditLog(t, o.ID), before, "listing writes no allowed audit row")
 
-		_, err = env.Members.List(ctx, limited)
+		_, err = env.AllMembers(ctx, limited)
 		require.ErrorIs(t, err, authz.ErrForbidden, "the full member list stays organization-wide")
 	})
 

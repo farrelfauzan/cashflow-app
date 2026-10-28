@@ -40,13 +40,18 @@ export function PropertyUnitsView({
   organizationName,
 }: PropertyUnitsViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const properties = useListProperties(orgId);
+  const properties = useListProperties(orgId, { pageSize: 100 });
   const property = properties.data?.properties.find(
     (candidate) => candidate.id === propertyId,
   );
-  const units = useListUnits(orgId, propertyId, {
-    query: { enabled: property !== undefined },
-  });
+  const units = useListUnits(
+    orgId,
+    propertyId,
+    { pageSize: 100 },
+    {
+      query: { enabled: property !== undefined },
+    },
+  );
   const [propertyPanel, setPropertyPanel] = useState<PropertyPanelState>({
     kind: "closed",
   });

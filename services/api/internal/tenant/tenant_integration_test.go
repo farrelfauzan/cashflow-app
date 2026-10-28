@@ -188,7 +188,7 @@ func TestTenantsAndLeases(t *testing.T) {
 		_, err = env.Tenants.UpdateLease(ctx, w.admin, lease1.ID, tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 1})
 		require.ErrorIs(t, err, tenant.ErrLeaseEnded)
 
-		tenants, err := env.Tenants.List(ctx, w.admin)
+		tenants, err := env.AllTenants(ctx, w.admin)
 		require.NoError(t, err)
 		var budi tenant.Tenant
 		for _, tn := range tenants {
@@ -219,7 +219,7 @@ func TestTenantsAndLeases(t *testing.T) {
 	})
 
 	t.Run("the supervisor reads every tenant but never writes", func(t *testing.T) {
-		tenants, err := env.Tenants.List(ctx, w.supervisor)
+		tenants, err := env.AllTenants(ctx, w.supervisor)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Budi Santoso", "Rina Wulandari"}, tenantNames(tenants))
 		_, err = env.Tenants.Create(ctx, w.supervisor, tenant.Input{Name: "X", Phone: "081271109998"})
@@ -266,7 +266,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 	rent(dewi, unit4, sari.ID)
 
 	t.Run("the list holds only their tenants and only their leases", func(t *testing.T) {
-		tenants, err := env.Tenants.List(ctx, w.karyawan)
+		tenants, err := env.AllTenants(ctx, w.karyawan)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Dewi Anggraini", "Rina Wulandari"}, tenantNames(tenants))
 		require.Len(t, tenants[0].Leases, 1)
@@ -274,7 +274,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 	})
 
 	t.Run("an admin sees every tenant, with or without a lease", func(t *testing.T) {
-		tenants, err := env.Tenants.List(ctx, w.admin)
+		tenants, err := env.AllTenants(ctx, w.admin)
 		require.NoError(t, err)
 		require.Len(t, tenants, 5)
 	})
@@ -296,7 +296,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 			StartDate: dewiMine.StartDate, RentAmount: dewiMine.RentAmount, CollectorMemberID: sari.ID,
 		})
 		require.NoError(t, err)
-		tenants, err := env.Tenants.List(ctx, w.karyawan)
+		tenants, err := env.AllTenants(ctx, w.karyawan)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Rina Wulandari"}, tenantNames(tenants))
 	})
@@ -311,7 +311,7 @@ func TestKaryawanSeesOnlyTheirTenants(t *testing.T) {
 	t.Run("after move-out the former collector no longer sees the tenant", func(t *testing.T) {
 		_, err := env.Tenants.MoveOut(ctx, w.admin, rinaLease.ID, day(2026, 11, 1))
 		require.NoError(t, err)
-		tenants, err := env.Tenants.List(ctx, w.karyawan)
+		tenants, err := env.AllTenants(ctx, w.karyawan)
 		require.NoError(t, err)
 		require.Empty(t, tenants)
 		_, err = env.Tenants.Get(ctx, w.karyawan, rina.ID)
@@ -347,7 +347,7 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("she sees the tenants with a lease in Kos Melati, and only those leases", func(t *testing.T) {
-		tenants, err := env.Tenants.List(ctx, limited)
+		tenants, err := env.AllTenants(ctx, limited)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Dewi", "Rina"}, tenantNames(tenants))
 		require.Len(t, tenants[0].Leases, 1, "Dewi's lease in Kontrakan Mawar stays hidden")
@@ -386,7 +386,7 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 		require.NoError(t, err)
 		_, err = env.Tenants.Get(ctx, limited, rina.ID)
 		require.ErrorIs(t, err, authz.ErrForbidden)
-		tenants, err := env.Tenants.List(ctx, limited)
+		tenants, err := env.AllTenants(ctx, limited)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Dewi"}, tenantNames(tenants))
 	})
@@ -425,7 +425,7 @@ func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 			StartDate: day(2026, 10, 1), RentAmount: 1, CollectorMemberID: b.karyawanMemberID,
 		}})
 		requireField(t, err, "tenantId")
-		tenants, err := env.Tenants.List(ctx, a.admin)
+		tenants, err := env.AllTenants(ctx, a.admin)
 		require.NoError(t, err)
 		require.Len(t, tenants, 1)
 		require.NotEqual(t, tenantB.ID, tenants[0].ID)

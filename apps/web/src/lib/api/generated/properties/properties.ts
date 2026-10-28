@@ -26,6 +26,8 @@ import type {
 import type {
   Error,
   ErrorResponse,
+  ListPropertiesParams,
+  ListUnitsParams,
   Property,
   PropertyInput,
   PropertyList,
@@ -59,17 +61,19 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * A member whose roles are limited to some properties gets only those. Sorted by name, with numbers in natural order.
- * @summary Properties the member may see (needs property:read)
+ * A member whose roles are limited to some properties gets only those, and total counts only those. Paginated (see the Page parameters); q matches the name. Sorted by name, with numbers in natural order.
+ * @summary One page of the properties the member may see (needs property:read)
  */
 export const listProperties = (
     orgId: string,
+    params?: ListPropertiesParams,
  options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
 ) => {
 
 
       return apiRequest<PropertyList>(
-      {url: `/orgs/${orgId}/properties`, method: 'GET', signal
+      {url: `/orgs/${orgId}/properties`, method: 'GET',
+        params, signal
     },
       options);
     }
@@ -77,20 +81,22 @@ export const listProperties = (
 
 
 
-export const getListPropertiesQueryKey = (orgId: string,) =>
-    apiQueryKey({ orgId }, { url: `/orgs/${orgId}/properties` });
+export const getListPropertiesQueryKey = (orgId: string,
+    params?: ListPropertiesParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/properties` });
 
 
-export const useListPropertiesQueryOptions = <TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+export const useListPropertiesQueryOptions = <TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListPropertiesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  apiQueryKey({ orgId }, { url: `/orgs/${orgId}/properties`, queryOptions });
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/properties`, queryOptions });
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProperties>>> = ({ signal }) => listProperties(orgId, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProperties>>> = ({ signal }) => listProperties(orgId,params, requestOptions, signal);
 
 
 
@@ -104,7 +110,8 @@ export type ListPropertiesQueryError = ErrorType<ErrorResponse>
 
 
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>> & Pick<
+ orgId: string,
+    params: undefined |  ListPropertiesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProperties>>,
           TError,
@@ -114,7 +121,8 @@ export function useListProperties<TData = Awaited<ReturnType<typeof listProperti
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>> & Pick<
+ orgId: string,
+    params?: ListPropertiesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listProperties>>,
           TError,
@@ -124,19 +132,21 @@ export function useListProperties<TData = Awaited<ReturnType<typeof listProperti
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ orgId: string,
+    params?: ListPropertiesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Properties the member may see (needs property:read)
+ * @summary One page of the properties the member may see (needs property:read)
  */
 
 export function useListProperties<TData = Awaited<ReturnType<typeof listProperties>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ orgId: string,
+    params?: ListPropertiesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProperties>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = useListPropertiesQueryOptions(orgId,options)
+  const queryOptions = useListPropertiesQueryOptions(orgId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -286,18 +296,20 @@ export const useUpdateProperty = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getUpdatePropertyMutationOptions(options), queryClient);
     }
     /**
- * Sorted by label, with numbers in natural order ("Kamar 2" before "Kamar 11").
- * @summary Units of one property (needs unit:read on that property)
+ * Paginated (see the Page parameters); q matches the label. Sorted by label, with numbers in natural order ("Kamar 2" before "Kamar 11").
+ * @summary One page of a property's units (needs unit:read on that property)
  */
 export const listUnits = (
     orgId: string,
     propertyId: string,
+    params?: ListUnitsParams,
  options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
 ) => {
 
 
       return apiRequest<UnitList>(
-      {url: `/orgs/${orgId}/properties/${propertyId}/units`, method: 'GET', signal
+      {url: `/orgs/${orgId}/properties/${propertyId}/units`, method: 'GET',
+        params, signal
     },
       options);
     }
@@ -306,21 +318,23 @@ export const listUnits = (
 
 
 export const getListUnitsQueryKey = (orgId: string,
-    propertyId: string,) =>
-    apiQueryKey({ orgId,propertyId }, { url: `/orgs/${orgId}/properties/${propertyId}/units` });
+    propertyId: string,
+    params?: ListUnitsParams,) =>
+    apiQueryKey({ orgId,propertyId,params }, { url: `/orgs/${orgId}/properties/${propertyId}/units` });
 
 
 export const useListUnitsQueryOptions = <TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+    propertyId: string,
+    params?: ListUnitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  apiQueryKey({ orgId,propertyId }, { url: `/orgs/${orgId}/properties/${propertyId}/units`, queryOptions });
+  const queryKey =  apiQueryKey({ orgId,propertyId,params }, { url: `/orgs/${orgId}/properties/${propertyId}/units`, queryOptions });
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnits>>> = ({ signal }) => listUnits(orgId,propertyId, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnits>>> = ({ signal }) => listUnits(orgId,propertyId,params, requestOptions, signal);
 
 
 
@@ -335,7 +349,8 @@ export type ListUnitsQueryError = ErrorType<ErrorResponse>
 
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    propertyId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>> & Pick<
+    propertyId: string,
+    params: undefined |  ListUnitsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUnits>>,
           TError,
@@ -346,7 +361,8 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>> & Pick<
+    propertyId: string,
+    params?: ListUnitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUnits>>,
           TError,
@@ -357,20 +373,22 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+    propertyId: string,
+    params?: ListUnitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Units of one property (needs unit:read on that property)
+ * @summary One page of a property's units (needs unit:read on that property)
  */
 
 export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TError = ErrorType<ErrorResponse>>(
  orgId: string,
-    propertyId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+    propertyId: string,
+    params?: ListUnitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = useListUnitsQueryOptions(orgId,propertyId,options)
+  const queryOptions = useListUnitsQueryOptions(orgId,propertyId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

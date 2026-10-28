@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
@@ -110,16 +111,59 @@ func NewService(st *store.Store, az *authz.Service, inv Invitations) *Service {
 	return &Service{store: st, authz: az, inv: inv}
 }
 
-// List returns every member of the principal's organization.
-func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error) {
-	var out []Member
+// ListQuery filters, orders and pages List. Zero values filter nothing.
+type ListQuery struct {
+	Page   listing.Page // the zero Page is listing.FirstPage
+	Search listing.Search
+	// Status is StatusActive or StatusDisabled.
+	Status string
+	// CollectorDisabled keeps disabled members who are still collector of an active lease.
+	CollectorDisabled bool
+	// Sort is name (the default), -name, createdAt or -createdAt.
+	Sort string
+}
+
+var listSorts = map[string]bool{"name": true, "-name": true, "createdAt": true, "-createdAt": true}
+
+// List returns one page of the organization's members.
+func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (listing.Result[Member], error) {
+	if lq.Page == (listing.Page{}) {
+		lq.Page = listing.FirstPage
+	}
+	if lq.Sort == "" {
+		lq.Sort = "name"
+	}
+	if !listSorts[lq.Sort] {
+		return listing.Result[Member]{}, &InputError{Field: "sort", Message: "Urutan tidak dikenal."}
+	}
+	if lq.Status != "" && lq.Status != StatusActive && lq.Status != StatusDisabled {
+		return listing.Result[Member]{}, &InputError{Field: "status", Message: "Status tidak dikenal."}
+	}
+	out := listing.Result[Member]{Page: lq.Page, Items: []Member{}}
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		req := authz.Request{Action: authz.ActionMemberRead, Resource: authz.Resource{Type: "member"}}
 		if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
 			return err
 		}
 		q := dbgen.New(tx)
-		rows, err := q.ListMembers(ctx, p.OrganizationID)
+		args := dbgen.ListMemberPageParams{
+			OrganizationID: p.OrganizationID,
+			Q:              lq.Search.Text, PhoneNational: lq.Search.PhoneNational, PhoneDigits: lq.Search.PhoneDigits,
+			CollectorDisabled: lq.CollectorDisabled,
+			Sort:              lq.Sort, PageLimit: lq.Page.Limit(), PageOffset: lq.Page.Offset(),
+		}
+		if lq.Status != "" {
+			args.Status = &lq.Status
+		}
+		var err error
+		out.Total, err = q.CountMemberPage(ctx, dbgen.CountMemberPageParams{
+			OrganizationID: args.OrganizationID, Q: args.Q, PhoneNational: args.PhoneNational,
+			PhoneDigits: args.PhoneDigits, Status: args.Status, CollectorDisabled: args.CollectorDisabled,
+		})
+		if err != nil {
+			return fmt.Errorf("counting members: %w", err)
+		}
+		rows, err := q.ListMemberPage(ctx, args)
 		if err != nil {
 			return fmt.Errorf("listing members: %w", err)
 		}
@@ -127,18 +171,20 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 		if err != nil {
 			return err
 		}
-		out = make([]Member, len(rows))
-		for i, r := range rows {
-			out[i] = Member{
+		for _, r := range rows {
+			out.Items = append(out.Items, Member{
 				ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone,
 				Status: r.Status, CreatedAt: r.CreatedAt, Roles: roles[r.ID],
 				Invitation:    invitationFrom(r.InvitationState, r.InvitationLastSentAt),
 				FirstSignInAt: r.FirstSignInAt, CollectorLeaseCount: r.CollectorLeaseCount,
-			}
+			})
 		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return listing.Result[Member]{}, err
+	}
+	return out, nil
 }
 
 // CollectorCandidates lists the active members, karyawan first, for the collector picker on

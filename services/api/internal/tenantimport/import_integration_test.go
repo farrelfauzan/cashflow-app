@@ -34,14 +34,14 @@ type counts struct{ properties, units, tenants, leases int }
 func countAll(t *testing.T, env *testenv.Env, admin authz.Principal) counts {
 	t.Helper()
 	ctx := context.Background()
-	props, err := env.Properties.List(ctx, admin)
+	props, err := env.AllProperties(ctx, admin)
 	require.NoError(t, err)
 	var c counts
 	c.properties = len(props)
 	for _, p := range props {
 		c.units += int(p.UnitCount)
 	}
-	tenants, err := env.Tenants.List(ctx, admin)
+	tenants, err := env.AllTenants(ctx, admin)
 	require.NoError(t, err)
 	c.tenants = len(tenants)
 	for _, tn := range tenants {
@@ -113,15 +113,15 @@ func TestImport(t *testing.T) {
 		require.True(t, res.Committed)
 		require.Equal(t, counts{properties: 3, units: 5, tenants: 4, leases: 5}, countAll(t, env, admin))
 
-		props, err := env.Properties.List(ctx, admin)
+		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		require.Equal(t, property.KindKontrakan, props[0].Kind, "Kontrakan Mawar sorts first")
-		units, err := env.Properties.ListUnits(ctx, admin, props[1].ID)
+		units, err := env.AllUnits(ctx, admin, props[1].ID)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kamar 1", "Kamar 2", "Kamar 11"}, []string{units[0].Label, units[1].Label, units[2].Label})
 		require.Equal(t, int64(850_000), *units[0].DefaultRent, "a new unit takes the rent as its usual rent")
 
-		tenants, err := env.Tenants.List(ctx, admin)
+		tenants, err := env.AllTenants(ctx, admin)
 		require.NoError(t, err)
 		var budi tenant.Tenant
 		for _, tn := range tenants {
@@ -334,7 +334,7 @@ func TestImportBilledFrom(t *testing.T) {
 		res, err := env.Imports.Run(ctx, admin, good, false)
 		require.NoError(t, err)
 		require.True(t, res.Committed)
-		tenants, err := env.Tenants.List(ctx, admin)
+		tenants, err := env.AllTenants(ctx, admin)
 		require.NoError(t, err)
 		billedFrom := map[string]time.Time{}
 		for _, tn := range tenants {
@@ -368,7 +368,7 @@ func TestImportBilledFrom(t *testing.T) {
 			require.Equal(t, tenantimport.Matched, row.Lease)
 			require.Equal(t, []string{"Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya."}, row.Notes)
 		}
-		tenants, err := env.Tenants.List(ctx, admin)
+		tenants, err := env.AllTenants(ctx, admin)
 		require.NoError(t, err)
 		for _, tn := range tenants {
 			if tn.Name == "Rina Wulandari" {

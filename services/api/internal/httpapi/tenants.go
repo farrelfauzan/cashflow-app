@@ -18,16 +18,25 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errMissingContext)
 		return
 	}
-	tenants, err := s.Tenants.List(r.Context(), p)
+	lp, ok := s.readListParams(w, r)
+	if !ok {
+		return
+	}
+	res, err := s.Tenants.List(r.Context(), p, tenant.ListQuery{
+		Page: lp.page, Search: lp.search, PropertyID: lp.propertyID, Status: lp.status,
+		CollectorDisabled: lp.collectorDisabled, Sort: lp.sort,
+	})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	resp := apigen.TenantList{Tenants: make([]apigen.Tenant, len(tenants))}
-	for i, t := range tenants {
-		resp.Tenants[i] = toAPITenant(t)
+	items := make([]apigen.Tenant, len(res.Items))
+	for i, t := range res.Items {
+		items[i] = toAPITenant(t)
 	}
-	s.writeJSON(w, http.StatusOK, resp)
+	s.writeJSON(w, http.StatusOK, apigen.TenantList{
+		Items: items, Tenants: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+	})
 }
 
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {

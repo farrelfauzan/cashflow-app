@@ -129,16 +129,24 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errMissingContext)
 		return
 	}
-	members, err := s.Members.List(r.Context(), p)
+	lp, ok := s.readListParams(w, r)
+	if !ok {
+		return
+	}
+	res, err := s.Members.List(r.Context(), p, member.ListQuery{
+		Page: lp.page, Search: lp.search, Status: lp.status, CollectorDisabled: lp.collectorDisabled, Sort: lp.sort,
+	})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	resp := apigen.MemberList{Members: make([]apigen.Member, len(members))}
-	for i, m := range members {
-		resp.Members[i] = toAPIMember(m)
+	items := make([]apigen.Member, len(res.Items))
+	for i, m := range res.Items {
+		items[i] = toAPIMember(m)
 	}
-	s.writeJSON(w, http.StatusOK, resp)
+	s.writeJSON(w, http.StatusOK, apigen.MemberList{
+		Items: items, Members: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+	})
 }
 
 func (s *Server) inviteMember(w http.ResponseWriter, r *http.Request) {

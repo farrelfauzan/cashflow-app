@@ -183,6 +183,132 @@ func (e RoleGrantRole) Valid() bool {
 	}
 }
 
+// Defines values for ListMembersParamsStatus.
+const (
+	ListMembersParamsStatusActive   ListMembersParamsStatus = "active"
+	ListMembersParamsStatusDisabled ListMembersParamsStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the ListMembersParamsStatus enum.
+func (e ListMembersParamsStatus) Valid() bool {
+	switch e {
+	case ListMembersParamsStatusActive:
+		return true
+	case ListMembersParamsStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListMembersParamsSort.
+const (
+	ListMembersParamsSortCreatedAt      ListMembersParamsSort = "createdAt"
+	ListMembersParamsSortMinusCreatedAt ListMembersParamsSort = "-createdAt"
+	ListMembersParamsSortMinusName      ListMembersParamsSort = "-name"
+	ListMembersParamsSortName           ListMembersParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListMembersParamsSort enum.
+func (e ListMembersParamsSort) Valid() bool {
+	switch e {
+	case ListMembersParamsSortCreatedAt:
+		return true
+	case ListMembersParamsSortMinusCreatedAt:
+		return true
+	case ListMembersParamsSortMinusName:
+		return true
+	case ListMembersParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPropertiesParamsSort.
+const (
+	ListPropertiesParamsSortMinusName ListPropertiesParamsSort = "-name"
+	ListPropertiesParamsSortName      ListPropertiesParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListPropertiesParamsSort enum.
+func (e ListPropertiesParamsSort) Valid() bool {
+	switch e {
+	case ListPropertiesParamsSortMinusName:
+		return true
+	case ListPropertiesParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListUnitsParamsSort.
+const (
+	Label      ListUnitsParamsSort = "label"
+	MinusLabel ListUnitsParamsSort = "-label"
+)
+
+// Valid indicates whether the value is a known member of the ListUnitsParamsSort enum.
+func (e ListUnitsParamsSort) Valid() bool {
+	switch e {
+	case Label:
+		return true
+	case MinusLabel:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListTenantsParamsStatus.
+const (
+	ListTenantsParamsStatusActive   ListTenantsParamsStatus = "active"
+	ListTenantsParamsStatusEnded    ListTenantsParamsStatus = "ended"
+	ListTenantsParamsStatusNone     ListTenantsParamsStatus = "none"
+	ListTenantsParamsStatusUpcoming ListTenantsParamsStatus = "upcoming"
+)
+
+// Valid indicates whether the value is a known member of the ListTenantsParamsStatus enum.
+func (e ListTenantsParamsStatus) Valid() bool {
+	switch e {
+	case ListTenantsParamsStatusActive:
+		return true
+	case ListTenantsParamsStatusEnded:
+		return true
+	case ListTenantsParamsStatusNone:
+		return true
+	case ListTenantsParamsStatusUpcoming:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListTenantsParamsSort.
+const (
+	ListTenantsParamsSortCreatedAt      ListTenantsParamsSort = "createdAt"
+	ListTenantsParamsSortMinusCreatedAt ListTenantsParamsSort = "-createdAt"
+	ListTenantsParamsSortMinusName      ListTenantsParamsSort = "-name"
+	ListTenantsParamsSortName           ListTenantsParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListTenantsParamsSort enum.
+func (e ListTenantsParamsSort) Valid() bool {
+	switch e {
+	case ListTenantsParamsSortCreatedAt:
+		return true
+	case ListTenantsParamsSortMinusCreatedAt:
+		return true
+	case ListTenantsParamsSortMinusName:
+		return true
+	case ListTenantsParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Capability defines model for Capability.
 type Capability struct {
 	Access CapabilityAccess `json:"access"`
@@ -538,7 +664,18 @@ type Member struct {
 
 // MemberList defines model for MemberList.
 type MemberList struct {
+	Items []Member `json:"items"`
+
+	// Members The same rows as items. Kept until the web reads items; then removed.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	Members []Member `json:"members"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
 }
 
 // MemberStatus A disabled member keeps their roles but can do nothing in the organization.
@@ -562,6 +699,16 @@ type Organization struct {
 	DisplayName string             `json:"displayName"`
 	Id          openapi_types.UUID `json:"id"`
 	Name        string             `json:"name"`
+}
+
+// PageInfo One page of a list. Rows are in a fixed order, ties broken by id, so pages never overlap or skip.
+type PageInfo struct {
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
 }
 
 // Property defines model for Property.
@@ -593,7 +740,18 @@ type PropertyKind string
 
 // PropertyList defines model for PropertyList.
 type PropertyList struct {
+	Items []Property `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Properties The same rows as items. Kept until the web reads items; then removed.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	Properties []Property `json:"properties"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
 }
 
 // RoleGrant defines model for RoleGrant.
@@ -666,7 +824,18 @@ type TenantInput struct {
 
 // TenantList defines model for TenantList.
 type TenantList struct {
+	Items []Tenant `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Tenants The same rows as items. Kept until the web reads items; then removed.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	Tenants []Tenant `json:"tenants"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
 }
 
 // Unit defines model for Unit.
@@ -698,6 +867,17 @@ type UnitInput struct {
 
 // UnitList defines model for UnitList.
 type UnitList struct {
+	Items []Unit `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+
+	// Units The same rows as items. Kept until the web reads items; then removed.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	Units []Unit `json:"units"`
 }
 
@@ -722,13 +902,101 @@ type LeaseId = openapi_types.UUID
 // OrgId defines model for OrgId.
 type OrgId = openapi_types.UUID
 
+// Page defines model for Page.
+type Page = int
+
+// PageSize defines model for PageSize.
+type PageSize = int
+
 // PropertyId defines model for PropertyId.
 type PropertyId = openapi_types.UUID
+
+// Search defines model for Search.
+type Search = string
 
 // ImportTenantsParams defines parameters for ImportTenants.
 type ImportTenantsParams struct {
 	DryRun *bool `form:"dryRun,omitempty" json:"dryRun,omitempty"`
 }
+
+// ListMembersParams defines parameters for ListMembers.
+type ListMembersParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Q Search text, ignoring case; empty means no search.
+	Q      *Search                  `form:"q,omitempty" json:"q,omitempty"`
+	Status *ListMembersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// CollectorDisabled true keeps only disabled members who are still collector of an active lease.
+	CollectorDisabled *bool `form:"collectorDisabled,omitempty" json:"collectorDisabled,omitempty"`
+
+	// Sort By name (the default) or when the member was added; a leading - reverses it.
+	Sort *ListMembersParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+}
+
+// ListMembersParamsStatus defines parameters for ListMembers.
+type ListMembersParamsStatus string
+
+// ListMembersParamsSort defines parameters for ListMembers.
+type ListMembersParamsSort string
+
+// ListPropertiesParams defines parameters for ListProperties.
+type ListPropertiesParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Q Search text, ignoring case; empty means no search.
+	Q    *Search                   `form:"q,omitempty" json:"q,omitempty"`
+	Sort *ListPropertiesParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+}
+
+// ListPropertiesParamsSort defines parameters for ListProperties.
+type ListPropertiesParamsSort string
+
+// ListUnitsParams defines parameters for ListUnits.
+type ListUnitsParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Q Search text, ignoring case; empty means no search.
+	Q    *Search              `form:"q,omitempty" json:"q,omitempty"`
+	Sort *ListUnitsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+}
+
+// ListUnitsParamsSort defines parameters for ListUnits.
+type ListUnitsParamsSort string
+
+// ListTenantsParams defines parameters for ListTenants.
+type ListTenantsParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Q Search text, ignoring case; empty means no search.
+	Q *Search `form:"q,omitempty" json:"q,omitempty"`
+
+	// PropertyId Keeps tenants with a lease in this property.
+	PropertyId *openapi_types.UUID `form:"propertyId,omitempty" json:"propertyId,omitempty"`
+
+	// Status The status of the tenant's first lease: active (started and running), upcoming (booked ahead: it starts after today, Asia/Jakarta), ended (every lease ended), none (no lease).
+	Status *ListTenantsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// CollectorDisabled true keeps only tenants with an active lease whose collector is disabled (the "belum punya penagih" flag).
+	CollectorDisabled *bool `form:"collectorDisabled,omitempty" json:"collectorDisabled,omitempty"`
+
+	// Sort By name (the default) or when the tenant was added; a leading - reverses it.
+	Sort *ListTenantsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+}
+
+// ListTenantsParamsStatus defines parameters for ListTenants.
+type ListTenantsParamsStatus string
+
+// ListTenantsParamsSort defines parameters for ListTenants.
+type ListTenantsParamsSort string
 
 // RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.
 type RequestLoginCodeJSONRequestBody = LoginCodeRequest

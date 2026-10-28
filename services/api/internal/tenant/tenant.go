@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
@@ -74,20 +75,98 @@ func NewService(st *store.Store, az *authz.Service, c clock.Clock) *Service {
 	return &Service{store: st, authz: az, clock: c}
 }
 
-// List returns the tenants the principal may see, by name, each with the leases they may see.
-func (s *Service) List(ctx context.Context, p authz.Principal) ([]Tenant, error) {
-	var out []Tenant
+// The tenant statuses List filters on: the status of the tenant's first lease among the leases
+// the caller may see, taking running ones first, then ones booked ahead, then ended ones.
+const (
+	ListStatusActive   = "active"   // a lease that has started and still runs
+	ListStatusUpcoming = "upcoming" // only leases booked ahead: they start after today
+	ListStatusEnded    = "ended"    // every lease ended
+	ListStatusNone     = "none"     // no lease at all
+)
+
+// ListQuery filters, orders and pages List. Zero values filter nothing.
+type ListQuery struct {
+	Page   listing.Page // the zero Page is listing.FirstPage
+	Search listing.Search
+	// PropertyID keeps tenants with a lease in this property.
+	PropertyID uuid.UUID
+	// Status is one of the ListStatus values.
+	Status string
+	// CollectorDisabled keeps tenants with an active lease whose collector is disabled.
+	CollectorDisabled bool
+	// Sort is name (the default), -name, createdAt or -createdAt.
+	Sort string
+}
+
+var (
+	listSorts    = map[string]bool{"name": true, "-name": true, "createdAt": true, "-createdAt": true}
+	listStatuses = map[string]bool{ListStatusActive: true, ListStatusUpcoming: true, ListStatusEnded: true, ListStatusNone: true}
+)
+
+// List returns one page of the tenants the principal may see, each with the leases they may
+// see. Filters, search and the total look only at what the principal may see.
+func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (listing.Result[Tenant], error) {
+	if lq.Page == (listing.Page{}) {
+		lq.Page = listing.FirstPage
+	}
+	if lq.Sort == "" {
+		lq.Sort = "name"
+	}
+	if !listSorts[lq.Sort] {
+		return listing.Result[Tenant]{}, &InputError{Field: "sort", Message: "Urutan tidak dikenal."}
+	}
+	if lq.Status != "" && !listStatuses[lq.Status] {
+		return listing.Result[Tenant]{}, &InputError{Field: "status", Message: "Status tidak dikenal."}
+	}
+	out := listing.Result[Tenant]{Page: lq.Page, Items: []Tenant{}}
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		all, err := s.authz.AuthorizeList(ctx, tx, p, readRequest(uuid.Nil))
 		if err != nil {
 			return err
 		}
 		q := dbgen.New(tx)
-		rows, err := q.ListTenants(ctx, p.OrganizationID)
+		args := dbgen.ListTenantPageParams{
+			OrganizationID: p.OrganizationID, OrgWide: all, LeaseIds: []uuid.UUID{}, Today: today(s.clock),
+			Q: lq.Search.Text, PhoneNational: lq.Search.PhoneNational, PhoneDigits: lq.Search.PhoneDigits,
+			PropertyID:        uuid.NullUUID{UUID: lq.PropertyID, Valid: lq.PropertyID != uuid.Nil},
+			CollectorDisabled: lq.CollectorDisabled,
+			Sort:              lq.Sort, PageLimit: lq.Page.Limit(), PageOffset: lq.Page.Offset(),
+		}
+		if lq.Status != "" {
+			args.LeaseStatus = &lq.Status
+		}
+		if !all {
+			// Who may see a lease is the policy's decision, so it is made here and the query
+			// gets the result.
+			scopes, err := q.ListLeaseScopes(ctx, p.OrganizationID)
+			if err != nil {
+				return fmt.Errorf("listing lease scopes: %w", err)
+			}
+			for _, l := range scopes {
+				if leaseVisible(p, Lease{
+					TenantID: l.TenantID, PropertyID: l.PropertyID, CollectorUserID: l.CollectorStaffUserID.UUID, Status: l.Status,
+				}) {
+					args.LeaseIds = append(args.LeaseIds, l.ID)
+				}
+			}
+		}
+		if out.Total, err = q.CountTenantPage(ctx, countTenantArgs(args)); err != nil {
+			return fmt.Errorf("counting tenants: %w", err)
+		}
+		rows, err := q.ListTenantPage(ctx, args)
 		if err != nil {
 			return fmt.Errorf("listing tenants: %w", err)
 		}
-		leaseRows, err := q.ListLeaseDetails(ctx, p.OrganizationID)
+		if len(rows) == 0 {
+			return nil
+		}
+		ids := make([]uuid.UUID, len(rows))
+		for i, r := range rows {
+			ids[i] = r.ID
+		}
+		leaseRows, err := q.ListLeaseDetailsForTenants(ctx, dbgen.ListLeaseDetailsForTenantsParams{
+			OrganizationID: p.OrganizationID, TenantIds: ids,
+		})
 		if err != nil {
 			return fmt.Errorf("listing leases: %w", err)
 		}
@@ -102,16 +181,25 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Tenant, error)
 		for _, l := range leases {
 			byTenant[l.TenantID] = append(byTenant[l.TenantID], l)
 		}
-		out = []Tenant{}
 		for _, r := range rows {
-			leases, ok := visibleLeases(p, all, byTenant[r.ID])
-			if ok {
-				out = append(out, toTenant(r, leases))
-			}
+			visible, _ := visibleLeases(p, all, byTenant[r.ID])
+			out.Items = append(out.Items, toTenant(dbgen.Tenant(r), visible))
 		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return listing.Result[Tenant]{}, err
+	}
+	return out, nil
+}
+
+// countTenantArgs is the WHERE of a page query, for counting every page.
+func countTenantArgs(a dbgen.ListTenantPageParams) dbgen.CountTenantPageParams {
+	return dbgen.CountTenantPageParams{
+		OrganizationID: a.OrganizationID, OrgWide: a.OrgWide, LeaseIds: a.LeaseIds, Today: a.Today,
+		Q: a.Q, PhoneNational: a.PhoneNational, PhoneDigits: a.PhoneDigits,
+		PropertyID: a.PropertyID, LeaseStatus: a.LeaseStatus, CollectorDisabled: a.CollectorDisabled,
+	}
 }
 
 // Get returns one tenant with the leases the principal may see.
@@ -254,11 +342,16 @@ func visibleLeases(p authz.Principal, all bool, leases []Lease) ([]Lease, bool) 
 	// 2026-10-27; revisit in slice 2, when arrears after move-out exist).
 	out := []Lease{}
 	for _, l := range leases {
-		if l.Status == StatusActive && authz.Allowed(p, authz.Request{Action: authz.ActionTenantRead, Resource: tenantVia(l)}) {
+		if leaseVisible(p, l) {
 			out = append(out, l)
 		}
 	}
 	return out, len(out) > 0
+}
+
+// leaseVisible reports whether p, who may not read every tenant, may see the tenant through l.
+func leaseVisible(p authz.Principal, l Lease) bool {
+	return l.Status == StatusActive && authz.Allowed(p, authz.Request{Action: authz.ActionTenantRead, Resource: tenantVia(l)})
 }
 
 // readRequest is tenant:read on the whole organization's tenants, or on one tenant without a

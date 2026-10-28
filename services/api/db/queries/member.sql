@@ -15,17 +15,59 @@ FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2;
 
--- name: ListMembers :many
-SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name,
-       -- Active leases naming the member as collector, organization-wide: a number, no names.
-       (SELECT count(*) FROM lease l
-        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
-          AND l.status = 'active') AS collector_lease_count
-FROM membership m
-JOIN staff_user u ON u.id = m.staff_user_id
-WHERE m.organization_id = $1
-ORDER BY u.name, m.id;
+-- name: ListMemberPage :many
+-- One page of the members matching the filters. CountMemberPage has the same WHERE: change
+-- both together.
+WITH mm AS (
+    SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
+           m.first_sign_in_at, u.phone, u.name,
+           -- Active leases naming the member as collector, organization-wide: a number, no names.
+           (SELECT count(*) FROM lease l
+            WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+              AND l.status = 'active') AS collector_lease_count,
+           CASE WHEN u.phone LIKE '+62%' THEN '0' || substr(u.phone, 4) ELSE u.phone END AS national_phone
+    FROM membership m
+    JOIN staff_user u ON u.id = m.staff_user_id
+    WHERE m.organization_id = @organization_id
+)
+SELECT mm.id, mm.staff_user_id, mm.status, mm.created_at, mm.invitation_state, mm.invitation_last_sent_at,
+       mm.first_sign_in_at, mm.phone, mm.name, mm.collector_lease_count
+FROM mm
+WHERE (sqlc.narg('q')::text IS NULL
+       OR mm.name ILIKE sqlc.narg('q')
+       OR mm.national_phone LIKE sqlc.narg('phone_national')::text
+       OR mm.national_phone LIKE sqlc.narg('phone_digits')::text)
+  AND (sqlc.narg('status')::text IS NULL OR mm.status = sqlc.narg('status'))
+  AND (NOT @collector_disabled::boolean OR (mm.status = 'disabled' AND mm.collector_lease_count > 0))
+ORDER BY CASE WHEN @sort::text = 'name' THEN mm.name END,
+         CASE WHEN @sort::text = '-name' THEN mm.name END DESC,
+         CASE WHEN @sort::text = 'createdAt' THEN mm.created_at END,
+         CASE WHEN @sort::text = '-createdAt' THEN mm.created_at END DESC,
+         mm.id
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountMemberPage :one
+-- Every member ListMemberPage would return on any page: keep the WHERE the same.
+WITH mm AS (
+    SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
+           m.first_sign_in_at, u.phone, u.name,
+           -- Active leases naming the member as collector, organization-wide: a number, no names.
+           (SELECT count(*) FROM lease l
+            WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+              AND l.status = 'active') AS collector_lease_count,
+           CASE WHEN u.phone LIKE '+62%' THEN '0' || substr(u.phone, 4) ELSE u.phone END AS national_phone
+    FROM membership m
+    JOIN staff_user u ON u.id = m.staff_user_id
+    WHERE m.organization_id = @organization_id
+)
+SELECT count(*)
+FROM mm
+WHERE (sqlc.narg('q')::text IS NULL
+       OR mm.name ILIKE sqlc.narg('q')
+       OR mm.national_phone LIKE sqlc.narg('phone_national')::text
+       OR mm.national_phone LIKE sqlc.narg('phone_digits')::text)
+  AND (sqlc.narg('status')::text IS NULL OR mm.status = sqlc.narg('status'))
+  AND (NOT @collector_disabled::boolean OR (mm.status = 'disabled' AND mm.collector_lease_count > 0));
 
 -- name: CreateMembership :one
 -- Returns no row when the staff user is already a member.

@@ -44,7 +44,7 @@ func requireDenied(t *testing.T, env *testenv.Env, org, actor uuid.UUID, action,
 
 func statusOf(t *testing.T, env *testenv.Env, p authz.Principal, membershipID uuid.UUID) string {
 	t.Helper()
-	members, err := env.Members.List(context.Background(), p)
+	members, err := env.AllMembers(context.Background(), p)
 	require.NoError(t, err)
 	for _, m := range members {
 		if m.ID == membershipID {

@@ -12,6 +12,53 @@ import (
 	"github.com/google/uuid"
 )
 
+const countMemberPage = `-- name: CountMemberPage :one
+WITH mm AS (
+    SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
+           m.first_sign_in_at, u.phone, u.name,
+           -- Active leases naming the member as collector, organization-wide: a number, no names.
+           (SELECT count(*) FROM lease l
+            WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+              AND l.status = 'active') AS collector_lease_count,
+           CASE WHEN u.phone LIKE '+62%' THEN '0' || substr(u.phone, 4) ELSE u.phone END AS national_phone
+    FROM membership m
+    JOIN staff_user u ON u.id = m.staff_user_id
+    WHERE m.organization_id = $6
+)
+SELECT count(*)
+FROM mm
+WHERE ($1::text IS NULL
+       OR mm.name ILIKE $1
+       OR mm.national_phone LIKE $2::text
+       OR mm.national_phone LIKE $3::text)
+  AND ($4::text IS NULL OR mm.status = $4)
+  AND (NOT $5::boolean OR (mm.status = 'disabled' AND mm.collector_lease_count > 0))
+`
+
+type CountMemberPageParams struct {
+	Q                 *string
+	PhoneNational     *string
+	PhoneDigits       *string
+	Status            *string
+	CollectorDisabled bool
+	OrganizationID    uuid.UUID
+}
+
+// Every member ListMemberPage would return on any page: keep the WHERE the same.
+func (q *Queries) CountMemberPage(ctx context.Context, arg CountMemberPageParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMemberPage,
+		arg.Q,
+		arg.PhoneNational,
+		arg.PhoneDigits,
+		arg.Status,
+		arg.CollectorDisabled,
+		arg.OrganizationID,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOtherActiveOrgAdmins = `-- name: CountOtherActiveOrgAdmins :one
 SELECT count(*) FROM membership m
 WHERE m.organization_id = $1 AND m.status = 'active' AND m.id <> $2
@@ -272,20 +319,49 @@ func (q *Queries) ListCollectorCandidates(ctx context.Context, organizationID uu
 	return items, nil
 }
 
-const listMembers = `-- name: ListMembers :many
-SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name,
-       -- Active leases naming the member as collector, organization-wide: a number, no names.
-       (SELECT count(*) FROM lease l
-        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
-          AND l.status = 'active') AS collector_lease_count
-FROM membership m
-JOIN staff_user u ON u.id = m.staff_user_id
-WHERE m.organization_id = $1
-ORDER BY u.name, m.id
+const listMemberPage = `-- name: ListMemberPage :many
+WITH mm AS (
+    SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
+           m.first_sign_in_at, u.phone, u.name,
+           -- Active leases naming the member as collector, organization-wide: a number, no names.
+           (SELECT count(*) FROM lease l
+            WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+              AND l.status = 'active') AS collector_lease_count,
+           CASE WHEN u.phone LIKE '+62%' THEN '0' || substr(u.phone, 4) ELSE u.phone END AS national_phone
+    FROM membership m
+    JOIN staff_user u ON u.id = m.staff_user_id
+    WHERE m.organization_id = $9
+)
+SELECT mm.id, mm.staff_user_id, mm.status, mm.created_at, mm.invitation_state, mm.invitation_last_sent_at,
+       mm.first_sign_in_at, mm.phone, mm.name, mm.collector_lease_count
+FROM mm
+WHERE ($1::text IS NULL
+       OR mm.name ILIKE $1
+       OR mm.national_phone LIKE $2::text
+       OR mm.national_phone LIKE $3::text)
+  AND ($4::text IS NULL OR mm.status = $4)
+  AND (NOT $5::boolean OR (mm.status = 'disabled' AND mm.collector_lease_count > 0))
+ORDER BY CASE WHEN $6::text = 'name' THEN mm.name END,
+         CASE WHEN $6::text = '-name' THEN mm.name END DESC,
+         CASE WHEN $6::text = 'createdAt' THEN mm.created_at END,
+         CASE WHEN $6::text = '-createdAt' THEN mm.created_at END DESC,
+         mm.id
+LIMIT $8 OFFSET $7
 `
 
-type ListMembersRow struct {
+type ListMemberPageParams struct {
+	Q                 *string
+	PhoneNational     *string
+	PhoneDigits       *string
+	Status            *string
+	CollectorDisabled bool
+	Sort              string
+	PageOffset        int32
+	PageLimit         int32
+	OrganizationID    uuid.UUID
+}
+
+type ListMemberPageRow struct {
 	ID                   uuid.UUID
 	StaffUserID          uuid.UUID
 	Status               string
@@ -298,15 +374,27 @@ type ListMembersRow struct {
 	CollectorLeaseCount  int64
 }
 
-func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]ListMembersRow, error) {
-	rows, err := q.db.Query(ctx, listMembers, organizationID)
+// One page of the members matching the filters. CountMemberPage has the same WHERE: change
+// both together.
+func (q *Queries) ListMemberPage(ctx context.Context, arg ListMemberPageParams) ([]ListMemberPageRow, error) {
+	rows, err := q.db.Query(ctx, listMemberPage,
+		arg.Q,
+		arg.PhoneNational,
+		arg.PhoneDigits,
+		arg.Status,
+		arg.CollectorDisabled,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.OrganizationID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListMembersRow
+	var items []ListMemberPageRow
 	for rows.Next() {
-		var i ListMembersRow
+		var i ListMemberPageRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.StaffUserID,

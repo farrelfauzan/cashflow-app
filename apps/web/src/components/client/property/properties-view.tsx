@@ -34,7 +34,7 @@ export function PropertiesView({
   organizationName,
 }: PropertiesViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const properties = useListProperties(orgId);
+  const properties = useListProperties(orgId, { pageSize: 100 });
   const [panel, setPanel] = useState<PropertyPanelState>({ kind: "closed" });
   // A short confirmation after a panel closes, announced to screen readers.
   const [notice, setNotice] = useState("");

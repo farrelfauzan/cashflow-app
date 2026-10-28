@@ -46,11 +46,11 @@ func TestMembers(t *testing.T) {
 
 	t.Run("admins and supervisors can list members, karyawan cannot", func(t *testing.T) {
 		for _, p := range []authz.Principal{admin, supervisor} {
-			members, err := env.Members.List(ctx, p)
+			members, err := env.AllMembers(ctx, p)
 			require.NoError(t, err)
 			require.Len(t, members, 3)
 		}
-		_, err := env.Members.List(ctx, karyawan)
+		_, err := env.AllMembers(ctx, karyawan)
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
 
@@ -156,7 +156,7 @@ func TestMembersStayInsideTheirOrganization(t *testing.T) {
 	})
 
 	t.Run("A's admin sees only A's members", func(t *testing.T) {
-		members, err := env.Members.List(ctx, adminA)
+		members, err := env.AllMembers(ctx, adminA)
 		require.NoError(t, err)
 		for _, m := range members {
 			require.True(t, slices.Contains([]uuid.UUID{a.Supervisor.UserID, a.Admin.UserID, a.Karyawan.UserID}, m.UserID))
@@ -209,12 +209,12 @@ func footprintOf(t *testing.T, env *testenv.Env, org uuid.UUID, e164 string) foo
 	require.NoError(t, err)
 	err = env.Store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		members, err := q.ListMembers(ctx, org)
+		members, err := q.CountMemberPage(ctx, dbgen.CountMemberPageParams{OrganizationID: org})
 		if err != nil {
 			return err
 		}
 		roles, err := q.ListOrgRoleAssignments(ctx, org)
-		f.memberships, f.roleAssignments = len(members), len(roles)
+		f.memberships, f.roleAssignments = int(members), len(roles)
 		return err
 	})
 	require.NoError(t, err)

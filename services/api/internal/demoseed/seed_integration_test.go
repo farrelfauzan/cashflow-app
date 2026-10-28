@@ -15,6 +15,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
@@ -211,14 +212,14 @@ func TestSeedDemo(t *testing.T) {
 
 	adminA := env.Principal(t, a.OrganizationID, a.UserID)
 	adminB := env.Principal(t, b.OrganizationID, b.UserID)
-	tenantsA, err := env.Tenants.List(ctx, adminA)
+	tenantsA, err := env.AllTenants(ctx, adminA)
 	require.NoError(t, err)
-	tenantsB, err := env.Tenants.List(ctx, adminB)
+	tenantsB, err := env.AllTenants(ctx, adminB)
 	require.NoError(t, err)
 
 	t.Run("the limited admin sees only Kos Melati's tenants", func(t *testing.T) {
 		sari := env.Principal(t, a.OrganizationID, env.UserID(t, "0812-0001-0004"))
-		got, err := env.Tenants.List(ctx, sari)
+		got, err := env.AllTenants(ctx, sari)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Budi Santoso", "Citra Lestari", "Fajar Nugroho", "Rina Wulandari"}, names(got))
 		require.Equal(t, []string{"Kos Melati/Kamar 1"}, leaseUnits(find(t, got, "Rina Wulandari")))
@@ -226,14 +227,14 @@ func TestSeedDemo(t *testing.T) {
 
 	t.Run("Dimas sees only the tenants he collects from", func(t *testing.T) {
 		dimas := env.Principal(t, a.OrganizationID, env.UserID(t, "0812-0001-0003"))
-		got, err := env.Tenants.List(ctx, dimas)
+		got, err := env.AllTenants(ctx, dimas)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Budi Santoso", "Rina Wulandari"}, names(got))
 		require.Equal(t, []string{"Kos Melati/Kamar 1"}, leaseUnits(find(t, got, "Rina Wulandari")))
 	})
 
 	t.Run("Joko is karyawan everywhere and admin of Kontrakan Mawar", func(t *testing.T) {
-		members, err := env.Members.List(ctx, adminA)
+		members, err := env.AllMembers(ctx, adminA)
 		require.NoError(t, err)
 		mawar := propertyID(t, env, adminA, "Kontrakan Mawar")
 		var joko member.Member
@@ -253,7 +254,7 @@ func TestSeedDemo(t *testing.T) {
 		}, got)
 
 		p := env.Principal(t, a.OrganizationID, joko.UserID)
-		seen, err := env.Tenants.List(ctx, p)
+		seen, err := env.AllTenants(ctx, p)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Citra Lestari", "Eko Prasetyo", "Rina Wulandari", "Toko Sumber Rejeki (Pak Agus)"}, names(seen))
 	})
@@ -272,7 +273,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("Agus is disabled and still collects from Eko", func(t *testing.T) {
-		members, err := env.Members.List(ctx, adminA)
+		members, err := env.AllMembers(ctx, adminA)
 		require.NoError(t, err)
 		var agus member.Member
 		for _, m := range members {
@@ -395,7 +396,7 @@ func TestSeedDemo(t *testing.T) {
 	t.Run("Kos Bulanan Sejahtera has volume for several pages", func(t *testing.T) {
 		adminC := env.Principal(t, c.OrganizationID, c.UserID)
 
-		props, err := env.Properties.List(ctx, adminC)
+		props, err := env.AllProperties(ctx, adminC)
 		require.NoError(t, err)
 		require.Len(t, props, 25)
 		lower := map[string]bool{}
@@ -404,11 +405,11 @@ func TestSeedDemo(t *testing.T) {
 			lower[strings.ToLower(p.Name)] = true
 		}
 		require.True(t, lower["kos melati 2"] && lower["ruko cempaka"], "small properties with searchable names")
-		bigUnits, err := env.Properties.ListUnits(ctx, adminC, propertyID(t, env, adminC, "Kos Sejahtera Utama"))
+		bigUnits, err := env.AllUnits(ctx, adminC, propertyID(t, env, adminC, "Kos Sejahtera Utama"))
 		require.NoError(t, err)
 		require.Len(t, bigUnits, 30)
 
-		members, err := env.Members.List(ctx, adminC)
+		members, err := env.AllMembers(ctx, adminC)
 		require.NoError(t, err)
 		require.Len(t, members, 27)
 		var disabled int
@@ -421,9 +422,13 @@ func TestSeedDemo(t *testing.T) {
 		}
 		require.Equal(t, 4, disabled)
 
-		tenantsC, err := env.Tenants.List(ctx, adminC)
+		tenantsC, err := env.AllTenants(ctx, adminC)
 		require.NoError(t, err)
 		require.Len(t, tenantsC, 45)
+		first, err := env.Tenants.List(ctx, adminC, tenant.ListQuery{})
+		require.NoError(t, err)
+		require.Len(t, first.Items, listing.DefaultPageSize, "the first page is full")
+		require.Equal(t, int64(45), first.Total)
 		today := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC) // the test clock
 		var active, booked, ended, none, flagged int
 		for _, tn := range tenantsC {
@@ -457,7 +462,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("Lestari is limited to Kontrakan Seturan in Kos Bulanan Sejahtera", func(t *testing.T) {
-		members, err := env.Members.List(ctx, env.Principal(t, c.OrganizationID, c.UserID))
+		members, err := env.AllMembers(ctx, env.Principal(t, c.OrganizationID, c.UserID))
 		require.NoError(t, err)
 		var lestari member.Member
 		for _, m := range members {
@@ -478,7 +483,7 @@ func TestSeedDemo(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, orgs, 1, "only Kos Bulanan Sejahtera")
 
-		seen, err := env.Tenants.List(ctx, env.Principal(t, c.OrganizationID, lestari.UserID))
+		seen, err := env.AllTenants(ctx, env.Principal(t, c.OrganizationID, lestari.UserID))
 		require.NoError(t, err)
 		// Seven running leases and Mulyadi's booking; Novita's ended lease is not listed.
 		require.Equal(t, []string{
@@ -526,7 +531,7 @@ func roleKeys(p authz.Principal) []string {
 
 func propertyID(t *testing.T, env *testenv.Env, p authz.Principal, name string) uuid.UUID {
 	t.Helper()
-	props, err := env.Properties.List(context.Background(), p)
+	props, err := env.AllProperties(context.Background(), p)
 	require.NoError(t, err)
 	for _, pr := range props {
 		if pr.Name == name {
