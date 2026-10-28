@@ -61,5 +61,8 @@ func TestCatalogConstantsAndSensitiveActionsExist(t *testing.T) {
 	for a := range sensitive {
 		require.True(t, IsAction(a), a)
 	}
+	for r := range orgWideResources {
+		require.Contains(t, catalog, r, "organization-wide resources must be catalog resources")
+	}
 	require.False(t, IsAction("invoice:*"), "wildcards are patterns, not actions")
 }
