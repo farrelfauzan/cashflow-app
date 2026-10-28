@@ -4,12 +4,17 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { UnitTenant } from './unitTenant';
 
 export interface Unit {
   id: string;
   propertyId: string;
   label: string;
   defaultRent?: number;
+  /** True while the unit has an active lease, a booking that has not started yet included. False for a free unit and for one whose lease has ended. */
+  occupied: boolean;
+  /** The tenant of the unit's active lease. Absent when the unit is free, and also when the viewer may not read that tenant: it is shown only when tenant:read is allowed on the lease's tenant, the same per-record check the tenant list uses (a karyawan through the lease's collector, a member limited to a property through that property). A custom role with unit:read but no tenant:read gets `occupied` only. */
+  currentTenant?: UnitTenant;
   createdAt: string;
   updatedAt: string;
 }

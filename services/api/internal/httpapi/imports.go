@@ -78,13 +78,18 @@ func toAPIImportResult(res tenantimport.Result) apigen.ImportResult {
 			TenantsCreated: res.Summary.TenantsCreated, LeasesCreated: res.Summary.LeasesCreated,
 			LeasesMatched: res.Summary.LeasesMatched,
 		},
-		Rows: make([]apigen.ImportRow, len(res.Rows)),
+		Warnings: make([]apigen.ImportWarning, len(res.Warnings)),
+		Rows:     make([]apigen.ImportRow, len(res.Rows)),
+	}
+	for i, w := range res.Warnings {
+		out.Warnings[i] = apigen.ImportWarning{Code: apigen.ImportWarningCode(w.Code), Message: w.Message}
 	}
 	for i, row := range res.Rows {
 		r := apigen.ImportRow{
 			Line: row.Line, Status: apigen.ImportRowStatusOk, Errors: []apigen.ImportRowError{}, Notes: []string{},
 			Property: importAction(row.Property), Unit: importAction(row.Unit),
 			Tenant: importAction(row.Tenant), Lease: importAction(row.Lease),
+			PropertyName: row.PropertyName, UnitLabel: row.UnitLabel, TenantName: row.TenantName,
 		}
 		if !row.OK() {
 			r.Status = apigen.ImportRowStatusError

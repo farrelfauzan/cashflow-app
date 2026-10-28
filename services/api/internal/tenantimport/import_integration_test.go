@@ -395,3 +395,84 @@ func TestImportBilledFrom(t *testing.T) {
 		}
 	})
 }
+
+func TestImportEchoAndWarnings(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812841")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+
+	const body = "Kos Melati;Kamar 1;Rina Wulandari;0812-8410-5001;850.000;15/09/2026"
+	tests := []struct {
+		name         string
+		file         string
+		wantWarnings []string
+	}{
+		{
+			name: "a current template gives no warnings",
+			file: "properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih\n" + body + ";\n",
+		},
+		{
+			name:         "the old jatuh_tempo column is ignored with a warning",
+			file:         "properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;jatuh_tempo;mulai_tagih\n" + body + ";5;\n",
+			wantWarnings: []string{tenantimport.WarnOldDueDayColumn},
+		},
+		{
+			name:         "no mulai_tagih column bills every row from its start date",
+			file:         "properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai\n" + body + "\n",
+			wantWarnings: []string{tenantimport.WarnNoBillFromColumn},
+		},
+		{
+			name:         "both warnings at once",
+			file:         "properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;jatuh_tempo\n" + body + ";5\n",
+			wantWarnings: []string{tenantimport.WarnOldDueDayColumn, tenantimport.WarnNoBillFromColumn},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dry, err := env.Imports.Run(ctx, admin, []byte(tc.file), true)
+			require.NoError(t, err)
+			require.NotNil(t, dry.Warnings, "never nil, so the API answers [] and not null")
+			var codes []string
+			for _, w := range dry.Warnings {
+				codes = append(codes, w.Code)
+				require.NotEmpty(t, w.Message)
+			}
+			require.Equal(t, tc.wantWarnings, codes)
+		})
+	}
+
+	t.Run("a commit returns the same warnings", func(t *testing.T) {
+		file := []byte("properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;jatuh_tempo\n" + body + ";5\n")
+		res, err := env.Imports.Run(ctx, admin, file, false)
+		require.NoError(t, err)
+		require.True(t, res.Committed)
+		require.Len(t, res.Warnings, 2)
+		require.Equal(t, tenantimport.WarnOldDueDayColumn, res.Warnings[0].Code)
+		require.Contains(t, res.Warnings[0].Message, "jatuh_tempo")
+		require.Equal(t, tenantimport.WarnNoBillFromColumn, res.Warnings[1].Code)
+		require.Contains(t, res.Warnings[1].Message, "mulai_tagih")
+	})
+
+	t.Run("a dry run echoes the names as read, trimmed, even for a row with errors", func(t *testing.T) {
+		env := testenv.New(t)
+		o := env.CreateOrg(t, "Griya Sejahtera", "0812842")
+		admin := env.Principal(t, o.ID, o.Admin.UserID)
+		file := []byte("properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih\n" +
+			"  Kos Melati ; Kamar 1 ;  Rina Wulandari  ;0812-8420-5001;850.000;15/09/2026;\n" +
+			"kos melati;KAMAR 2;budi santoso;12345;850.000;15/09/2026;\n")
+		res, err := env.Imports.Run(ctx, admin, file, true)
+		require.NoError(t, err)
+		require.Len(t, res.Rows, 2)
+
+		require.True(t, res.Rows[0].OK(), "%v", res.Rows[0].Errors)
+		require.Equal(t, "Kos Melati", res.Rows[0].PropertyName)
+		require.Equal(t, "Kamar 1", res.Rows[0].UnitLabel)
+		require.Equal(t, "Rina Wulandari", res.Rows[0].TenantName)
+
+		require.Equal(t, []string{"phone"}, errorColumns(res.Rows[1]))
+		require.Equal(t, "kos melati", res.Rows[1].PropertyName, "as typed, not the stored spelling")
+		require.Equal(t, "KAMAR 2", res.Rows[1].UnitLabel)
+		require.Equal(t, "budi santoso", res.Rows[1].TenantName)
+	})
+}

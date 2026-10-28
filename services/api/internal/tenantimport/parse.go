@@ -79,9 +79,23 @@ type FileError struct{ Message string }
 
 func (e *FileError) Error() string { return "tenantimport: " + e.Message }
 
+// The codes of the warnings about a file as a whole.
+const (
+	WarnOldDueDayColumn  = "old_due_day_column"
+	WarnNoBillFromColumn = "no_bill_from_column"
+)
+
+// Warning is something about the whole file worth a look that is not an error. Message is
+// Bahasa Indonesia and safe to show to the user.
+type Warning struct {
+	Code    string
+	Message string
+}
+
 // parseFile reads the CSV: a header line, then data rows. The separator is a comma or, as
-// Excel writes in an Indonesian locale, a semicolon. Blank rows are skipped.
-func parseFile(data []byte) ([]record, error) {
+// Excel writes in an Indonesian locale, a semicolon. Blank rows are skipped. The warnings say
+// what the header means for every row, such as an ignored older column.
+func parseFile(data []byte) ([]record, []Warning, error) {
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")) // Excel's UTF-8 byte order mark
 	firstLine, _, _ := bytes.Cut(data, []byte("\n"))
 	r := csv.NewReader(bytes.NewReader(data))
@@ -93,14 +107,14 @@ func parseFile(data []byte) ([]record, error) {
 
 	header, err := r.Read()
 	if errors.Is(err, io.EOF) {
-		return nil, &FileError{Message: "Berkas kosong."}
+		return nil, nil, &FileError{Message: "Berkas kosong."}
 	}
 	if err != nil {
-		return nil, &FileError{Message: "Berkas bukan CSV yang bisa dibaca."}
+		return nil, nil, &FileError{Message: "Berkas bukan CSV yang bisa dibaca."}
 	}
-	columns, err := headerColumns(header)
+	columns, warnings, err := headerColumns(header)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var out []record
@@ -111,10 +125,10 @@ func parseFile(data []byte) ([]record, error) {
 		}
 		var parseErr *csv.ParseError
 		if errors.As(err, &parseErr) {
-			return nil, &FileError{Message: fmt.Sprintf("Baris %d tidak bisa dibaca sebagai CSV.", parseErr.StartLine)}
+			return nil, nil, &FileError{Message: fmt.Sprintf("Baris %d tidak bisa dibaca sebagai CSV.", parseErr.StartLine)}
 		}
 		if err != nil {
-			return nil, &FileError{Message: "Berkas bukan CSV yang bisa dibaca."}
+			return nil, nil, &FileError{Message: "Berkas bukan CSV yang bisa dibaca."}
 		}
 		if blank(fields) {
 			continue
@@ -128,18 +142,18 @@ func parseFile(data []byte) ([]record, error) {
 		}
 		out = append(out, rec)
 		if len(out) > MaxRows {
-			return nil, &FileError{Message: fmt.Sprintf("Paling banyak %d baris per berkas. Bagi berkas menjadi beberapa bagian.", MaxRows)}
+			return nil, nil, &FileError{Message: fmt.Sprintf("Paling banyak %d baris per berkas. Bagi berkas menjadi beberapa bagian.", MaxRows)}
 		}
 	}
 	if len(out) == 0 {
-		return nil, &FileError{Message: "Berkas tidak berisi baris data."}
+		return nil, nil, &FileError{Message: "Berkas tidak berisi baris data."}
 	}
-	return out, nil
+	return out, warnings, nil
 }
 
 // headerColumns returns the canonical name of each column, or "" for a column the import does
-// not use.
-func headerColumns(header []string) ([]string, error) {
+// not use, and the warnings the header earns.
+func headerColumns(header []string) ([]string, []Warning, error) {
 	columns := make([]string, len(header))
 	seen := map[string]bool{}
 	for i, h := range header {
@@ -151,7 +165,7 @@ func headerColumns(header []string) ([]string, error) {
 			continue
 		}
 		if seen[name] {
-			return nil, &FileError{Message: fmt.Sprintf("Kolom %s muncul dua kali.", name)}
+			return nil, nil, &FileError{Message: fmt.Sprintf("Kolom %s muncul dua kali.", name)}
 		}
 		seen[name] = true
 		columns[i] = name
@@ -163,9 +177,16 @@ func headerColumns(header []string) ([]string, error) {
 		}
 	}
 	if len(missing) > 0 {
-		return nil, &FileError{Message: "Kolom wajib tidak ada: " + strings.Join(missing, ", ") + "."}
+		return nil, nil, &FileError{Message: "Kolom wajib tidak ada: " + strings.Join(missing, ", ") + "."}
 	}
-	return columns, nil
+	var warnings []Warning
+	if seen[colOldDueDay] {
+		warnings = append(warnings, Warning{Code: WarnOldDueDayColumn, Message: "Kolom jatuh_tempo tidak dipakai lagi: sewa jatuh tempo pada tanggal mulai."})
+	}
+	if !seen[colBillFrom] {
+		warnings = append(warnings, Warning{Code: WarnNoBillFromColumn, Message: "Tidak ada kolom mulai_tagih: setiap sewa ditagih sejak tanggal mulai."})
+	}
+	return columns, warnings, nil
 }
 
 func blank(fields []string) bool {
