@@ -274,7 +274,18 @@ func readRequest(id uuid.UUID) authz.Request {
 // tenantVia is the tenant seen through one lease: in that lease's property, assigned to its
 // collector.
 func tenantVia(l Lease) authz.Resource {
-	return authz.Resource{Type: "tenant", ID: l.TenantID.String(), PropertyID: l.PropertyID, OwnerID: l.CollectorUserID}
+	return viaResource(l.TenantID, l.PropertyID, l.CollectorUserID)
+}
+
+func viaResource(tenantID, propertyID, collectorUserID uuid.UUID) authz.Resource {
+	return authz.Resource{Type: "tenant", ID: tenantID.String(), PropertyID: propertyID, OwnerID: collectorUserID}
+}
+
+// ReadViaLease is tenant:read on a tenant seen through one of their leases, in the lease's
+// property and assigned to its collector (uuid.Nil for none). Use it with authz.Allowed to
+// filter a record that shows the tenant, such as a unit's current tenant, the way List does.
+func ReadViaLease(tenantID, propertyID, collectorUserID uuid.UUID) authz.Request {
+	return authz.Request{Action: authz.ActionTenantRead, Resource: viaResource(tenantID, propertyID, collectorUserID)}
 }
 
 func load(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (dbgen.Tenant, []Lease, error) {

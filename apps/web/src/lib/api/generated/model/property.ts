@@ -12,6 +12,8 @@ export interface Property {
   kind: PropertyKind;
   address: string;
   unitCount: number;
+  /** How many of the property's units have an active lease, a booking that has not started yet included. It counts units, not who may see their tenants, so it is the same for every member who can read the property. */
+  occupiedUnitCount: number;
   createdAt: string;
   updatedAt: string;
 }

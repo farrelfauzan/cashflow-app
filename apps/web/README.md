@@ -33,6 +33,11 @@ API's `DEVLOG_FILE`, verifies it, and saves the `cf_session` cookie to `e2e/.aut
 (git-ignored), which the specs reuse. A saved session the API still accepts is reused on the
 next run, because the API allows only 3 code requests per phone per 15 minutes.
 
+Records a test leaves behind (invited members) use a run id set in `playwright.config.ts`, so
+the specs can run again on the same database. The members specs send six WhatsApp invitations
+per run, and the API allows 20 per organization per hour: after three runs in an hour, wait, or
+start from a fresh database (`make dev-reset`, then migrate and seed again).
+
 1. Start PostgreSQL and Redis, migrate, and seed (from the repository root): `make dev-up`,
    `make migrate`, then `make admin ARGS=seed-demo` (needs `APP_ENV=development` in
    `services/api/.env`, as in the example).

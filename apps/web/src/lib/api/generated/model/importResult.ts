@@ -6,11 +6,14 @@
  */
 import type { ImportRow } from './importRow';
 import type { ImportSummary } from './importSummary';
+import type { ImportWarning } from './importWarning';
 
 export interface ImportResult {
   dryRun: boolean;
   /** True only when the rows were saved. */
   committed: boolean;
   summary: ImportSummary;
+  /** Things about the file as a whole worth a look that are not errors. Empty when there are none; a dry run and a commit return the same ones. */
+  warnings: ImportWarning[];
   rows: ImportRow[];
 }

@@ -1117,13 +1117,20 @@ components:
 
     Property:
       type: object
-      required: [id, name, kind, address, unitCount, createdAt, updatedAt]
+      required: [id, name, kind, address, unitCount, occupiedUnitCount, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         kind: { $ref: "#/components/schemas/PropertyKind" }
         address: { type: string }
         unitCount: { type: integer, format: int64 }
+        occupiedUnitCount:
+          type: integer
+          format: int64
+          description: >
+            How many of the property's units have an active lease, a booking that has not started
+            yet included. It counts units, not who may see their tenants, so it is the same for every
+            member who can read the property.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -1151,14 +1158,34 @@ components:
           description: Usual monthly rent in rupiah, a suggestion for new leases. Leave it out for none.
           example: 1250000
 
+    UnitTenant:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
     Unit:
       type: object
-      required: [id, propertyId, label, createdAt, updatedAt]
+      required: [id, propertyId, label, occupied, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         propertyId: { type: string, format: uuid }
         label: { type: string }
         defaultRent: { type: integer, format: int64 }
+        occupied:
+          type: boolean
+          description: >
+            True while the unit has an active lease, a booking that has not started yet included.
+            False for a free unit and for one whose lease has ended.
+        currentTenant:
+          description: >
+            The tenant of the unit's active lease. Absent when the unit is free, and also when the
+            viewer may not read that tenant: it is shown only when tenant:read is allowed on the
+            lease's tenant, the same per-record check the tenant list uses (a karyawan through the
+            lease's collector, a member limited to a property through that property). A custom role
+            with unit:read but no tenant:read gets `occupied` only.
+          $ref: "#/components/schemas/UnitTenant"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -1398,7 +1425,7 @@ components:
 
     ImportRow:
       type: object
-      required: [line, status, errors, notes]
+      required: [line, status, errors, notes, propertyName, unitLabel, tenantName]
       properties:
         line: { type: integer, description: "Line number in the file, counting the header as line 1." }
         status:
@@ -1416,6 +1443,9 @@ components:
         tenant: { $ref: "#/components/schemas/ImportAction" }
         lease: { $ref: "#/components/schemas/ImportAction" }
         values: { $ref: "#/components/schemas/ImportRowValues" }
+        propertyName: { type: string, description: "The properti cell as read from the file, trimmed; empty when the cell is empty." }
+        unitLabel: { type: string, description: "The kamar cell as read from the file, trimmed; empty when the cell is empty." }
+        tenantName: { type: string, description: "The nama_penyewa cell as read from the file, trimmed; empty when the cell is empty." }
 
     ImportRowValues:
       type: object
@@ -1442,13 +1472,30 @@ components:
         leasesCreated: { type: integer }
         leasesMatched: { type: integer }
 
+    ImportWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [old_due_day_column, no_bill_from_column]
+          description: >
+            old_due_day_column: the file has the older jatuh_tempo (due_day) column, which is ignored.
+            no_bill_from_column: the file has no mulai_tagih (bill_from) column, so every row bills
+            from its start date.
+        message: { type: string, description: "In Bahasa Indonesia, safe to show to the user." }
+
     ImportResult:
       type: object
-      required: [dryRun, committed, summary, rows]
+      required: [dryRun, committed, summary, warnings, rows]
       properties:
         dryRun: { type: boolean }
         committed: { type: boolean, description: True only when the rows were saved. }
         summary: { $ref: "#/components/schemas/ImportSummary" }
+        warnings:
+          type: array
+          description: Things about the file as a whole worth a look that are not errors. Empty when there are none; a dry run and a commit return the same ones.
+          items: { $ref: "#/components/schemas/ImportWarning" }
         rows:
           type: array
           items: { $ref: "#/components/schemas/ImportRow" }

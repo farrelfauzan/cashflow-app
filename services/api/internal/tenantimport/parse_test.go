@@ -16,7 +16,7 @@ func TestParseFile(t *testing.T) {
 
 	t.Run("canonical header with commas", func(t *testing.T) {
 		t.Parallel()
-		recs, err := parseFile([]byte("property,unit,tenant_name,phone,rent,start_date\n" +
+		recs, _, err := parseFile([]byte("property,unit,tenant_name,phone,rent,start_date\n" +
 			"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,2026-10-01\n"))
 		require.NoError(t, err)
 		require.Len(t, recs, 1)
@@ -31,7 +31,7 @@ func TestParseFile(t *testing.T) {
 			"1;Rina Wulandari;0812 1111 2222;Kos Melati;Kamar 1;Rp850.000;01/10/2026;850.000;kos\r\n" +
 			";;;;;;;;\r\n" +
 			"2;Budi;0812 1111 3333;Kos Melati;Kamar 2;850000;1/10/2026;;\r\n"
-		recs, err := parseFile([]byte(data))
+		recs, _, err := parseFile([]byte(data))
 		require.NoError(t, err)
 		require.Len(t, recs, 2, "the blank row is skipped")
 		require.Equal(t, "Rina Wulandari", recs[0].get(colTenantName))
@@ -62,7 +62,7 @@ func TestParseFile(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
-				recs, err := parseFile([]byte(tc.data))
+				recs, _, err := parseFile([]byte(tc.data))
 				require.NoError(t, err)
 				require.Len(t, recs, 1)
 				require.Equal(t, "Kos Melati", recs[0].get(colProperty))
@@ -88,7 +88,7 @@ func TestParseFile(t *testing.T) {
 	for name, data := range fileErrors {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, err := parseFile([]byte(data))
+			_, _, err := parseFile([]byte(data))
 			var fileErr *FileError
 			require.ErrorAs(t, err, &fileErr)
 			require.NotEmpty(t, fileErr.Message)
@@ -97,7 +97,7 @@ func TestParseFile(t *testing.T) {
 
 	t.Run("the missing columns are named", func(t *testing.T) {
 		t.Parallel()
-		_, err := parseFile([]byte("property,unit,tenant_name\n"))
+		_, _, err := parseFile([]byte("property,unit,tenant_name\n"))
 		require.ErrorContains(t, err, "phone, rent, start_date")
 	})
 }
@@ -180,7 +180,7 @@ func TestTemplateReadsBackWithOnlyTheExampleError(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.HasPrefix(data, []byte("\xef\xbb\xbf")), "a byte order mark, so Excel reads UTF-8")
 
-	records, err := parseFile(data)
+	records, _, err := parseFile(data)
 	require.NoError(t, err)
 	require.Len(t, records, len(templateRows))
 	for _, rec := range records {
@@ -217,7 +217,7 @@ func TestParseBillFromColumn(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			recs, err := parseFile([]byte(tc.data))
+			recs, _, err := parseFile([]byte(tc.data))
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
 			require.Equal(t, "2026-10-15", recs[0].get(colBillFrom))
@@ -226,9 +226,47 @@ func TestParseBillFromColumn(t *testing.T) {
 
 	t.Run("the column is optional", func(t *testing.T) {
 		t.Parallel()
-		recs, err := parseFile([]byte("property,unit,tenant_name,phone,rent,start_date\n" +
+		recs, _, err := parseFile([]byte("property,unit,tenant_name,phone,rent,start_date\n" +
 			"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,2026-09-15\n"))
 		require.NoError(t, err)
 		require.Empty(t, recs[0].get(colBillFrom))
+	})
+}
+
+func TestHeaderWarnings(t *testing.T) {
+	t.Parallel()
+	const required = "property,unit,tenant_name,phone,rent,start_date"
+	oldDueDay := Warning{Code: WarnOldDueDayColumn, Message: "Kolom jatuh_tempo tidak dipakai lagi: sewa jatuh tempo pada tanggal mulai."}
+	noBillFrom := Warning{Code: WarnNoBillFromColumn, Message: "Tidak ada kolom mulai_tagih: setiap sewa ditagih sejak tanggal mulai."}
+
+	tests := []struct {
+		name   string
+		header string
+		want   []Warning
+	}{
+		{name: "mulai_tagih and no due day column gives none", header: required + ",mulai_tagih"},
+		{name: "bill_from and no due day column gives none", header: required + ",bill_from"},
+		{name: "no bill_from column", header: required, want: []Warning{noBillFrom}},
+		{name: "jatuh_tempo column", header: required + ",jatuh_tempo,mulai_tagih", want: []Warning{oldDueDay}},
+		{name: "tanggal_jatuh_tempo is the same column", header: required + ",tanggal_jatuh_tempo,bill_from", want: []Warning{oldDueDay}},
+		{name: "due_day column", header: required + ",due_day,mulai_tagih", want: []Warning{oldDueDay}},
+		{name: "both, the old column first", header: required + ",jatuh_tempo", want: []Warning{oldDueDay, noBillFrom}},
+		{name: "an unknown column earns nothing", header: required + ",catatan,mulai_tagih"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, got, err := headerColumns(strings.Split(tc.header, ","))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("parseFile returns them with the rows", func(t *testing.T) {
+		t.Parallel()
+		recs, warnings, err := parseFile([]byte(required + ",jatuh_tempo\nKos,K1,Rina,0812,1,2026-10-01,5\n"))
+		require.NoError(t, err)
+		require.Len(t, recs, 1)
+		require.Equal(t, []Warning{oldDueDay, noBillFrom}, warnings)
 	})
 }

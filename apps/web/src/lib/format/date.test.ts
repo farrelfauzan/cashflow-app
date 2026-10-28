@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatDateTime } from "./date";
+import { formatDate, formatDateTime, formatTimestampDate } from "./date";
 
 // Jakarta is UTC+7 all year, so getTimezoneOffset() there is -420. vitest.config.mts runs the
 // tests in America/New_York; if that ever stops working, this fails instead of the date
@@ -93,5 +93,34 @@ describe("formatDateTime", () => {
 
   it("throws on an invalid Date", () => {
     expect(() => formatDateTime(new Date(Number.NaN))).toThrow(RangeError);
+  });
+});
+
+describe("formatTimestampDate", () => {
+  it.each([
+    {
+      name: "an afternoon in Jakarta",
+      input: "2026-10-27T07:00:00Z",
+      want: "27 Okt 2026",
+    },
+    {
+      name: "an evening in UTC that is the next day in Jakarta",
+      input: "2026-10-27T18:30:00Z",
+      want: "28 Okt 2026",
+    },
+    {
+      name: "a timestamp with an offset",
+      input: "2026-10-27T23:30:00+07:00",
+      want: "27 Okt 2026",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampDate(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "a timestamp without a zone", input: "2026-10-27T07:00:00" },
+    { name: "garbage", input: "kemarin" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatTimestampDate(input)).toThrow(RangeError);
   });
 });

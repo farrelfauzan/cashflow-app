@@ -1,6 +1,7 @@
-import { PendingSection } from "@/components/server/shell/pending-section";
+import { MembersScreen } from "@/components/server/member/members-screen";
 
-// Built in W5 from its board.
-export default function MembersPage() {
-  return <PendingSection title="Anggota tim" />;
+export default function MembersPage({
+  params,
+}: PageProps<"/o/[orgId]/members">) {
+  return <MembersScreen params={params} />;
 }

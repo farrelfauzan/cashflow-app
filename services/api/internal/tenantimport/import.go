@@ -46,6 +46,9 @@ type Row struct {
 	Property, Unit, Tenant, Lease Action
 	// Values are the lease terms as read from the row; nil when any of them could not be read.
 	Values *Values
+	// The property, unit and tenant names as read from the file, trimmed, whatever else the
+	// row got wrong.
+	PropertyName, UnitLabel, TenantName string
 }
 
 // Values are the lease terms read from a row, shown so a dry run says exactly what is saved.
@@ -71,7 +74,9 @@ type Result struct {
 	DryRun    bool
 	Committed bool
 	Summary   Summary
-	Rows      []Row
+	// Warnings are about the file as a whole; never nil, empty when there are none.
+	Warnings []Warning
+	Rows     []Row
 }
 
 // errDiscard rolls back the import transaction without it being a failure.
@@ -94,11 +99,14 @@ func NewService(st *store.Store, az *authz.Service, props *property.Service, ten
 // Run imports the CSV in data. It needs tenant:manage and lease:manage for the whole
 // organization. A file that cannot be read returns a *FileError and no rows.
 func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRun bool) (Result, error) {
-	records, err := parseFile(data)
+	records, warnings, err := parseFile(data)
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{DryRun: dryRun, Rows: make([]Row, len(records))}
+	if warnings == nil {
+		warnings = []Warning{}
+	}
+	res := Result{DryRun: dryRun, Warnings: warnings, Rows: make([]Row, len(records))}
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		for _, req := range importRequests() {
 			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
@@ -142,7 +150,9 @@ func importRequests() []authz.Request {
 // and lease inside a savepoint. Row problems come back in the row; only unexpected failures and
 // permission denials are returned as errors, and they stop the whole import.
 func (s *Service) importRow(ctx context.Context, tx pgx.Tx, p authz.Principal, rec record) (Row, error) {
-	row := Row{Line: rec.Line}
+	row := Row{
+		Line: rec.Line, PropertyName: rec.get(colProperty), UnitLabel: rec.get(colUnit), TenantName: rec.get(colTenantName),
+	}
 	in := check(rec, &row)
 	if !row.OK() {
 		return row, nil

@@ -41,6 +41,12 @@ func TestImportOverHTTP(t *testing.T) {
 		require.Equal(t, 1, res.Summary.LeasesCreated)
 		require.Equal(t, int64(850_000), res.Rows[0].Values.RentAmount)
 		require.Contains(t, string(body), `"startDate":"2026-10-01"`, "01/10/2026 is read day first and shown as a plain date")
+		require.Contains(t, string(body), `"tenantName":"Rina Wulandari"`)
+		require.Contains(t, string(body), `"propertyName":"Kos Melati"`)
+		require.Contains(t, string(body), `"unitLabel":"Kamar 1"`)
+		require.Len(t, res.Warnings, 1, "the file has no mulai_tagih column")
+		require.Equal(t, apigen.ImportWarningCode("no_bill_from_column"), res.Warnings[0].Code)
+		require.Contains(t, string(body), `"warnings":[{"code":"no_bill_from_column","message":"Tidak ada kolom mulai_tagih: setiap sewa ditagih sejak tanggal mulai."}]`)
 
 		resp, body = admin.do(http.MethodGet, "/api/orgs/"+o.ID.String()+"/tenants", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -54,6 +60,15 @@ func TestImportOverHTTP(t *testing.T) {
 		require.True(t, res.Committed)
 		require.Equal(t, apigen.ImportRowStatusOk, res.Rows[0].Status)
 		require.Equal(t, apigen.ImportAction("created"), *res.Rows[0].Lease)
+	})
+
+	t.Run("a file with mulai_tagih and no jatuh_tempo has an empty warnings array", func(t *testing.T) {
+		current := []byte("properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih\n" +
+			"Kos Melati;Kamar 3;Citra Lestari;0812-1717-5003;850.000;01/10/2026;\n")
+		resp, body := admin.send(http.MethodPost, path, "text/csv", current)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"warnings":[]`, "an empty array, not null")
+		require.Empty(t, decode[apigen.ImportResult](t, body).Warnings)
 	})
 
 	t.Run("a bad row comes back with its column, and nothing is saved", func(t *testing.T) {

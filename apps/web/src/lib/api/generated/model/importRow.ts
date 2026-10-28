@@ -21,4 +21,10 @@ export interface ImportRow {
   tenant?: ImportAction;
   lease?: ImportAction;
   values?: ImportRowValues;
+  /** The properti cell as read from the file, trimmed; empty when the cell is empty. */
+  propertyName: string;
+  /** The kamar cell as read from the file, trimmed; empty when the cell is empty. */
+  unitLabel: string;
+  /** The nama_penyewa cell as read from the file, trimmed; empty when the cell is empty. */
+  tenantName: string;
 }
