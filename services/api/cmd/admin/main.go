@@ -173,13 +173,17 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 // writeLogins prints the demo logins as a plain table.
 func writeLogins(w io.Writer, logins []demoseed.Login) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PHONE\tNAME\tORGANIZATION\tROLES\tPROPERTY LIMIT")
+	fmt.Fprintln(tw, "PHONE\tNAME\tORGANIZATION\tROLES\tPROPERTY LIMIT\tSTATUS")
 	for _, l := range logins {
 		limit := "-"
 		if len(l.PropertyLimits) > 0 {
 			limit = strings.Join(l.PropertyLimits, ", ")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", l.Phone, l.Name, l.Organization, strings.Join(l.Roles, ", "), limit)
+		status := "active"
+		if l.Disabled {
+			status = "disabled (cannot sign in)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", l.Phone, l.Name, l.Organization, strings.Join(l.Roles, ", "), limit, status)
 	}
 	return tw.Flush()
 }

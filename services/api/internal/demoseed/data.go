@@ -23,6 +23,9 @@ type staffSpec struct {
 	Phone  string
 	Name   string
 	Grants []grantSpec
+	// Disabled members are invited, given their leases, then disabled, so they stay collector
+	// on those leases the way a karyawan who leaves does.
+	Disabled bool
 }
 
 type grantSpec struct {
@@ -110,6 +113,7 @@ func demoOrgs(c clock.Clock) []orgSpec {
 	const (
 		dimas = "0812-0001-0003"
 		joko  = "0812-0001-0005"
+		agus  = "0812-0001-0006"
 		rudi  = "0812-0002-0003"
 	)
 	return []orgSpec{
@@ -130,6 +134,9 @@ func demoOrgs(c clock.Clock) []orgSpec {
 					{Role: authz.RoleAdmin, Property: propMawar},
 				}},
 				{Phone: phoneHendra, Name: "Pak Hendra Gunawan", Grants: orgWide(authz.RoleAdmin)},
+				// A karyawan who left: disabled, still the collector on Eko's lease until an admin
+				// picks another ("1 penyewa belum punya penagih").
+				{Phone: agus, Name: "Mas Agus Setiawan", Grants: orgWide(authz.RoleKaryawan), Disabled: true},
 			},
 			Properties: []propertySpec{
 				{
@@ -171,7 +178,7 @@ func demoOrgs(c clock.Clock) []orgSpec {
 					},
 				}},
 				{Name: "Eko Prasetyo", Phone: "0813-0001-0005", Leases: []leaseSpec{
-					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Rent: 1_500_000},
+					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Rent: 1_500_000, Collector: agus},
 				}},
 				{Name: "Toko Sumber Rejeki (Pak Agus)", Phone: "0813-0001-0006", Leases: []leaseSpec{
 					{

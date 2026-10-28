@@ -61,8 +61,10 @@ It refuses to run unless `APP_ENV` is explicitly `development` (unset does not c
 touches the database. It is safe to run again: it matches every record (organizations, members,
 properties, units, tenants, leases) and creates only what is missing; it never changes or
 deletes existing data. When it finishes it prints the login list to stdout: phone, name,
-organization, roles and property limit of every demo member. Sign in with any of those phones
-as above.
+organization, roles, property limit and status of every demo member. Sign in with any active
+one's phone as above. One member, Mas Agus Setiawan in Griya Sejahtera, is disabled on purpose
+and cannot sign in: he stays the collector on Eko Prasetyo's lease, so the members screen and
+the tenant list show "1 penyewa belum punya penagih".
 
 ### Login codes for end-to-end tests (development only)
 
