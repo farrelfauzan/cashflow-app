@@ -301,14 +301,16 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 - A lease starting within the lead time is invoiced as soon as it is saved (the daily run is the
   safety net); a lease booked further ahead is invoiced by the daily run, like any other. The
   start date can change only until the lease's first invoice exists. An invoice belongs to the
-  month of its due date (dashboard filters, "Tagihan November").
+  month of its period, which for a regular invoice is the month of its due date (dashboard
+  filters, "Tagihan November").
 - A lease entered while already running (its start date is before the day it is saved, as in
-  the tenant import) has its current period invoiced at once, full rent, due 7 days after the
-  day it is entered: started 15 Sep and entered 28 Oct gives 15 Oct to 14 Nov, due 4 Nov, then
-  15 Nov as usual. Earlier months are invoiced only when the admin chooses so for that lease
-  ("Tagih bulan sebelumnya", with a number of months; off by default, also an import column);
-  those back invoices are due at once, show as arrears, and are fixed by corrections, never
-  deleted. These are the only invoices not due on their anniversary.
+  the tenant import) is invoiced for every period from its start date, by default: started
+  15 Sep and entered 28 Oct gives 15 Sep to 14 Oct, due 28 Oct (arrears at once), and 15 Oct to
+  14 Nov, due 4 Nov, then 15 Nov as usual. Past periods are due on the entry day; the current
+  one 7 days after it, but never on or after the next anniversary. These are the only invoices
+  not due on their anniversary. At most the last 12 periods are billed, with a warning. The
+  admin can skip periods the owner collected by hand with "Mulai tagih dari" (an anniversary;
+  also an import column). A wrong invoice is fixed by a correction, never deleted.
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are
