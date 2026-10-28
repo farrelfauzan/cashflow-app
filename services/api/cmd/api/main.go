@@ -92,7 +92,6 @@ func run() error {
 	props := property.NewService(st, az)
 	tenants := tenant.NewService(st, az, clk)
 	imports := tenantimport.NewService(st, az, props, tenants)
-	members := member.NewService(st, az)
 	cookieSecure := cfg.CookieSecure()
 	allowedOrigins := cfg.Origins()
 	docsSpecPath := cfg.DocsSpecPath()

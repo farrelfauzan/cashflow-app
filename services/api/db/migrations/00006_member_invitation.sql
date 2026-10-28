@@ -13,13 +13,14 @@ ALTER TABLE membership
     ADD CONSTRAINT membership_invitation_time_needs_state
         CHECK (invitation_last_sent_at IS NULL OR invitation_state IS NOT NULL);
 
--- The person's first successful sign-in, in any organization. Set once by the login, in the
--- auth scope; organizations read it through the staff_user_org_member policy.
-ALTER TABLE staff_user ADD COLUMN first_sign_in_at timestamptz;
+-- When the member first opened this organization after signing in. It is per membership, not
+-- per person, so one organization never learns that a number signs in elsewhere. Set once, in
+-- the organization scope, by the member's first GET /orgs/{orgId}/me.
+ALTER TABLE membership ADD COLUMN first_sign_in_at timestamptz;
 
 -- +goose Down
-ALTER TABLE staff_user DROP COLUMN first_sign_in_at;
 ALTER TABLE membership
+    DROP COLUMN first_sign_in_at,
     DROP CONSTRAINT membership_invitation_time_needs_state,
     DROP CONSTRAINT membership_invitation_sent_has_time,
     DROP COLUMN invitation_last_sent_at,

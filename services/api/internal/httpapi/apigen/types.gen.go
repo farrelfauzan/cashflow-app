@@ -431,7 +431,7 @@ type MeResponse struct {
 type Member struct {
 	CreatedAt time.Time `json:"createdAt"`
 
-	// FirstSignInAt When this person first signed in to the app, in any organization; null until they have.
+	// FirstSignInAt When the member first opened this organization after signing in (their first getOrgMe here); null until they have. Each organization sees only its own, so it never reveals that a number belongs to another organization.
 	FirstSignInAt *time.Time         `json:"firstSignInAt"`
 	Id            openapi_types.UUID `json:"id"`
 

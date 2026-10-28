@@ -74,7 +74,8 @@ type Member struct {
 	CreatedAt time.Time
 	// Invitation is nil for a member who was never invited (an organization founder).
 	Invitation *Invitation
-	// FirstSignInAt is the person's first sign-in to the app, in any organization, or nil.
+	// FirstSignInAt is when the member first opened this organization after signing in, or nil.
+	// It is per membership, so it says nothing about the person's other organizations.
 	FirstSignInAt *time.Time
 }
 
@@ -127,6 +128,22 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 		return nil
 	})
 	return out, err
+}
+
+// RecordSignIn records that the principal opened their organization, the first time only, so
+// the members screen can tell an invitee who never signed in. It is the member's own row and
+// changes no access, so it needs no permission.
+func (s *Service) RecordSignIn(ctx context.Context, p authz.Principal) error {
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		now := s.inv.Clock.Now()
+		return dbgen.New(tx).SetMembershipFirstSignIn(ctx, dbgen.SetMembershipFirstSignInParams{
+			OrganizationID: p.OrganizationID, ID: p.MembershipID, FirstSignInAt: &now,
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("recording first sign-in: %w", err)
+	}
+	return nil
 }
 
 // Invite adds a staff member by phone number with built-in roles, each optionally limited to

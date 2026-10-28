@@ -86,6 +86,10 @@ func (s *Server) getOrgMe(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errMissingContext)
 		return
 	}
+	if err := s.Members.RecordSignIn(r.Context(), p); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	resp := apigen.OrgMeResponse{
 		MembershipId: p.MembershipID,
 		Roles:        make([]apigen.RoleRef, len(p.Roles)),

@@ -6,14 +6,14 @@ WHERE organization_id = $1 AND staff_user_id = $2 AND status = 'active';
 
 -- name: GetMembership :one
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       u.phone, u.name, u.first_sign_in_at
+       m.first_sign_in_at, u.phone, u.name
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2;
 
 -- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       u.phone, u.name, u.first_sign_in_at
+       m.first_sign_in_at, u.phone, u.name
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1
@@ -80,6 +80,11 @@ WHERE m.organization_id = $1 AND m.status = 'active' AND m.id <> sqlc.arg(exclud
 -- Roles are kept, so re-enabling restores the same access.
 UPDATE membership SET status = sqlc.arg(status)
 WHERE organization_id = $1 AND id = $2;
+
+-- name: SetMembershipFirstSignIn :exec
+-- Only the first time the member opens the organization is kept.
+UPDATE membership SET first_sign_in_at = $3
+WHERE organization_id = $1 AND id = $2 AND first_sign_in_at IS NULL;
 
 -- name: SetMembershipInvitation :execrows
 -- Records an invitation's state. A NULL last_sent_at keeps the time of the last send that

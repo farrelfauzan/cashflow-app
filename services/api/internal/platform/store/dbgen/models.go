@@ -66,6 +66,7 @@ type Membership struct {
 	CreatedAt            time.Time
 	InvitationState      *string
 	InvitationLastSentAt *time.Time
+	FirstSignInAt        *time.Time
 }
 
 type Organization struct {
@@ -124,11 +125,10 @@ type StaffSession struct {
 }
 
 type StaffUser struct {
-	ID            uuid.UUID
-	Phone         string
-	Name          string
-	CreatedAt     time.Time
-	FirstSignInAt *time.Time
+	ID        uuid.UUID
+	Phone     string
+	Name      string
+	CreatedAt time.Time
 }
 
 type Tenant struct {

@@ -70,6 +70,12 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		if member.NeedsOperator(err) {
 			s.log.ErrorContext(r.Context(), "member invitation not sent", "path", r.URL.Path)
 		}
+		if errors.Is(err, messaging.ErrUndeliverable) {
+			// Retrying never helps and spends one of the number's daily sends.
+			s.writeErrorField(w, http.StatusUnprocessableEntity, "whatsapp_undeliverable",
+				"Nomor ini tidak bisa menerima WhatsApp.", "phone")
+			return
+		}
 		s.writeError(w, http.StatusServiceUnavailable, "whatsapp_unavailable", "WhatsApp gagal mengirim. Coba lagi.")
 	case errors.Is(err, member.ErrAlreadyMember):
 		s.writeErrorField(w, http.StatusConflict, "already_member", "Nomor ini sudah terdaftar di usaha ini.", "phone")

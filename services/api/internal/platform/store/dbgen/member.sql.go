@@ -86,7 +86,7 @@ const createMembership = `-- name: CreateMembership :one
 INSERT INTO membership (id, organization_id, staff_user_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (organization_id, staff_user_id) DO NOTHING
-RETURNING id, organization_id, staff_user_id, status, created_at, invitation_state, invitation_last_sent_at
+RETURNING id, organization_id, staff_user_id, status, created_at, invitation_state, invitation_last_sent_at, first_sign_in_at
 `
 
 type CreateMembershipParams struct {
@@ -107,6 +107,7 @@ func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipPara
 		&i.CreatedAt,
 		&i.InvitationState,
 		&i.InvitationLastSentAt,
+		&i.FirstSignInAt,
 	)
 	return i, err
 }
@@ -159,7 +160,7 @@ func (q *Queries) DeleteBuiltinRoleAssignments(ctx context.Context, arg DeleteBu
 
 const getActiveMembershipForUser = `-- name: GetActiveMembershipForUser :one
 
-SELECT id, organization_id, staff_user_id, status, created_at, invitation_state, invitation_last_sent_at FROM membership
+SELECT id, organization_id, staff_user_id, status, created_at, invitation_state, invitation_last_sent_at, first_sign_in_at FROM membership
 WHERE organization_id = $1 AND staff_user_id = $2 AND status = 'active'
 `
 
@@ -180,13 +181,14 @@ func (q *Queries) GetActiveMembershipForUser(ctx context.Context, arg GetActiveM
 		&i.CreatedAt,
 		&i.InvitationState,
 		&i.InvitationLastSentAt,
+		&i.FirstSignInAt,
 	)
 	return i, err
 }
 
 const getMembership = `-- name: GetMembership :one
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       u.phone, u.name, u.first_sign_in_at
+       m.first_sign_in_at, u.phone, u.name
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2
@@ -204,9 +206,9 @@ type GetMembershipRow struct {
 	CreatedAt            time.Time
 	InvitationState      *string
 	InvitationLastSentAt *time.Time
+	FirstSignInAt        *time.Time
 	Phone                string
 	Name                 string
-	FirstSignInAt        *time.Time
 }
 
 func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (GetMembershipRow, error) {
@@ -219,16 +221,16 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 		&i.CreatedAt,
 		&i.InvitationState,
 		&i.InvitationLastSentAt,
+		&i.FirstSignInAt,
 		&i.Phone,
 		&i.Name,
-		&i.FirstSignInAt,
 	)
 	return i, err
 }
 
 const listMembers = `-- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       u.phone, u.name, u.first_sign_in_at
+       m.first_sign_in_at, u.phone, u.name
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1
@@ -242,9 +244,9 @@ type ListMembersRow struct {
 	CreatedAt            time.Time
 	InvitationState      *string
 	InvitationLastSentAt *time.Time
+	FirstSignInAt        *time.Time
 	Phone                string
 	Name                 string
-	FirstSignInAt        *time.Time
 }
 
 func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]ListMembersRow, error) {
@@ -263,9 +265,9 @@ func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]
 			&i.CreatedAt,
 			&i.InvitationState,
 			&i.InvitationLastSentAt,
+			&i.FirstSignInAt,
 			&i.Phone,
 			&i.Name,
-			&i.FirstSignInAt,
 		); err != nil {
 			return nil, err
 		}
@@ -379,6 +381,23 @@ SELECT id FROM organization WHERE id = $1 FOR NO KEY UPDATE
 // written in its own transaction while this lock is held) never wait on it.
 func (q *Queries) LockOrganizationMembers(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, lockOrganizationMembers, id)
+	return err
+}
+
+const setMembershipFirstSignIn = `-- name: SetMembershipFirstSignIn :exec
+UPDATE membership SET first_sign_in_at = $3
+WHERE organization_id = $1 AND id = $2 AND first_sign_in_at IS NULL
+`
+
+type SetMembershipFirstSignInParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+	FirstSignInAt  *time.Time
+}
+
+// Only the first time the member opens the organization is kept.
+func (q *Queries) SetMembershipFirstSignIn(ctx context.Context, arg SetMembershipFirstSignInParams) error {
+	_, err := q.db.Exec(ctx, setMembershipFirstSignIn, arg.OrganizationID, arg.ID, arg.FirstSignInAt)
 	return err
 }
 

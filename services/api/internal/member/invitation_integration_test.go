@@ -343,42 +343,37 @@ func TestFirstSignInAt(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, sari.FirstSignInAt)
 
-	signIn := func(t *testing.T) {
-		t.Helper()
+	t.Run("signing in alone records nothing", func(t *testing.T) {
 		require.NoError(t, env.Auth.RequestCode(ctx, "0812-3870-0001"))
 		_, _, err := env.Auth.VerifyCode(ctx, "0812-3870-0001", env.LastCode(t))
 		require.NoError(t, err)
-	}
-
-	t.Run("a wrong code does not count", func(t *testing.T) {
-		env.Clock.Advance(time.Minute)
-		require.NoError(t, env.Auth.RequestCode(ctx, "0812-3870-0001"))
-		wrong := "000000"
-		if env.LastCode(t) == wrong {
-			wrong = "111111"
-		}
-		_, _, err := env.Auth.VerifyCode(ctx, "0812-3870-0001", wrong)
-		require.Error(t, err)
 		require.Nil(t, memberByID(t, env, admin, sari.ID).FirstSignInAt)
+		require.Nil(t, memberByID(t, env, otherAdmin, sariElsewhere.ID).FirstSignInAt)
 	})
 
 	firstAt := env.Clock.Now().Add(time.Hour)
-	t.Run("the first sign-in is recorded for every organization", func(t *testing.T) {
+	t.Run("opening one organization records it there only", func(t *testing.T) {
 		env.Clock.Advance(time.Hour)
-		signIn(t)
+		require.NoError(t, env.Members.RecordSignIn(ctx, env.Principal(t, o.ID, sari.UserID)))
 		got := memberByID(t, env, admin, sari.ID).FirstSignInAt
 		require.NotNil(t, got)
 		require.True(t, firstAt.Equal(*got))
-		got = memberByID(t, env, otherAdmin, sariElsewhere.ID).FirstSignInAt
-		require.NotNil(t, got, "per person, not per organization")
+		require.Nil(t, memberByID(t, env, otherAdmin, sariElsewhere.ID).FirstSignInAt,
+			"the other organization must not learn the number signs in elsewhere")
+	})
+
+	t.Run("later opens keep the first", func(t *testing.T) {
+		env.Clock.Advance(48 * time.Hour)
+		require.NoError(t, env.Members.RecordSignIn(ctx, env.Principal(t, o.ID, sari.UserID)))
+		got := memberByID(t, env, admin, sari.ID).FirstSignInAt
+		require.NotNil(t, got)
 		require.True(t, firstAt.Equal(*got))
 	})
 
-	t.Run("later sign-ins keep the first", func(t *testing.T) {
-		env.Clock.Advance(48 * time.Hour)
-		signIn(t)
-		got := memberByID(t, env, admin, sari.ID).FirstSignInAt
+	t.Run("each organization keeps its own", func(t *testing.T) {
+		require.NoError(t, env.Members.RecordSignIn(ctx, env.Principal(t, other.ID, sari.UserID)))
+		got := memberByID(t, env, otherAdmin, sariElsewhere.ID).FirstSignInAt
 		require.NotNil(t, got)
-		require.True(t, firstAt.Equal(*got))
+		require.True(t, env.Clock.Now().Equal(*got))
 	})
 }

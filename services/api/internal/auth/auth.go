@@ -213,10 +213,6 @@ func (s *Service) VerifyCode(ctx context.Context, rawPhone, code string) (Sessio
 		if err != nil {
 			return fmt.Errorf("loading staff user: %w", err)
 		}
-		// Kept only the first time, so the members screen can tell an invitee who never signed in.
-		if err := q.SetFirstSignIn(ctx, dbgen.SetFirstSignInParams{ID: user.ID, FirstSignInAt: &now}); err != nil {
-			return fmt.Errorf("recording first sign-in: %w", err)
-		}
 		token, tokenHash, err := newToken()
 		if err != nil {
 			return err

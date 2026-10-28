@@ -134,7 +134,7 @@ func (q *Queries) GetOpenChallengeForUpdate(ctx context.Context, phone string) (
 
 const getStaffUserByPhone = `-- name: GetStaffUserByPhone :one
 
-SELECT id, phone, name, created_at, first_sign_in_at FROM staff_user WHERE phone = $1
+SELECT id, phone, name, created_at FROM staff_user WHERE phone = $1
 `
 
 // Runs in the auth scope (store.WithAuthTx).
@@ -146,7 +146,6 @@ func (q *Queries) GetStaffUserByPhone(ctx context.Context, phone string) (StaffU
 		&i.Phone,
 		&i.Name,
 		&i.CreatedAt,
-		&i.FirstSignInAt,
 	)
 	return i, err
 }
@@ -209,22 +208,6 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) er
 	return err
 }
 
-const setFirstSignIn = `-- name: SetFirstSignIn :exec
-UPDATE staff_user SET first_sign_in_at = $2
-WHERE id = $1 AND first_sign_in_at IS NULL
-`
-
-type SetFirstSignInParams struct {
-	ID            uuid.UUID
-	FirstSignInAt *time.Time
-}
-
-// Only the first successful sign-in is kept.
-func (q *Queries) SetFirstSignIn(ctx context.Context, arg SetFirstSignInParams) error {
-	_, err := q.db.Exec(ctx, setFirstSignIn, arg.ID, arg.FirstSignInAt)
-	return err
-}
-
 const supersedeOpenChallenges = `-- name: SupersedeOpenChallenges :exec
 UPDATE otp_challenge SET consumed_at = $2
 WHERE phone = $1 AND consumed_at IS NULL
@@ -258,7 +241,7 @@ const upsertStaffUser = `-- name: UpsertStaffUser :one
 INSERT INTO staff_user (id, phone, name)
 VALUES ($1, $2, $3)
 ON CONFLICT (phone) DO UPDATE SET phone = EXCLUDED.phone
-RETURNING id, phone, name, created_at, first_sign_in_at
+RETURNING id, phone, name, created_at
 `
 
 type UpsertStaffUserParams struct {
@@ -276,7 +259,6 @@ func (q *Queries) UpsertStaffUser(ctx context.Context, arg UpsertStaffUserParams
 		&i.Phone,
 		&i.Name,
 		&i.CreatedAt,
-		&i.FirstSignInAt,
 	)
 	return i, err
 }

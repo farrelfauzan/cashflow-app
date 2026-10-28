@@ -92,7 +92,9 @@ paths:
       description: >
         Capabilities are for showing or hiding controls. The server checks every request
         regardless. "conditional" means allowed on some records, such as a karyawan's own
-        assigned tenants.
+        assigned tenants. The first call by a member records their firstSignInAt in this
+        organization; later calls leave it unchanged. The web app makes this call when the
+        member opens the organization.
       responses:
         "200":
           description: OK
@@ -184,6 +186,14 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409":
           description: "The member is disabled (code member_disabled) or was never invited (code not_invited)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: >
+            The number cannot receive WhatsApp messages (code whatsapp_undeliverable, field
+            phone). Trying again does not help; the number needs to be checked.
+            invitation.state is now not_sent.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -927,8 +937,9 @@ components:
           format: date-time
           nullable: true
           description: >
-            When this person first signed in to the app, in any organization; null until they
-            have.
+            When the member first opened this organization after signing in (their first
+            getOrgMe here); null until they have. Each organization sees only its own, so it
+            never reveals that a number belongs to another organization.
 
     Invitation:
       type: object
