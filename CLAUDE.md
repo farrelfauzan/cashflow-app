@@ -279,8 +279,8 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   Per-org secrets (payment keys) are encrypted at rest.
 - **Authorization**: default deny. Every handler and job checks permission through `authz`,
   and denials and sensitive actions are audited. See "Authorization (RBAC)".
-- **FIFO allocation**: every payment pays the oldest open invoice first. One payment can
-  split across invoices via `payment_allocation`. Overpayment becomes credit and
+- **FIFO allocation**: every payment pays the open invoice with the oldest period first. One
+  payment can split across invoices via `payment_allocation`. Overpayment becomes credit and
   auto-applies to the next invoice.
 - **No minimum partial payment, no interest, no late fees.**
 - **Corrections are append-only** with a mandatory reason, and show up in the Supervisor report.
@@ -294,6 +294,24 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 
 ## Billing and reminders
 
+- Each lease bills on the anniversary of its own start date, in advance: a lease starting 15 Oct
+  has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due 15 Nov), and so on, with a full
+  first month and no proration. A start on the 29th to 31st is due on the last day of shorter
+  months, always counted from the start date (31 Jan, 28 Feb, 31 Mar).
+- A lease starting within the lead time is invoiced as soon as it is saved (the daily run is the
+  safety net); a lease booked further ahead is invoiced by the daily run, like any other. The
+  start date can change only until the lease's first invoice exists. An invoice belongs to the
+  month of its period, which for a regular invoice is the month of its due date (dashboard
+  filters, "Tagihan November").
+- An invoice not fully paid by its due date is debt (tunggakan) from H+1. Debt stacks: what a
+  partial payment leaves stays open, FIFO pays the oldest period first, and the tenant always
+  sees one total to pay, while each invoice stays its own row.
+- A lease entered late (its start date is before the day it is saved, as in the tenant import)
+  is invoiced for every period since its start date, by default; its past periods are due on
+  the day it is entered and its current period 7 days after. Started 15 Sep and entered 28 Oct
+  gives 15 Sep to 14 Oct, due 28 Oct, and 15 Oct to 14 Nov, due 4 Nov, then 15 Nov as usual. The
+  admin can skip periods the owner collected by hand with "Mulai tagih dari" (an anniversary;
+  also an import column). A wrong invoice is fixed by a correction, never deleted.
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are
