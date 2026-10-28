@@ -101,6 +101,14 @@ test.describe("Admin of the whole organization", () => {
       list.getByRole("listitem").filter({ hasText: "Mas Joko Prasetyo" }),
     ).toContainText("Admin· Kontrakan Mawar");
 
+    // Mas Agus is disabled but still collects from one tenant (seed-demo), so his row says so
+    // until an admin picks another collector on that lease.
+    const agus = list
+      .getByRole("listitem")
+      .filter({ hasText: "Mas Agus Setiawan" });
+    await expect(agus).toContainText("Nonaktif");
+    await expect(agus).toContainText("1 penyewa belum punya penagih");
+
     const invite = page.getByRole("button", { name: "Tambah anggota" });
     await expect(invite).toBeVisible();
     expect((await invite.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(
