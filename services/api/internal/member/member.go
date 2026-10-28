@@ -52,8 +52,9 @@ type RoleRef struct {
 	Name    string
 	Builtin bool
 	// PropertyID is the property the role is limited to, or uuid.Nil for the whole
-	// organization.
-	PropertyID uuid.UUID
+	// organization. PropertyName is that property's name, for showing the role.
+	PropertyID   uuid.UUID
+	PropertyName string
 }
 
 // RoleGrant is a built-in role to hold, optionally limited to one property.
@@ -137,6 +138,18 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 			}
 		}
 		return nil
+	})
+	return out, err
+}
+
+// OwnRoles returns the principal's own roles in their organization, with property names, for
+// GET /orgs/{orgId}/me. Everyone may read their own roles, so it checks no permission.
+func (s *Service) OwnRoles(ctx context.Context, p authz.Principal) ([]RoleRef, error) {
+	var out []RoleRef
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		m, err := load(ctx, dbgen.New(tx), p.OrganizationID, p.MembershipID)
+		out = m.Roles
+		return err
 	})
 	return out, err
 }
@@ -566,7 +579,7 @@ func load(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) (M
 		CollectorLeaseCount: r.CollectorLeaseCount,
 	}
 	for _, row := range rows {
-		m.Roles = append(m.Roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID))
+		m.Roles = append(m.Roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID, row.PropertyName))
 	}
 	sortRoles(m.Roles)
 	return m, nil
@@ -579,7 +592,7 @@ func rolesByMembership(ctx context.Context, q *dbgen.Queries, org uuid.UUID) (ma
 	}
 	out := map[uuid.UUID][]RoleRef{}
 	for _, r := range rows {
-		out[r.MembershipID] = append(out[r.MembershipID], roleRef(r.BuiltinRole, r.RoleID, r.RoleName, r.PropertyID))
+		out[r.MembershipID] = append(out[r.MembershipID], roleRef(r.BuiltinRole, r.RoleID, r.RoleName, r.PropertyID, r.PropertyName))
 	}
 	for _, roles := range out {
 		sortRoles(roles)
@@ -594,18 +607,24 @@ func sortRoles(roles []RoleRef) {
 		func(r RoleRef) string { return r.Name + "/" + r.PropertyID.String() })
 }
 
-func roleRef(builtin *string, roleID uuid.NullUUID, roleName *string, propertyID uuid.NullUUID) RoleRef {
-	if builtin != nil {
+func roleRef(builtin *string, roleID uuid.NullUUID, roleName *string, propertyID uuid.NullUUID, propertyName *string) RoleRef {
+	ref := RoleRef{PropertyID: propertyID.UUID}
+	if propertyName != nil {
+		ref.PropertyName = *propertyName
+	}
+	switch {
+	case builtin != nil:
+		ref.Key, ref.Name, ref.Builtin = *builtin, *builtin, true
 		if r, ok := authz.BuiltinRole(*builtin); ok {
-			return RoleRef{Key: r.Key, Name: r.Name, Builtin: true, PropertyID: propertyID.UUID}
+			ref.Key, ref.Name = r.Key, r.Name
 		}
-		return RoleRef{Key: *builtin, Name: *builtin, Builtin: true, PropertyID: propertyID.UUID}
+	default:
+		ref.Key = "custom:" + roleID.UUID.String()
+		if roleName != nil {
+			ref.Name = *roleName
+		}
 	}
-	name := ""
-	if roleName != nil {
-		name = *roleName
-	}
-	return RoleRef{Key: "custom:" + roleID.UUID.String(), Name: name, PropertyID: propertyID.UUID}
+	return ref
 }
 
 func validName(raw string) (string, error) {

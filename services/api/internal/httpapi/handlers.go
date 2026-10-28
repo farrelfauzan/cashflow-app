@@ -90,12 +90,17 @@ func (s *Server) getOrgMe(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	roles, err := s.Members.OwnRoles(r.Context(), p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	resp := apigen.OrgMeResponse{
 		MembershipId: p.MembershipID,
-		Roles:        make([]apigen.RoleRef, len(p.Roles)),
+		Roles:        make([]apigen.RoleRef, len(roles)),
 	}
-	for i, role := range p.Roles {
-		resp.Roles[i] = apigen.RoleRef{Key: role.Key, Name: role.Name, Builtin: role.Builtin, PropertyId: optionalID(role.Property)}
+	for i, role := range roles {
+		resp.Roles[i] = toAPIRole(role)
 	}
 	for _, c := range authz.Capabilities(p) {
 		resp.Capabilities = append(resp.Capabilities, apigen.Capability{
@@ -254,7 +259,7 @@ func toAPIMember(m member.Member) apigen.Member {
 		out.Invitation = &apigen.Invitation{State: apigen.InvitationState(m.Invitation.State), LastSentAt: m.Invitation.LastSentAt}
 	}
 	for i, role := range m.Roles {
-		out.Roles[i] = apigen.RoleRef{Key: role.Key, Name: role.Name, Builtin: role.Builtin, PropertyId: optionalID(role.PropertyID)}
+		out.Roles[i] = toAPIRole(role)
 	}
 	return out
 }
@@ -265,4 +270,12 @@ func optionalID(id uuid.UUID) *uuid.UUID {
 		return nil
 	}
 	return &id
+}
+
+func toAPIRole(role member.RoleRef) apigen.RoleRef {
+	out := apigen.RoleRef{Key: role.Key, Name: role.Name, Builtin: role.Builtin, PropertyId: optionalID(role.PropertyID)}
+	if role.PropertyID != uuid.Nil {
+		out.PropertyName = &role.PropertyName
+	}
+	return out
 }

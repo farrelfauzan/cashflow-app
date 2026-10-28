@@ -330,9 +330,11 @@ func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]
 }
 
 const listOrgRoleAssignments = `-- name: ListOrgRoleAssignments :many
-SELECT ra.membership_id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name
+SELECT ra.membership_id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name,
+       p.name AS property_name
 FROM role_assignment ra
 LEFT JOIN role r ON r.id = ra.role_id
+LEFT JOIN property p ON p.organization_id = ra.organization_id AND p.id = ra.property_id
 WHERE ra.organization_id = $1
 ORDER BY ra.created_at, ra.id
 `
@@ -343,6 +345,7 @@ type ListOrgRoleAssignmentsRow struct {
 	RoleID       uuid.NullUUID
 	PropertyID   uuid.NullUUID
 	RoleName     *string
+	PropertyName *string
 }
 
 func (q *Queries) ListOrgRoleAssignments(ctx context.Context, organizationID uuid.UUID) ([]ListOrgRoleAssignmentsRow, error) {
@@ -360,6 +363,7 @@ func (q *Queries) ListOrgRoleAssignments(ctx context.Context, organizationID uui
 			&i.RoleID,
 			&i.PropertyID,
 			&i.RoleName,
+			&i.PropertyName,
 		); err != nil {
 			return nil, err
 		}
@@ -372,9 +376,11 @@ func (q *Queries) ListOrgRoleAssignments(ctx context.Context, organizationID uui
 }
 
 const listRoleAssignmentsForMembership = `-- name: ListRoleAssignmentsForMembership :many
-SELECT ra.id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name, r.policy AS role_policy
+SELECT ra.id, ra.builtin_role, ra.role_id, ra.property_id, r.name AS role_name, r.policy AS role_policy,
+       p.name AS property_name
 FROM role_assignment ra
 LEFT JOIN role r ON r.id = ra.role_id
+LEFT JOIN property p ON p.organization_id = ra.organization_id AND p.id = ra.property_id
 WHERE ra.organization_id = $1 AND ra.membership_id = $2
 ORDER BY ra.created_at, ra.id
 `
@@ -385,12 +391,13 @@ type ListRoleAssignmentsForMembershipParams struct {
 }
 
 type ListRoleAssignmentsForMembershipRow struct {
-	ID          uuid.UUID
-	BuiltinRole *string
-	RoleID      uuid.NullUUID
-	PropertyID  uuid.NullUUID
-	RoleName    *string
-	RolePolicy  []byte
+	ID           uuid.UUID
+	BuiltinRole  *string
+	RoleID       uuid.NullUUID
+	PropertyID   uuid.NullUUID
+	RoleName     *string
+	RolePolicy   []byte
+	PropertyName *string
 }
 
 func (q *Queries) ListRoleAssignmentsForMembership(ctx context.Context, arg ListRoleAssignmentsForMembershipParams) ([]ListRoleAssignmentsForMembershipRow, error) {
@@ -409,6 +416,7 @@ func (q *Queries) ListRoleAssignmentsForMembership(ctx context.Context, arg List
 			&i.PropertyID,
 			&i.RoleName,
 			&i.RolePolicy,
+			&i.PropertyName,
 		); err != nil {
 			return nil, err
 		}

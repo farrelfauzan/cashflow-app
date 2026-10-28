@@ -959,6 +959,10 @@ components:
           type: string
           format: uuid
           description: Set when the role is limited to this property; absent means the whole organization.
+        propertyName:
+          type: string
+          description: The name of the property in propertyId, set with it, so a role reads "Admin · Kos Melati" without the property list.
+          example: Kos Melati
 
     Capability:
       type: object
