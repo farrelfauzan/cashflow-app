@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Capability } from "@/lib/api/generated/model";
+import { createAppAbility } from "@/lib/capabilities";
 
 import { ORG_MENU, roleSummary, visibleOrgMenu } from "./utils";
 
@@ -20,12 +21,9 @@ describe("visibleOrgMenu", () => {
       "tenant:read": "allow",
       "member:read": "allow",
     });
-    expect(visibleOrgMenu(all).map((item) => item.key)).toEqual([
-      "home",
-      "properties",
-      "tenants",
-      "members",
-    ]);
+    expect(
+      visibleOrgMenu(createAppAbility(all)).map((item) => item.key),
+    ).toEqual(["home", "properties", "tenants", "members"]);
   });
 
   it("shows an item allowed on some records", () => {
@@ -34,20 +32,22 @@ describe("visibleOrgMenu", () => {
       "tenant:read": "conditional",
       "member:read": "deny",
     });
-    expect(visibleOrgMenu(limited).map((item) => item.key)).toEqual([
-      "home",
-      "properties",
-      "tenants",
-    ]);
+    expect(
+      visibleOrgMenu(createAppAbility(limited)).map((item) => item.key),
+    ).toEqual(["home", "properties", "tenants"]);
   });
 
   it("shows only the home to a member with no matching action", () => {
-    expect(visibleOrgMenu([]).map((item) => item.key)).toEqual(["home"]);
+    expect(
+      visibleOrgMenu(createAppAbility([])).map((item) => item.key),
+    ).toEqual(["home"]);
   });
 
   it("names a catalog action for every gated item", () => {
     for (const item of ORG_MENU) {
-      if (item.action !== null) expect(item.action).toMatch(/^[a-z]+:[a-z]+$/);
+      if (item.permission !== null) {
+        expect(item.permission.join(" ")).toMatch(/^[a-z]+ [a-z]+$/);
+      }
     }
   });
 });
