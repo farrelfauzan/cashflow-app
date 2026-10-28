@@ -23,4 +23,9 @@ export interface Member {
      * @nullable
      */
   firstSignInAt: string | null;
+  /**
+     * How many active leases in this organization name this member as collector, on every property. It is organization-wide because it is a count with no names or tenant data and the members list is organization-level (member:read for the whole organization; a role limited to one property cannot list members); reassigning still needs lease:manage on each lease. A disabled member keeps the leases they collect until an admin picks another collector with updateLease, so a disabled member with a count above 0 is shown as "N penyewa belum punya penagih".
+     * @minimum 0
+     */
+  collectorLeaseCount: number;
 }

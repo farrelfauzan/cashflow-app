@@ -203,6 +203,8 @@ type ChargeTypeList struct {
 
 // Collector defines model for Collector.
 type Collector struct {
+	// Active False when the member is disabled in the organization. The lease keeps them as collector until an admin picks another one with updateLease. The web counts the flagged tenants from listTenants because that list is not paginated; if it ever becomes paginated, an organization-wide count must come from the API instead.
+	Active   bool               `json:"active"`
 	MemberId openapi_types.UUID `json:"memberId"`
 	Name     string             `json:"name"`
 }
@@ -381,7 +383,7 @@ type LeaseInput struct {
 	// Example: 2026-10-15
 	BilledFrom *openapi_types.Date `json:"billedFrom,omitempty"`
 
-	// CollectorMemberId The member (Member.id) who collects from this tenant. Leave it out for none.
+	// CollectorMemberId The member (Member.id) who collects from this tenant. Leave it out for none. The member must be active, except on updateLease when it is the lease's current collector, so a lease whose collector was disabled can still be edited while it keeps them. A different disabled member is refused (field collectorMemberId).
 	CollectorMemberId *openapi_types.UUID `json:"collectorMemberId,omitempty"`
 
 	// DepositAmount Defaults to 0.
@@ -418,7 +420,7 @@ type LeaseTerms struct {
 	// Example: 2026-10-15
 	BilledFrom *openapi_types.Date `json:"billedFrom,omitempty"`
 
-	// CollectorMemberId The member (Member.id) who collects from this tenant. Leave it out for none.
+	// CollectorMemberId The member (Member.id) who collects from this tenant. Leave it out for none. The member must be active, except on updateLease when it is the lease's current collector, so a lease whose collector was disabled can still be edited while it keeps them. A different disabled member is refused (field collectorMemberId).
 	CollectorMemberId *openapi_types.UUID `json:"collectorMemberId,omitempty"`
 
 	// DepositAmount Defaults to 0.
@@ -458,7 +460,9 @@ type MeResponse struct {
 
 // Member defines model for Member.
 type Member struct {
-	CreatedAt time.Time `json:"createdAt"`
+	// CollectorLeaseCount How many active leases in this organization name this member as collector, on every property. It is organization-wide because it is a count with no names or tenant data and the members list is organization-level (member:read for the whole organization; a role limited to one property cannot list members); reassigning still needs lease:manage on each lease. A disabled member keeps the leases they collect until an admin picks another collector with updateLease, so a disabled member with a count above 0 is shown as "N penyewa belum punya penagih".
+	CollectorLeaseCount int64     `json:"collectorLeaseCount"`
+	CreatedAt           time.Time `json:"createdAt"`
 
 	// FirstSignInAt When the member first opened this organization after signing in (their first getOrgMe here); null until they have. Each organization sees only its own, so it never reveals that a number belongs to another organization.
 	FirstSignInAt *time.Time         `json:"firstSignInAt"`

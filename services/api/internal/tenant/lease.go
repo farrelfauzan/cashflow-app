@@ -50,10 +50,12 @@ type Lease struct {
 	RentAmount     int64
 	DepositAmount  int64
 	Status         string
-	// Collector is the member who collects from this tenant, if any.
+	// Collector is the member who collects from this tenant, if any. A collector who is
+	// disabled stays on the lease, with CollectorActive false, until an admin picks another.
 	CollectorMemberID uuid.UUID
 	CollectorUserID   uuid.UUID
 	CollectorName     string
+	CollectorActive   bool
 	// Charges are the fixed monthly extras on top of rent, by name; never nil once loaded.
 	Charges   []Charge
 	CreatedAt time.Time
@@ -155,8 +157,10 @@ func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID) (
 // UpdateLease changes the terms of an active lease. Each change is audited; a new rent applies
 // from the next invoice. Terms without a BilledFrom keep the stored one, so an edit of another
 // term never undoes a skipped billing start; when the start date changes and the kept value no
-// longer fits it, the update is refused on billedFrom. Slice 2 adds the rule that the start date
-// and BilledFrom lock once the lease has an invoice.
+// longer fits it, the update is refused on billedFrom. Terms that name the lease's current
+// collector keep them even when they have been disabled, so the lease stays editable until an
+// admin picks another; any other collector must be active. Slice 2 adds the rule that the start
+// date and BilledFrom lock once the lease has an invoice.
 func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UUID, t Terms) (Lease, error) {
 	terms, err := ValidTerms(t)
 	if err != nil {
@@ -178,9 +182,12 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		if current.PlannedEndDate != nil && current.PlannedEndDate.Before(terms.StartDate) {
 			return &InputError{Field: "startDate", Message: "Tanggal mulai tidak boleh setelah rencana keluar. Ubah rencana keluar dulu."}
 		}
-		collector, err := collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID)
-		if err != nil {
-			return err
+		// The current collector is kept even when disabled; only a new one must be active.
+		collector := uuid.NullUUID{UUID: current.CollectorUserID, Valid: current.CollectorUserID != uuid.Nil}
+		if terms.CollectorMemberID != current.CollectorMemberID {
+			if collector, err = collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID); err != nil {
+				return err
+			}
 		}
 		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
 			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
@@ -387,6 +394,7 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	if r.CollectorName != nil {
 		l.CollectorName = *r.CollectorName
 	}
+	l.CollectorActive = r.CollectorStatus != nil && *r.CollectorStatus == "active"
 	return l
 }
 
