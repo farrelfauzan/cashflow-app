@@ -15,6 +15,12 @@ const baseURL = `http://localhost:${port}`;
 const apiOrigin = process.env.API_DEV_ORIGIN?.trim() || "http://localhost:8080";
 const apiInternalUrl = process.env.API_INTERNAL_URL?.trim() || apiOrigin;
 const isCI = Boolean(process.env.CI);
+// One id per run (minutes since the epoch, four digits), set here once and inherited by the
+// workers through the environment. Records a test leaves in the database, such as invited
+// members, use it, so a second run on the same local database does not collide with the first.
+process.env.E2E_RUN_ID ??= String(
+  Math.floor(Date.now() / 60_000) % 10_000,
+).padStart(4, "0");
 
 // Chromium only, at the two target sizes from CLAUDE.md "UX rules".
 export default defineConfig({
