@@ -39,6 +39,13 @@ curl -b jar localhost:8080/api/orgs/<organization id>/members
 
 The endpoints are described in `api/openapi.yaml`.
 
+Inviting a member (`POST /api/orgs/<organization id>/members`) sends them a WhatsApp invitation
+with a link to the web login page, built from `PUBLIC_WEB_ORIGIN` (development defaults to
+`http://localhost:3000`; staging and production must set an https origin). With devlog the
+invitation shows up in the API log like the login code. A failed or rate-limited send leaves the
+member created with `invitation.state` `not_sent`; `POST .../members/<member id>/invitation`
+sends it again.
+
 ### Demo data (development only)
 
 To get a realistic database without typing it in, seed two demo organizations (Griya Sejahtera

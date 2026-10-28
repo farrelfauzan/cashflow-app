@@ -59,6 +59,24 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeError(w, http.StatusConflict, "lease_ended", "Sewa ini sudah berakhir dan tidak bisa diubah.")
 	case errors.Is(err, member.ErrLastAdmin):
 		s.writeError(w, http.StatusConflict, "last_admin", "Anggota ini admin terakhir yang aktif. Tambahkan admin lain dulu.")
+	case errors.Is(err, member.ErrMemberDisabled):
+		s.writeError(w, http.StatusConflict, "member_disabled", "Anggota ini sedang nonaktif.")
+	case errors.Is(err, member.ErrNotInvited):
+		s.writeError(w, http.StatusConflict, "not_invited", "Anggota ini tidak punya undangan.")
+	case errors.Is(err, member.ErrInviteRateLimited):
+		s.writeError(w, http.StatusTooManyRequests, "rate_limited", "Terlalu sering. Coba lagi nanti.")
+	case errors.Is(err, member.ErrSendFailed):
+		// The member package has logged the send; an operator only needs to act on some causes.
+		if member.NeedsOperator(err) {
+			s.log.ErrorContext(r.Context(), "member invitation not sent", "path", r.URL.Path)
+		}
+		if errors.Is(err, messaging.ErrUndeliverable) {
+			// Retrying never helps and spends one of the number's daily sends.
+			s.writeErrorField(w, http.StatusUnprocessableEntity, "whatsapp_undeliverable",
+				"Nomor ini tidak bisa menerima WhatsApp.", "phone")
+			return
+		}
+		s.writeError(w, http.StatusServiceUnavailable, "whatsapp_unavailable", "WhatsApp gagal mengirim. Coba lagi.")
 	case errors.Is(err, member.ErrAlreadyMember):
 		s.writeErrorField(w, http.StatusConflict, "already_member", "Nomor ini sudah terdaftar di usaha ini.", "phone")
 	case errors.Is(err, messaging.ErrNotConnected), errors.Is(err, messaging.ErrRateLimited),

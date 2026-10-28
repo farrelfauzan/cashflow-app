@@ -83,7 +83,8 @@ func run() error {
 	}
 
 	clk := clock.System()
-	authSvc, err := auth.NewService(st, msg, ratelimit.NewRedis(rdb), clk, log, []byte(cfg.AuthSecret))
+	limiter := ratelimit.NewRedis(rdb)
+	authSvc, err := auth.NewService(st, msg, limiter, clk, log, []byte(cfg.AuthSecret))
 	if err != nil {
 		return err
 	}
@@ -91,10 +92,13 @@ func run() error {
 	props := property.NewService(st, az)
 	tenants := tenant.NewService(st, az, clk)
 	imports := tenantimport.NewService(st, az, props, tenants)
-	members := member.NewService(st, az)
 	cookieSecure := cfg.CookieSecure()
 	allowedOrigins := cfg.Origins()
 	docsSpecPath := cfg.DocsSpecPath()
+
+	members := member.NewService(st, az, member.Invitations{
+		Messenger: msg, Limiter: limiter, Clock: clk, Log: log, LoginURL: cfg.LoginURL(),
+	})
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,

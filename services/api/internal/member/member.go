@@ -72,6 +72,11 @@ type Member struct {
 	Status    string
 	Roles     []RoleRef
 	CreatedAt time.Time
+	// Invitation is nil for a member who was never invited (an organization founder).
+	Invitation *Invitation
+	// FirstSignInAt is when the member first opened this organization after signing in, or nil.
+	// It is per membership, so it says nothing about the person's other organizations.
+	FirstSignInAt *time.Time
 }
 
 // Invite is the input for adding a member.
@@ -86,11 +91,12 @@ type Invite struct {
 type Service struct {
 	store *store.Store
 	authz *authz.Service
+	inv   Invitations
 }
 
-// NewService returns a Service.
-func NewService(st *store.Store, az *authz.Service) *Service {
-	return &Service{store: st, authz: az}
+// NewService returns a Service. inv sends the WhatsApp invitations.
+func NewService(st *store.Store, az *authz.Service, inv Invitations) *Service {
+	return &Service{store: st, authz: az, inv: inv}
 }
 
 // List returns every member of the principal's organization.
@@ -115,11 +121,29 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 			out[i] = Member{
 				ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone,
 				Status: r.Status, CreatedAt: r.CreatedAt, Roles: roles[r.ID],
+				Invitation:    invitationFrom(r.InvitationState, r.InvitationLastSentAt),
+				FirstSignInAt: r.FirstSignInAt,
 			}
 		}
 		return nil
 	})
 	return out, err
+}
+
+// RecordSignIn records that the principal opened their organization, the first time only, so
+// the members screen can tell an invitee who never signed in. It is the member's own row and
+// changes no access, so it needs no permission.
+func (s *Service) RecordSignIn(ctx context.Context, p authz.Principal) error {
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		now := s.inv.Clock.Now()
+		return dbgen.New(tx).SetMembershipFirstSignIn(ctx, dbgen.SetMembershipFirstSignInParams{
+			OrganizationID: p.OrganizationID, ID: p.MembershipID, FirstSignInAt: &now,
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("recording first sign-in: %w", err)
+	}
+	return nil
 }
 
 // Invite adds a staff member by phone number with built-in roles, each optionally limited to
@@ -140,6 +164,11 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 // A failure in step 3 (such as ErrAlreadyMember or a property removed in between) can leave a
 // staff user from step 2 with no membership. That row grants nothing: access comes only from
 // memberships and their roles.
+//
+// Step 3 marks the invitation not_sent. Once it has committed, the invitation is sent over
+// WhatsApp and the outcome recorded (see deliver). A send that fails or is rate limited never
+// undoes the invite: the member is returned with the invitation not_sent. A number that is
+// already a member fails in step 3 with ErrAlreadyMember, so nothing is sent.
 func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Member, error) {
 	number, err := phone.Normalize(in.Phone)
 	if err != nil {
@@ -179,7 +208,10 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 	}
 
 	// Step 3.
-	var m Member
+	var (
+		m      Member
+		params map[string]string
+	)
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		for _, req := range reqs {
 			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
@@ -194,10 +226,26 @@ func (s *Service) Invite(ctx context.Context, p authz.Principal, in Invite) (Mem
 		if err != nil {
 			return err
 		}
-		m, err = load(ctx, q, p.OrganizationID, membershipID)
+		if err := setInvitation(ctx, q, p.OrganizationID, membershipID, InvitationNotSent, nil); err != nil {
+			return err
+		}
+		if m, err = load(ctx, q, p.OrganizationID, membershipID); err != nil {
+			return err
+		}
+		params, err = invitationParams(ctx, q, p, m)
 		return err
 	})
-	return m, err
+	if err != nil {
+		return Member{}, err
+	}
+
+	// The invite has committed, so a failed send only shows on the member as not_sent.
+	m, err = s.deliver(ctx, p.OrganizationID, m, params)
+	if NeedsOperator(err) {
+		s.inv.Log.ErrorContext(ctx, "member invitation not sent", "organization_id", p.OrganizationID,
+			"membership_id", m.ID, "reason", failureReason(err))
+	}
+	return m, nil
 }
 
 // inviteRequests returns member:invite and role:assign on each granted role, once per role
@@ -474,7 +522,10 @@ func load(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) (M
 	if err != nil {
 		return Member{}, fmt.Errorf("loading member roles: %w", err)
 	}
-	m := Member{ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt}
+	m := Member{
+		ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt,
+		Invitation: invitationFrom(r.InvitationState, r.InvitationLastSentAt), FirstSignInAt: r.FirstSignInAt,
+	}
 	for _, row := range rows {
 		m.Roles = append(m.Roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID))
 	}

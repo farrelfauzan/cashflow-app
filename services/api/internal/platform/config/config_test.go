@@ -28,6 +28,7 @@ func TestLoadAPI(t *testing.T) {
 				RedisAddr:        "localhost:6379",
 				AuthSecret:       testSecret,
 				AllowedOrigins:   "http://localhost:3000",
+				PublicWebOrigin:  "http://localhost:3000",
 				WhatsAppProvider: "devlog",
 				OpenAPISpec:      "../../api/openapi.yaml",
 			},
@@ -42,6 +43,7 @@ func TestLoadAPI(t *testing.T) {
 				"REDIS_ADDR":        "redis:6379",
 				"AUTH_SECRET":       testSecret,
 				"ALLOWED_ORIGINS":   "https://app.example.id",
+				"PUBLIC_WEB_ORIGIN": "https://app.example.id",
 				"WHATSAPP_PROVIDER": "gowa",
 				"GOWA_URL":          "http://gowa:3000",
 				"GOWA_USERNAME":     "cashflow",
@@ -55,6 +57,7 @@ func TestLoadAPI(t *testing.T) {
 				RedisAddr:        "redis:6379",
 				AuthSecret:       testSecret,
 				AllowedOrigins:   "https://app.example.id",
+				PublicWebOrigin:  "https://app.example.id",
 				WhatsAppProvider: "gowa",
 				GOWA:             GOWA{URL: "http://gowa:3000", Username: "cashflow", Password: "gowa-secret", DeviceID: "platform"},
 				OpenAPISpec:      "../../api/openapi.yaml",
@@ -99,7 +102,10 @@ func TestLoadAPI(t *testing.T) {
 }
 
 func TestWhatsAppProviderChoice(t *testing.T) {
-	base := map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret}
+	base := map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+		"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+	}
 	with := func(extra map[string]string) map[string]string {
 		m := map[string]string{}
 		for k, v := range base {
@@ -138,6 +144,52 @@ func TestWhatsAppProviderChoice(t *testing.T) {
 				return
 			}
 			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestPublicWebOrigin(t *testing.T) {
+	gowa := map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+		"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
+	}
+	env := func(appEnv, origin string) map[string]string {
+		m := map[string]string{"APP_ENV": appEnv}
+		for k, v := range gowa {
+			m[k] = v
+		}
+		if origin != "" {
+			m["PUBLIC_WEB_ORIGIN"] = origin
+		}
+		return m
+	}
+	tests := []struct {
+		name      string
+		env       map[string]string
+		wantLogin string
+		wantErr   string
+	}{
+		{name: "development defaults to the Next.js dev server", env: env("development", ""), wantLogin: "http://localhost:3000/login"},
+		{name: "http is fine in development", env: env("development", "http://192.168.1.5:3000"), wantLogin: "http://192.168.1.5:3000/login"},
+		{name: "https in production", env: env("production", "https://app.example.id"), wantLogin: "https://app.example.id/login"},
+		{name: "missing outside development", env: env("staging", ""), wantErr: "PUBLIC_WEB_ORIGIN is required in staging"},
+		{name: "http outside development", env: env("production", "http://app.example.id"), wantErr: "must use https in production"},
+		{name: "a path", env: env("production", "https://app.example.id/app"), wantErr: "origin only"},
+		{name: "a trailing slash", env: env("production", "https://app.example.id/"), wantErr: "origin only"},
+		{name: "a query", env: env("production", "https://app.example.id?x=1"), wantErr: "origin only"},
+		{name: "credentials", env: env("production", "https://u:p@app.example.id"), wantErr: "origin only"},
+		{name: "not absolute", env: env("production", "app.example.id"), wantErr: "absolute http(s) origin"},
+		{name: "another scheme", env: env("development", "ftp://app.example.id"), wantErr: "absolute http(s) origin"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := loadAPI(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantLogin, got.LoginURL())
 		})
 	}
 }
