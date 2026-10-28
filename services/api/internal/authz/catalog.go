@@ -49,6 +49,16 @@ var catalog = map[string][]string{
 	"audit":        {"read"},
 }
 
+// orgWideResources are the resources whose records never belong to a property, so a role
+// limited to one property grants nothing on them (decision 15) and Capabilities reports deny
+// rather than conditional. Add a resource here when its records never carry a property.
+var orgWideResources = map[string]bool{
+	"organization": true,
+	"settings":     true,
+	"member":       true,
+	"role":         true,
+}
+
 var allActions = func() []string {
 	var out []string
 	for resource, verbs := range catalog {
