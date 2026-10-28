@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,6 +195,9 @@ func check(rec record, row *Row) input {
 	if parsed {
 		row.Values = &Values{StartDate: start, Rent: rent, Deposit: deposit}
 	}
+	if note, ok := oldDueDayNote(rec.get(colOldDueDay), start); ok {
+		row.Notes = append(row.Notes, note)
+	}
 
 	var in input
 	var err error
@@ -353,4 +357,16 @@ func (s *Summary) add(row Row) {
 	if row.Lease == Matched {
 		s.LeasesMatched++
 	}
+}
+
+// oldDueDayNote warns when an older template's due day differs from the start date's day, since
+// rent is now due on the start date's day and the old column is not used.
+func oldDueDayNote(cell string, start time.Time) (string, bool) {
+	if cell == "" || start.IsZero() {
+		return "", false
+	}
+	if day, err := strconv.Atoi(cell); err == nil && day == start.Day() {
+		return "", false
+	}
+	return fmt.Sprintf("Jatuh tempo kini mengikuti tanggal mulai (tanggal %d); kolom jatuh_tempo tidak dipakai.", start.Day()), true
 }

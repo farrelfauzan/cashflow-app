@@ -40,16 +40,24 @@ func TestParseFile(t *testing.T) {
 		require.Equal(t, 4, recs[1].Line, "line numbers count the skipped row")
 	})
 
-	t.Run("an older template with a due day column still imports, the column is ignored", func(t *testing.T) {
+	t.Run("an older template with a due day column still imports, with a note when the day differs", func(t *testing.T) {
 		t.Parallel()
+		const differs = "Jatuh tempo kini mengikuti tanggal mulai (tanggal 1); kolom jatuh_tempo tidak dipakai."
 		tests := []struct {
-			name string
-			data string
+			name      string
+			data      string
+			wantNotes []string
 		}{
-			{"due_day header", "property,unit,tenant_name,phone,rent,due_day,start_date\n" +
-				"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,5,2026-10-01\n"},
-			{"Jatuh Tempo header", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
-				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;5;2026-10-01\n"},
+			{"due_day header, another day", "property,unit,tenant_name,phone,rent,due_day,start_date\n" +
+				"Kos Melati,Kamar 1,Rina,0812-1111-2222,850000,5,2026-10-01\n", []string{differs}},
+			{"Jatuh Tempo header, another day", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;5;2026-10-01\n", []string{differs}},
+			{"the start date's day", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;01;2026-10-01\n", nil},
+			{"an empty due day", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;;2026-10-01\n", nil},
+			{"a due day that is not a number", "Properti;Kamar;Nama Penyewa;No WA;Sewa;Jatuh Tempo;Tanggal Mulai\n" +
+				"Kos Melati;Kamar 1;Rina;0812-1111-2222;850000;awal bulan;2026-10-01\n", []string{differs}},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -64,6 +72,7 @@ func TestParseFile(t *testing.T) {
 				var row Row
 				check(recs[0], &row)
 				require.Empty(t, row.Errors)
+				require.Equal(t, tc.wantNotes, row.Notes)
 			})
 		}
 	})

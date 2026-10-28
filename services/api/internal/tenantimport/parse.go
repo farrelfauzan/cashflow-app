@@ -23,6 +23,9 @@ const (
 	colRent         = "rent"
 	colStartDate    = "start_date"
 	colDeposit      = "deposit"
+	// colOldDueDay is the due day of older templates. Rent is now due on the start date's day,
+	// so it is read only to warn when an older sheet says otherwise.
+	colOldDueDay = "due_day"
 )
 
 // MaxRows is the most data rows one file may hold.
@@ -30,7 +33,7 @@ const MaxRows = 2000
 
 var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, colRent, colStartDate}
 
-var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit)
+var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit, colOldDueDay)
 
 // The Indonesian column names. The template writes them, and the parser reads them as aliases.
 const (
@@ -54,6 +57,7 @@ var aliases = map[string]string{
 	idRent: colRent, "harga_sewa": colRent,
 	idStartDate: colStartDate, "mulai_sewa": colStartDate,
 	idDeposit: colDeposit, "uang_jaminan": colDeposit,
+	"jatuh_tempo": colOldDueDay, "tanggal_jatuh_tempo": colOldDueDay,
 }
 
 // kindAliases maps property kinds as people write them to the stored kinds.
