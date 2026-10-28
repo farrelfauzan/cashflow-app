@@ -111,12 +111,15 @@ func TestWriteLogins(t *testing.T) {
 			Phone: "+6281200010005", Name: "Mas Joko Prasetyo", Organization: "Griya Sejahtera",
 			Roles: []string{"Admin", "Karyawan"}, PropertyLimits: []string{"Admin: Kontrakan Mawar"},
 		},
+		{Phone: "+6281200010006", Name: "Mas Agus Setiawan", Organization: "Griya Sejahtera", Roles: []string{"Karyawan"}, Disabled: true},
 	})
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	require.Len(t, lines, 3)
+	require.Len(t, lines, 4)
 	require.Contains(t, lines[0], "PHONE")
 	require.Contains(t, lines[0], "PROPERTY LIMIT")
-	require.Regexp(t, `^\+6281200010002\s+Pak Budi Hartono\s+Griya Sejahtera\s+Admin\s+-$`, lines[1])
-	require.Regexp(t, `^\+6281200010005\s+Mas Joko Prasetyo\s+Griya Sejahtera\s+Admin, Karyawan\s+Admin: Kontrakan Mawar$`, lines[2])
+	require.Contains(t, lines[0], "STATUS")
+	require.Regexp(t, `^\+6281200010002\s+Pak Budi Hartono\s+Griya Sejahtera\s+Admin\s+-\s+active$`, lines[1])
+	require.Regexp(t, `^\+6281200010005\s+Mas Joko Prasetyo\s+Griya Sejahtera\s+Admin, Karyawan\s+Admin: Kontrakan Mawar\s+active$`, lines[2])
+	require.Regexp(t, `^\+6281200010006\s+Mas Agus Setiawan\s+Griya Sejahtera\s+Karyawan\s+-\s+disabled \(cannot sign in\)$`, lines[3])
 }

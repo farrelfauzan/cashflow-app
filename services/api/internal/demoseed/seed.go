@@ -10,7 +10,8 @@
 // among its Admin's own memberships, members by phone, properties by name, units by label in
 // their property, charge types by name ignoring case, tenants by phone and leases by an active
 // lease of that tenant on the unit. A record that already exists is left exactly as it is, even
-// when its values differ; fixed extras are set only on a lease that has none.
+// when its values differ; fixed extras are set only on a lease that has none, and a member the
+// demo marks disabled is disabled only by the run that invites them.
 package demoseed
 
 import (
@@ -51,6 +52,8 @@ type Login struct {
 	Roles        []string // role names, in display order
 	// PropertyLimits lists "Role: Property" for each role limited to a property.
 	PropertyLimits []string
+	// Disabled members cannot sign in; they are listed so the demo's people are all there.
+	Disabled bool
 }
 
 // Result is what the seed leaves in the database.
@@ -89,7 +92,11 @@ type seeder struct {
 	types map[string]uuid.UUID            // lower-case charge type name -> id
 	units map[string]map[string]uuid.UUID // property name -> unit label -> id
 	staff map[string]uuid.UUID            // E.164 phone -> membership id
-	notes []string
+	// disabled has the E.164 phones of members who were disabled before this run.
+	disabled map[string]bool
+	// toDisable are the members this run invited that the demo marks disabled.
+	toDisable []uuid.UUID
+	notes     []string
 }
 
 func (s *seeder) note(format string, args ...any) {
@@ -112,6 +119,12 @@ func (s *seeder) run(ctx context.Context) error {
 	for _, t := range s.spec.Tenants {
 		if err := s.ensureTenant(ctx, t); err != nil {
 			return fmt.Errorf("tenant %s: %w", t.Name, err)
+		}
+	}
+	// Last, so their leases could still name them as collector.
+	for _, id := range s.toDisable {
+		if _, err := s.d.Members.SetStatus(ctx, s.p, id, member.StatusDisabled); err != nil {
+			return fmt.Errorf("disabling a member: %w", err)
 		}
 	}
 	return nil
@@ -241,8 +254,10 @@ func (s *seeder) ensureMembers(ctx context.Context) error {
 		return err
 	}
 	s.staff = map[string]uuid.UUID{}
+	s.disabled = map[string]bool{}
 	for _, m := range existing {
 		s.staff[m.Phone] = m.ID
+		s.disabled[m.Phone] = m.Status == member.StatusDisabled
 	}
 	for _, sp := range slices.Concat(s.spec.Founders, s.spec.Invited) {
 		number, err := phone.Normalize(sp.Phone)
@@ -268,6 +283,9 @@ func (s *seeder) ensureMembers(ctx context.Context) error {
 			return fmt.Errorf("inviting %s: %w", sp.Name, err)
 		}
 		s.staff[number] = m.ID
+		if sp.Disabled {
+			s.toDisable = append(s.toDisable, m.ID)
+		}
 	}
 	return nil
 }
@@ -347,10 +365,15 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 			return uuid.Nil, err
 		}
 		id, ok := s.staff[number]
-		if !ok {
+		switch {
+		case !ok:
 			return uuid.Nil, fmt.Errorf("collector %s is not a member", phone.Mask(number))
+		case s.disabled[number]:
+			// Only an active member can be made collector of a new lease.
+			s.note("%s %s: collector %s is disabled; lease created without a collector", ls.Property, ls.Unit, phone.Mask(number))
+		default:
+			terms.CollectorMemberID = id
 		}
-		terms.CollectorMemberID = id
 	}
 	l, err := s.d.Tenants.CreateLeaseTx(ctx, tx, s.p, tenant.NewLease{TenantID: tenantID, UnitID: unitID, Terms: terms})
 	if err != nil {
@@ -405,7 +428,7 @@ func (s *seeder) logins(ctx context.Context) ([]Login, error) {
 	}
 	out := make([]Login, 0, len(members))
 	for _, m := range members {
-		l := Login{Phone: m.Phone, Name: m.Name, Organization: s.spec.Name}
+		l := Login{Phone: m.Phone, Name: m.Name, Organization: s.spec.Name, Disabled: m.Status == member.StatusDisabled}
 		for _, r := range m.Roles {
 			if !slices.Contains(l.Roles, r.Name) {
 				l.Roles = append(l.Roles, r.Name)
