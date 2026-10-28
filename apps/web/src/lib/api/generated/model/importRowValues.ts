@@ -6,13 +6,12 @@
  */
 
 /**
- * The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit, due day or start date could not be read.
+ * The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
  */
 export interface ImportRowValues {
   startDate: string;
   /** Monthly rent in rupiah. */
   rentAmount: number;
-  dueDay: number;
   /** Deposit in rupiah; 0 when the cell is empty. */
   depositAmount: number;
 }

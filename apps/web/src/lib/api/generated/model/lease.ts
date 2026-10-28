@@ -15,13 +15,12 @@ export interface Lease {
   unitLabel: string;
   propertyId: string;
   propertyName: string;
+  /** First day of the lease. Rent is billed in advance on this day of every month (the last day of a shorter month when it is the 29th to 31st). */
   startDate: string;
   /** Last day of the lease, set by move-out. */
   endDate?: string;
   /** Monthly rent in rupiah. */
   rentAmount: number;
-  /** Day of the month rent is due, 1 to 28. */
-  dueDay: number;
   /** Deposit held, in rupiah. */
   depositAmount: number;
   status: LeaseStatus;

@@ -6,14 +6,10 @@
  */
 
 export interface LeaseTerms {
+  /** Also the day of the month rent is due. */
   startDate: string;
   /** @minimum 1 */
   rentAmount: number;
-  /**
-     * @minimum 1
-     * @maximum 28
-     */
-  dueDay: number;
   /**
      * Defaults to 0.
      * @minimum 0
