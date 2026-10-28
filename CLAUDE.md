@@ -279,8 +279,8 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   Per-org secrets (payment keys) are encrypted at rest.
 - **Authorization**: default deny. Every handler and job checks permission through `authz`,
   and denials and sensitive actions are audited. See "Authorization (RBAC)".
-- **FIFO allocation**: every payment pays the oldest open invoice first. One payment can
-  split across invoices via `payment_allocation`. Overpayment becomes credit and
+- **FIFO allocation**: every payment pays the open invoice with the oldest period first. One
+  payment can split across invoices via `payment_allocation`. Overpayment becomes credit and
   auto-applies to the next invoice.
 - **No minimum partial payment, no interest, no late fees.**
 - **Corrections are append-only** with a mandatory reason, and show up in the Supervisor report.
@@ -307,11 +307,11 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   partial payment leaves stays open, FIFO pays the oldest period first, and the tenant always
   sees one total to pay, while each invoice stays its own row.
 - A lease entered late (its start date is before the day it is saved, as in the tenant import)
-  is invoiced for every period since its start date, by default; its past periods are debt at
-  once and its current period is due 7 days after entry. Started 15 Sep and entered 28 Oct gives
-  15 Sep to 14 Oct, due 28 Oct, and 15 Oct to 14 Nov, due 4 Nov, then 15 Nov as usual. The admin
-  can skip periods the owner collected by hand with "Mulai tagih dari" (an anniversary; also an
-  import column). A wrong invoice is fixed by a correction, never deleted.
+  is invoiced for every period since its start date, by default; its past periods are due on
+  the day it is entered and its current period 7 days after. Started 15 Sep and entered 28 Oct
+  gives 15 Sep to 14 Oct, due 28 Oct, and 15 Oct to 14 Nov, due 4 Nov, then 15 Nov as usual. The
+  admin can skip periods the owner collected by hand with "Mulai tagih dari" (an anniversary;
+  also an import column). A wrong invoice is fixed by a correction, never deleted.
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are
