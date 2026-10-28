@@ -1,12 +1,8 @@
 "use client";
 
 import type { Member } from "@/lib/api/generated/model";
-import {
-  canManageMember,
-  canResendInvitation,
-  type MemberPermissions,
-} from "@/lib/member/member-controls";
-import type { PropertyNames } from "@/lib/member/role-labels";
+import { canManageMember, canResendInvitation } from "./utils";
+import type { MemberPermissions, PropertyNames } from "./type";
 
 import { MemberCard } from "./member-card";
 import { MemberTableRow } from "./member-table-row";

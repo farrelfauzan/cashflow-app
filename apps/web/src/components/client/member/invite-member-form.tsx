@@ -14,22 +14,19 @@ import {
   getListMembersQueryKey,
   useInviteMember,
 } from "@/lib/api/generated/members/members";
-import { inviteFormError } from "@/lib/member/member-errors";
 import {
+  inviteFormError,
   inviteRoleForm,
   roleFormErrors,
   roleGrantsFromForm,
-  type RoleFormErrors,
-} from "@/lib/member/role-form";
-
-import { RoleFields } from "./role-fields";
-import type { TextFieldErrors } from "./type";
-import {
   EMPTY_NAME_MESSAGE,
   EMPTY_PHONE_MESSAGE,
   INPUT_CLASS,
   NAME_MAX_LENGTH,
 } from "./utils";
+import type { RoleFormErrors, TextFieldErrors } from "./type";
+
+import { RoleFields } from "./role-fields";
 
 type InviteMemberFormProps = {
   orgId: string;

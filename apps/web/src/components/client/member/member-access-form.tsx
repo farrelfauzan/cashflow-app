@@ -11,13 +11,13 @@ import {
   getListMembersQueryKey,
   useSetMemberRoles,
 } from "@/lib/api/generated/members/members";
-import { accessFormError } from "@/lib/member/member-errors";
 import {
+  accessFormError,
   roleFormErrors,
   roleFormFromRoles,
   roleGrantsFromForm,
-  type RoleFormErrors,
-} from "@/lib/member/role-form";
+} from "./utils";
+import type { RoleFormErrors } from "./type";
 
 import { MemberStatusSection } from "./member-status-section";
 import { RoleFields } from "./role-fields";

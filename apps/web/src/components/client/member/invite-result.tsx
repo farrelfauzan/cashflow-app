@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { SheetClose } from "@/components/ui/sheet";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
-import { describeRoles, type PropertyNames } from "@/lib/member/role-labels";
+import { describeRoles } from "./utils";
+import type { PropertyNames } from "./type";
 import { cn } from "@/lib/utils";
 
 type InviteResultProps = {

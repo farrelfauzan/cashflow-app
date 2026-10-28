@@ -1,9 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { MemberStatusView } from "@/lib/member/member-status";
-
-import { STATUS_TONE_CLASS } from "@/lib/member/status-tone";
+import { STATUS_TONE_CLASS } from "./utils";
+import type { MemberStatusView } from "./type";
 
 type MemberStatusLabelProps = {
   status: MemberStatusView;

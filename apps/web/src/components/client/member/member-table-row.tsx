@@ -3,8 +3,8 @@
 import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
-import { memberStatusView } from "@/lib/member/member-status";
-import { roleChips, type PropertyNames } from "@/lib/member/role-labels";
+import { memberStatusView, roleChips } from "./utils";
+import type { PropertyNames } from "./type";
 
 import { ManageMemberButton } from "./manage-member-button";
 import { MemberStatusLabel } from "./member-status-label";

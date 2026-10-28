@@ -10,15 +10,13 @@ import {
   useListMembers,
 } from "@/lib/api/generated/members/members";
 import { useListProperties } from "@/lib/api/generated/properties/properties";
-import { memberPermissions } from "@/lib/member/member-controls";
-import type { MemberPanelState } from "@/lib/member/panel-state";
-import { propertyNames } from "@/lib/member/role-labels";
+import { memberPermissions, propertyNames, NO_PERMISSIONS } from "./utils";
+import type { MemberPanelState } from "./type";
 import { canSee } from "@/lib/organization/org-menu";
 
 import { MemberList } from "./member-list";
 import { MemberPanel } from "./member-panel";
 import { MembersHeader } from "./members-header";
-import { NO_PERMISSIONS } from "./utils";
 
 type MembersViewProps = {
   orgId: string;

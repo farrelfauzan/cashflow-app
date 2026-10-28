@@ -11,13 +11,11 @@ import {
 } from "@/components/ui/sheet";
 import type { Member, Property } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
-import type { MemberPanelState } from "@/lib/member/panel-state";
-import type { PropertyNames } from "@/lib/member/role-labels";
+import type { MemberPanelState, PropertyNames, OpenPanel } from "./type";
 
 import { InviteMemberForm } from "./invite-member-form";
 import { InviteResult } from "./invite-result";
 import { MemberAccessForm } from "./member-access-form";
-import type { OpenPanel } from "./type";
 
 type MemberPanelProps = {
   orgId: string;

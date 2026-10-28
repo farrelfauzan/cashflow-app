@@ -3,14 +3,13 @@
 import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
-import { memberStatusView } from "@/lib/member/member-status";
-import { roleChips, type PropertyNames } from "@/lib/member/role-labels";
+import { memberStatusView, roleChips, STATUS_TONE_CLASS } from "./utils";
+import type { PropertyNames } from "./type";
 
 import { ManageMemberButton } from "./manage-member-button";
 import { OwnMemberChip } from "./own-member-chip";
 import { ResendInvitationButton } from "./resend-invitation-button";
 import { RoleChip } from "./role-chip";
-import { STATUS_TONE_CLASS } from "@/lib/member/status-tone";
 
 type MemberCardProps = {
   orgId: string;

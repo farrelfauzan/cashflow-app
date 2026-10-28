@@ -1,9 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { RoleChip as RoleChipData } from "@/lib/member/role-labels";
-
 import { ROLE_CHIP_TONE } from "./utils";
+import type { RoleChip as RoleChipData } from "./type";
 
 type RoleChipProps = {
   chip: RoleChipData;

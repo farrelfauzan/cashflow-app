@@ -9,11 +9,9 @@ import {
   getListMembersQueryKey,
   useResendMemberInvitation,
 } from "@/lib/api/generated/members/members";
-import { resendError } from "@/lib/member/member-errors";
-import { cn } from "@/lib/utils";
-
+import { resendError, RESENT_MESSAGE } from "./utils";
 import type { Outcome } from "./type";
-import { RESENT_MESSAGE } from "./utils";
+import { cn } from "@/lib/utils";
 
 type ResendInvitationButtonProps = {
   orgId: string;

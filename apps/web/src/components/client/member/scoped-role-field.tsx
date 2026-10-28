@@ -7,9 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { Property } from "@/lib/api/generated/model";
-import { toggleProperty, type ScopedRoleState } from "@/lib/member/role-form";
-
-import { ROLE_OPTION_CLASS } from "./utils";
+import { toggleProperty, ROLE_OPTION_CLASS } from "./utils";
+import type { ScopedRoleState } from "./type";
 
 type ScopedRoleFieldProps = {
   // "Admin" or "Karyawan".

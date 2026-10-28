@@ -4,15 +4,11 @@ import { useId } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import type { Property } from "@/lib/api/generated/model";
-import {
-  SCOPED_ROLES,
-  type RoleFormErrors,
-  type RoleFormState,
-} from "@/lib/member/role-form";
+import { SCOPED_ROLES, SCOPED_ROLE_LABELS } from "./utils";
+import type { RoleFormErrors, RoleFormState } from "./type";
 
 import { ScopedRoleField } from "./scoped-role-field";
 import { SupervisorRoleRow } from "./supervisor-role-row";
-import { SCOPED_ROLE_LABELS } from "./utils";
 
 type RoleFieldsProps = {
   // "edit" shows the member's Supervisor role, which cannot change; "invite" says why there
