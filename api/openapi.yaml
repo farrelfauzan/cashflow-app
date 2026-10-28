@@ -572,7 +572,9 @@ paths:
       description: >
         Unit and tenant never change; end the lease and start a new one instead. A rent change
         applies from the next invoice. A start date after the lease's planned end date is refused
-        (field startDate); change the planned end date first.
+        (field startDate); change the planned end date first. Sending the lease's current
+        collector keeps them even when they have been disabled; any other collector must be an
+        active member.
       requestBody:
         required: true
         content:
@@ -957,7 +959,7 @@ components:
 
     Member:
       type: object
-      required: [id, userId, name, phone, status, roles, createdAt, invitation, firstSignInAt]
+      required: [id, userId, name, phone, status, roles, createdAt, invitation, firstSignInAt, collectorLeaseCount]
       properties:
         id: { type: string, format: uuid }
         userId: { type: string, format: uuid }
@@ -983,6 +985,19 @@ components:
             When the member first opened this organization after signing in (their first
             getOrgMe here); null until they have. Each organization sees only its own, so it
             never reveals that a number belongs to another organization.
+        collectorLeaseCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >
+            How many active leases in this organization name this member as collector, on every
+            property. It is organization-wide because it is a count with no names or tenant data
+            and the members list is organization-level (member:read for the whole organization;
+            a role limited to one property cannot list members); reassigning still needs
+            lease:manage on each lease. A disabled
+            member keeps the leases they collect until an admin picks another collector with
+            updateLease, so a disabled member with a count above 0 is shown as "N penyewa belum
+            punya penagih".
 
     Invitation:
       type: object
@@ -1182,10 +1197,17 @@ components:
 
     Collector:
       type: object
-      required: [memberId, name]
+      required: [memberId, name, active]
       properties:
         memberId: { type: string, format: uuid }
         name: { type: string }
+        active:
+          type: boolean
+          description: >
+            False when the member is disabled in the organization. The lease keeps them as
+            collector until an admin picks another one with updateLease. The web counts the
+            flagged tenants from listTenants because that list is not paginated; if it ever
+            becomes paginated, an organization-wide count must come from the API instead.
 
     Lease:
       type: object
@@ -1303,7 +1325,11 @@ components:
         collectorMemberId:
           type: string
           format: uuid
-          description: The member (Member.id) who collects from this tenant. Leave it out for none.
+          description: >
+            The member (Member.id) who collects from this tenant. Leave it out for none. The
+            member must be active, except on updateLease when it is the lease's current
+            collector, so a lease whose collector was disabled can still be edited while it
+            keeps them. A different disabled member is refused (field collectorMemberId).
         billedFrom:
           type: string
           format: date

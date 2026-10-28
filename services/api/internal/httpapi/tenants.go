@@ -245,7 +245,7 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 		out.PlannedEndDate = &openapi_types.Date{Time: *l.PlannedEndDate}
 	}
 	if l.CollectorMemberID != uuid.Nil {
-		out.Collector = &apigen.Collector{MemberId: l.CollectorMemberID, Name: l.CollectorName}
+		out.Collector = &apigen.Collector{MemberId: l.CollectorMemberID, Name: l.CollectorName, Active: l.CollectorActive}
 	}
 	return out
 }

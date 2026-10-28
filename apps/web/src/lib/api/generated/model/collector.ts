@@ -8,4 +8,6 @@
 export interface Collector {
   memberId: string;
   name: string;
+  /** False when the member is disabled in the organization. The lease keeps them as collector until an admin picks another one with updateLease. The web counts the flagged tenants from listTenants because that list is not paginated; if it ever becomes paginated, an organization-wide count must come from the API instead. */
+  active: boolean;
 }
