@@ -113,3 +113,101 @@ export function toPageSize(value: string): number {
   const size = Number(value);
   return PAGE_SIZES.find((allowed) => allowed === size) ?? DEFAULT_PAGE_SIZE;
 }
+
+// The URL search params a paginated list keeps its state in, so back, reload and a shared link
+// show the same rows. Defaults are left out of the URL (no page=1, no pageSize=20).
+export const PAGE_PARAM = "page";
+export const PAGE_SIZE_PARAM = "pageSize";
+export const SEARCH_PARAM = "q";
+export const SORT_PARAM = "sort";
+
+// How long the search waits after the last key before it asks the API.
+export const SEARCH_DELAY_MS = 300;
+
+// The API allows pages up to this number; a larger one in the URL is not a page.
+const MAX_PAGE = 1_000_000;
+
+// The page in the URL: a whole number from 1, anything else (missing, "abc", "0", "2.5") is 1.
+// A page past the last is kept: the list answers it with no rows and the right total, and the
+// screen then goes to the last page.
+export function readPage(params: URLSearchParams): number {
+  const raw = params.get(PAGE_PARAM);
+  if (raw === null || !/^[1-9][0-9]*$/.test(raw)) {
+    return 1;
+  }
+  const page = Number(raw);
+  return page <= MAX_PAGE ? page : 1;
+}
+
+// The page size in the URL when it is one of the offered sizes, otherwise 20.
+export function readPageSize(params: URLSearchParams): number {
+  const raw = params.get(PAGE_SIZE_PARAM);
+  return raw === null ? DEFAULT_PAGE_SIZE : toPageSize(raw);
+}
+
+// The search as typed (the field shows it back); empty when there is none.
+export function readSearch(params: URLSearchParams): string {
+  return params.get(SEARCH_PARAM) ?? "";
+}
+
+// What the API gets for a search: the trimmed text, or nothing for a blank one.
+export function searchQuery(search: string): string | undefined {
+  const q = search.trim();
+  return q === "" ? undefined : q;
+}
+
+// A param whose value must be one of `allowed` (a status, a sort); anything else counts as not
+// set, so a hand-edited URL never makes the API answer 400.
+export function readChoice<T extends string>(
+  params: URLSearchParams,
+  name: string,
+  allowed: readonly T[],
+): T | undefined {
+  const raw = params.get(name);
+  return allowed.find((value) => value === raw);
+}
+
+// The address after `changes` (null removes a param). Changing anything but the page (a search,
+// a filter, the sort, the page size) goes back to page 1, because the old page number means
+// nothing in the new list. Defaults are dropped, and the other params keep their order.
+export function listHref(
+  pathname: string,
+  params: URLSearchParams,
+  changes: Readonly<Record<string, string | number | null>>,
+): string {
+  const next = new URLSearchParams(params);
+  const resetsPage = Object.keys(changes).some((name) => name !== PAGE_PARAM);
+  if (resetsPage) {
+    next.delete(PAGE_PARAM);
+  }
+  for (const [name, value] of Object.entries(changes)) {
+    if (value === null || value === "") {
+      next.delete(name);
+    } else {
+      next.set(name, String(value));
+    }
+  }
+  if (next.get(PAGE_PARAM) === "1") {
+    next.delete(PAGE_PARAM);
+  }
+  if (next.get(PAGE_SIZE_PARAM) === String(DEFAULT_PAGE_SIZE)) {
+    next.delete(PAGE_SIZE_PARAM);
+  }
+  const query = next.toString();
+  return query === "" ? pathname : `${pathname}?${query}`;
+}
+
+// The page to go to when the API answered a page past the end: the last page that has rows.
+// null when the current page is fine (it has rows, or the whole list is empty).
+export function pageAfterOverflow(
+  page: number,
+  pageSize: number,
+  total: number,
+  rowsOnPage: number,
+): number | null {
+  if (rowsOnPage > 0 || total === 0) {
+    return null;
+  }
+  const last = pageCount(total, pageSize);
+  return page > last ? last : null;
+}
