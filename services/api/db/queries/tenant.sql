@@ -22,7 +22,8 @@ RETURNING *;
 -- name: ListLeaseDetails :many
 -- Every lease in the organization with its unit, property and collector, active first.
 SELECT l.*, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
@@ -33,7 +34,8 @@ ORDER BY l.status, l.start_date DESC, l.id;
 
 -- name: ListLeaseDetailsForTenant :many
 SELECT l.*, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
@@ -44,7 +46,8 @@ ORDER BY l.status, l.start_date DESC, l.id;
 
 -- name: GetLeaseDetail :one
 SELECT l.*, u.label AS unit_label, u.property_id, p.name AS property_name,
-       m.id AS collector_member_id, su.name AS collector_name
+       m.id AS collector_member_id, su.name AS collector_name,
+       m.status AS collector_status
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id

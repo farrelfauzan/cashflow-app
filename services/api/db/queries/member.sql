@@ -6,14 +6,22 @@ WHERE organization_id = $1 AND staff_user_id = $2 AND status = 'active';
 
 -- name: GetMembership :one
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2;
 
 -- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1

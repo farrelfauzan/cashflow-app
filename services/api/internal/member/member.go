@@ -77,6 +77,9 @@ type Member struct {
 	// FirstSignInAt is when the member first opened this organization after signing in, or nil.
 	// It is per membership, so it says nothing about the person's other organizations.
 	FirstSignInAt *time.Time
+	// CollectorLeaseCount is the number of active leases in the organization that name the
+	// member as collector. A disabled member keeps them until an admin picks another collector.
+	CollectorLeaseCount int64
 }
 
 // Invite is the input for adding a member.
@@ -122,7 +125,7 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 				ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone,
 				Status: r.Status, CreatedAt: r.CreatedAt, Roles: roles[r.ID],
 				Invitation:    invitationFrom(r.InvitationState, r.InvitationLastSentAt),
-				FirstSignInAt: r.FirstSignInAt,
+				FirstSignInAt: r.FirstSignInAt, CollectorLeaseCount: r.CollectorLeaseCount,
 			}
 		}
 		return nil
@@ -525,6 +528,7 @@ func load(ctx context.Context, q *dbgen.Queries, org, membershipID uuid.UUID) (M
 	m := Member{
 		ID: r.ID, UserID: r.StaffUserID, Name: r.Name, Phone: r.Phone, Status: r.Status, CreatedAt: r.CreatedAt,
 		Invitation: invitationFrom(r.InvitationState, r.InvitationLastSentAt), FirstSignInAt: r.FirstSignInAt,
+		CollectorLeaseCount: r.CollectorLeaseCount,
 	}
 	for _, row := range rows {
 		m.Roles = append(m.Roles, roleRef(row.BuiltinRole, row.RoleID, row.RoleName, row.PropertyID))

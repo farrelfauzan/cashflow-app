@@ -188,7 +188,11 @@ func (q *Queries) GetActiveMembershipForUser(ctx context.Context, arg GetActiveM
 
 const getMembership = `-- name: GetMembership :one
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.id = $2
@@ -209,6 +213,7 @@ type GetMembershipRow struct {
 	FirstSignInAt        *time.Time
 	Phone                string
 	Name                 string
+	CollectorLeaseCount  int64
 }
 
 func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (GetMembershipRow, error) {
@@ -224,13 +229,18 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 		&i.FirstSignInAt,
 		&i.Phone,
 		&i.Name,
+		&i.CollectorLeaseCount,
 	)
 	return i, err
 }
 
 const listMembers = `-- name: ListMembers :many
 SELECT m.id, m.staff_user_id, m.status, m.created_at, m.invitation_state, m.invitation_last_sent_at,
-       m.first_sign_in_at, u.phone, u.name
+       m.first_sign_in_at, u.phone, u.name,
+       -- Active leases naming the member as collector, organization-wide: a number, no names.
+       (SELECT count(*) FROM lease l
+        WHERE l.organization_id = m.organization_id AND l.collector_staff_user_id = m.staff_user_id
+          AND l.status = 'active') AS collector_lease_count
 FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1
@@ -247,6 +257,7 @@ type ListMembersRow struct {
 	FirstSignInAt        *time.Time
 	Phone                string
 	Name                 string
+	CollectorLeaseCount  int64
 }
 
 func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]ListMembersRow, error) {
@@ -268,6 +279,7 @@ func (q *Queries) ListMembers(ctx context.Context, organizationID uuid.UUID) ([]
 			&i.FirstSignInAt,
 			&i.Phone,
 			&i.Name,
+			&i.CollectorLeaseCount,
 		); err != nil {
 			return nil, err
 		}

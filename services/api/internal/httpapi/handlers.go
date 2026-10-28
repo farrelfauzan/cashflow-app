@@ -229,7 +229,8 @@ func toAPIMember(m member.Member) apigen.Member {
 		CreatedAt: m.CreatedAt,
 		Roles:     make([]apigen.RoleRef, len(m.Roles)),
 
-		FirstSignInAt: m.FirstSignInAt,
+		FirstSignInAt:       m.FirstSignInAt,
+		CollectorLeaseCount: m.CollectorLeaseCount,
 	}
 	if m.Invitation != nil {
 		out.Invitation = &apigen.Invitation{State: apigen.InvitationState(m.Invitation.State), LastSentAt: m.Invitation.LastSentAt}
