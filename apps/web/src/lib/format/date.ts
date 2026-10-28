@@ -23,6 +23,13 @@ const jakartaDateTimeParts = new Intl.DateTimeFormat("id-ID", {
   hourCycle: "h23",
 });
 
+const jakartaDateParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: JAKARTA,
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
 const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 // RFC 3339 with an explicit zone. A timestamp without one would be read in the device's
 // timezone, so it is rejected instead of guessed.
@@ -76,17 +83,36 @@ export function formatDate(date: string): string {
  * @throws RangeError when the value is not a valid timestamp with a zone.
  */
 export function formatDateTime(timestamp: string | Date): string {
+  const parts = jakartaDateTimeParts.formatToParts(
+    toInstant(timestamp, "formatDateTime"),
+  );
+  const date = `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
+  return `${date}, ${part(parts, "hour")}.${part(parts, "minute")}`;
+}
+
+/**
+ * Formats the Jakarta calendar day of an API timestamp (`format: date-time`), without the
+ * time: `"2026-10-27T18:30:00Z"` gives `"28 Okt 2026"`.
+ *
+ * @throws RangeError when the value is not a valid timestamp with a zone.
+ */
+export function formatTimestampDate(timestamp: string | Date): string {
+  const parts = jakartaDateParts.formatToParts(
+    toInstant(timestamp, "formatTimestampDate"),
+  );
+  return `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
+}
+
+function toInstant(timestamp: string | Date, caller: string): Date {
   if (typeof timestamp === "string" && !TIMESTAMP_WITH_ZONE.test(timestamp)) {
     throw new RangeError(
-      `formatDateTime expects an RFC 3339 timestamp with a zone, got ${JSON.stringify(timestamp)}`,
+      `${caller} expects an RFC 3339 timestamp with a zone, got ${JSON.stringify(timestamp)}`,
     );
   }
   const instant =
     typeof timestamp === "string" ? new Date(timestamp) : timestamp;
   if (Number.isNaN(instant.getTime())) {
-    throw new RangeError("formatDateTime got an invalid date");
+    throw new RangeError(`${caller} got an invalid date`);
   }
-  const parts = jakartaDateTimeParts.formatToParts(instant);
-  const date = `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
-  return `${date}, ${part(parts, "hour")}.${part(parts, "minute")}`;
+  return instant;
 }
