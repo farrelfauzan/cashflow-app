@@ -35,7 +35,7 @@ import type {
   SetRoles
 } from '../model';
 
-import { apiFetch } from '../../client';
+import { apiRequest } from '../../client';
 import type { ErrorType , BodyType } from '../../client';
 import { apiQueryKey } from '../../query-key';
 
@@ -59,29 +59,21 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export const getGetOrgMeUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/me`
-}
-
 /**
  * Capabilities are for showing or hiding controls. The server checks every request regardless. "conditional" means allowed on some records, such as a karyawan's own assigned tenants. The first call by a member records their firstSignInAt in this organization; later calls leave it unchanged. The web app makes this call when the member opens the organization.
  * @summary The signed-in member's roles and what they may do in this organization
  */
-export const getOrgMe = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<OrgMeResponse> => {
-
-  return apiFetch<OrgMeResponse>(getGetOrgMeUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const getOrgMe = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<OrgMeResponse>(
+      {url: `/orgs/${orgId}/me`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -90,7 +82,7 @@ export const getGetOrgMeQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/me` });
 
 
-export const useGetOrgMeQueryOptions = <TData = Awaited<ReturnType<typeof getOrgMe>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrgMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useGetOrgMeQueryOptions = <TData = Awaited<ReturnType<typeof getOrgMe>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrgMe>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -99,7 +91,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrgMe>>> = ({ signal }) => getOrgMe(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrgMe>>> = ({ signal }) => getOrgMe(orgId, requestOptions, signal);
 
 
 
@@ -119,7 +111,7 @@ export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError
           TError,
           Awaited<ReturnType<typeof getOrgMe>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError = ErrorType<ErrorResponse>>(
@@ -129,11 +121,11 @@ export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError
           TError,
           Awaited<ReturnType<typeof getOrgMe>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrgMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrgMe>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -141,7 +133,7 @@ export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError
  */
 
 export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrgMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrgMe>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -157,29 +149,21 @@ export function useGetOrgMe<TData = Awaited<ReturnType<typeof getOrgMe>>, TError
 
 
 
-export const getListCollectorCandidatesUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/collector-candidates`
-}
-
 /**
  * For the collector picker on the lease form. A narrow exception to the rule that a role limited to some properties reads nothing organization-wide (decision 27, like decision 22 for charge types): any member who may manage some lease may list the candidates. Only active members, karyawan first, then by name, with their name and whether they hold the karyawan role; no phone numbers and no other roles. Listing writes no allowed audit row; a refusal is audited.
  * @summary The active members a lease's collector can be picked from (needs lease:manage, for the whole organization or limited to properties)
  */
-export const listCollectorCandidates = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<CollectorCandidateList> => {
-
-  return apiFetch<CollectorCandidateList>(getListCollectorCandidatesUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const listCollectorCandidates = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<CollectorCandidateList>(
+      {url: `/orgs/${orgId}/collector-candidates`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -188,7 +172,7 @@ export const getListCollectorCandidatesQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/collector-candidates` });
 
 
-export const useListCollectorCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useListCollectorCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -197,7 +181,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCollectorCandidates>>> = ({ signal }) => listCollectorCandidates(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCollectorCandidates>>> = ({ signal }) => listCollectorCandidates(orgId, requestOptions, signal);
 
 
 
@@ -217,7 +201,7 @@ export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof lis
           TError,
           Awaited<ReturnType<typeof listCollectorCandidates>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
@@ -227,11 +211,11 @@ export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof lis
           TError,
           Awaited<ReturnType<typeof listCollectorCandidates>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -239,7 +223,7 @@ export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof lis
  */
 
 export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof listCollectorCandidates>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCollectorCandidates>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -255,28 +239,20 @@ export function useListCollectorCandidates<TData = Awaited<ReturnType<typeof lis
 
 
 
-export const getListMembersUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/members`
-}
-
 /**
  * @summary Every member of the organization (needs member:read)
  */
-export const listMembers = async (orgId: string, options?: Parameters<typeof apiFetch>[1]): Promise<MemberList> => {
-
-  return apiFetch<MemberList>(getListMembersUrl(orgId),
-  {
-    ...options,
-    method: 'GET'
+export const listMembers = (
+    orgId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<MemberList>(
+      {url: `/orgs/${orgId}/members`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -285,7 +261,7 @@ export const getListMembersQueryKey = (orgId: string,) =>
     apiQueryKey({ orgId }, { url: `/orgs/${orgId}/members` });
 
 
-export const useListMembersQueryOptions = <TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useListMembersQueryOptions = <TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -294,7 +270,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembers>>> = ({ signal }) => listMembers(orgId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembers>>> = ({ signal }) => listMembers(orgId, requestOptions, signal);
 
 
 
@@ -314,7 +290,7 @@ export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, 
           TError,
           Awaited<ReturnType<typeof listMembers>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
@@ -324,11 +300,11 @@ export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, 
           TError,
           Awaited<ReturnType<typeof listMembers>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -336,7 +312,7 @@ export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, 
  */
 
 export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -352,45 +328,25 @@ export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, 
 
 
 
-export const getInviteMemberUrl = (orgId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/members`
-}
-
 /**
  * Each role can be limited to one property with propertyId, as in setMemberRoles. The member and every role are created together, so the member never holds a broader role than the one asked for. A role limited to a property grants nothing on organization-wide records, so a member whose roles are all limited to properties cannot invite anyone.
  * After the member is created, the invitation is sent once over WhatsApp: who invited them, the organization, the role and a link to the login page (no token in it; the member signs in with the usual WhatsApp code). A failed or rate-limited send never undoes the invite: the answer is still 201, with invitation.state not_sent, and resendMemberInvitation sends it again. A number that is already a member answers 409 already_member and sends nothing.
  * @summary Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
  */
-export const inviteMember = async (orgId: string,
-    inviteMemberBody: InviteMember, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
+export const inviteMember = (
+    orgId: string,
+    inviteMemberBody: BodyType<InviteMember>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Member>(getInviteMemberUrl(orgId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(inviteMemberBody)
-  }
-);}
 
+      return apiRequest<Member>(
+      {url: `/orgs/${orgId}/members`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: inviteMemberBody, signal
+    },
+      options);
+    }
 
 
 
@@ -398,7 +354,7 @@ return apiFetch<Member>(getInviteMemberUrl(orgId),
 export const getInviteMemberMutationKey = () => ['inviteMember'] as const;
 
 export const getInviteMemberMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext> => {
 
 const mutationKey = getInviteMemberMutationKey();
@@ -433,7 +389,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add a staff member by WhatsApp number (needs member:invite and role:assign per role)
  */
 export const useInviteMember = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteMember>>, TError,InviteMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof inviteMember>>,
         TError,
@@ -442,31 +398,22 @@ export const useInviteMember = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getInviteMemberMutationOptions(options), queryClient);
     }
-    export const getResendMemberInvitationUrl = (orgId: string,
-    memberId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/members/${memberId}/invitation`
-}
-
-/**
+    /**
  * Sends the same invitation as inviteMember and returns the member with the new invitation state. Members who were never invited (the organization's founders) have nothing to resend. WhatsApp sends from one number shared by every organization, so invitation sends, first sends included, are limited to 20 per organization per hour and 3 per WhatsApp number per 24 hours.
  * @summary Send a member's WhatsApp invitation again (needs member:invite)
  */
-export const resendMemberInvitation = async (orgId: string,
-    memberId: string, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
-
-  return apiFetch<Member>(getResendMemberInvitationUrl(orgId,memberId),
-  {
-    ...options,
-    method: 'POST'
+export const resendMemberInvitation = (
+    orgId: string,
+    memberId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<Member>(
+      {url: `/orgs/${orgId}/members/${memberId}/invitation`, method: 'POST', signal
+    },
+      options);
+    }
 
 
 
@@ -474,7 +421,7 @@ export const resendMemberInvitation = async (orgId: string,
 export const getResendMemberInvitationMutationKey = () => ['resendMemberInvitation'] as const;
 
 export const getResendMemberInvitationMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext> => {
 
 const mutationKey = getResendMemberInvitationMutationKey();
@@ -509,7 +456,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Send a member's WhatsApp invitation again (needs member:invite)
  */
 export const useResendMemberInvitation = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendMemberInvitation>>, TError,ResendMemberInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof resendMemberInvitation>>,
         TError,
@@ -518,46 +465,25 @@ export const useResendMemberInvitation = <TError = ErrorType<ErrorResponse | Err
       > => {
       return useMutation(getResendMemberInvitationMutationOptions(options), queryClient);
     }
-    export const getSetMemberRolesUrl = (orgId: string,
-    memberId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/members/${memberId}/roles`
-}
-
-/**
+    /**
  * Nobody can change their own roles. Each role can be limited to one property with propertyId; give the same role once per property to cover several. A role limited to a property grants nothing on organization-wide records (members, settings, payslips), so a member who needs those also needs the role without a property. The Admin role for the whole organization cannot be taken from the last active member who holds it; Admin limited to a property does not count (409 last_admin).
  * @summary Replace a member's built-in roles (needs member:manage and role:assign per changed role)
  */
-export const setMemberRoles = async (orgId: string,
+export const setMemberRoles = (
+    orgId: string,
     memberId: string,
-    setRoles: SetRoles, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
+    setRoles: BodyType<SetRoles>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Member>(getSetMemberRolesUrl(orgId,memberId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(setRoles)
-  }
-);}
 
+      return apiRequest<Member>(
+      {url: `/orgs/${orgId}/members/${memberId}/roles`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: setRoles, signal
+    },
+      options);
+    }
 
 
 
@@ -565,7 +491,7 @@ return apiFetch<Member>(getSetMemberRolesUrl(orgId,memberId),
 export const getSetMemberRolesMutationKey = () => ['setMemberRoles'] as const;
 
 export const getSetMemberRolesMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext> => {
 
 const mutationKey = getSetMemberRolesMutationKey();
@@ -600,7 +526,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Replace a member's built-in roles (needs member:manage and role:assign per changed role)
  */
 export const useSetMemberRoles = <TError = ErrorType<ErrorResponse | Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberRoles>>, TError,SetMemberRolesMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setMemberRoles>>,
         TError,
@@ -609,46 +535,25 @@ export const useSetMemberRoles = <TError = ErrorType<ErrorResponse | Error>,
       > => {
       return useMutation(getSetMemberRolesMutationOptions(options), queryClient);
     }
-    export const getSetMemberStatusUrl = (orgId: string,
-    memberId: string,) => {
-
-
-
-
-  return `/orgs/${orgId}/members/${memberId}/status`
-}
-
-/**
+    /**
  * A disabled member keeps their roles but can do nothing in this organization: their sessions are refused here at once (the organization answers 404 not_found, as for a non-member) and the organization leaves their list. Their other organizations and their history are untouched. Re-enabling restores the same roles. Nobody can change their own status, and an Admin cannot disable or re-enable a Supervisor. Setting the status the member already has changes nothing and returns the member. The last active Admin for the whole organization cannot be disabled (409 last_admin).
  * @summary Disable or re-enable a member (needs member:manage and role:assign on every role the member holds)
  */
-export const setMemberStatus = async (orgId: string,
+export const setMemberStatus = (
+    orgId: string,
     memberId: string,
-    setMemberStatusBody: SetMemberStatus, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
+    setMemberStatusBody: BodyType<SetMemberStatus>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<Member>(getSetMemberStatusUrl(orgId,memberId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(setMemberStatusBody)
-  }
-);}
 
+      return apiRequest<Member>(
+      {url: `/orgs/${orgId}/members/${memberId}/status`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: setMemberStatusBody, signal
+    },
+      options);
+    }
 
 
 
@@ -656,7 +561,7 @@ return apiFetch<Member>(getSetMemberStatusUrl(orgId,memberId),
 export const getSetMemberStatusMutationKey = () => ['setMemberStatus'] as const;
 
 export const getSetMemberStatusMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext> => {
 
 const mutationKey = getSetMemberStatusMutationKey();
@@ -691,7 +596,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Disable or re-enable a member (needs member:manage and role:assign on every role the member holds)
  */
 export const useSetMemberStatus = <TError = ErrorType<Error | ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setMemberStatus>>, TError,SetMemberStatusMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setMemberStatus>>,
         TError,

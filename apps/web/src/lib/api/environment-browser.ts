@@ -18,7 +18,7 @@ async function getRequestEnvironment(): Promise<RequestEnvironment> {
       "The browser API client cannot run during server rendering. Read the data in a server component instead.",
     );
   }
-  return { origin: "", credentials: "same-origin", headers: {} };
+  return { origin: "", headers: {} };
 }
 
 // The session is missing, expired or revoked: drop every cached answer and go to login, then

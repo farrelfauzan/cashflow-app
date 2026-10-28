@@ -31,7 +31,7 @@ import type {
   StatusResponse
 } from '../model';
 
-import { apiFetch } from '../../client';
+import { apiRequest } from '../../client';
 import type { ErrorType , BodyType } from '../../client';
 import { apiQueryKey } from '../../query-key';
 
@@ -55,43 +55,23 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export const getRequestLoginCodeUrl = () => {
-
-
-
-
-  return `/auth/otp/request`
-}
-
 /**
  * Always answers 202 for a well-formed number, whether or not a code was sent, so the response does not reveal which numbers are registered. Limited to 3 requests per number per 15 minutes.
  * @summary Send a login code over WhatsApp
  */
-export const requestLoginCode = async (loginCodeRequest: LoginCodeRequest, options?: Parameters<typeof apiFetch>[1]): Promise<StatusResponse> => {
+export const requestLoginCode = (
+    loginCodeRequest: BodyType<LoginCodeRequest>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<StatusResponse>(getRequestLoginCodeUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(loginCodeRequest)
-  }
-);}
 
+      return apiRequest<StatusResponse>(
+      {url: `/auth/otp/request`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: loginCodeRequest, signal
+    },
+      options);
+    }
 
 
 
@@ -99,7 +79,7 @@ return apiFetch<StatusResponse>(getRequestLoginCodeUrl(),
 export const getRequestLoginCodeMutationKey = () => ['requestLoginCode'] as const;
 
 export const getRequestLoginCodeMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,RequestLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,RequestLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,RequestLoginCodeMutationVariables, TContext> => {
 
 const mutationKey = getRequestLoginCodeMutationKey();
@@ -134,7 +114,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Send a login code over WhatsApp
  */
 export const useRequestLoginCode = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,RequestLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,RequestLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof requestLoginCode>>,
         TError,
@@ -143,43 +123,23 @@ export const useRequestLoginCode = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getRequestLoginCodeMutationOptions(options), queryClient);
     }
-    export const getVerifyLoginCodeUrl = () => {
-
-
-
-
-  return `/auth/otp/verify`
-}
-
-/**
+    /**
  * Sets the cf_session cookie (HttpOnly, SameSite=Lax) on success.
  * @summary Check the code and start a session
  */
-export const verifyLoginCode = async (loginCodeVerify: LoginCodeVerify, options?: Parameters<typeof apiFetch>[1]): Promise<MeResponse> => {
+export const verifyLoginCode = (
+    loginCodeVerify: BodyType<LoginCodeVerify>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<MeResponse>(getVerifyLoginCodeUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(loginCodeVerify)
-  }
-);}
 
+      return apiRequest<MeResponse>(
+      {url: `/auth/otp/verify`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: loginCodeVerify, signal
+    },
+      options);
+    }
 
 
 
@@ -187,7 +147,7 @@ return apiFetch<MeResponse>(getVerifyLoginCodeUrl(),
 export const getVerifyLoginCodeMutationKey = () => ['verifyLoginCode'] as const;
 
 export const getVerifyLoginCodeMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,VerifyLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,VerifyLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,VerifyLoginCodeMutationVariables, TContext> => {
 
 const mutationKey = getVerifyLoginCodeMutationKey();
@@ -222,7 +182,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Check the code and start a session
  */
 export const useVerifyLoginCode = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,VerifyLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,VerifyLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof verifyLoginCode>>,
         TError,
@@ -231,28 +191,20 @@ export const useVerifyLoginCode = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getVerifyLoginCodeMutationOptions(options), queryClient);
     }
-    export const getLogoutUrl = () => {
-
-
-
-
-  return `/auth/logout`
-}
-
-/**
+    /**
  * @summary End the current session
  */
-export const logout = async ( options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
+export const logout = (
 
-  return apiFetch<void>(getLogoutUrl(),
-  {
-    ...options,
-    method: 'POST'
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<void>(
+      {url: `/auth/logout`, method: 'POST', signal
+    },
+      options);
+    }
 
 
 
@@ -260,7 +212,7 @@ export const logout = async ( options?: Parameters<typeof apiFetch>[1]): Promise
 export const getLogoutMutationKey = () => ['logout'] as const;
 
 export const getLogoutMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, request?: SecondParameter<typeof apiRequest>}
 ): UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext> => {
 
 const mutationKey = getLogoutMutationKey();
@@ -295,7 +247,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary End the current session
  */
 export const useLogout = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof logout>>,
         TError,
@@ -304,28 +256,20 @@ export const useLogout = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getLogoutMutationOptions(options), queryClient);
     }
-    export const getGetMeUrl = () => {
-
-
-
-
-  return `/me`
-}
-
-/**
+    /**
  * @summary The signed-in staff user and their organizations
  */
-export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<MeResponse> => {
+export const getMe = (
 
-  return apiFetch<MeResponse>(getGetMeUrl(),
-  {
-    ...options,
-    method: 'GET'
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
 
 
-  }
-);}
-
+      return apiRequest<MeResponse>(
+      {url: `/me`, method: 'GET', signal
+    },
+      options);
+    }
 
 
 
@@ -334,7 +278,7 @@ export const getGetMeQueryKey = () =>
     apiQueryKey({  }, { url: `/me` });
 
 
-export const useGetMeQueryOptions = <TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const useGetMeQueryOptions = <TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -343,7 +287,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMe>>> = ({ signal }) => getMe({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMe>>> = ({ signal }) => getMe(requestOptions, signal);
 
 
 
@@ -363,7 +307,7 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
           TError,
           Awaited<ReturnType<typeof getMe>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<ErrorResponse>>(
@@ -373,11 +317,11 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
           TError,
           Awaited<ReturnType<typeof getMe>>
         > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
+      >, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<ErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -385,7 +329,7 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
  */
 
 export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<ErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
