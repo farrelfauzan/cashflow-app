@@ -97,3 +97,115 @@ func TestMoveOutDates(t *testing.T) {
 		})
 	}
 }
+
+func TestValidTermsBilledFrom(t *testing.T) {
+	t.Parallel()
+	start := date(2026, 9, 15)
+	tests := []struct {
+		name       string
+		start      time.Time
+		billedFrom time.Time
+		want       time.Time
+		wantField  string
+	}{
+		{"left out stays zero for the service to fill in", start, time.Time{}, time.Time{}, ""},
+		{"the start date itself", start, start, start, ""},
+		{"a later anniversary", start, date(2026, 11, 15), date(2026, 11, 15), ""},
+		{"a time of day is dropped", start, time.Date(2026, 10, 15, 17, 0, 0, 0, time.UTC), date(2026, 10, 15), ""},
+		{"a month-end start allows the clamped day", date(2027, 1, 31), date(2027, 2, 28), date(2027, 2, 28), ""},
+		{"not an anniversary", start, date(2026, 10, 20), time.Time{}, "billedFrom"},
+		{"the day before an anniversary", start, date(2026, 10, 14), time.Time{}, "billedFrom"},
+		{"before the start date", start, date(2026, 8, 15), time.Time{}, "billedFrom"},
+		{"the day before the start date", start, date(2026, 9, 14), time.Time{}, "billedFrom"},
+		{"a month-end start refuses the middle of the month", date(2027, 1, 31), date(2027, 2, 15), time.Time{}, "billedFrom"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ValidTerms(Terms{StartDate: tc.start, RentAmount: 850_000, BilledFrom: tc.billedFrom})
+			if tc.wantField == "" {
+				require.NoError(t, err)
+				require.Equal(t, tc.want, got.BilledFrom)
+				return
+			}
+			var inputErr *InputError
+			require.ErrorAs(t, err, &inputErr)
+			require.Equal(t, tc.wantField, inputErr.Field)
+		})
+	}
+}
+
+func TestCheckBilledFrom(t *testing.T) {
+	t.Parallel()
+	today := date(2026, 11, 2)
+	tests := []struct {
+		name       string
+		start      time.Time
+		billedFrom time.Time
+		enteredOn  time.Time
+		wantLatest string // "" when allowed, else the date the message names
+	}{
+		{"late lease: the start date", date(2026, 9, 15), date(2026, 9, 15), today, ""},
+		{"late lease: a past period", date(2026, 9, 15), date(2026, 10, 15), today, ""},
+		{"late lease: the current period", date(2026, 9, 15), date(2026, 11, 15), today, ""},
+		{"late lease: one period too far", date(2026, 9, 15), date(2026, 12, 15), today, "15/11/2026"},
+		{"late lease: far in the future", date(2026, 9, 15), date(2027, 9, 15), today, "15/11/2026"},
+		{"booking: the start date", date(2026, 12, 1), date(2026, 12, 1), today, ""},
+		{"booking: the second period", date(2026, 12, 1), date(2027, 1, 1), today, ""},
+		{"booking: the third period", date(2026, 12, 1), date(2027, 2, 1), today, "01/01/2027"},
+		{"starting today: the start date", today, today, today, ""},
+		{"starting today: the next period", today, date(2026, 12, 2), today, ""},
+		{"starting today: two periods ahead", today, date(2027, 1, 2), today, "02/12/2026"},
+		{"entered on an anniversary: the next one is allowed", date(2026, 9, 15), date(2026, 12, 15), date(2026, 11, 15), ""},
+		{"entered on an anniversary: not the one after", date(2026, 9, 15), date(2027, 1, 15), date(2026, 11, 15), "15/12/2026"},
+		{"month-end start: the clamped current period", date(2026, 8, 31), date(2026, 11, 30), today, ""},
+		{"month-end start: past the clamped current period", date(2026, 8, 31), date(2026, 12, 31), today, "30/11/2026"},
+		{"entered earlier: bounded by the stored day, not today", date(2026, 9, 15), date(2026, 11, 15), date(2026, 9, 20), "15/10/2026"},
+		{"entered earlier: the stored day's current period", date(2026, 9, 15), date(2026, 10, 15), date(2026, 9, 20), ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkBilledFrom(Terms{StartDate: tc.start, BilledFrom: tc.billedFrom}, tc.enteredOn)
+			if tc.wantLatest == "" {
+				require.NoError(t, err)
+				return
+			}
+			var inputErr *InputError
+			require.ErrorAs(t, err, &inputErr)
+			require.Equal(t, "billedFrom", inputErr.Field)
+			require.Contains(t, inputErr.Message, tc.wantLatest)
+		})
+	}
+}
+
+func TestCheckPlannedEnd(t *testing.T) {
+	t.Parallel()
+	now := date(2026, 11, 2)
+	tests := []struct {
+		name       string
+		start, end time.Time
+		ok         bool
+	}{
+		{"today", date(2026, 10, 1), date(2026, 11, 2), true},
+		{"a later day", date(2026, 10, 1), date(2026, 11, 14), true},
+		{"yesterday", date(2026, 10, 1), date(2026, 11, 1), false},
+		{"before the start", date(2026, 10, 1), date(2026, 9, 30), false},
+		{"a booking planned to end on its start date", date(2026, 12, 10), date(2026, 12, 10), true},
+		{"a booking planned to end before its start", date(2026, 12, 10), date(2026, 12, 9), false},
+		{"a lease starting today, ending today", now, now, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkPlannedEnd(tc.start, tc.end, now)
+			if tc.ok {
+				require.NoError(t, err)
+				return
+			}
+			var inputErr *InputError
+			require.ErrorAs(t, err, &inputErr)
+			require.Equal(t, "plannedEndDate", inputErr.Field)
+		})
+	}
+}

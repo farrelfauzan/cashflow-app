@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -105,6 +106,7 @@ func (s *Server) createLease(w http.ResponseWriter, r *http.Request) {
 		Terms: leaseTerms(apigen.LeaseTerms{
 			StartDate: body.StartDate, RentAmount: body.RentAmount,
 			DepositAmount: body.DepositAmount, CollectorMemberId: body.CollectorMemberId,
+			BilledFrom: body.BilledFrom,
 		}),
 	})
 	if err != nil {
@@ -130,6 +132,33 @@ func (s *Server) updateLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l, err := s.Tenants.UpdateLease(r.Context(), p, id, leaseTerms(body))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPILease(l))
+}
+
+func (s *Server) setLeasePlannedEnd(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "leaseID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	var body apigen.LeasePlannedEnd
+	if !s.decode(w, r, &body) {
+		return
+	}
+	var date *time.Time
+	if body.PlannedEndDate != nil {
+		date = &body.PlannedEndDate.Time
+	}
+	l, err := s.Tenants.SetPlannedEnd(r.Context(), p, id, date)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -176,6 +205,9 @@ func leaseTerms(body apigen.LeaseTerms) tenant.Terms {
 	if body.CollectorMemberId != nil {
 		t.CollectorMemberID = *body.CollectorMemberId
 	}
+	if body.BilledFrom != nil {
+		t.BilledFrom = body.BilledFrom.Time
+	}
 	return t
 }
 
@@ -196,6 +228,8 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 		Id: l.ID, TenantId: l.TenantID, UnitId: l.UnitID, UnitLabel: l.UnitLabel,
 		PropertyId: l.PropertyID, PropertyName: l.PropertyName,
 		StartDate:     openapi_types.Date{Time: l.StartDate},
+		EnteredOn:     openapi_types.Date{Time: l.EnteredOn},
+		BilledFrom:    openapi_types.Date{Time: l.BilledFrom},
 		RentAmount:    l.RentAmount,
 		DepositAmount: l.DepositAmount, Status: apigen.LeaseStatus(l.Status),
 		Charges:   make([]apigen.LeaseCharge, len(l.Charges)),
@@ -206,6 +240,9 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 	}
 	if l.EndDate != nil {
 		out.EndDate = &openapi_types.Date{Time: *l.EndDate}
+	}
+	if l.PlannedEndDate != nil {
+		out.PlannedEndDate = &openapi_types.Date{Time: *l.PlannedEndDate}
 	}
 	if l.CollectorMemberID != uuid.Nil {
 		out.Collector = &apigen.Collector{MemberId: l.CollectorMemberID, Name: l.CollectorName}

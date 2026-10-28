@@ -312,6 +312,15 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   gives 15 Sep to 14 Oct, due 28 Oct, and 15 Oct to 14 Nov, due 4 Nov, then 15 Nov as usual. The
   admin can skip periods the owner collected by hand with "Mulai tagih dari" (an anniversary;
   also an import column). A wrong invoice is fixed by a correction, never deleted.
+- When a tenant says they will not continue, the admin sets the lease's planned end date
+  ("Rencana keluar", the tenant's last day). No invoice is generated for a period that starts
+  after it, and one already generated is cancelled by a correction with the reason "sewa tidak
+  diperpanjang"; its reminders stop, while older debt and its reminders stay. Money already paid
+  on a cancelled invoice goes back through FIFO and the rest becomes credit. Setting the date
+  checks `correction:create` as well as `lease:manage` when it cancels or restores an invoice.
+  A move-out cancels, the same way, any invoice for a period that starts after its end date,
+  before the arrears rule applies. A period the tenant started is billed in full, with no
+  proration and no refund unless an admin approves one.
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
   air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
   per month and billed once, on the next invoice generated after they are recorded. Lines are

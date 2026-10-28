@@ -53,8 +53,9 @@ LEFT JOIN staff_user su ON su.id = l.collector_staff_user_id
 WHERE l.organization_id = $1 AND l.id = $2;
 
 -- name: CreateLease :exec
-INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount, collector_staff_user_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount,
+                   collector_staff_user_id, entered_on, billed_from)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: LockLease :one
 -- Locks the lease row for the rest of the transaction, so a concurrent change or move-out
@@ -66,11 +67,17 @@ FOR UPDATE;
 -- name: UpdateLeaseTerms :execrows
 -- Only an active lease changes. Unit and tenant never change: end the lease and start another.
 UPDATE lease SET start_date = $3, rent_amount = $4, deposit_amount = $5,
-       collector_staff_user_id = $6, updated_at = now()
+       collector_staff_user_id = $6, billed_from = $7, updated_at = now()
+WHERE organization_id = $1 AND id = $2 AND status = 'active';
+
+-- name: SetLeasePlannedEnd :execrows
+-- NULL clears it. Only an active lease has one.
+UPDATE lease SET planned_end_date = $3, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active';
 
 -- name: EndLease :execrows
-UPDATE lease SET status = 'ended', end_date = $3, updated_at = now()
+-- The move-out clears the planned end date: the real end replaces it.
+UPDATE lease SET status = 'ended', end_date = $3, planned_end_date = NULL, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active';
 
 -- name: FindTenantByPhone :one

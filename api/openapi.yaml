@@ -571,12 +571,49 @@ paths:
       summary: Change the terms of an active lease (needs lease:manage; audited)
       description: >
         Unit and tenant never change; end the lease and start a new one instead. A rent change
-        applies from the next invoice.
+        applies from the next invoice. A start date after the lease's planned end date is refused
+        (field startDate); change the planned end date first.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/LeaseTerms" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The lease has already ended (code lease_ended)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/leases/{leaseId}/planned-end:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/LeaseId"
+    put:
+      tags: [tenants]
+      operationId: setLeasePlannedEnd
+      summary: Set, change or clear an active lease's planned end date (needs lease:manage; audited)
+      description: >
+        The planned end date ("Rencana keluar") is the tenant's last day, set when they say they
+        will not continue. It must be on or after today in Asia/Jakarta and not before the start
+        date; null clears it. It can change until the move-out, which clears it. From slice 2, no
+        invoice is generated for a period that starts after it, and setting it cancels an invoice
+        already generated for such a period (that also needs correction:create); today it is
+        only stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeasePlannedEnd" }
       responses:
         "200":
           description: OK
@@ -605,7 +642,8 @@ paths:
         The end date is the last day of the lease: not before the start date and not after
         today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same
         way, with the end date equal to its start date; it will never be invoiced. The unit is
-        free for a new lease right away. What happens to arrears is settled in slice 2.
+        free for a new lease right away, and any planned end date is cleared. What happens to
+        arrears is settled in slice 2.
       requestBody:
         required: true
         content:
@@ -718,10 +756,12 @@ paths:
         unit:manage for each property or unit a row creates; a denial stops the whole import.
 
         The first line names the columns, separated by commas or semicolons, in any order:
-        property, unit, tenant_name, phone, rent, start_date, and optionally deposit and
-        property_kind (kos, kontrakan, ruko, other; new properties default to other). Indonesian
-        names work too (properti, kamar, nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan,
-        jenis_properti). Other columns are ignored. Rent is due on the day of the start date; the
+        property, unit, tenant_name, phone, rent, start_date, and optionally deposit,
+        property_kind (kos, kontrakan, ruko, other; new properties default to other) and
+        bill_from ("Mulai tagih dari", an anniversary of the start date, as on createLease;
+        empty bills from the start date). Indonesian names work too (properti, kamar,
+        nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan, jenis_properti, mulai_tagih). Other
+        columns are ignored. Rent is due on the day of the start date; the
         due_day (jatuh_tempo) column of older templates is not used, and a row whose due day
         differs from its start date's day gets a note saying so.
         Amounts are whole rupiah ("850000", "850.000" or "Rp850.000").
@@ -774,7 +814,7 @@ paths:
         A file to fill in and upload to importTenants. UTF-8 with a byte order mark so Excel opens
         it correctly, separated by semicolons as Excel writes CSV in an Indonesian locale. The
         header row uses the Indonesian column names (properti, jenis_properti, kamar,
-        nama_penyewa, no_wa, sewa, tanggal_mulai, jaminan), followed by two example
+        nama_penyewa, no_wa, sewa, tanggal_mulai, mulai_tagih, jaminan), followed by two example
         rows. The example rows only show the format: the import refuses them by their phone
         numbers ("Ini baris contoh. Hapus baris ini sebelum mengimpor."), so an example left in
         the file never becomes a tenant. Served as an attachment named template-impor-penyewa.csv.
@@ -1122,7 +1162,7 @@ components:
 
     Lease:
       type: object
-      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, rentAmount, depositAmount, status, charges, createdAt, updatedAt]
+      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, enteredOn, billedFrom, rentAmount, depositAmount, status, charges, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
@@ -1137,6 +1177,25 @@ components:
             First day of the lease. Rent is billed in advance on this day of every month (the
             last day of a shorter month when it is the 29th to 31st).
         endDate: { type: string, format: date, description: "Last day of the lease, set by move-out." }
+        enteredOn:
+          type: string
+          format: date
+          description: >
+            The day the lease was saved, in Asia/Jakarta, set by the server. A lease whose start
+            date is before it was entered late: from slice 2 its past periods are due on this day.
+        billedFrom:
+          type: string
+          format: date
+          description: >
+            "Mulai tagih dari": the first period the app invoices, an anniversary of the start
+            date. It equals the start date unless the admin skipped periods the owner collected by
+            hand.
+        plannedEndDate:
+          type: string
+          format: date
+          description: >
+            "Rencana keluar": the tenant's planned last day, set with setLeasePlannedEnd. Missing
+            when none is set; cleared by move-out.
         rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
         depositAmount: { type: integer, format: int64, description: "Deposit held, in rupiah." }
         status: { $ref: "#/components/schemas/LeaseStatus" }
@@ -1218,6 +1277,32 @@ components:
           type: string
           format: uuid
           description: The member (Member.id) who collects from this tenant. Leave it out for none.
+        billedFrom:
+          type: string
+          format: date
+          example: "2026-10-15"
+          description: >
+            "Mulai tagih dari": the first period to invoice, to skip periods the owner collected
+            by hand. It must be an anniversary of the start date (the start date itself, or the
+            same day a whole number of months later, the last day of a shorter month for a start
+            on the 29th to 31st), and no later than the first anniversary after the later of the
+            start date and the day the lease was entered. On createLease, leaving it out bills
+            from the start date. On updateLease, leaving it out (or null) keeps the stored value,
+            so editing another term never undoes a skipped billing start; to bill from the start
+            date again, send the start date. When a changed start date no longer fits the kept
+            value, the update is refused on billedFrom. Errors use field billedFrom.
+
+    LeasePlannedEnd:
+      type: object
+      properties:
+        plannedEndDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-11-14"
+          description: >
+            The tenant's last day. To stop before a new month, pick the day before the next
+            anniversary. null (or leaving it out) clears it. Errors use field plannedEndDate.
 
     LeaseInput:
       allOf:
@@ -1272,9 +1357,10 @@ components:
         The lease terms as the API read them from the row, so a dry run shows exactly what will be
         saved (for example a date read day first). Missing when the row's rent, deposit or start
         date could not be read.
-      required: [startDate, rentAmount, depositAmount]
+      required: [startDate, billedFrom, rentAmount, depositAmount]
       properties:
         startDate: { type: string, format: date }
+        billedFrom: { type: string, format: date, description: "Mulai tagih dari; the start date when the cell is empty." }
         rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
         depositAmount: { type: integer, format: int64, description: "Deposit in rupiah; 0 when the cell is empty." }
 

@@ -268,6 +268,9 @@ type ImportRowError struct {
 
 // ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
 type ImportRowValues struct {
+	// BilledFrom Mulai tagih dari; the start date when the cell is empty.
+	BilledFrom openapi_types.Date `json:"billedFrom"`
+
 	// DepositAmount Deposit in rupiah; 0 when the cell is empty.
 	DepositAmount int64 `json:"depositAmount"`
 
@@ -308,6 +311,9 @@ type InviteMember struct {
 
 // Lease defines model for Lease.
 type Lease struct {
+	// BilledFrom "Mulai tagih dari": the first period the app invoices, an anniversary of the start date. It equals the start date unless the admin skipped periods the owner collected by hand.
+	BilledFrom openapi_types.Date `json:"billedFrom"`
+
 	// Charges Fixed monthly extras on top of rent, by name. Always present, empty when none.
 	Charges   []LeaseCharge `json:"charges"`
 	Collector *Collector    `json:"collector,omitempty"`
@@ -317,10 +323,16 @@ type Lease struct {
 	DepositAmount int64 `json:"depositAmount"`
 
 	// EndDate Last day of the lease, set by move-out.
-	EndDate      *openapi_types.Date `json:"endDate,omitempty"`
-	Id           openapi_types.UUID  `json:"id"`
-	PropertyId   openapi_types.UUID  `json:"propertyId"`
-	PropertyName string              `json:"propertyName"`
+	EndDate *openapi_types.Date `json:"endDate,omitempty"`
+
+	// EnteredOn The day the lease was saved, in Asia/Jakarta, set by the server. A lease whose start date is before it was entered late: from slice 2 its past periods are due on this day.
+	EnteredOn openapi_types.Date `json:"enteredOn"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// PlannedEndDate "Rencana keluar": the tenant's planned last day, set with setLeasePlannedEnd. Missing when none is set; cleared by move-out.
+	PlannedEndDate *openapi_types.Date `json:"plannedEndDate,omitempty"`
+	PropertyId     openapi_types.UUID  `json:"propertyId"`
+	PropertyName   string              `json:"propertyName"`
 
 	// RentAmount Monthly rent in rupiah.
 	RentAmount int64 `json:"rentAmount"`
@@ -363,6 +375,12 @@ type LeaseChargesInput struct {
 
 // LeaseInput defines model for LeaseInput.
 type LeaseInput struct {
+	// BilledFrom "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be an anniversary of the start date (the start date itself, or the same day a whole number of months later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first anniversary after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom.
+	//
+	//
+	// Example: 2026-10-15
+	BilledFrom *openapi_types.Date `json:"billedFrom,omitempty"`
+
 	// CollectorMemberId The member (Member.id) who collects from this tenant. Leave it out for none.
 	CollectorMemberId *openapi_types.UUID `json:"collectorMemberId,omitempty"`
 
@@ -380,11 +398,26 @@ type LeaseInput struct {
 	UnitId    openapi_types.UUID `json:"unitId"`
 }
 
+// LeasePlannedEnd defines model for LeasePlannedEnd.
+type LeasePlannedEnd struct {
+	// PlannedEndDate The tenant's last day. To stop before a new month, pick the day before the next anniversary. null (or leaving it out) clears it. Errors use field plannedEndDate.
+	//
+	//
+	// Example: 2026-11-14
+	PlannedEndDate *openapi_types.Date `json:"plannedEndDate,omitempty"`
+}
+
 // LeaseStatus defines model for LeaseStatus.
 type LeaseStatus string
 
 // LeaseTerms defines model for LeaseTerms.
 type LeaseTerms struct {
+	// BilledFrom "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be an anniversary of the start date (the start date itself, or the same day a whole number of months later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first anniversary after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom.
+	//
+	//
+	// Example: 2026-10-15
+	BilledFrom *openapi_types.Date `json:"billedFrom,omitempty"`
+
 	// CollectorMemberId The member (Member.id) who collects from this tenant. Leave it out for none.
 	CollectorMemberId *openapi_types.UUID `json:"collectorMemberId,omitempty"`
 
@@ -643,6 +676,9 @@ type SetLeaseChargesJSONRequestBody = LeaseChargesInput
 
 // MoveOutJSONRequestBody defines body for MoveOut for application/json ContentType.
 type MoveOutJSONRequestBody = MoveOut
+
+// SetLeasePlannedEndJSONRequestBody defines body for SetLeasePlannedEnd for application/json ContentType.
+type SetLeasePlannedEndJSONRequestBody = LeasePlannedEnd
 
 // InviteMemberJSONRequestBody defines body for InviteMember for application/json ContentType.
 type InviteMemberJSONRequestBody = InviteMember

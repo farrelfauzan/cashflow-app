@@ -50,7 +50,9 @@ type Row struct {
 
 // Values are the lease terms read from a row, shown so a dry run says exactly what is saved.
 type Values struct {
-	StartDate     time.Time
+	StartDate time.Time
+	// BilledFrom is "Mulai tagih dari"; the start date when the cell is empty.
+	BilledFrom    time.Time
 	Rent, Deposit int64
 }
 
@@ -191,9 +193,16 @@ func check(rec record, row *Row) input {
 	if !ok {
 		fail(colStartDate, "Tanggal mulai harus seperti 2026-10-01 atau 01/10/2026.")
 	}
+	billFrom, ok := parseDate(rec.get(colBillFrom))
+	if !ok {
+		fail(colBillFrom, "Mulai tagih harus seperti 2026-10-01 atau 01/10/2026.")
+	}
 	parsed := len(row.Errors) == 0
 	if parsed {
-		row.Values = &Values{StartDate: start, Rent: rent, Deposit: deposit}
+		row.Values = &Values{StartDate: start, BilledFrom: billFrom, Rent: rent, Deposit: deposit}
+		if billFrom.IsZero() {
+			row.Values.BilledFrom = start
+		}
 	}
 	if note, ok := oldDueDayNote(rec.get(colOldDueDay), start); ok {
 		row.Notes = append(row.Notes, note)
@@ -220,7 +229,7 @@ func check(rec record, row *Row) input {
 	}
 	if parsed {
 		if in.terms, err = tenant.ValidTerms(tenant.Terms{
-			StartDate: start, RentAmount: rent, DepositAmount: deposit,
+			StartDate: start, RentAmount: rent, DepositAmount: deposit, BilledFrom: billFrom,
 		}); err != nil {
 			addInputError(row, err)
 		}
@@ -272,8 +281,12 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 	switch {
 	case err == nil && current.TenantID == tn.ID:
 		row.Lease = Matched
-		if current.RentAmount != in.terms.RentAmount ||
-			current.DepositAmount != in.terms.DepositAmount || !current.StartDate.Equal(in.terms.StartDate) {
+		billedFrom := in.terms.BilledFrom // an empty cell means the start date, as for a new lease
+		if billedFrom.IsZero() {
+			billedFrom = in.terms.StartDate
+		}
+		if current.RentAmount != in.terms.RentAmount || current.DepositAmount != in.terms.DepositAmount ||
+			!current.StartDate.Equal(in.terms.StartDate) || !current.BilledFrom.Equal(billedFrom) {
 			row.Notes = append(row.Notes, "Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya.")
 		}
 		return nil
@@ -321,7 +334,7 @@ var (
 	propertyColumns = map[string]string{"name": colProperty, "kind": colPropertyKind, "label": colUnit, "defaultRent": colRent}
 	tenantColumns   = map[string]string{
 		"name": colTenantName, "phone": colPhone, "startDate": colStartDate, "rentAmount": colRent,
-		"depositAmount": colDeposit,
+		"depositAmount": colDeposit, "billedFrom": colBillFrom,
 	}
 )
 
