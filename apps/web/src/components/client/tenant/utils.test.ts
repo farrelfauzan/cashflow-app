@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
 import type { Capability, Lease, Tenant } from "@/lib/api/generated/model";
+import { createAppAbility } from "@/lib/capabilities";
 
 import type { TenantFilters } from "./type";
 import {
@@ -350,7 +351,9 @@ describe("tenantPermissions", () => {
       want: false,
     },
   ])("$name", ({ capabilities, want }) => {
-    expect(tenantPermissions(capabilities).canManageLeases).toBe(want);
+    expect(
+      tenantPermissions(createAppAbility(capabilities)).canManageLeases,
+    ).toBe(want);
   });
 });
 
