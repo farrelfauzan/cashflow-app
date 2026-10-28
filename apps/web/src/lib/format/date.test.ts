@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatDateTime, formatTimestampDate } from "./date";
+import {
+  formatDate,
+  formatDateTime,
+  formatDayMonth,
+  formatTimestampDate,
+  jakartaToday,
+} from "./date";
 
 // Jakarta is UTC+7 all year, so getTimezoneOffset() there is -420. vitest.config.mts runs the
 // tests in America/New_York; if that ever stops working, this fails instead of the date
@@ -122,5 +128,55 @@ describe("formatTimestampDate", () => {
     { name: "garbage", input: "kemarin" },
   ])("throws on $name", ({ input }) => {
     expect(() => formatTimestampDate(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatDayMonth", () => {
+  it.each([
+    { input: "2026-12-05", want: "5 Des" },
+    { input: "2026-09-30", want: "30 Sep" },
+    { input: "2026-01-01", want: "1 Jan" },
+    { input: "2028-02-29", want: "29 Feb" },
+  ])("formats $input as $want", ({ input, want }) => {
+    expect(formatDayMonth(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "an empty string", input: "" },
+    { name: "a timestamp", input: "2026-10-25T00:00:00Z" },
+    { name: "a date that does not exist", input: "2026-02-30" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatDayMonth(input)).toThrow(RangeError);
+  });
+});
+
+describe("jakartaToday", () => {
+  it.each([
+    {
+      name: "an afternoon in Jakarta",
+      input: "2026-10-28T07:00:00Z",
+      want: "2026-10-28",
+    },
+    {
+      name: "a UTC evening that is already the next day in Jakarta",
+      input: "2026-10-27T18:30:00Z",
+      want: "2026-10-28",
+    },
+    {
+      name: "the last minute before Jakarta midnight",
+      input: "2026-10-27T16:59:00Z",
+      want: "2026-10-27",
+    },
+    {
+      name: "the turn of the year",
+      input: "2026-12-31T17:00:00Z",
+      want: "2027-01-01",
+    },
+  ])("gives the Jakarta day for $name", ({ input, want }) => {
+    expect(jakartaToday(new Date(input))).toBe(want);
+  });
+
+  it("throws on an invalid Date", () => {
+    expect(() => jakartaToday(new Date(Number.NaN))).toThrow(RangeError);
   });
 });
