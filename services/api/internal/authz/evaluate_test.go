@@ -268,9 +268,42 @@ func TestRoleLimitedToOneProperty(t *testing.T) {
 
 	t.Run("its capabilities become conditional", func(t *testing.T) {
 		require.Equal(t, AccessConditional, AccessTo(p, ActionPropertyRead))
-		require.Equal(t, AccessConditional, AccessTo(p, ActionMemberRead))
+		require.Equal(t, AccessConditional, AccessTo(p, ActionTenantRead))
 		require.Equal(t, AccessDeny, AccessTo(p, "payroll:approve"))
 		require.Equal(t, AccessDeny, AccessTo(p, "property:delete"), "unknown actions are denied")
+	})
+}
+
+func TestLimitedRoleOnOrganizationWideActions(t *testing.T) {
+	melati := uuid.New()
+	admin, ok := BuiltinRole(RoleAdmin)
+	require.True(t, ok)
+	limited := admin
+	limited.Property = melati
+
+	t.Run("a limited role reports deny, as the server answers", func(t *testing.T) {
+		p := Principal{UserID: uuid.New(), Roles: []Role{limited}}
+		for _, action := range []string{ActionMemberRead, ActionMemberInvite, ActionMemberManage, ActionRoleAssign, "settings:update", "organization:read"} {
+			require.Equal(t, AccessDeny, AccessTo(p, action), action)
+		}
+		d := Evaluate(p, Request{Action: ActionMemberRead, Resource: Resource{Type: "member"}})
+		require.False(t, d.Allowed, "the capability matches the evaluation")
+	})
+
+	t.Run("an organization-wide role next to it still allows", func(t *testing.T) {
+		p := Principal{UserID: uuid.New(), Roles: []Role{admin, limited}}
+		require.Equal(t, AccessAllow, AccessTo(p, ActionMemberRead))
+	})
+
+	t.Run("a limited deny always denies organization-wide records", func(t *testing.T) {
+		deny := customRole(t, `{"Version":"2026-10-25","Statement":[
+			{"Sid":"NoMembers","Effect":"Deny","Action":["member:*"]}]}`)
+		deny.Property = melati
+		p := Principal{UserID: uuid.New(), Roles: []Role{admin, deny}}
+		require.Equal(t, AccessDeny, AccessTo(p, ActionMemberRead))
+		d := Evaluate(p, Request{Action: ActionMemberRead, Resource: Resource{Type: "member"}})
+		require.False(t, d.Allowed, "the capability matches the evaluation")
+		require.Equal(t, AccessAllow, AccessTo(p, ActionTenantRead), "other actions are not affected")
 	})
 }
 

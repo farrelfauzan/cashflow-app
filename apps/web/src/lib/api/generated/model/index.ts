@@ -11,6 +11,8 @@ export * from './chargeType';
 export * from './chargeTypeInput';
 export * from './chargeTypeList';
 export * from './collector';
+export * from './collectorCandidate';
+export * from './collectorCandidateList';
 export * from './error';
 export * from './errorError';
 export * from './errorResponse';

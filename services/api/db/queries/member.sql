@@ -101,3 +101,14 @@ UPDATE membership
 SET invitation_state = sqlc.arg(state)::text,
     invitation_last_sent_at = COALESCE(sqlc.narg(last_sent_at), invitation_last_sent_at)
 WHERE organization_id = $1 AND id = $2;
+
+-- name: ListCollectorCandidates :many
+-- Active members a lease's collector can be picked from, karyawan first, then by name.
+SELECT m.id, u.name,
+       EXISTS (SELECT 1 FROM role_assignment ra
+               WHERE ra.organization_id = m.organization_id AND ra.membership_id = m.id
+                 AND ra.builtin_role = 'karyawan') AS karyawan
+FROM membership m
+JOIN staff_user u ON u.id = m.staff_user_id
+WHERE m.organization_id = $1 AND m.status = 'active'
+ORDER BY karyawan DESC, u.name, m.id;

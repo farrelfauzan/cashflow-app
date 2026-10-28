@@ -104,6 +104,30 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/collector-candidates:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [members]
+      operationId: listCollectorCandidates
+      summary: The active members a lease's collector can be picked from (needs lease:manage, for the whole organization or limited to properties)
+      description: >
+        For the collector picker on the lease form. A narrow exception to the rule that a role
+        limited to some properties reads nothing organization-wide (decision 27, like decision
+        22 for charge types): any member who may manage some lease may list the candidates.
+        Only active members, karyawan first, then by name, with their name and whether they
+        hold the karyawan role; no phone numbers and no other roles. Listing writes no allowed
+        audit row; a refusal is audited.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CollectorCandidateList" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /orgs/{orgId}/members:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -1024,6 +1048,22 @@ components:
       required: [status]
       properties:
         status: { $ref: "#/components/schemas/MemberStatus" }
+
+    CollectorCandidate:
+      type: object
+      required: [memberId, name, karyawan]
+      properties:
+        memberId: { type: string, format: uuid, description: "The value for LeaseTerms.collectorMemberId." }
+        name: { type: string }
+        karyawan: { type: boolean, description: "True when the member holds the karyawan role, anywhere in the organization." }
+
+    CollectorCandidateList:
+      type: object
+      required: [candidates]
+      properties:
+        candidates:
+          type: array
+          items: { $ref: "#/components/schemas/CollectorCandidate" }
 
     MemberList:
       type: object

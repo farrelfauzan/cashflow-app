@@ -82,6 +82,14 @@ type Member struct {
 	CollectorLeaseCount int64
 }
 
+// CollectorCandidate is an active member a lease's collector can be picked from.
+type CollectorCandidate struct {
+	MemberID uuid.UUID
+	Name     string
+	// Karyawan is true when the member holds the karyawan role anywhere in the organization.
+	Karyawan bool
+}
+
 // Invite is the input for adding a member.
 type Invite struct {
 	Phone string
@@ -127,6 +135,33 @@ func (s *Service) List(ctx context.Context, p authz.Principal) ([]Member, error)
 				Invitation:    invitationFrom(r.InvitationState, r.InvitationLastSentAt),
 				FirstSignInAt: r.FirstSignInAt, CollectorLeaseCount: r.CollectorLeaseCount,
 			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+// CollectorCandidates lists the active members, karyawan first, for the collector picker on
+// the lease form. Any member who may manage some lease may list them, including one whose roles
+// are limited to some properties: a narrow exception to decision 15 (decision 27, like decision
+// 22 for charge types). It returns names only, no phones or roles. Listing writes no allowed
+// audit row; a refusal is audited.
+func (s *Service) CollectorCandidates(ctx context.Context, p authz.Principal) ([]CollectorCandidate, error) {
+	if authz.AccessTo(p, authz.ActionLeaseManage) == authz.AccessDeny {
+		req := authz.Request{Action: authz.ActionLeaseManage, Resource: authz.Resource{Type: "member"}}
+		if err := s.authz.Check(ctx, p, req); err != nil {
+			return nil, err
+		}
+	}
+	var out []CollectorCandidate
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		rows, err := dbgen.New(tx).ListCollectorCandidates(ctx, p.OrganizationID)
+		if err != nil {
+			return fmt.Errorf("listing collector candidates: %w", err)
+		}
+		out = make([]CollectorCandidate, len(rows))
+		for i, r := range rows {
+			out[i] = CollectorCandidate{MemberID: r.ID, Name: r.Name, Karyawan: r.Karyawan}
 		}
 		return nil
 	})
