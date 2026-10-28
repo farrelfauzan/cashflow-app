@@ -4,8 +4,14 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { PageInfo } from './pageInfo';
 import type { Unit } from './unit';
 
-export interface UnitList {
+export type UnitList = PageInfo & {
+  items: Unit[];
+  /**
+     * The same rows as items. Kept until the web reads items; then removed.
+     * @deprecated
+     */
   units: Unit[];
-}
+};

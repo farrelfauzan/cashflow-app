@@ -4,8 +4,14 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { PageInfo } from './pageInfo';
 import type { Tenant } from './tenant';
 
-export interface TenantList {
+export type TenantList = PageInfo & {
+  items: Tenant[];
+  /**
+     * The same rows as items. Kept until the web reads items; then removed.
+     * @deprecated
+     */
   tenants: Tenant[];
-}
+};

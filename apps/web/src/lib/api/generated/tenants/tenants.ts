@@ -36,6 +36,7 @@ import type {
   LeaseInput,
   LeasePlannedEnd,
   LeaseTerms,
+  ListTenantsParams,
   MoveOut,
   Tenant,
   TenantInput,
@@ -67,17 +68,20 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * A tenant is visible through any of their leases: a karyawan sees the tenants whose lease names them as collector, a member limited to a property sees the tenants with a lease there, and only those leases. Tenants without a lease are visible only to members with tenant:read for the whole organization.
+ * A tenant is visible through any of their leases: a karyawan sees the tenants whose lease names them as collector, a member limited to a property sees the tenants with a lease there, and only those leases. Tenants without a lease are visible only to members with tenant:read for the whole organization. Filters, q and total see only what the member may see: the visible tenants and, for each, their visible leases.
+ * Paginated (see the Page parameters). q matches the name, the unit label of a lease, or the WhatsApp number when q is made of digits and phone punctuation (at least 3 digits; 0812, 62812 and +62 812 all match 0812-...).
  * @summary Tenants the member may see, with their leases (needs tenant:read)
  */
 export const listTenants = (
     orgId: string,
+    params?: ListTenantsParams,
  options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
 ) => {
 
 
       return apiRequest<TenantList>(
-      {url: `/orgs/${orgId}/tenants`, method: 'GET', signal
+      {url: `/orgs/${orgId}/tenants`, method: 'GET',
+        params, signal
     },
       options);
     }
@@ -85,20 +89,22 @@ export const listTenants = (
 
 
 
-export const getListTenantsQueryKey = (orgId: string,) =>
-    apiQueryKey({ orgId }, { url: `/orgs/${orgId}/tenants` });
+export const getListTenantsQueryKey = (orgId: string,
+    params?: ListTenantsParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/tenants` });
 
 
-export const useListTenantsQueryOptions = <TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+export const useListTenantsQueryOptions = <TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListTenantsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  apiQueryKey({ orgId }, { url: `/orgs/${orgId}/tenants`, queryOptions });
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/tenants`, queryOptions });
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenants>>> = ({ signal }) => listTenants(orgId, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenants>>> = ({ signal }) => listTenants(orgId,params, requestOptions, signal);
 
 
 
@@ -112,7 +118,8 @@ export type ListTenantsQueryError = ErrorType<ErrorResponse>
 
 
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>> & Pick<
+ orgId: string,
+    params: undefined |  ListTenantsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listTenants>>,
           TError,
@@ -122,7 +129,8 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>> & Pick<
+ orgId: string,
+    params?: ListTenantsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listTenants>>,
           TError,
@@ -132,7 +140,8 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ orgId: string,
+    params?: ListTenantsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -140,11 +149,12 @@ export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, 
  */
 
 export function useListTenants<TData = Awaited<ReturnType<typeof listTenants>>, TError = ErrorType<ErrorResponse>>(
- orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ orgId: string,
+    params?: ListTenantsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenants>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = useListTenantsQueryOptions(orgId,options)
+  const queryOptions = useListTenantsQueryOptions(orgId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
