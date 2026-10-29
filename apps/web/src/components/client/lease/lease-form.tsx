@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SheetClose } from "@/components/ui/sheet";
+import { ApiError } from "@/lib/api/errors";
 import { toFormError } from "@/lib/api/form-error";
 import { useListCollectorCandidates } from "@/lib/api/generated/members/members";
 import type { Lease, Tenant } from "@/lib/api/generated/model";
@@ -178,6 +179,13 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
 
   function handleError(error: unknown) {
     const failed = toFormError(error, LEASE_API_FIELDS);
+    // The unit was taken since the list loaded: reload it, so that unit leaves the choices and
+    // the select goes back to "Pilih unit" with the refusal still under it.
+    if (error instanceof ApiError && error.code === "unit_occupied") {
+      void queryClient.invalidateQueries({
+        queryKey: getListUnitsQueryKey(orgId, propertyId),
+      });
+    }
     if (isLeaseFormField(failed.field)) {
       showErrors({ [failed.field]: failed.message });
     } else {

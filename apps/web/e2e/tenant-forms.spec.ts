@@ -32,6 +32,7 @@ const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 const TAKEN_MESSAGE = "Nomor ini sudah dipakai penyewa lain.";
 const OCCUPIED_MESSAGE = "Unit ini masih disewa. Akhiri sewa yang lama dulu.";
+const NO_FREE_UNIT_TEXT = "Semua unit di properti ini sudah terisi.";
 
 // Minimum body text per project, CLAUDE.md "UX rules".
 const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
@@ -362,10 +363,11 @@ test.describe("Admin of the whole organization", () => {
     });
     await lease.getByRole("button", { name: "Simpan sewa" }).click();
     await expect(lease.getByText(OCCUPIED_MESSAGE)).toBeVisible();
-    await expect(lease.getByRole("combobox", { name: "Unit" })).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
+    const unitSelect = lease.getByRole("combobox", { name: "Unit" });
+    await expect(unitSelect).toHaveAttribute("aria-invalid", "true");
+    // The unit list reloads, so the taken unit is no longer offered.
+    await expect(unitSelect).toHaveText("Pilih unit");
+    await expect(lease).toContainText(NO_FREE_UNIT_TEXT);
     await lease.getByRole("button", { name: "Batal" }).click();
     await expect(lease).toHaveCount(0);
 
