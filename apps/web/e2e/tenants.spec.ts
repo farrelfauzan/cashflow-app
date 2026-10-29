@@ -57,6 +57,15 @@ function visibleText(page: Page, text: string | RegExp): Locator {
   return page.getByText(text).filter({ visible: true });
 }
 
+// The tenants seed-demo puts in Griya Sejahtera. Other specs add tenants of their own (with names
+// that sort after these), so counts look at the seeded rows only.
+const GRIYA_SEEDED =
+  /Rina Wulandari|Budi Santoso|Citra Lestari|Dewi Anggraini|Eko Prasetyo|Toko Sumber Rejeki|Fajar Nugroho/;
+
+function seededRows(list: Locator): Locator {
+  return list.getByRole("listitem").filter({ hasText: GRIYA_SEEDED });
+}
+
 function tenantRow(list: Locator, name: string): Locator {
   return list.getByRole("listitem").filter({ hasText: name });
 }
@@ -134,17 +143,18 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       visibleText(page, "Semua penyewa Griya Sejahtera dan sewanya."),
     ).toBeVisible();
-    // Adding and importing tenants come later.
+    // Adding tenants is e2e/tenant-forms.spec.ts; importing them comes later.
     await expect(
-      page.getByRole("link", { name: /Tambah penyewa|Impor dari spreadsheet/ }),
+      page.getByRole("button", { name: "Tambah penyewa" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Impor dari spreadsheet" }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", {
-        name: /Tambah penyewa|Impor dari spreadsheet/,
-      }),
+      page.getByRole("button", { name: "Impor dari spreadsheet" }),
     ).toHaveCount(0);
 
-    await expect(list.getByRole("listitem")).toHaveCount(7);
+    await expect(seededRows(list)).toHaveCount(7);
     // Rina has two leases; the newest active one comes first, and it has no collector.
     const rina = tenantRow(list, "Rina Wulandari");
     await expect(rina).toContainText("0813-0001-0001");
@@ -227,7 +237,7 @@ test.describe("Admin of the whole organization", () => {
     await attachFullPageScreenshot(page, testInfo, "tenants-list-flagged");
     await chip.click();
     await expect(chip).toHaveCount(0);
-    await expect(list.getByRole("listitem")).toHaveCount(7);
+    await expect(seededRows(list)).toHaveCount(7);
 
     expect(outsideRequests).toEqual([]);
   });
@@ -257,7 +267,7 @@ test.describe("Admin of the whole organization", () => {
       await expect(tenantRow(list, "Dewi Anggraini")).toBeVisible();
     }
     await search.fill("");
-    await expect(rows).toHaveCount(7);
+    await expect(seededRows(list)).toHaveCount(7);
 
     // A tenant is in a property through any of their leases.
     await choose(page, "Filter properti", "Kontrakan Mawar");
@@ -293,7 +303,7 @@ test.describe("Admin of the whole organization", () => {
     const reset = page.getByRole("button", { name: "Hapus pencarian" });
     await expectTouchTarget(reset);
     await reset.click();
-    await expect(rows).toHaveCount(7);
+    await expect(seededRows(list)).toHaveCount(7);
     await expect(search).toHaveValue("");
     await expect(
       page.getByRole("combobox", { name: "Filter properti" }),

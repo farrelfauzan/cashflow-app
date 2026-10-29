@@ -6,12 +6,13 @@ export const MAX_RUPIAH_DIGITS = 15;
 
 /**
  * Keeps only the digits of what was typed or pasted (`"Rp 1.250.000"` gives `"1250000"`), drops
- * leading zeros, and cuts the rest at MAX_RUPIAH_DIGITS. Typing only zeros leaves the field empty.
+ * leading zeros, and cuts the rest at MAX_RUPIAH_DIGITS. Typing only zeros leaves one "0", so a
+ * field that asks for 0 ("Isi 0 kalau tidak ada") can show it.
  */
 export function rupiahDigits(input: string): string {
   return input
     .replace(/\D/g, "")
-    .replace(/^0+/, "")
+    .replace(/^0+(?=\d)/, "")
     .slice(0, MAX_RUPIAH_DIGITS);
 }
 
@@ -30,7 +31,11 @@ export function rupiahFieldText(input: string): string {
  * caret can go back after the same digits once the text is grouped again.
  */
 export function rupiahDigitsBefore(input: string, caret: number): number {
-  return rupiahDigits(input.slice(0, caret)).length;
+  const digits = input.replace(/\D/g, "");
+  // The leading zeros rupiahDigits drops from the whole value never count.
+  const dropped = digits.length - digits.replace(/^0+(?=\d)/, "").length;
+  const before = input.slice(0, caret).replace(/\D/g, "").length;
+  return Math.min(Math.max(before - dropped, 0), MAX_RUPIAH_DIGITS);
 }
 
 /** The caret position right after the first `count` digits of a grouped text. */

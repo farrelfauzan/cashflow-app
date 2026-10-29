@@ -12,7 +12,17 @@ import { createAppAbility } from "@/lib/capabilities";
 import type { TenantListFilters } from "./type";
 import {
   billedNote,
+  checkTenantForm,
   CLEAR_FILTERS,
+  EMPTY_TENANT_NAME_MESSAGE,
+  EMPTY_TENANT_PHONE_MESSAGE,
+  leaseSavedNotice,
+  needsLease,
+  noLeaseText,
+  tenantAddedNotice,
+  tenantAddedText,
+  tenantFormValues,
+  tenantSavedNotice,
   extraLeasesText,
   filterParam,
   isFiltering,
@@ -350,6 +360,169 @@ describe("tenantPermissions", () => {
       tenantPermissions(createAppAbility(capabilities)).canManageLeases,
     ).toBe(want);
   });
+});
+
+describe("tenantPermissions for the tenant and lease controls", () => {
+  const permissions = (capabilities: Capability[]) =>
+    tenantPermissions(createAppAbility(capabilities));
+
+  it.each<{ name: string; capabilities: Capability[]; want: object }>([
+    {
+      name: "an admin of the whole organization sees every control",
+      capabilities: [
+        { action: "tenant:manage", access: "allow" },
+        { action: "lease:manage", access: "allow" },
+      ],
+      want: { canAddTenant: true, canEditTenant: true, canManageLeases: true },
+    },
+    {
+      name: "an admin limited to a property cannot add a tenant, but edits and rents",
+      capabilities: [
+        { action: "tenant:manage", access: "conditional" },
+        { action: "lease:manage", access: "conditional" },
+      ],
+      want: { canAddTenant: false, canEditTenant: true, canManageLeases: true },
+    },
+    {
+      name: "a read-only member sees none",
+      capabilities: [
+        { action: "tenant:read", access: "allow" },
+        { action: "tenant:manage", access: "deny" },
+        { action: "lease:manage", access: "deny" },
+      ],
+      want: {
+        canAddTenant: false,
+        canEditTenant: false,
+        canManageLeases: false,
+      },
+    },
+    {
+      name: "tenant:manage without lease:manage adds but does not rent",
+      capabilities: [{ action: "tenant:manage", access: "allow" }],
+      want: { canAddTenant: true, canEditTenant: true, canManageLeases: false },
+    },
+  ])("$name", ({ capabilities, want }) => {
+    expect(permissions(capabilities)).toEqual(want);
+  });
+});
+
+describe("needsLease", () => {
+  it.each<{ name: string; leases: Lease[]; want: boolean }>([
+    { name: "no lease", leases: [], want: true },
+    {
+      name: "only an ended lease",
+      leases: [lease({ status: "ended" })],
+      want: true,
+    },
+    { name: "a running lease", leases: [lease()], want: false },
+    {
+      name: "a booking (the API calls it active)",
+      leases: [lease({ startDate: "2026-12-01" })],
+      want: false,
+    },
+    {
+      name: "an ended lease and a running one",
+      leases: [lease({ status: "ended" }), lease({ id: "x" })],
+      want: false,
+    },
+  ])("$name: $want", ({ leases, want }) => {
+    expect(needsLease({ leases })).toBe(want);
+  });
+});
+
+describe("checkTenantForm", () => {
+  it("trims and sends name, number and note", () => {
+    expect(
+      checkTenantForm({
+        name: "  Bu Dewi Lestari ",
+        phone: " 0812-3456-7899 ",
+        note: " bayar lewat anaknya ",
+      }),
+    ).toEqual({
+      ok: true,
+      input: {
+        name: "Bu Dewi Lestari",
+        phone: "0812-3456-7899",
+        note: "bayar lewat anaknya",
+      },
+    });
+  });
+
+  it("sends an empty note when there is none", () => {
+    const checked = checkTenantForm({ name: "A", phone: "0812", note: "  " });
+    expect(checked.ok && checked.input.note).toBe("");
+  });
+
+  it.each([
+    {
+      name: "an empty name",
+      values: { name: " ", phone: "0812", note: "" },
+      want: { name: EMPTY_TENANT_NAME_MESSAGE },
+    },
+    {
+      name: "an empty number",
+      values: { name: "A", phone: "", note: "" },
+      want: { phone: EMPTY_TENANT_PHONE_MESSAGE },
+    },
+    {
+      name: "both",
+      values: { name: "", phone: " ", note: "" },
+      want: {
+        name: EMPTY_TENANT_NAME_MESSAGE,
+        phone: EMPTY_TENANT_PHONE_MESSAGE,
+      },
+    },
+  ])("refuses $name", ({ values, want }) => {
+    expect(checkTenantForm(values)).toEqual({ ok: false, errors: want });
+  });
+});
+
+describe("tenantFormValues", () => {
+  it("is empty when adding", () => {
+    expect(tenantFormValues(undefined)).toEqual({
+      name: "",
+      phone: "",
+      note: "",
+    });
+  });
+
+  it("starts from the tenant, with the number as people read it", () => {
+    expect(tenantFormValues(tenant({ note: "kerja di toko" }))).toEqual({
+      name: "Rina Wulandari",
+      phone: "0813-0001-0001",
+      note: "kerja di toko",
+    });
+  });
+});
+
+describe("tenant copy", () => {
+  it("announces what was saved", () => {
+    expect(tenantAddedNotice("Bu Dewi")).toBe("Bu Dewi sudah ditambahkan.");
+    expect(tenantSavedNotice("Bu Dewi")).toBe("Bu Dewi sudah disimpan.");
+    expect(leaseSavedNotice(lease(), "Bu Dewi")).toBe(
+      "Kamar 1 · Kos Melati sudah disewakan kepada Bu Dewi.",
+    );
+  });
+
+  it.each([
+    {
+      canManageLeases: true,
+      added:
+        "Bu Dewi belum punya sewa. Sewakan unit sekarang supaya tagihannya bisa dibuat.",
+      none: "Bu Dewi belum menyewa unit apa pun. Sewakan satu unit supaya tagihan bisa dibuat.",
+    },
+    {
+      canManageLeases: false,
+      added: "Bu Dewi belum punya sewa.",
+      none: "Bu Dewi belum menyewa unit apa pun.",
+    },
+  ])(
+    "speaks of renting a unit only with lease:manage ($canManageLeases)",
+    ({ canManageLeases, added, none }) => {
+      expect(tenantAddedText("Bu Dewi", canManageLeases)).toBe(added);
+      expect(noLeaseText("Bu Dewi", canManageLeases)).toBe(none);
+    },
+  );
 });
 
 describe("readTenantFilters", () => {

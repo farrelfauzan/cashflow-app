@@ -16,7 +16,8 @@ describe("rupiahDigits", () => {
     { name: "a formatted amount", input: "Rp 1.250.000", want: "1250000" },
     { name: "letters and signs", input: "-1a2,5b", want: "125" },
     { name: "leading zeros", input: "0001500", want: "1500" },
-    { name: "only zeros", input: "000", want: "" },
+    { name: "only zeros", input: "000", want: "0" },
+    { name: "one zero", input: "0", want: "0" },
     { name: "nothing", input: "", want: "" },
     {
       name: "more digits than a safe integer holds",
@@ -77,6 +78,7 @@ describe("rupiahDigitsBefore", () => {
       want: 0,
     },
     { name: "a leading zero typed", input: "01.250", caret: 1, want: 0 },
+    { name: "only zeros typed", input: "000", caret: 3, want: 1 },
   ])("$name", ({ input, caret, want }) => {
     expect(rupiahDigitsBefore(input, caret)).toBe(want);
   });

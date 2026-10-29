@@ -1,4 +1,8 @@
-import type { ListTenantsStatus } from "@/lib/api/generated/model";
+import type {
+  ListTenantsStatus,
+  Tenant,
+  TenantInput,
+} from "@/lib/api/generated/model";
 
 // Tenant status: what a lease (or a tenant without one) is, from the lease's status and dates.
 export type StatusTone = "active" | "upcoming" | "ended" | "none";
@@ -16,9 +20,39 @@ export type ChipTone = StatusTone | "warning" | "neutral";
 
 // Tenant controls: which controls show, from the signed-in member's capabilities.
 export type TenantPermissions = {
-  // The to-do banner about tenants whose collector was disabled ("Tampilkan").
+  // "Tambah penyewa": the API accepts it only with tenant:manage for the whole organization, so a
+  // member limited to some properties ("conditional") does not see it.
+  canAddTenant: boolean;
+  // "Ubah penyewa"; "conditional" shows it and lets the API decide per tenant.
+  canEditTenant: boolean;
+  // "Sewakan unit", and the to-do banner about tenants whose collector was disabled.
   canManageLeases: boolean;
 };
+
+// The side panel of the tenant screens; one at a time. The tenant is the one the API returned
+// (after adding) or the one on the page (editing, renting a unit).
+export type TenantPanelState =
+  | { kind: "closed" }
+  | { kind: "add" }
+  | { kind: "added"; tenant: Tenant }
+  | { kind: "edit"; tenant: Tenant }
+  | { kind: "lease"; tenant: Tenant };
+
+export type OpenTenantPanel = Exclude<TenantPanelState, { kind: "closed" }>;
+
+export type TenantFormValues = {
+  name: string;
+  phone: string;
+  note: string;
+};
+
+// "note" is never found by the form (any text is fine); it is where an API error on it is shown.
+export type TenantFormErrors = Partial<
+  Record<"name" | "phone" | "note", string>
+>;
+
+export type TenantFormResult =
+  { ok: true; input: TenantInput } | { ok: false; errors: TenantFormErrors };
 
 // Tenant filters: what the API narrows the list to, read from the URL. Each is undefined when it
 // is not set, so the request and its query key leave it out.

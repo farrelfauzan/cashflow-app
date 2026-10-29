@@ -14,13 +14,16 @@ import {
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
 import { formatRupiah } from "@/lib/format/rupiah";
-import type { AppAbility } from "@/lib/capabilities";
+import { everywhere, type AppAbility } from "@/lib/capabilities";
 
 import type {
   ChipTone,
   FilterOption,
   LeaseView,
   StatusView,
+  TenantFormErrors,
+  TenantFormResult,
+  TenantFormValues,
   TenantListFilters,
   TenantPermissions,
   TenantRowView,
@@ -186,7 +189,91 @@ export function tenantsSubtitle(organizationName: string): string {
 // Tenant controls: which controls show, from the member's ability (getOrgMe's capabilities),
 // never from role names. Hiding is visibility only; the API checks every request.
 export function tenantPermissions(ability: AppAbility): TenantPermissions {
-  return { canManageLeases: ability.can("manage", "lease") };
+  return {
+    canAddTenant: ability.can("manage", everywhere("tenant")),
+    canEditTenant: ability.can("manage", "tenant"),
+    canManageLeases: ability.can("manage", "lease"),
+  };
+}
+
+// A tenant who may rent a unit now: one without an active lease (a booking counts as active).
+// The API itself allows a second lease; the screen offers it only here (board Sewa-Baru.dc.html).
+export function needsLease(tenant: Pick<Tenant, "leases">): boolean {
+  return !tenant.leases.some((lease) => lease.status === "active");
+}
+
+// What the tenant form checks before it sends anything. The Go API validates everything again
+// (the number's format included) and its message always wins; these only give a friendly
+// message early.
+
+// The API's limits (TenantInput).
+export const TENANT_NAME_MAX_LENGTH = 100;
+export const TENANT_NOTE_MAX_LENGTH = 500;
+
+export const EMPTY_TENANT_NAME_MESSAGE = "Isi nama penyewa.";
+export const EMPTY_TENANT_PHONE_MESSAGE = "Isi nomor WhatsApp.";
+
+// The fields the API's errors can name; any other field goes to the alert.
+export const TENANT_FORM_FIELDS = ["name", "phone", "note"] as const;
+
+export function checkTenantForm(values: TenantFormValues): TenantFormResult {
+  const name = values.name.trim();
+  const phone = values.phone.trim();
+  const errors: TenantFormErrors = {};
+  if (name === "") errors.name = EMPTY_TENANT_NAME_MESSAGE;
+  if (phone === "") errors.phone = EMPTY_TENANT_PHONE_MESSAGE;
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  return { ok: true, input: { name, phone, note: values.note.trim() } };
+}
+
+// The form's starting text: empty when adding, the tenant's own when changing them, with the
+// number the way people read it.
+export function tenantFormValues(
+  tenant: Pick<Tenant, "name" | "phone" | "note"> | undefined,
+): TenantFormValues {
+  if (tenant === undefined) return { name: "", phone: "", note: "" };
+  return {
+    name: tenant.name,
+    phone: formatPhone(tenant.phone),
+    note: tenant.note,
+  };
+}
+
+// The short notices announced after a panel closes.
+export function tenantAddedNotice(name: string): string {
+  return `${name} sudah ditambahkan.`;
+}
+
+export function tenantSavedNotice(name: string): string {
+  return `${name} sudah disimpan.`;
+}
+
+export function leaseSavedNotice(
+  lease: Pick<Lease, "unitLabel" | "propertyName">,
+  tenantName: string,
+): string {
+  return `${lease.unitLabel} · ${lease.propertyName} sudah disewakan kepada ${tenantName}.`;
+}
+
+// "Penyewa ditambahkan" (board Penyewa-Tambah.dc.html).
+export function tenantAddedText(
+  name: string,
+  canManageLeases: boolean,
+): string {
+  return canManageLeases
+    ? `${name} belum punya sewa. Sewakan unit sekarang supaya tagihannya bisa dibuat.`
+    : `${name} belum punya sewa.`;
+}
+
+export const TENANT_ADDED_LATER_TEXT =
+  "Kalau belum siap, penyewa tetap tersimpan dan bisa disewakan unit nanti dari daftar penyewa.";
+
+// "Belum ada sewa" on the tenant's page (board Sewa-Baru.dc.html). Without lease:manage the
+// sentence about renting a unit is left out.
+export function noLeaseText(name: string, canManageLeases: boolean): string {
+  return canManageLeases
+    ? `${name} belum menyewa unit apa pun. Sewakan satu unit supaya tagihan bisa dibuat.`
+    : `${name} belum menyewa unit apa pun.`;
 }
 
 // A property id as the API parses it; anything else (a link cut short in a chat) is not one.
