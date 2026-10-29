@@ -1,3 +1,4 @@
+import { leaseUnitText } from "@/components/client/lease/utils";
 import {
   readChoice,
   readSearch,
@@ -19,6 +20,8 @@ import { everywhere, type AppAbility } from "@/lib/capabilities";
 import type {
   ChipTone,
   FilterOption,
+  LeaseActions,
+  LeasePanelKind,
   LeaseView,
   StatusView,
   TenantFormErrors,
@@ -341,7 +344,7 @@ export function leaseView(lease: Lease, today: string): LeaseView {
   const ended = lease.status === "ended";
   return {
     id: lease.id,
-    title: `${lease.unitLabel} · ${lease.propertyName}`,
+    title: leaseUnitText(lease),
     status: leaseStatusView(lease, today),
     rent: formatRupiah(lease.rentAmount),
     deposit: formatRupiah(lease.depositAmount),
@@ -365,4 +368,60 @@ export function leaseView(lease: Lease, today: string): LeaseView {
     })),
     entered: `Dimasukkan ke aplikasi ${formatDate(lease.enteredOn)}.`,
   };
+}
+
+// The buttons on a lease's card: only on an active lease, and only for a member with lease:manage
+// (canManageLeases, from the capabilities). A lease that starts after today is a booking, which is
+// cancelled instead of moved out of.
+export function leaseActions(
+  lease: Pick<Lease, "status" | "startDate">,
+  today: string,
+  canManageLeases: boolean,
+): LeaseActions | null {
+  if (!canManageLeases || lease.status !== "active") return null;
+  return { end: lease.startDate > today ? "cancelBooking" : "moveOut" };
+}
+
+// An outline button in a lease card's footer: full width and stacked on the phone, in a row on
+// iPad, 48px tall.
+export const LEASE_ACTION_CLASS =
+  "h-12 w-full rounded-xl border-[1.5px] bg-card px-[18px] text-base font-semibold md:w-auto md:text-[17px]";
+
+// The lease panels' titles, also the labels of the card's buttons that open them.
+export const LEASE_PANEL_TITLES: Record<LeasePanelKind, string> = {
+  editLease: "Ubah sewa",
+  plannedEnd: "Rencana keluar",
+  moveOut: "Catat pindah keluar",
+  cancelBooking: "Batalkan sewa",
+};
+
+// A lease panel's subtitle: "Bu Rina Wulandari · Kamar 07 · Kos Melati".
+export function leasePanelSubtitle(
+  tenantName: string,
+  lease: Pick<Lease, "unitLabel" | "propertyName">,
+): string {
+  return `${tenantName} · ${leaseUnitText(lease)}`;
+}
+
+export function leaseUpdatedNotice(lease: Pick<Lease, "unitLabel">): string {
+  return `Sewa ${lease.unitLabel} diperbarui.`;
+}
+
+// After "Simpan rencana keluar" or "Hapus rencana keluar", from the saved lease.
+export function plannedEndNotice(
+  lease: Pick<Lease, "unitLabel" | "plannedEndDate">,
+): string {
+  return lease.plannedEndDate === undefined
+    ? `Rencana keluar ${lease.unitLabel} dihapus.`
+    : `Rencana keluar ${lease.unitLabel}: ${formatDate(lease.plannedEndDate)}.`;
+}
+
+export function movedOutNotice(lease: Pick<Lease, "unitLabel">): string {
+  return `Pindah keluar dicatat. ${lease.unitLabel} sekarang kosong.`;
+}
+
+export function bookingCancelledNotice(
+  lease: Pick<Lease, "unitLabel">,
+): string {
+  return `Sewa ${lease.unitLabel} dibatalkan. Unitnya kosong lagi.`;
 }

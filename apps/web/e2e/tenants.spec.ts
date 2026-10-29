@@ -341,7 +341,8 @@ test.describe("Admin of the whole organization", () => {
     await expect(first.getByText("Mulai sewa")).toBeVisible();
     await expect(first).toContainText("1 Jul 2026");
     await expect(first.getByText("Mulai tagih dari")).toBeVisible();
-    await expect(first.getByText("Rencana keluar")).toBeVisible();
+    // The label comes before the card's "Rencana keluar" button.
+    await expect(first.getByText("Rencana keluar").first()).toBeVisible();
     await expect(first).toContainText("Belum diatur");
     await expect(first.getByText("Biaya tambahan tetap")).toBeVisible();
     await expect(first).toContainText("Wi-Fi Rp50.000");
@@ -355,16 +356,24 @@ test.describe("Admin of the whole organization", () => {
     await expect(second).toContainText("Rp1.500.000");
     await expect(second).toContainText("Tidak ada");
     await expect(second.getByText("Biaya tambahan tetap")).toHaveCount(0);
-    // Read-only: nothing here changes a lease.
+    // Pak Hendra may change both active leases (lease-changes.spec.ts covers what the buttons
+    // do); extra charges and invoices are not on this page yet.
+    for (const card of [first, second]) {
+      await expect(
+        card.getByRole("button", { name: "Rencana keluar" }),
+      ).toBeVisible();
+      await expect(
+        card.getByRole("button", { name: "Catat pindah keluar" }),
+      ).toBeVisible();
+    }
+    await expect(page.getByRole("button", { name: "Ubah sewa" })).toHaveCount(
+      2,
+    );
     await expect(
-      page.getByRole("button", {
-        name: /Ubah sewa|Biaya tambahan|Rencana keluar|Catat pindah keluar/,
-      }),
+      page.getByRole("button", { name: /Biaya tambahan|Lihat tagihan/ }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("link", {
-        name: /Ubah sewa|Biaya tambahan|Catat pindah keluar|Lihat tagihan/,
-      }),
+      page.getByRole("link", { name: /Biaya tambahan|Lihat tagihan/ }),
     ).toHaveCount(0);
 
     const min = minFont(testInfo);

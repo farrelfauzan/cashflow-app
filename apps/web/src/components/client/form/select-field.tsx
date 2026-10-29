@@ -32,6 +32,9 @@ type SelectFieldProps = {
   hint: string | null;
   error: string | undefined;
   disabled: boolean;
+  // "warning" gives the select a warning border and the hint the warning text: a choice that
+  // still works but needs the member's attention (a collector who was disabled).
+  hintTone?: "muted" | "warning";
   className?: string;
 };
 
@@ -46,8 +49,10 @@ export function SelectField({
   hint,
   error,
   disabled,
+  hintTone = "muted",
   className,
 }: SelectFieldProps) {
+  const warning = hintTone === "warning";
   const id = useId();
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
@@ -69,7 +74,7 @@ export function SelectField({
           id={`${id}-select`}
           aria-invalid={error !== undefined}
           aria-describedby={describedBy === "" ? undefined : describedBy}
-          className={SELECT_TRIGGER_CLASS}
+          className={cn(SELECT_TRIGGER_CLASS, warning && "border-warning")}
         >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
@@ -87,7 +92,13 @@ export function SelectField({
       </Select>
       {error !== undefined && <FieldError id={errorId} message={error} />}
       {hint !== null && (
-        <p id={hintId} className={FIELD_HINT_CLASS}>
+        <p
+          id={hintId}
+          className={cn(
+            FIELD_HINT_CLASS,
+            warning && "font-semibold text-warning",
+          )}
+        >
           {hint}
         </p>
       )}

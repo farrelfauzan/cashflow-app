@@ -1,9 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import type { Unit } from "@/lib/api/generated/model";
+import type { Lease, Unit } from "@/lib/api/generated/model";
 
-import type { LeaseFormValues } from "./type";
+import type { LeaseFormValues, LeaseTermsValues } from "./type";
 import {
+  cancelBookingText,
+  checkLeaseTerms,
+  checkMoveOut,
+  checkPlannedEnd,
+  collectorOptions,
+  currentPlannedEndText,
+  editStartBox,
+  END_AFTER_TODAY_MESSAGE,
+  END_BEFORE_START_MESSAGE,
+  keepsDisabledCollector,
+  leaseTermsValues,
+  leaseUnitText,
+  moveOutHint,
+  NO_DATE_MESSAGE,
+  PLANNED_END_BEFORE_START_MESSAGE,
+  PLANNED_END_BEFORE_TODAY_MESSAGE,
+  plannedEndHint,
+  plannedEndSuggestion,
   addDays,
   anniversary,
   BAD_DEPOSIT_MESSAGE,
@@ -491,41 +509,46 @@ describe("defaultBilledFrom", () => {
 
 describe("billingExplanation", () => {
   it("bills every period since the start: past periods today, the current one in 7 days (CLAUDE.md's example)", () => {
-    expect(billingExplanation("2026-09-15", "2026-09-15", TODAY)).toBe(
+    expect(billingExplanation("2026-09-15", "2026-09-15", TODAY, TODAY)).toBe(
       "Tanggal mulai ini sudah lewat, jadi setiap bulan sejak 15 Sep 2026 ikut ditagih. Bulan yang sudah lewat jatuh tempo hari ini (28 Okt); bulan berjalan jatuh tempo 4 Nov. Kalau pemilik sudah menerima uang sewa bulan-bulan itu langsung, pilih bulan mulai tagih yang lebih baru.",
     );
   });
 
   it("bills from the current period only", () => {
-    expect(billingExplanation("2026-09-15", "2026-10-15", TODAY)).toBe(
+    expect(billingExplanation("2026-09-15", "2026-10-15", TODAY, TODAY)).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 15 Okt 2026 ikut ditagih, jatuh tempo 4 Nov.",
     );
   });
 
   it("a lease in its first period bills that period, due in 7 days", () => {
-    expect(billingExplanation("2026-10-15", "2026-10-15", TODAY)).toBe(
+    expect(billingExplanation("2026-10-15", "2026-10-15", TODAY, TODAY)).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 15 Okt 2026 ikut ditagih, jatuh tempo 4 Nov.",
     );
   });
 
   it("billing from the next anniversary leaves the owner every period so far", () => {
-    expect(billingExplanation("2026-09-15", "2026-11-15", TODAY)).toBe(
+    expect(billingExplanation("2026-09-15", "2026-11-15", TODAY, TODAY)).toBe(
       "Bulan sebelum 15 Nov 2026 tidak ditagih. Tagihan pertama untuk bulan mulai 15 Nov 2026, jatuh tempo 15 Nov.",
     );
   });
 
   it("finds the current period of a 31st start at a month end", () => {
-    expect(billingExplanation("2026-08-31", "2026-09-30", TODAY)).toBe(
+    expect(billingExplanation("2026-08-31", "2026-09-30", TODAY, TODAY)).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 30 Sep 2026 ikut ditagih, jatuh tempo 4 Nov.",
     );
-    expect(billingExplanation("2026-08-31", "2026-08-31", TODAY)).toContain(
-      "setiap bulan sejak 31 Agu 2026 ikut ditagih",
-    );
+    expect(
+      billingExplanation("2026-08-31", "2026-08-31", TODAY, TODAY),
+    ).toContain("setiap bulan sejak 31 Agu 2026 ikut ditagih");
   });
 
   it("crosses the new year for the current period's due date", () => {
     expect(
-      billingExplanation("2026-11-20", "2026-11-20", "2026-12-28"),
+      billingExplanation(
+        "2026-11-20",
+        "2026-11-20",
+        "2026-12-28",
+        "2026-12-28",
+      ),
     ).toContain("bulan berjalan jatuh tempo 4 Jan");
   });
 });
@@ -763,5 +786,414 @@ describe("form fields", () => {
     { field: null, want: false },
   ])("$field is a field of the form: $want", ({ field, want }) => {
     expect(isLeaseFormField(field)).toBe(want);
+  });
+});
+
+describe("billingExplanation for a lease being changed", () => {
+  it("names the day the lease was entered when it is not today", () => {
+    expect(
+      billingExplanation("2026-09-15", "2026-09-15", "2026-10-20", TODAY),
+    ).toBe(
+      "Tanggal mulai ini sudah lewat, jadi setiap bulan sejak 15 Sep 2026 ikut ditagih. Bulan yang sudah lewat jatuh tempo 20 Okt, hari sewa ini dimasukkan; bulan berjalan jatuh tempo 27 Okt. Kalau pemilik sudah menerima uang sewa bulan-bulan itu langsung, pilih bulan mulai tagih yang lebih baru.",
+    );
+  });
+
+  it("counts the current period from the day it was entered", () => {
+    expect(
+      billingExplanation("2026-08-15", "2026-09-15", "2026-09-20", TODAY),
+    ).toBe(
+      "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 15 Sep 2026 ikut ditagih, jatuh tempo 27 Sep.",
+    );
+    expect(
+      billingExplanation("2026-08-15", "2026-10-15", "2026-09-20", TODAY),
+    ).toBe(
+      "Bulan sebelum 15 Okt 2026 tidak ditagih. Tagihan pertama untuk bulan mulai 15 Okt 2026, jatuh tempo 15 Okt.",
+    );
+  });
+});
+
+describe("billedFromOptions for a lease being changed", () => {
+  it("stops at the first anniversary after the day it was entered, not today", () => {
+    expect(
+      billedFromOptions("2026-08-15", "2026-09-20").map((o) => o.value),
+    ).toEqual(["2026-09-15", "2026-10-15"]);
+  });
+});
+
+const leaseOf = (over: Partial<Lease> = {}): Lease => ({
+  id: "11111111-1111-4111-8111-111111111111",
+  tenantId: "22222222-2222-4222-8222-222222222222",
+  unitId: "33333333-3333-4333-8333-333333333333",
+  unitLabel: "Kamar 07",
+  propertyId: "44444444-4444-4444-8444-444444444444",
+  propertyName: "Kos Melati",
+  startDate: "2026-09-15",
+  enteredOn: TODAY,
+  billedFrom: "2026-09-15",
+  rentAmount: 1_500_000,
+  depositAmount: 3_000_000,
+  status: "active",
+  charges: [],
+  createdAt: "2026-10-28T03:00:00Z",
+  updatedAt: "2026-10-28T03:00:00Z",
+  ...over,
+});
+
+describe("editStartBox", () => {
+  it.each([
+    {
+      name: "a start before the day it was entered shows the billing choice",
+      start: "2026-09-15",
+      enteredOn: TODAY,
+      want: "billing",
+    },
+    {
+      name: "a start on the day it was entered shows nothing",
+      start: "2026-10-20",
+      enteredOn: "2026-10-20",
+      want: "none",
+    },
+    {
+      name: "a start after it was entered but before today shows nothing",
+      start: "2026-10-22",
+      enteredOn: "2026-10-20",
+      want: "none",
+    },
+    {
+      name: "a start today shows nothing",
+      start: TODAY,
+      enteredOn: "2026-10-20",
+      want: "none",
+    },
+    {
+      name: "a start after today shows the booking note",
+      start: "2026-12-05",
+      enteredOn: "2026-10-20",
+      want: "booking",
+    },
+    {
+      name: "an empty date shows nothing",
+      start: "",
+      enteredOn: TODAY,
+      want: "none",
+    },
+  ])("$name", ({ start, enteredOn, want }) => {
+    expect(editStartBox(start, enteredOn, TODAY)).toBe(want);
+  });
+});
+
+describe("leaseTermsValues", () => {
+  it("starts from the lease's own terms", () => {
+    expect(
+      leaseTermsValues(
+        leaseOf({
+          collector: { memberId: "m-1", name: "Mas Dimas", active: true },
+        }),
+      ),
+    ).toEqual({
+      startDate: "2026-09-15",
+      billing: "start",
+      billedFrom: "",
+      rent: "1.500.000",
+      deposit: "3.000.000",
+      collector: "m-1",
+    });
+  });
+
+  it("picks the later billing start the lease has, and no collector", () => {
+    expect(
+      leaseTermsValues(leaseOf({ billedFrom: "2026-10-15", depositAmount: 0 })),
+    ).toMatchObject({
+      billing: "pick",
+      billedFrom: "2026-10-15",
+      deposit: "0",
+      collector: NO_COLLECTOR,
+    });
+  });
+});
+
+describe("collectors", () => {
+  const candidates = [
+    { memberId: "m-1", name: "Mas Dimas Saputra", karyawan: true },
+    { memberId: "m-2", name: "Mbak Sari", karyawan: false },
+  ];
+
+  it("offers none, then the candidates", () => {
+    expect(collectorOptions(candidates, undefined)).toEqual([
+      { value: NO_COLLECTOR, label: "Tidak ada" },
+      { value: "m-1", label: "Mas Dimas Saputra" },
+      { value: "m-2", label: "Mbak Sari" },
+    ]);
+  });
+
+  it("adds the lease's disabled collector, who is no longer a candidate", () => {
+    expect(
+      collectorOptions(candidates, {
+        memberId: "m-9",
+        name: "Mas Teguh Santoso",
+      }).at(-1),
+    ).toEqual({ value: "m-9", label: "Mas Teguh Santoso" });
+  });
+
+  it("does not repeat a collector who is a candidate", () => {
+    expect(
+      collectorOptions(candidates, { memberId: "m-1", name: "Mas Dimas" }),
+    ).toHaveLength(3);
+  });
+
+  it.each([
+    {
+      name: "the disabled collector still chosen",
+      selected: "m-9",
+      current: { memberId: "m-9", active: false },
+      want: true,
+    },
+    {
+      name: "another collector chosen",
+      selected: "m-1",
+      current: { memberId: "m-9", active: false },
+      want: false,
+    },
+    {
+      name: "an active collector",
+      selected: "m-1",
+      current: { memberId: "m-1", active: true },
+      want: false,
+    },
+    {
+      name: "no collector on the lease",
+      selected: NO_COLLECTOR,
+      current: undefined,
+      want: false,
+    },
+  ])("warns for $name: $want", ({ selected, current, want }) => {
+    expect(keepsDisabledCollector(selected, current)).toBe(want);
+  });
+});
+
+describe("checkLeaseTerms", () => {
+  const values = (over: Partial<LeaseTermsValues> = {}): LeaseTermsValues => ({
+    startDate: "2026-09-15",
+    billing: "start",
+    billedFrom: "",
+    rent: "1.500.000",
+    deposit: "3.000.000",
+    collector: NO_COLLECTOR,
+    ...over,
+  });
+  // Entered on its start date: "Mulai tagih dari" never shows for it.
+  const onTime = leaseOf({ startDate: "2026-09-15", enteredOn: "2026-09-15" });
+  // Entered late, on 28 Oct.
+  const late = leaseOf({ startDate: "2026-09-15", enteredOn: TODAY });
+
+  it("sends the whole terms, leaving billedFrom out for an unchanged start", () => {
+    expect(checkLeaseTerms(values({ collector: "m-1" }), onTime)).toEqual({
+      ok: true,
+      input: {
+        startDate: "2026-09-15",
+        rentAmount: 1_500_000,
+        depositAmount: 3_000_000,
+        collectorMemberId: "m-1",
+      },
+    });
+  });
+
+  it("sends a deposit of 0 for an empty field and no collector for none", () => {
+    expect(checkLeaseTerms(values({ deposit: "" }), onTime)).toEqual({
+      ok: true,
+      input: {
+        startDate: "2026-09-15",
+        rentAmount: 1_500_000,
+        depositAmount: 0,
+      },
+    });
+  });
+
+  it("sends the new start date as billedFrom when the start changes and the block is hidden", () => {
+    const checked = checkLeaseTerms(
+      values({ startDate: "2026-09-20" }),
+      onTime,
+    );
+    expect(checked.ok && checked.input.billedFrom).toBe("2026-09-20");
+  });
+
+  it("sends the start date for the first choice while the block shows", () => {
+    const checked = checkLeaseTerms(values(), late);
+    expect(checked.ok && checked.input.billedFrom).toBe("2026-09-15");
+  });
+
+  it("sends the chosen anniversary for the second choice", () => {
+    const checked = checkLeaseTerms(
+      values({ billing: "pick", billedFrom: "2026-10-15" }),
+      late,
+    );
+    expect(checked.ok && checked.input.billedFrom).toBe("2026-10-15");
+  });
+
+  it("follows a changed start while the block shows", () => {
+    const checked = checkLeaseTerms(
+      values({ startDate: "2026-08-31", billing: "start" }),
+      late,
+    );
+    expect(checked.ok && checked.input.billedFrom).toBe("2026-08-31");
+  });
+
+  it("refuses an anniversary the API would refuse", () => {
+    expect(
+      checkLeaseTerms(
+        values({ billing: "pick", billedFrom: "2026-12-15" }),
+        late,
+      ),
+    ).toEqual({ ok: false, errors: { billedFrom: NO_BILLED_FROM_MESSAGE } });
+  });
+
+  it("ignores the second choice once the block is hidden", () => {
+    const checked = checkLeaseTerms(
+      values({ startDate: TODAY, billing: "pick", billedFrom: "2026-10-15" }),
+      late,
+    );
+    expect(checked.ok && checked.input.billedFrom).toBe(TODAY);
+  });
+
+  it("finds every bad field", () => {
+    expect(
+      checkLeaseTerms(
+        values({ startDate: "", rent: "0", deposit: "1,5" }),
+        onTime,
+      ),
+    ).toEqual({
+      ok: false,
+      errors: {
+        startDate: NO_START_MESSAGE,
+        rentAmount: BAD_RENT_MESSAGE,
+        depositAmount: BAD_DEPOSIT_MESSAGE,
+      },
+    });
+  });
+});
+
+describe("plannedEndSuggestion", () => {
+  it.each([
+    {
+      name: "the day before the next anniversary (the board's case)",
+      start: "2026-09-15",
+      today: TODAY,
+      want: { date: "2026-11-14", nextStart: "2026-11-15" },
+    },
+    {
+      name: "today, when tomorrow is an anniversary",
+      start: "2026-09-29",
+      today: TODAY,
+      want: { date: TODAY, nextStart: "2026-10-29" },
+    },
+    {
+      name: "a 31st start before a 30-day month",
+      start: "2026-08-31",
+      today: "2026-11-05",
+      want: { date: "2026-11-29", nextStart: "2026-11-30" },
+    },
+    {
+      name: "a 31st start before February",
+      start: "2026-12-31",
+      today: "2027-02-10",
+      want: { date: "2027-02-27", nextStart: "2027-02-28" },
+    },
+    {
+      name: "a 30th start in a leap February",
+      start: "2027-12-30",
+      today: "2028-02-03",
+      want: { date: "2028-02-28", nextStart: "2028-02-29" },
+    },
+    {
+      name: "a start today: the day before its second period",
+      start: TODAY,
+      today: TODAY,
+      want: { date: "2026-11-27", nextStart: "2026-11-28" },
+    },
+    {
+      name: "a booking: the day before its second period",
+      start: "2026-12-05",
+      today: TODAY,
+      want: { date: "2027-01-04", nextStart: "2027-01-05" },
+    },
+  ])("$name", ({ start, today, want }) => {
+    expect(plannedEndSuggestion(start, today)).toEqual(want);
+  });
+
+  it("says why in the hint", () => {
+    expect(
+      plannedEndHint({ date: "2026-11-14", nextStart: "2026-11-15" }),
+    ).toBe(
+      "Usulan: 14 Nov 2026, sehari sebelum bulan berikutnya (15 Nov) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.",
+    );
+    expect(currentPlannedEndText("2026-11-14")).toBe(
+      "Rencana keluar saat ini: 14 Nov 2026. Menghapusnya mengembalikan tagihan yang tadi dibatalkan.",
+    );
+  });
+});
+
+describe("checkPlannedEnd", () => {
+  it.each([
+    {
+      date: "2026-11-14",
+      start: "2026-09-15",
+      want: { ok: true, date: "2026-11-14" },
+    },
+    { date: TODAY, start: "2026-09-15", want: { ok: true, date: TODAY } },
+    {
+      date: "",
+      start: "2026-09-15",
+      want: { ok: false, error: NO_DATE_MESSAGE },
+    },
+    {
+      date: "2026-10-27",
+      start: "2026-09-15",
+      want: { ok: false, error: PLANNED_END_BEFORE_TODAY_MESSAGE },
+    },
+    {
+      date: "2026-12-01",
+      start: "2026-12-05",
+      want: { ok: false, error: PLANNED_END_BEFORE_START_MESSAGE },
+    },
+    {
+      date: "2026-12-05",
+      start: "2026-12-05",
+      want: { ok: true, date: "2026-12-05" },
+    },
+  ])("'$date' for a start on $start", ({ date, start, want }) => {
+    expect(checkPlannedEnd(date, start, TODAY)).toEqual(want);
+  });
+});
+
+describe("checkMoveOut", () => {
+  it.each([
+    { date: TODAY, want: { ok: true, date: TODAY } },
+    { date: "2026-09-15", want: { ok: true, date: "2026-09-15" } },
+    { date: "", want: { ok: false, error: NO_DATE_MESSAGE } },
+    {
+      date: "2026-09-14",
+      want: { ok: false, error: END_BEFORE_START_MESSAGE },
+    },
+    {
+      date: "2026-10-29",
+      want: { ok: false, error: END_AFTER_TODAY_MESSAGE },
+    },
+  ])("'$date'", ({ date, want }) => {
+    expect(checkMoveOut(date, "2026-09-15", TODAY)).toEqual(want);
+  });
+
+  it("names the start date in the hint", () => {
+    expect(moveOutHint("2026-09-15")).toBe(
+      "Diisi hari ini. Tidak boleh sebelum tanggal mulai sewa (15 Sep 2026) dan tidak boleh setelah hari ini.",
+    );
+  });
+});
+
+describe("lease copy", () => {
+  it("names the unit and the booking's start", () => {
+    expect(leaseUnitText(leaseOf())).toBe("Kamar 07 · Kos Melati");
+    expect(cancelBookingText("2026-12-05")).toBe(
+      "Sewa ini belum dimulai (mulai 5 Des 2026). Kalau dibatalkan, unit langsung kosong lagi dan sewa ini tidak akan pernah ditagih.",
+    );
   });
 });

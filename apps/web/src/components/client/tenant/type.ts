@@ -1,4 +1,5 @@
 import type {
+  Lease,
   ListTenantsStatus,
   Tenant,
   TenantInput,
@@ -29,14 +30,21 @@ export type TenantPermissions = {
   canManageLeases: boolean;
 };
 
+// The changes to an active lease, each opened from its card: "Ubah sewa", "Rencana keluar",
+// "Catat pindah keluar", and "Batalkan sewa" for a booking.
+export type LeasePanelKind =
+  "editLease" | "plannedEnd" | "moveOut" | "cancelBooking";
+
 // The side panel of the tenant screens; one at a time. The tenant is the one the API returned
-// (after adding) or the one on the page (editing, renting a unit).
+// (after adding) or the one on the page (editing, renting a unit). A lease panel carries the
+// lease from the page and its tenant's name.
 export type TenantPanelState =
   | { kind: "closed" }
   | { kind: "add" }
   | { kind: "added"; tenant: Tenant }
   | { kind: "edit"; tenant: Tenant }
-  | { kind: "lease"; tenant: Tenant };
+  | { kind: "lease"; tenant: Tenant }
+  | { kind: LeasePanelKind; lease: Lease; tenantName: string };
 
 export type OpenTenantPanel = Exclude<TenantPanelState, { kind: "closed" }>;
 
@@ -86,6 +94,12 @@ export type TenantRowView = {
   // Any active lease of the tenant has a collector who is disabled.
   flagged: boolean;
   status: StatusView;
+};
+
+// The buttons on an active lease's card for a member with lease:manage. "Ubah sewa" and "Rencana
+// keluar" always show; the last one is "Catat pindah keluar", or "Batalkan sewa" for a booking.
+export type LeaseActions = {
+  end: "moveOut" | "cancelBooking";
 };
 
 // One lease card on the tenant's page, every value ready to show.
