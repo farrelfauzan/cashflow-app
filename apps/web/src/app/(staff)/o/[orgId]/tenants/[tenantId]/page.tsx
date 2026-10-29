@@ -1,7 +1,17 @@
-import { TenantDetailScreen } from "@/components/server/tenant/tenant-detail-screen";
+import { Suspense } from "react";
 
+import { TenantDetailScreen } from "@/components/server/tenant/tenant-detail-screen";
+import { DetailScreenSkeleton } from "@/components/server/shell/detail-screen-skeleton";
+
+// The screen reads the session and the route's params, so it streams in behind its own boundary:
+// a navigation inside the organization (where the shell is already on screen) shows the
+// placeholder at once instead of waiting for the API.
 export default function TenantDetailPage({
   params,
 }: PageProps<"/o/[orgId]/tenants/[tenantId]">) {
-  return <TenantDetailScreen params={params} />;
+  return (
+    <Suspense fallback={<DetailScreenSkeleton />}>
+      <TenantDetailScreen params={params} />
+    </Suspense>
+  );
 }

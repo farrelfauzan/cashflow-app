@@ -123,6 +123,10 @@ web-test: ## Web unit tests (Vitest)
 web-e2e: ## Web end-to-end tests (Playwright, iPad and phone sizes)
 	cd $(WEB_DIR) && pnpm e2e
 
+.PHONY: web-e2e-dev
+web-e2e-dev: ## Open every staff screen against `next dev`; fails on a Next.js dev error
+	cd $(WEB_DIR) && E2E_SERVER=dev pnpm e2e
+
 .PHONY: web-build
 web-build: ## Production build of the web app
 	cd $(WEB_DIR) && pnpm build
