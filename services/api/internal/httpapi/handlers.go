@@ -134,7 +134,7 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errMissingContext)
 		return
 	}
-	lp, ok := s.readListParams(w, r)
+	lp, ok := s.readListParams(w, r, withCollectorDisabled)
 	if !ok {
 		return
 	}
@@ -150,7 +150,7 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 		items[i] = toAPIMember(m)
 	}
 	s.writeJSON(w, http.StatusOK, apigen.MemberList{
-		Items: items, Members: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+		Items: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
 	})
 }
 

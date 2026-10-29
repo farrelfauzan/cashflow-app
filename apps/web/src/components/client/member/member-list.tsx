@@ -2,7 +2,7 @@
 
 import type { Member } from "@/lib/api/generated/model";
 import { canManageMember, canResendInvitation } from "./utils";
-import type { MemberPermissions, PropertyNames } from "./type";
+import type { MemberPermissions } from "./type";
 
 import { MemberCard } from "./member-card";
 import { MemberTableRow } from "./member-table-row";
@@ -13,7 +13,6 @@ type MemberListProps = {
   // The signed-in member (getOrgMe.membershipId): their row says "Anda" and has no "Atur".
   ownMembershipId: string;
   permissions: MemberPermissions;
-  propertyNames: PropertyNames;
   onManage: (memberId: string) => void;
 };
 
@@ -24,7 +23,6 @@ export function MemberList({
   members,
   ownMembershipId,
   permissions,
-  propertyNames,
   onManage,
 }: MemberListProps) {
   const rows = members.map((member) => ({
@@ -51,7 +49,6 @@ export function MemberList({
             <MemberTableRow
               key={row.member.id}
               orgId={orgId}
-              propertyNames={propertyNames}
               onManage={onManage}
               {...row}
             />
@@ -67,7 +64,6 @@ export function MemberList({
           <MemberCard
             key={row.member.id}
             orgId={orgId}
-            propertyNames={propertyNames}
             onManage={onManage}
             {...row}
           />

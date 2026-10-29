@@ -9,9 +9,4 @@ import type { PageInfo } from './pageInfo';
 
 export type MemberList = PageInfo & {
   items: Member[];
-  /**
-     * The same rows as items. Kept until the web reads items; then removed.
-     * @deprecated
-     */
-  members: Member[];
 };

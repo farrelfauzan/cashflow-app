@@ -347,7 +347,7 @@ type ChargeTypeList struct {
 
 // Collector defines model for Collector.
 type Collector struct {
-	// Active False when the member is disabled in the organization. The lease keeps them as collector until an admin picks another one with updateLease. The web counts the flagged tenants from listTenants because that list is not paginated; if it ever becomes paginated, an organization-wide count must come from the API instead.
+	// Active False when the member is disabled in the organization. The lease keeps them as collector until an admin picks another one with updateLease. The web counts the flagged tenants with listTenants and collectorDisabled=true, which answers the total.
 	Active   bool               `json:"active"`
 	MemberId openapi_types.UUID `json:"memberId"`
 	Name     string             `json:"name"`
@@ -666,10 +666,6 @@ type Member struct {
 type MemberList struct {
 	Items []Member `json:"items"`
 
-	// Members The same rows as items. Kept until the web reads items; then removed.
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Members []Member `json:"members"`
-
 	// Page The page returned, from 1.
 	Page     int `json:"page"`
 	PageSize int `json:"pageSize"`
@@ -745,10 +741,6 @@ type PropertyList struct {
 	// Page The page returned, from 1.
 	Page     int `json:"page"`
 	PageSize int `json:"pageSize"`
-
-	// Properties The same rows as items. Kept until the web reads items; then removed.
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Properties []Property `json:"properties"`
 
 	// Total Every row matching the filters that the member may see, on all pages.
 	Total int `json:"total"`
@@ -835,10 +827,6 @@ type TenantList struct {
 	Page     int `json:"page"`
 	PageSize int `json:"pageSize"`
 
-	// Tenants The same rows as items. Kept until the web reads items; then removed.
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Tenants []Tenant `json:"tenants"`
-
 	// Total Every row matching the filters that the member may see, on all pages.
 	Total int `json:"total"`
 }
@@ -880,10 +868,6 @@ type UnitList struct {
 
 	// Total Every row matching the filters that the member may see, on all pages.
 	Total int `json:"total"`
-
-	// Units The same rows as items. Kept until the web reads items; then removed.
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Units []Unit `json:"units"`
 }
 
 // UnitTenant defines model for UnitTenant.

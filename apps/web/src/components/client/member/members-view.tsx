@@ -2,7 +2,7 @@
 
 import { useAbility } from "@casl/react";
 import { keepPreviousData } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
 import { ListPagination } from "@/components/client/list/list-pagination";
@@ -20,7 +20,7 @@ import {
   useListMembers,
 } from "@/lib/api/generated/members/members";
 import { useListProperties } from "@/lib/api/generated/properties/properties";
-import { memberPermissions, propertyNames } from "./utils";
+import { memberPermissions } from "./utils";
 import type { MemberPanelState } from "./type";
 import type { AppAbility } from "@/lib/capabilities";
 
@@ -55,6 +55,7 @@ export function MembersView({
   );
   useLastPageRedirect(url, page, pageSize, members.data);
   const ability = useAbility<AppAbility>();
+  // The property choices of the invite and access forms (role chips name theirs from the API).
   const properties = useListProperties(
     orgId,
     { pageSize: 100 },
@@ -65,10 +66,6 @@ export function MembersView({
   const [notice, setNotice] = useState("");
 
   const permissions = memberPermissions(ability);
-  const names = useMemo(
-    () => propertyNames(properties.data?.items ?? []),
-    [properties.data],
-  );
 
   function openPanel(next: MemberPanelState) {
     setNotice("");
@@ -121,7 +118,6 @@ export function MembersView({
             members={members.data.items}
             ownMembershipId={orgMe.data.membershipId}
             permissions={permissions}
-            propertyNames={names}
             onManage={(memberId) => openPanel({ kind: "access", memberId })}
           />
           <ListPagination
@@ -140,7 +136,6 @@ export function MembersView({
         panel={panel}
         members={members.data?.items ?? []}
         properties={properties.data?.items ?? []}
-        propertyNames={names}
         roleGuide={roleGuide}
         onPanelChange={setPanel}
         onNotice={setNotice}

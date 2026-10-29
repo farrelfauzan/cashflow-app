@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api/errors";
 import type { Property, PropertyKind, Unit } from "@/lib/api/generated/model";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
@@ -29,6 +30,16 @@ export const ONLY_ASSIGNED_NOTE =
   "Anda hanya melihat properti yang ditugaskan kepada Anda.";
 
 export const LOADING_TEXT = "Memuat…";
+
+// getProperty answers not_found for a property that does not exist (or an id that is not one)
+// and forbidden for one outside the member's properties. The page shows both as "Properti tidak
+// ditemukan", so it never tells a limited member that a property they may not see exists.
+export function isPropertyMissing(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    (error.code === "not_found" || error.code === "forbidden")
+  );
+}
 
 // Which property and unit controls show, from the member's ability (getOrgMe's capabilities),
 // never from role names. "conditional" shows the control and lets the API decide per property;

@@ -95,7 +95,7 @@ func TestLeaseChargesOverHTTP(t *testing.T) {
 		require.Equal(t, got.Charges, decode[apigen.Tenant](t, body).Leases[0].Charges)
 		resp, body = admin.do(http.MethodGet, orgPath+"/tenants", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		require.Equal(t, got.Charges, decode[apigen.TenantList](t, body).Tenants[0].Leases[0].Charges)
+		require.Equal(t, got.Charges, decode[apigen.TenantList](t, body).Items[0].Leases[0].Charges)
 
 		resp, body = admin.do(http.MethodPut, chargesPath, map[string]any{"charges": []any{}})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))

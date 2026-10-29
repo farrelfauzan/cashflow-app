@@ -120,7 +120,7 @@ async function tenantIdOf(
   try {
     const response = await api.get(`/api/orgs/${orgId}/tenants`);
     expect(response.ok()).toBe(true);
-    const { tenants } = (await response.json()) as TenantList;
+    const { items: tenants } = (await response.json()) as TenantList;
     const found = tenants.find((tenant) => tenant.name === name);
     if (found === undefined) throw new Error(`${name} is not seeded.`);
     return found.id;

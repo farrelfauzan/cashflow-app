@@ -1182,15 +1182,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
         - type: object
-          required: [items, members]
+          required: [items]
           properties:
             items:
               type: array
-              items: { $ref: "#/components/schemas/Member" }
-            members:
-              type: array
-              deprecated: true
-              description: The same rows as items. Kept until the web reads items; then removed.
               items: { $ref: "#/components/schemas/Member" }
 
     InviteMember:
@@ -1258,15 +1253,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
         - type: object
-          required: [items, properties]
+          required: [items]
           properties:
             items:
               type: array
-              items: { $ref: "#/components/schemas/Property" }
-            properties:
-              type: array
-              deprecated: true
-              description: The same rows as items. Kept until the web reads items; then removed.
               items: { $ref: "#/components/schemas/Property" }
 
     UnitInput:
@@ -1320,15 +1310,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
         - type: object
-          required: [items, units]
+          required: [items]
           properties:
             items:
               type: array
-              items: { $ref: "#/components/schemas/Unit" }
-            units:
-              type: array
-              deprecated: true
-              description: The same rows as items. Kept until the web reads items; then removed.
               items: { $ref: "#/components/schemas/Unit" }
 
     TenantInput:
@@ -1361,15 +1346,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
         - type: object
-          required: [items, tenants]
+          required: [items]
           properties:
             items:
               type: array
-              items: { $ref: "#/components/schemas/Tenant" }
-            tenants:
-              type: array
-              deprecated: true
-              description: The same rows as items. Kept until the web reads items; then removed.
               items: { $ref: "#/components/schemas/Tenant" }
 
     LeaseStatus:
@@ -1387,8 +1367,7 @@ components:
           description: >
             False when the member is disabled in the organization. The lease keeps them as
             collector until an admin picks another one with updateLease. The web counts the
-            flagged tenants from listTenants because that list is not paginated; if it ever
-            becomes paginated, an organization-wide count must come from the API instead.
+            flagged tenants with listTenants and collectorDisabled=true, which answers the total.
 
     Lease:
       type: object

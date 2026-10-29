@@ -1,19 +1,13 @@
 import { ApiError } from "@/lib/api/errors";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 import { formatTimestampDate } from "@/lib/format/date";
-import type {
-  Member,
-  Property,
-  RoleGrant,
-  RoleRef,
-} from "@/lib/api/generated/model";
+import type { Member, RoleGrant, RoleRef } from "@/lib/api/generated/model";
 import type { AppAbility } from "@/lib/capabilities";
 
 import type {
   MemberPermissions,
   MemberStatusTone,
   MemberStatusView,
-  PropertyNames,
   ResendError,
   RoleChip,
   RoleFormErrors,
@@ -253,20 +247,13 @@ export function toggleProperty(
 }
 
 // Role labels: how a member's roles read on screen: one chip per role ("Admin", "Karyawan · Kos
-// Melati"), and one sentence for the "Anggota ditambahkan" note. The role name comes from the
-// API; the property name from listProperties. Display only: what a member may do comes from
+// Melati"), and one sentence for the "Anggota ditambahkan" note. The role name and the property
+// name both come from the API (RoleRef). Display only: what a member may do comes from
 // capabilities.
-// Shown when the property of a limited role is not in the list the viewer may read.
+// Shown if the API ever sends a limited role without its property's name.
 export const UNKNOWN_PROPERTY = "properti lain";
 
-export function propertyNames(properties: readonly Property[]): PropertyNames {
-  return new Map(properties.map((p) => [p.id, p.name]));
-}
-
-export function roleChips(
-  roles: readonly RoleRef[],
-  names: PropertyNames,
-): RoleChip[] {
+export function roleChips(roles: readonly RoleRef[]): RoleChip[] {
   return roles.map((role) => ({
     id: `${role.key}:${role.propertyId ?? ""}`,
     key: role.key,
@@ -274,16 +261,13 @@ export function roleChips(
     property:
       role.propertyId === undefined
         ? null
-        : (names.get(role.propertyId) ?? UNKNOWN_PROPERTY),
+        : (role.propertyName ?? UNKNOWN_PROPERTY),
   }));
 }
 
 // "Karyawan", "Admin di Kos Melati dan Karyawan", "A, B dan C".
-export function describeRoles(
-  roles: readonly RoleRef[],
-  names: PropertyNames,
-): string {
-  const parts = roleChips(roles, names).map((chip) =>
+export function describeRoles(roles: readonly RoleRef[]): string {
+  const parts = roleChips(roles).map((chip) =>
     chip.property === null ? chip.label : `${chip.label} di ${chip.property}`,
   );
   if (parts.length <= 1) return parts.join("");

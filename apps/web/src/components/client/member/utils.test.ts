@@ -645,12 +645,6 @@ describe("role form", () => {
 describe("role labels", () => {
   const KOS_MELATI = "11111111-1111-4111-8111-111111111111";
   const MAWAR = "22222222-2222-4222-8222-222222222222";
-  const GONE = "99999999-9999-4999-8999-999999999999";
-
-  const names = new Map([
-    [KOS_MELATI, "Kos Melati"],
-    [MAWAR, "Kontrakan Mawar"],
-  ]);
 
   const admin: RoleRef = { key: "admin", name: "Admin", builtin: true };
   const karyawan: RoleRef = {
@@ -658,12 +652,12 @@ describe("role labels", () => {
     name: "Karyawan",
     builtin: true,
   };
+  const inMelati = { propertyId: KOS_MELATI, propertyName: "Kos Melati" };
+  const inMawar = { propertyId: MAWAR, propertyName: "Kontrakan Mawar" };
 
   describe("roleChips", () => {
-    it("names the property of a limited role", () => {
-      expect(
-        roleChips([karyawan, { ...admin, propertyId: MAWAR }], names),
-      ).toEqual([
+    it("names the property of a limited role from the API", () => {
+      expect(roleChips([karyawan, { ...admin, ...inMawar }])).toEqual([
         { id: "karyawan:", key: "karyawan", label: "Karyawan", property: null },
         {
           id: `admin:${MAWAR}`,
@@ -674,18 +668,16 @@ describe("role labels", () => {
       ]);
     });
 
-    it("falls back when the property is not in the list", () => {
-      expect(
-        roleChips([{ ...admin, propertyId: GONE }], names)[0]?.property,
-      ).toBe(UNKNOWN_PROPERTY);
+    it("falls back when the API sends no property name", () => {
+      expect(roleChips([{ ...admin, propertyId: MAWAR }])[0]?.property).toBe(
+        UNKNOWN_PROPERTY,
+      );
     });
 
     it("uses the API's role name, also for a custom role", () => {
       expect(
-        roleChips(
-          [{ key: "penagih", name: "Penagih", builtin: false }],
-          names,
-        )[0]?.label,
+        roleChips([{ key: "penagih", name: "Penagih", builtin: false }])[0]
+          ?.label,
       ).toBe("Penagih");
     });
   });
@@ -696,25 +688,21 @@ describe("role labels", () => {
       { name: "one role", roles: [karyawan], want: "Karyawan" },
       {
         name: "a limited role",
-        roles: [{ ...karyawan, propertyId: MAWAR }],
+        roles: [{ ...karyawan, ...inMawar }],
         want: "Karyawan di Kontrakan Mawar",
       },
       {
         name: "two roles",
-        roles: [{ ...admin, propertyId: KOS_MELATI }, karyawan],
+        roles: [{ ...admin, ...inMelati }, karyawan],
         want: "Admin di Kos Melati dan Karyawan",
       },
       {
         name: "three roles",
-        roles: [
-          { ...admin, propertyId: KOS_MELATI },
-          { ...admin, propertyId: MAWAR },
-          karyawan,
-        ],
+        roles: [{ ...admin, ...inMelati }, { ...admin, ...inMawar }, karyawan],
         want: "Admin di Kos Melati, Admin di Kontrakan Mawar dan Karyawan",
       },
     ])("describes $name", ({ roles, want }) => {
-      expect(describeRoles(roles, names)).toBe(want);
+      expect(describeRoles(roles)).toBe(want);
     });
   });
 });

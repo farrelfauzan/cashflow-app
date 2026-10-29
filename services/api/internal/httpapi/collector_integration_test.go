@@ -67,7 +67,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 	counts := func(t *testing.T, c *client, path string) map[uuid.UUID]int64 {
 		t.Helper()
 		out := map[uuid.UUID]int64{}
-		for _, m := range decode[apigen.MemberList](t, ok(t, c, http.MethodGet, path+"/members", nil, http.StatusOK)).Members {
+		for _, m := range decode[apigen.MemberList](t, ok(t, c, http.MethodGet, path+"/members", nil, http.StatusOK)).Items {
 			out[m.Id] = m.CollectorLeaseCount
 		}
 		return out
@@ -106,7 +106,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 
 	// Members of organization A. Dimas is the karyawan CreateOrg made.
 	var dimas apigen.Member
-	for _, m := range decode[apigen.MemberList](t, ok(t, admin, http.MethodGet, orgPath+"/members", nil, http.StatusOK)).Members {
+	for _, m := range decode[apigen.MemberList](t, ok(t, admin, http.MethodGet, orgPath+"/members", nil, http.StatusOK)).Items {
 		if m.UserId == o.Karyawan.UserID {
 			dimas = m
 		}
@@ -135,7 +135,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 		resp, body := admin.do(http.MethodGet, orgPath+"/tenants/"+rina.Id.String(), nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"active":false`)
-		for _, tn := range decode[apigen.TenantList](t, ok(t, admin, http.MethodGet, orgPath+"/tenants", nil, http.StatusOK)).Tenants {
+		for _, tn := range decode[apigen.TenantList](t, ok(t, admin, http.MethodGet, orgPath+"/tenants", nil, http.StatusOK)).Items {
 			for _, l := range tn.Leases {
 				if l.Status == apigen.LeaseStatusActive {
 					require.NotNil(t, l.Collector, tn.Name)
@@ -162,7 +162,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 		limited := newClient(t, srv.URL)
 		limited.signIn(env, "0812 1919 4003")
 
-		tenants := decode[apigen.TenantList](t, ok(t, limited, http.MethodGet, orgPath+"/tenants", nil, http.StatusOK)).Tenants
+		tenants := decode[apigen.TenantList](t, ok(t, limited, http.MethodGet, orgPath+"/tenants", nil, http.StatusOK)).Items
 		require.Len(t, tenants, 1, "only the tenant with an active lease on Kos Melati")
 		require.Equal(t, rina.Id, tenants[0].Id)
 		require.Len(t, tenants[0].Leases, 1)

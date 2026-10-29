@@ -7,20 +7,18 @@ import { SheetClose } from "@/components/ui/sheet";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
 import { describeRoles } from "./utils";
-import type { PropertyNames } from "./type";
 import { cn } from "@/lib/utils";
 
 type InviteResultProps = {
   // The member inviteMember returned.
   member: Member;
-  propertyNames: PropertyNames;
 };
 
 // "Anggota ditambahkan": the member is in the organization either way; the invitation either
 // went out over WhatsApp or did not, and then can be resent from the list.
-export function InviteResult({ member, propertyNames }: InviteResultProps) {
+export function InviteResult({ member }: InviteResultProps) {
   const sent = member.invitation?.state === "sent";
-  const roles = describeRoles(member.roles, propertyNames);
+  const roles = describeRoles(member.roles);
   const phone = formatPhone(member.phone);
 
   return (

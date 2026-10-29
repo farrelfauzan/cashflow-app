@@ -149,7 +149,7 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 	t.Run("the admin lists and adds members", func(t *testing.T) {
 		resp, body := admin.do(http.MethodGet, orgPath+"/members", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		require.Len(t, decode[apigen.MemberList](t, body).Members, 3)
+		require.Len(t, decode[apigen.MemberList](t, body).Items, 3)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/members", apigen.InviteMember{
 			Phone: "0812 1313 9999", Name: "Mbak Sari", Roles: []apigen.RoleGrant{{Role: apigen.Karyawan}},
@@ -253,7 +253,7 @@ func TestPropertiesOverHTTP(t *testing.T) {
 
 		resp, body = admin.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String()+"/units", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		require.Len(t, decode[apigen.UnitList](t, body).Units, 1)
+		require.Len(t, decode[apigen.UnitList](t, body).Items, 1)
 
 		resp, body = admin.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String(), nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
@@ -318,7 +318,7 @@ func TestPropertiesOverHTTP(t *testing.T) {
 
 		resp, body = limited.do(http.MethodGet, orgPath+"/properties", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		props := decode[apigen.PropertyList](t, body).Properties
+		props := decode[apigen.PropertyList](t, body).Items
 		require.Len(t, props, 1)
 		require.Equal(t, mawar.Id, props[0].Id)
 
@@ -392,7 +392,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 	resp, body = admin.do(http.MethodGet, orgPath+"/members", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var karyawanMember uuid.UUID
-	for _, m := range decode[apigen.MemberList](t, body).Members {
+	for _, m := range decode[apigen.MemberList](t, body).Items {
 		if m.UserId == o.Karyawan.UserID {
 			karyawanMember = m.Id
 		}
@@ -443,7 +443,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 		karyawan.signIn(env, o.Karyawan.Phone)
 		resp, body := karyawan.do(http.MethodGet, orgPath+"/tenants", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		tenants := decode[apigen.TenantList](t, body).Tenants
+		tenants := decode[apigen.TenantList](t, body).Items
 		require.Len(t, tenants, 1)
 		require.Equal(t, rina.Id, tenants[0].Id)
 

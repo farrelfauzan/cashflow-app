@@ -53,7 +53,7 @@ func TestOccupancyOverHTTP(t *testing.T) {
 		require.Contains(t, string(body), `"currentTenant":{"id":"`+rina.ID.String()+`","name":"Rina Wulandari"}`)
 		require.Contains(t, string(body), `"occupied":false`)
 
-		units := decode[apigen.UnitList](t, body).Units
+		units := decode[apigen.UnitList](t, body).Items
 		require.Len(t, units, 2)
 		require.True(t, units[0].Occupied)
 		require.NotNil(t, units[0].CurrentTenant)
