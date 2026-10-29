@@ -31,7 +31,7 @@ export default defineConfig({
   testDir: "./e2e",
   // The dev smoke spec runs only against `next dev`, and only it does.
   ...(devServer
-    ? { testMatch: /(dev-smoke\.spec|\.setup)\.ts$/ }
+    ? { testMatch: /dev-smoke\.spec\.ts$/ }
     : { testIgnore: /dev-smoke\.spec\.ts$/ }),
   fullyParallel: true,
   forbidOnly: isCI,
