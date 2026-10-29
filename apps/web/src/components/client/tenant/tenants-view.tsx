@@ -29,11 +29,13 @@ import {
   tenantPermissions,
   tenantRow,
 } from "./utils";
+import type { TenantPanelState } from "./type";
 
 import { TenantFilters } from "./tenant-filters";
 import { TenantFlagBanner } from "./tenant-flag-banner";
 import { TenantList } from "./tenant-list";
 import { TenantLoadError } from "./tenant-load-error";
+import { TenantPanel } from "./tenant-panel";
 import { TenantsEmpty } from "./tenants-empty";
 import { TenantsHeader } from "./tenants-header";
 import { TenantsNoResults } from "./tenants-no-results";
@@ -44,8 +46,9 @@ type TenantsViewProps = {
 };
 
 // The tenant list: one page of the tenants the member may see, with the lease they live in. The
-// page, size, search and filters live in the URL and the API applies them. Read-only: what shows
-// beyond that (the banner, the property filter) comes from the member's capabilities (getOrgMe).
+// page, size, search and filters live in the URL and the API applies them. What shows beyond
+// that (the banner, the property filter, "Tambah penyewa") comes from the member's capabilities
+// (getOrgMe).
 export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
   const orgMe = useGetOrgMe(orgId);
   const ability = useAbility<AppAbility>();
@@ -96,10 +99,34 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
   );
 
   const failed = orgMe.isError ? orgMe.error : tenants.error;
+  const empty =
+    tenants.data !== undefined &&
+    tenants.data.total === 0 &&
+    !isFiltering(filters);
+
+  const [panel, setPanel] = useState<TenantPanelState>({ kind: "closed" });
+  // A short confirmation after a panel closes, announced to screen readers.
+  const [notice, setNotice] = useState("");
+  const addTenant = () => {
+    setNotice("");
+    setPanel({ kind: "add" });
+  };
 
   return (
     <div className="flex flex-col gap-4 md:gap-[22px]">
-      <TenantsHeader organizationName={organizationName} />
+      <TenantsHeader
+        organizationName={organizationName}
+        canAdd={permissions.canAddTenant && !empty}
+        onAdd={addTenant}
+      />
+
+      <p
+        role="status"
+        aria-live="polite"
+        className="text-[15px] font-semibold text-primary empty:hidden md:text-base"
+      >
+        {notice}
+      </p>
 
       {failed !== null ? (
         <TenantLoadError
@@ -111,8 +138,8 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
         />
       ) : orgMe.data === undefined || tenants.data === undefined ? (
         <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>
-      ) : tenants.data.total === 0 && !isFiltering(filters) ? (
-        <TenantsEmpty />
+      ) : empty ? (
+        <TenantsEmpty canAdd={permissions.canAddTenant} onAdd={addTenant} />
       ) : (
         <>
           {permissions.canManageLeases && flaggedTotal > 0 && (
@@ -151,6 +178,16 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
           </div>
         </>
       )}
+
+      <TenantPanel
+        orgId={orgId}
+        organizationName={organizationName}
+        today={today}
+        canManageLeases={permissions.canManageLeases}
+        panel={panel}
+        onPanelChange={setPanel}
+        onNotice={setNotice}
+      />
     </div>
   );
 }

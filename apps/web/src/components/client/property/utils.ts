@@ -13,18 +13,13 @@ import type {
   UnitOccupancyView,
 } from "./type";
 
-// A text field of the property and unit forms: 52px tall, 17px text on iPad and 16px on phone.
-export const INPUT_CLASS =
-  "h-13 rounded-xl border-[1.5px] bg-card px-3.5 text-base aria-invalid:border-2 md:text-[17px]";
-
-export const TEXTAREA_CLASS =
-  "min-h-28 rounded-xl border-[1.5px] bg-card px-3.5 py-3 text-base aria-invalid:border-2 md:text-[17px]";
-
-export const FIELD_LABEL_CLASS =
-  "text-[15px] leading-normal font-semibold md:text-base";
-
-export const FIELD_HINT_CLASS =
-  "text-sm leading-[1.45] text-muted-foreground md:text-base";
+// The property and unit forms look like every other panel form.
+export {
+  FIELD_HINT_CLASS,
+  FIELD_LABEL_CLASS,
+  INPUT_CLASS,
+  TEXTAREA_CLASS,
+} from "@/components/client/form/utils";
 
 // The note under the title when the member can look but not change.
 export const READ_ONLY_NOTE =
