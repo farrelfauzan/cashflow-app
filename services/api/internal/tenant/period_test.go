@@ -39,7 +39,10 @@ func TestPeriodAt(t *testing.T) {
 		{"late 3 months: the running period is due 7 days after entry", date(2026, 9, 15), date(2026, 10, 28), 3, 0, date(2026, 9, 15), date(2026, 12, 14), date(2026, 11, 4)},
 		{"late 12 months: a past year is due on the entry day", date(2025, 3, 1), date(2026, 10, 28), 12, 0, date(2025, 3, 1), date(2026, 2, 28), date(2026, 10, 28)},
 		{"late 12 months: the running year is due 7 days after entry", date(2025, 3, 1), date(2026, 10, 28), 12, 1, date(2026, 3, 1), date(2027, 2, 28), date(2026, 11, 4)},
-		{"late: a period starting on the entry day is due that day", date(2026, 9, 15), date(2026, 10, 15), 1, 1, date(2026, 10, 15), date(2026, 11, 14), date(2026, 10, 15)},
+		{"late: a period starting on the entry day is the current one, due 7 days after", date(2026, 9, 15), date(2026, 10, 15), 1, 1, date(2026, 10, 15), date(2026, 11, 14), date(2026, 10, 22)},
+		{"late: entered a day later, the same period is due 7 days after that", date(2026, 9, 15), date(2026, 10, 16), 1, 1, date(2026, 10, 15), date(2026, 11, 14), date(2026, 10, 23)},
+		{"late: the period after the current one is due as usual", date(2026, 9, 15), date(2026, 10, 15), 1, 2, date(2026, 11, 15), date(2026, 12, 14), date(2026, 11, 15)},
+		{"on time: a lease entered on its start date is due that day", date(2026, 10, 15), date(2026, 10, 15), 12, 0, date(2026, 10, 15), date(2027, 10, 14), date(2026, 10, 15)},
 		{"late: the period that ended the day before entry is due on entry", date(2026, 9, 15), date(2026, 10, 15), 1, 0, date(2026, 9, 15), date(2026, 10, 14), date(2026, 10, 15)},
 		{"a time of day is ignored", time.Date(2026, 10, 15, 22, 0, 0, 0, time.UTC), time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC), 3, 0, date(2026, 10, 15), date(2027, 1, 14), date(2026, 10, 15)},
 	}

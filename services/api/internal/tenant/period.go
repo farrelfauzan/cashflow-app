@@ -33,16 +33,16 @@ func PeriodStart(start time.Time, term, n int) time.Time {
 // PeriodAt returns a lease's n-th period (n >= 0) for its term. The period ends the day before
 // the next one starts. It is due on its first day (rent is paid in advance), except for a lease
 // entered late, whose start date is before the day it was entered (decision 24, revised): its
-// periods that ended before the entry day are due on the entry day, and a period already running
-// on the entry day is due 7 days after it. A period that starts on or after the entry day is due
-// on its first day, as for any lease.
+// periods that ended before the entry day are due on the entry day, and its current period, the
+// one running on the entry day (also when it starts that day), is due 7 days after it. Later
+// periods are due on their first day, as for any lease.
 func PeriodAt(start, enteredOn time.Time, term, n int) Period {
 	start, enteredOn = calendarDay(start), calendarDay(enteredOn)
 	p := Period{N: n, From: PeriodStart(start, term, n)}
 	next := PeriodStart(start, term, n+1)
 	p.To = next.AddDate(0, 0, -1)
 	switch {
-	case !p.From.Before(enteredOn):
+	case !start.Before(enteredOn) || p.From.After(enteredOn):
 		p.Due = p.From
 	case next.After(enteredOn):
 		p.Due = enteredOn.AddDate(0, 0, lateEntryGrace)
