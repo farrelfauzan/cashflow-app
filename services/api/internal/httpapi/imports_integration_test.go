@@ -50,7 +50,7 @@ func TestImportOverHTTP(t *testing.T) {
 
 		resp, body = admin.do(http.MethodGet, "/api/orgs/"+o.ID.String()+"/tenants", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		require.Empty(t, decode[apigen.TenantList](t, body).Tenants)
+		require.Empty(t, decode[apigen.TenantList](t, body).Items)
 	})
 
 	t.Run("dryRun=false saves the rows", func(t *testing.T) {

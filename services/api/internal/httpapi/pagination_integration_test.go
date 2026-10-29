@@ -5,6 +5,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -60,13 +61,13 @@ func TestListPaginationOverHTTP(t *testing.T) {
 	admin.signIn(env, o.Admin.Phone)
 
 	lists := []struct {
-		name, path, deprecated string
-		total                  int
+		name, path string
+		total      int
 	}{
-		{name: "members", path: orgPath + "/members", deprecated: "members", total: 3},
-		{name: "properties", path: orgPath + "/properties", deprecated: "properties", total: 3},
-		{name: "units", path: orgPath + "/properties/" + melati.ID.String() + "/units", deprecated: "units", total: 3},
-		{name: "tenants", path: orgPath + "/tenants", deprecated: "tenants", total: 3},
+		{name: "members", path: orgPath + "/members", total: 3},
+		{name: "properties", path: orgPath + "/properties", total: 3},
+		{name: "units", path: orgPath + "/properties/" + melati.ID.String() + "/units", total: 3},
+		{name: "tenants", path: orgPath + "/tenants", total: 3},
 	}
 
 	get := func(t *testing.T, path string, v url.Values) (int, []byte) {
@@ -79,7 +80,7 @@ func TestListPaginationOverHTTP(t *testing.T) {
 	}
 
 	for _, l := range lists {
-		t.Run(l.name+": items, page, pageSize and total, with the deprecated array holding the same rows", func(t *testing.T) {
+		t.Run(l.name+": items, page, pageSize and total, and nothing else", func(t *testing.T) {
 			for _, tc := range []struct {
 				name                     string
 				query                    url.Values
@@ -95,7 +96,8 @@ func TestListPaginationOverHTTP(t *testing.T) {
 					require.Equal(t, http.StatusOK, status, string(body))
 					var raw map[string]json.RawMessage
 					require.NoError(t, json.Unmarshal(body, &raw))
-					require.JSONEq(t, string(raw["items"]), string(raw[l.deprecated]))
+					require.ElementsMatch(t, []string{"items", "page", "pageSize", "total"}, slices.Collect(maps.Keys(raw)),
+						"the old plain array is gone")
 					var shape struct {
 						Items          []json.RawMessage `json:"items"`
 						Page, PageSize int
@@ -112,17 +114,15 @@ func TestListPaginationOverHTTP(t *testing.T) {
 		})
 	}
 
-	t.Run("the typed responses decode and items match the deprecated arrays", func(t *testing.T) {
+	t.Run("the typed responses decode", func(t *testing.T) {
 		_, body := get(t, lists[3].path, url.Values{"q": {"rina"}})
 		tl := decode[apigen.TenantList](t, body)
 		require.Equal(t, 1, tl.Total)
 		require.Equal(t, "Rina Wulandari", tl.Items[0].Name)
-		require.Equal(t, tl.Items, tl.Tenants)
 
 		_, body = get(t, lists[2].path, url.Values{"sort": {"-label"}, "pageSize": {"1"}})
 		ul := decode[apigen.UnitList](t, body)
 		require.Equal(t, "Kamar 3", ul.Items[0].Label)
-		require.Equal(t, ul.Items, ul.Units)
 	})
 
 	const (
@@ -186,6 +186,10 @@ func TestListPaginationOverHTTP(t *testing.T) {
 			{name: "a well-formed but unknown propertyId", path: lists[3].path, query: url.Values{"propertyId": {"00000000-0000-4000-8000-000000000000"}}},
 			{name: "every tenant status", path: lists[3].path, query: url.Values{"status": {"active"}}},
 			{name: "sort createdAt on members", path: lists[0].path, query: url.Values{"sort": {"-createdAt"}}},
+			// A filter the list does not define is ignored, like any unknown parameter.
+			{name: "propertyId on members", path: lists[0].path, query: url.Values{"propertyId": {"not-a-uuid"}}},
+			{name: "propertyId on properties", path: lists[1].path, query: url.Values{"propertyId": {"not-a-uuid"}}},
+			{name: "collectorDisabled on units", path: lists[2].path, query: url.Values{"collectorDisabled": {"yes"}}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				status, body := get(t, tc.path, tc.query)

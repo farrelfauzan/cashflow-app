@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"unicode/utf8"
 
@@ -11,6 +12,16 @@ import (
 )
 
 const maxSearchLength = 100
+
+// listParam names a filter that only some lists define. readListParams parses one only when
+// the list asks for it, so a list ignores a filter it does not have, as it ignores any other
+// unknown query parameter.
+type listParam int
+
+const (
+	withPropertyID listParam = iota + 1
+	withCollectorDisabled
+)
 
 // listParams are the query parameters of a list. Each list reads the ones it has; sort and
 // status are checked by the domain package, which owns their values.
@@ -22,9 +33,9 @@ type listParams struct {
 	collectorDisabled bool
 }
 
-// readListParams parses the list parameters. It answers the request itself and returns false
-// when one is not acceptable.
-func (s *Server) readListParams(w http.ResponseWriter, r *http.Request) (listParams, bool) {
+// readListParams parses the parameters every list has, plus the extra filters the list
+// defines. It answers the request itself and returns false when one is not acceptable.
+func (s *Server) readListParams(w http.ResponseWriter, r *http.Request, extra ...listParam) (listParams, bool) {
 	v := r.URL.Query()
 	out := listParams{page: listing.FirstPage, sort: v.Get("sort"), status: v.Get("status")}
 	var ok bool
@@ -42,7 +53,7 @@ func (s *Server) readListParams(w http.ResponseWriter, r *http.Request) (listPar
 		return out, false
 	}
 	out.search = listing.NewSearch(q)
-	if raw := v.Get("propertyId"); raw != "" {
+	if raw := v.Get("propertyId"); raw != "" && slices.Contains(extra, withPropertyID) {
 		id, err := uuid.Parse(raw)
 		if err != nil {
 			s.writeErrorField(w, http.StatusBadRequest, "invalid_input", "Properti tidak dikenal.", "propertyId")
@@ -50,7 +61,7 @@ func (s *Server) readListParams(w http.ResponseWriter, r *http.Request) (listPar
 		}
 		out.propertyID = id
 	}
-	if raw := v.Get("collectorDisabled"); raw != "" {
+	if raw := v.Get("collectorDisabled"); raw != "" && slices.Contains(extra, withCollectorDisabled) {
 		b, err := strconv.ParseBool(raw)
 		if err != nil || (raw != "true" && raw != "false") {
 			s.writeErrorField(w, http.StatusBadRequest, "invalid_input", "Nilai collectorDisabled harus true atau false.", "collectorDisabled")
