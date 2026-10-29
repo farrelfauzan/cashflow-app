@@ -96,6 +96,8 @@ export function CancelBookingForm({
         submitLabel="Batalkan sewa"
         saving={saving}
         wide={false}
+        // The user's choice (2026-10-29): cancelling a booking looks destructive.
+        destructive
       />
     </>
   );

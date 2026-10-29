@@ -416,9 +416,20 @@ test.describe("Admin of the whole organization", () => {
     await expectTouchTarget(
       form.getByRole("button", { name: "Jangan batalkan" }),
     );
+    // The user's choice: cancelling a booking looks destructive (the theme's destructive color).
+    const confirm = form.getByRole("button", { name: "Batalkan sewa" });
+    const colors = await confirm.evaluate((button) => {
+      const probe = document.createElement("div");
+      probe.className = "bg-destructive";
+      document.body.append(probe);
+      const want = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { got: getComputedStyle(button).backgroundColor, want };
+    });
+    expect(colors.got).toBe(colors.want);
     await attachViewportScreenshot(page, testInfo, "lease-cancel-booking");
 
-    await form.getByRole("button", { name: "Batalkan sewa" }).click();
+    await confirm.click();
     await expect(form).toHaveCount(0);
     await expect(
       visibleText(page, `Sewa ${UNIT} dibatalkan. Unitnya kosong lagi.`),
