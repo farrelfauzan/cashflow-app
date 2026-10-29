@@ -6,12 +6,15 @@ import { useState, type ReactNode } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
 import { ListPagination } from "@/components/client/list/list-pagination";
+import { ListSortSelect } from "@/components/client/list/list-sort-select";
 import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
 import { useListUrl } from "@/components/client/list/use-list-url";
 import {
+  ADDED_SORT_OPTIONS,
   PAGE_SIZE_PARAM,
   readPage,
   readPageSize,
+  readSort,
 } from "@/components/client/list/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
@@ -35,7 +38,7 @@ type MembersViewProps = {
   roleGuide: ReactNode;
 };
 
-// The members screen: one page of the list (page and size in the URL), and the panels that
+// The members screen: one page of the list (page, size and sort in the URL), and the panels that
 // change it. The panels get the members on the current page, since "Atur" opens from a visible
 // row. What shows comes from the signed-in member's capabilities (getOrgMe); after every change
 // the list query is invalidated and loads again from the API.
@@ -48,9 +51,10 @@ export function MembersView({
   const url = useListUrl();
   const page = readPage(url.searchParams);
   const pageSize = readPageSize(url.searchParams);
+  const sort = readSort(url.searchParams, ADDED_SORT_OPTIONS);
   const members = useListMembers(
     orgId,
-    { page, pageSize },
+    { page, pageSize, sort },
     { query: { placeholderData: keepPreviousData } },
   );
   useLastPageRedirect(url, page, pageSize, members.data);
@@ -109,25 +113,34 @@ export function MembersView({
       ) : orgMe.data === undefined || members.data === undefined ? (
         <p className="text-base text-muted-foreground">Memuat…</p>
       ) : (
-        <div
-          aria-busy={members.isPlaceholderData}
-          className="flex flex-col gap-4 aria-busy:opacity-60"
-        >
-          <MemberList
-            orgId={orgId}
-            members={members.data.items}
-            ownMembershipId={orgMe.data.membershipId}
-            permissions={permissions}
-            onManage={(memberId) => openPanel({ kind: "access", memberId })}
+        <>
+          <ListSortSelect
+            options={ADDED_SORT_OPTIONS}
+            value={sort}
+            onChange={url.change}
           />
-          <ListPagination
-            page={page}
-            pageSize={pageSize}
-            total={members.data.total}
-            hrefFor={url.hrefFor}
-            onPageSizeChange={(size) => url.change({ [PAGE_SIZE_PARAM]: size })}
-          />
-        </div>
+          <div
+            aria-busy={members.isPlaceholderData}
+            className="flex flex-col gap-4 aria-busy:opacity-60"
+          >
+            <MemberList
+              orgId={orgId}
+              members={members.data.items}
+              ownMembershipId={orgMe.data.membershipId}
+              permissions={permissions}
+              onManage={(memberId) => openPanel({ kind: "access", memberId })}
+            />
+            <ListPagination
+              page={page}
+              pageSize={pageSize}
+              total={members.data.total}
+              hrefFor={url.hrefFor}
+              onPageSizeChange={(size) =>
+                url.change({ [PAGE_SIZE_PARAM]: size })
+              }
+            />
+          </div>
+        </>
       )}
 
       <MemberPanel

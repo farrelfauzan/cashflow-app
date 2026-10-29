@@ -1,5 +1,12 @@
 import { ApiError } from "@/lib/api/errors";
-import type { Property, PropertyKind, Unit } from "@/lib/api/generated/model";
+import type { SortOptions } from "@/components/client/list/type";
+import type {
+  ListPropertiesSort,
+  ListUnitsSort,
+  Property,
+  PropertyKind,
+  Unit,
+} from "@/lib/api/generated/model";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
 
@@ -30,6 +37,17 @@ export const ONLY_ASSIGNED_NOTE =
   "Anda hanya melihat properti yang ditugaskan kepada Anda.";
 
 export const LOADING_TEXT = "Memuat…";
+
+// The sort choices of the properties list and of a property's units; the API's default is first.
+export const PROPERTY_SORT_OPTIONS: SortOptions<ListPropertiesSort> = [
+  { value: "name", label: "Nama A–Z" },
+  { value: "-name", label: "Nama Z–A" },
+];
+
+export const UNIT_SORT_OPTIONS: SortOptions<ListUnitsSort> = [
+  { value: "label", label: "Nama unit A–Z" },
+  { value: "-label", label: "Nama unit Z–A" },
+];
 
 // getProperty answers not_found for a property that does not exist (or an id that is not one)
 // and forbidden for one outside the member's properties. The page shows both as "Properti tidak

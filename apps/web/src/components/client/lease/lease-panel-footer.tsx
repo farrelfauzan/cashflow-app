@@ -12,6 +12,8 @@ type LeasePanelFooterProps = {
   saving: boolean;
   // The wide panel puts both buttons at the right on iPad; the narrow one fills the row.
   wide: boolean;
+  // A main action that cannot be undone ("Batalkan sewa"): the destructive style.
+  destructive?: boolean;
 };
 
 // The footer of a lease panel: a button that closes the panel, and the panel's one main action.
@@ -22,6 +24,7 @@ export function LeasePanelFooter({
   submitLabel,
   saving,
   wide,
+  destructive = false,
 }: LeasePanelFooterProps) {
   return (
     <div
@@ -46,6 +49,7 @@ export function LeasePanelFooter({
         type="submit"
         form={formId}
         disabled={saving}
+        variant={destructive ? "destructive" : "default"}
         className={cn(
           "h-13 flex-2 rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]",
           wide && "md:min-w-60 md:flex-none",
