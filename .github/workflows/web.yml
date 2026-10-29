@@ -127,6 +127,14 @@ jobs:
       - name: End-to-end tests
         working-directory: apps/web
         run: pnpm e2e
+      # Next.js checks in development only that every page load and navigation can show
+      # something at once (data read outside <Suspense> is reported as an error), so the staff
+      # screens are opened once more against `next dev` (e2e/dev-smoke.spec.ts).
+      - name: Instant navigation check (next dev)
+        working-directory: apps/web
+        run: pnpm e2e
+        env:
+          E2E_SERVER: dev
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4

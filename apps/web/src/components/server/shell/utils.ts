@@ -77,3 +77,6 @@ export function visibleOrgMenu(ability: AppAbility): OrgMenuItem[] {
 export function roleSummary(roles: readonly RoleRef[]): string {
   return [...new Set(roles.map((role) => role.name))].join(", ");
 }
+
+// What a screen's placeholder says to screen readers while its data streams in.
+export const SCREEN_LOADING_LABEL = "Memuat…";

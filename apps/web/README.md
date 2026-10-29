@@ -16,6 +16,7 @@ make web-install   # pnpm install --frozen-lockfile
 make web-dev       # http://localhost:3000
 make web-check     # lint, type check, unit tests, build: what CI runs
 make web-e2e       # Playwright at iPad (1180x820) and phone (390x844) sizes
+make web-e2e-dev   # every staff screen against `next dev`; fails on a Next.js dev error
 ```
 
 Or inside `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm test`,
@@ -55,6 +56,11 @@ The run builds the app with the `/api` rewrite and starts it. Settings, all opti
 - `E2E_REUSE_SERVER=1`: test a server already running on `E2E_PORT` instead of failing. It
   must proxy `/api` to the API (`pnpm dev` does; a production build only when it was built
   with `API_DEV_ORIGIN`).
+- `E2E_SERVER=dev` (`make web-e2e-dev`): start `next dev` instead of a production build and run
+  only `e2e/dev-smoke.spec.ts`. With Cache Components, Next.js checks in development only that
+  every page load and client navigation can show something at once: a server component that
+  reads data outside a `<Suspense>` boundary is reported as an error. The smoke spec opens every
+  staff screen both ways and fails on any console error. CI runs it after the main e2e run.
 
 A login failure names the cause (`bad_origin`, `rate_limited`, no code in the file). If the
 rate limit is hit, wait 15 minutes or flush the dev Redis. Reports land in
