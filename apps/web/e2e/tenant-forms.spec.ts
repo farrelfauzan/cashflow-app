@@ -151,7 +151,7 @@ async function createUnit(
   const unit = await post<Unit>(
     page.request,
     `/orgs/${orgId}/properties/${property.id}/units`,
-    { label: "Kamar 1", defaultRent: 1_250_000 },
+    { label: "Kamar 1", terms: [{ months: 1, price: 1_250_000 }] },
   );
   return { property, unit };
 }
@@ -237,12 +237,32 @@ test.describe("Admin of the whole organization", () => {
     await expect(lease).toContainText(`${name} · ${phone}`);
     await choose(page, lease, "Properti", property.name);
     await choose(page, lease, "Unit", unit.label);
-    await expect(lease.getByLabel("Sewa per bulan")).toHaveValue("1.250.000");
-    await expect(lease).toContainText(
-      "Usulan dari sewa biasa unit: Rp1.250.000.",
+    // An amount takes digits only and shows them grouped; the API gets an integer.
+    const deposit = lease.getByLabel("Uang jaminan");
+    await deposit.fill("Rp 1x250.000,5");
+    await expect(deposit).toHaveValue("12.500.005");
+    await deposit.fill("1250000");
+    await expect(deposit).toHaveValue("1.250.000");
+    // Backspace right after a dot removes the digit before it, and the caret stays where the
+    // admin is typing.
+    await deposit.click();
+    await expect(deposit).toBeFocused();
+    await deposit.evaluate((input: HTMLInputElement) =>
+      input.setSelectionRange(2, 2),
     );
-    await lease.getByLabel("Uang jaminan").fill("2500000");
-    await expect(lease.getByLabel("Uang jaminan")).toHaveValue("2.500.000");
+    expect(
+      await deposit.evaluate((input: HTMLInputElement) => input.selectionStart),
+    ).toBe(2);
+    await page.keyboard.press("Backspace");
+    await expect(deposit).toHaveValue("250.000");
+    await page.keyboard.press("1");
+    await expect(deposit).toHaveValue("1.250.000");
+    expect(
+      await deposit.evaluate((input: HTMLInputElement) => input.selectionStart),
+    ).toBe(1);
+    await expectTouchTarget(deposit);
+    await deposit.fill("2500000");
+    await expect(deposit).toHaveValue("2.500.000");
     await expect(lease.getByRole("combobox", { name: "Penagih" })).toHaveText(
       "Tidak ada",
     );
@@ -359,7 +379,7 @@ test.describe("Admin of the whole organization", () => {
       tenantId: other.id,
       unitId: unit.id,
       startDate: today,
-      rentAmount: 1_250_000,
+      termMonths: 1,
     });
     await lease.getByRole("button", { name: "Simpan sewa" }).click();
     await expect(lease.getByText(OCCUPIED_MESSAGE)).toBeVisible();

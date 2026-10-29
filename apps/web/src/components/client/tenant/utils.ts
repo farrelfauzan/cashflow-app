@@ -1,4 +1,7 @@
-import { leaseUnitText } from "@/components/client/lease/utils";
+import {
+  leaseUnitText,
+  TERM_PERIOD_WORDS,
+} from "@/components/client/lease/utils";
 import {
   readChoice,
   readSearch,
@@ -11,6 +14,7 @@ import {
   type Lease,
   type Property,
   type Tenant,
+  type TermMonths,
 } from "@/lib/api/generated/model";
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
@@ -344,13 +348,30 @@ export function billedNote(lease: Lease): string | null {
   return `${from} sampai ${to} dianggap sudah ditagih sendiri oleh pemilik`;
 }
 
+// The rent's label on a lease card, by the lease's term: "Sewa per bulan", "Sewa per 3 bulan",
+// "Sewa per 6 bulan" or "Sewa per tahun".
+export function leaseRentLabel(termMonths: TermMonths): string {
+  return `Sewa per ${TERM_PERIOD_WORDS[termMonths]}`;
+}
+
+export const NO_PERIOD_RENT_TEXT = "Belum ada harga";
+
+// The rent for one period of the lease's term in force today, from the API, or "Belum ada harga"
+// when the unit has no price for that term.
+export function leaseRentText(lease: Pick<Lease, "periodRent">): string {
+  return lease.periodRent === undefined
+    ? NO_PERIOD_RENT_TEXT
+    : formatRupiah(lease.periodRent);
+}
+
 export function leaseView(lease: Lease, today: string): LeaseView {
   const ended = lease.status === "ended";
   return {
     id: lease.id,
     title: leaseUnitText(lease),
     status: leaseStatusView(lease, today),
-    rent: formatRupiah(lease.rentAmount),
+    rentLabel: leaseRentLabel(lease.termMonths),
+    rent: leaseRentText(lease),
     deposit: formatRupiah(lease.depositAmount),
     collector:
       lease.collector === undefined

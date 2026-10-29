@@ -12,7 +12,7 @@ import { RupiahInput } from "./rupiah-input";
 type RupiahFieldProps = {
   inputRef: RefObject<HTMLInputElement | null>;
   label: string;
-  // The input's name, the API field it fills ("rentAmount").
+  // The input's name, the API field it fills ("depositAmount").
   name: string;
   placeholder: string;
   // Under the field; none for no hint.

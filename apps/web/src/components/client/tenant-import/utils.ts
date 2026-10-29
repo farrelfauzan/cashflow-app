@@ -192,9 +192,11 @@ function cell(value: string): string {
   return value === "" ? EMPTY_CELL : value;
 }
 
+// The rent shows only when the row's sewa cell has one; an empty cell uses the unit's price.
 function rowPlaceText(row: ImportRow): string {
   const parts = [cell(row.unitLabel), cell(row.propertyName)];
-  if (row.values !== undefined) parts.push(formatRupiah(row.values.rentAmount));
+  const rent = row.values?.rentAmount;
+  if (rent !== undefined) parts.push(formatRupiah(rent));
   return parts.join(" · ");
 }
 

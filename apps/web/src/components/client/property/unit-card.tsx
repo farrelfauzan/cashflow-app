@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import type { Unit } from "@/lib/api/generated/model";
-import { defaultRentText, unitOccupancyView } from "./utils";
+import { unitRentText, unitOccupancyView } from "./utils";
 
 import { UnitTenant } from "./unit-tenant";
 
@@ -19,7 +19,7 @@ export function UnitCard({ unit, canManage, onEdit }: UnitCardProps) {
       <div className="flex min-w-0 flex-col gap-1">
         <span className="text-[17px] font-semibold">{unit.label}</span>
         <span className="text-sm text-muted-foreground">
-          Sewa biasa {defaultRentText(unit)}
+          Sewa biasa {unitRentText(unit)}
         </span>
         <div>
           <UnitTenant view={unitOccupancyView(unit)} className="text-[15px]" />

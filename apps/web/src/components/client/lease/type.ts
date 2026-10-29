@@ -2,6 +2,7 @@ import type {
   LeaseChargesInput,
   LeaseInput,
   LeaseTerms,
+  TermMonths,
 } from "@/lib/api/generated/model";
 
 // When the lease starts, against today in Jakarta: a lease entered late, one that starts today,
@@ -26,8 +27,7 @@ export type LeaseTermsValues = {
   billing: BillingChoice;
   // The chosen anniversary; only sent with billing "pick" while "Mulai tagih dari" shows.
   billedFrom: string;
-  // The amount fields' text: digits and dots, empty for none.
-  rent: string;
+  // The deposit field's text: digits and dots, empty for none.
   deposit: string;
   // A member id, or NO_COLLECTOR for none.
   collector: string;
@@ -37,6 +37,8 @@ export type LeaseFormValues = LeaseTermsValues & {
   tenantId: string;
   // "" until chosen.
   unitId: string;
+  // The chosen unit's shortest term; null when no unit is chosen or it offers none.
+  termMonths: TermMonths | null;
 };
 
 // The fields a check or the API can name. "propertyId" is the form's own: the API never sees it.
@@ -45,7 +47,6 @@ export type LeaseFormField =
   | "unitId"
   | "startDate"
   | "billedFrom"
-  | "rentAmount"
   | "depositAmount"
   | "collectorMemberId";
 
@@ -56,13 +57,6 @@ export type LeaseFormResult =
 
 export type LeaseTermsResult =
   { ok: true; input: LeaseTerms } | { ok: false; errors: LeaseFormErrors };
-
-// The rent and deposit typed in a lease form, as integers: rent null when it is not a whole
-// amount of at least 1, deposit undefined when the field is empty.
-export type LeaseAmounts = {
-  rent: number | null;
-  deposit: number | undefined;
-};
 
 // What sits under "Mulai sewa" in "Ubah sewa": the billing choice for a lease entered late, the
 // booking note for a start after today, or nothing.

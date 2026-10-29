@@ -39,7 +39,6 @@ import {
   addDays,
   anniversary,
   BAD_DEPOSIT_MESSAGE,
-  BAD_RENT_MESSAGE,
   billAllHint,
   billedFromOptions,
   billingExplanation,
@@ -58,8 +57,10 @@ import {
   NO_START_MESSAGE,
   NO_UNIT_MESSAGE,
   periodStartOn,
-  rentSuggestion,
-  rentTextFor,
+  NO_TERM_MESSAGE,
+  leaseTermFor,
+  shortestTerm,
+  TERM_PERIOD_WORDS,
   startDateHint,
   startTiming,
 } from "./utils";
@@ -603,6 +604,7 @@ describe("units and rent", () => {
     id: "u",
     propertyId: "p",
     label: "Kamar 1",
+    terms: [{ months: 1, price: 1_250_000 }],
     occupied: false,
     createdAt: "2026-10-28T03:00:00Z",
     updatedAt: "2026-10-28T03:00:00Z",
@@ -618,18 +620,61 @@ describe("units and rent", () => {
       ]).map((u) => u.id),
     ).toEqual(["a", "c"]);
   });
+});
 
-  it("suggests the unit's usual rent", () => {
-    expect(rentSuggestion(unit({ defaultRent: 1_250_000 }))).toBe(
-      "Usulan dari sewa biasa unit: Rp1.250.000.",
-    );
-    expect(rentTextFor(unit({ defaultRent: 1_250_000 }))).toBe("1.250.000");
+describe("shortestTerm", () => {
+  it.each([
+    { name: "a single term", months: [12], want: 12 },
+    { name: "several terms, fewest months first", months: [1, 3, 12], want: 1 },
+    { name: "terms in any order", months: [12, 6, 3], want: 3 },
+    { name: "no term", months: [], want: null },
+  ] as const)("takes $want from $name", ({ months, want }) => {
+    expect(shortestTerm(months.map((m) => ({ months: m })))).toBe(want);
   });
 
-  it("suggests nothing without a usual rent", () => {
-    expect(rentSuggestion(unit({}))).toBeNull();
-    expect(rentSuggestion(undefined)).toBeNull();
-    expect(rentTextFor(unit({}))).toBe("");
+  it("takes nothing from no list", () => {
+    expect(shortestTerm(undefined)).toBeNull();
+  });
+});
+
+describe("leaseTermFor", () => {
+  it.each([
+    {
+      name: "the shortest priced term",
+      terms: [
+        { months: 12, price: 15_000_000 },
+        { months: 1, price: 1_300_000 },
+      ],
+      want: 1,
+    },
+    {
+      name: "a priced longer term over an unpriced shorter one",
+      terms: [{ months: 1 }, { months: 12, price: 15_000_000 }],
+      want: 12,
+    },
+    {
+      name: "the shortest term when none is priced",
+      terms: [{ months: 6 }, { months: 3 }],
+      want: 3,
+    },
+    { name: "no term", terms: [], want: null },
+  ] as const)("takes $want for $name", ({ terms, want }) => {
+    expect(leaseTermFor({ terms: [...terms] })).toBe(want);
+  });
+
+  it("takes nothing when no unit is chosen", () => {
+    expect(leaseTermFor(undefined)).toBeNull();
+  });
+});
+
+describe("TERM_PERIOD_WORDS", () => {
+  it("names one period of every term", () => {
+    expect(TERM_PERIOD_WORDS).toEqual({
+      1: "bulan",
+      3: "3 bulan",
+      6: "6 bulan",
+      12: "tahun",
+    });
   });
 });
 
@@ -640,7 +685,7 @@ describe("checkLeaseForm", () => {
     startDate: "2026-11-01",
     billing: "start",
     billedFrom: "",
-    rent: "1.250.000",
+    termMonths: 1,
     deposit: "",
     collector: NO_COLLECTOR,
     ...over,
@@ -653,7 +698,7 @@ describe("checkLeaseForm", () => {
         tenantId: "t",
         unitId: "u",
         startDate: "2026-11-01",
-        rentAmount: 1_250_000,
+        termMonths: 1,
       },
     });
   });
@@ -663,10 +708,15 @@ describe("checkLeaseForm", () => {
     expect(checked.ok && checked.input.depositAmount).toBe(0);
   });
 
-  it("refuses a rent of 0", () => {
-    expect(checkLeaseForm(values({ rent: "0" }), "p", TODAY)).toEqual({
+  it("sends the unit's shortest term", () => {
+    const checked = checkLeaseForm(values({ termMonths: 12 }), "p", TODAY);
+    expect(checked.ok && checked.input.termMonths).toBe(12);
+  });
+
+  it("refuses a unit with no term under the unit", () => {
+    expect(checkLeaseForm(values({ termMonths: null }), "p", TODAY)).toEqual({
       ok: false,
-      errors: { rentAmount: BAD_RENT_MESSAGE },
+      errors: { unitId: NO_TERM_MESSAGE },
     });
   });
 
@@ -683,7 +733,7 @@ describe("checkLeaseForm", () => {
         tenantId: "t",
         unitId: "u",
         startDate: "2026-11-01",
-        rentAmount: 1_250_000,
+        termMonths: 1,
         depositAmount: 2_500_000,
         collectorMemberId: "member-1",
       },
@@ -751,7 +801,7 @@ describe("checkLeaseForm", () => {
   it("finds every missing field", () => {
     expect(
       checkLeaseForm(
-        values({ unitId: "", startDate: "", rent: "" }),
+        values({ unitId: "", startDate: "", termMonths: null }),
         "",
         TODAY,
       ),
@@ -761,15 +811,7 @@ describe("checkLeaseForm", () => {
         propertyId: NO_PROPERTY_MESSAGE,
         unitId: NO_UNIT_MESSAGE,
         startDate: NO_START_MESSAGE,
-        rentAmount: BAD_RENT_MESSAGE,
       },
-    });
-  });
-
-  it.each(["0", "abc", "1.5"])("refuses the rent '%s'", (rent) => {
-    expect(checkLeaseForm(values({ rent }), "p", TODAY)).toEqual({
-      ok: false,
-      errors: { rentAmount: BAD_RENT_MESSAGE },
     });
   });
 
@@ -785,7 +827,7 @@ describe("form fields", () => {
   it("focuses the first bad field in the form's order", () => {
     expect(
       firstLeaseError({
-        rentAmount: "x",
+        depositAmount: "x",
         startDate: "y",
         collectorMemberId: "z",
       }),
@@ -844,7 +886,8 @@ const leaseOf = (over: Partial<Lease> = {}): Lease => ({
   startDate: "2026-09-15",
   enteredOn: TODAY,
   billedFrom: "2026-09-15",
-  rentAmount: 1_500_000,
+  termMonths: 1,
+  periodRent: 1_500_000,
   depositAmount: 3_000_000,
   status: "active",
   charges: [],
@@ -908,7 +951,6 @@ describe("leaseTermsValues", () => {
       startDate: "2026-09-15",
       billing: "start",
       billedFrom: "",
-      rent: "1.500.000",
       deposit: "3.000.000",
       collector: "m-1",
     });
@@ -990,7 +1032,6 @@ describe("checkLeaseTerms", () => {
     startDate: "2026-09-15",
     billing: "start",
     billedFrom: "",
-    rent: "1.500.000",
     deposit: "3.000.000",
     collector: NO_COLLECTOR,
     ...over,
@@ -1005,7 +1046,6 @@ describe("checkLeaseTerms", () => {
       ok: true,
       input: {
         startDate: "2026-09-15",
-        rentAmount: 1_500_000,
         depositAmount: 3_000_000,
         collectorMemberId: "m-1",
       },
@@ -1017,7 +1057,6 @@ describe("checkLeaseTerms", () => {
       ok: true,
       input: {
         startDate: "2026-09-15",
-        rentAmount: 1_500_000,
         depositAmount: 0,
       },
     });
@@ -1071,15 +1110,11 @@ describe("checkLeaseTerms", () => {
 
   it("finds every bad field", () => {
     expect(
-      checkLeaseTerms(
-        values({ startDate: "", rent: "0", deposit: "1,5" }),
-        onTime,
-      ),
+      checkLeaseTerms(values({ startDate: "", deposit: "1,5" }), onTime),
     ).toEqual({
       ok: false,
       errors: {
         startDate: NO_START_MESSAGE,
-        rentAmount: BAD_RENT_MESSAGE,
         depositAmount: BAD_DEPOSIT_MESSAGE,
       },
     });

@@ -159,7 +159,7 @@ async function createLease(
     "POST",
     `/orgs/${orgId}/properties/${property.id}/units`,
     201,
-    { label: UNIT, defaultRent: 1_250_000 },
+    { label: UNIT, terms: [{ months: 1, price: 1_250_000 }] },
   );
   const tenant = await call<Tenant>(
     page,
@@ -176,7 +176,7 @@ async function createLease(
     tenantId: tenant.id,
     unitId: unit.id,
     startDate: start,
-    rentAmount: 1_250_000,
+    termMonths: 1,
     depositAmount: 2_500_000,
   });
   return { property, tenant, lease };
@@ -203,7 +203,9 @@ async function openOwnLease(
 test.describe("Admin of the whole organization", () => {
   test.use({ storageState: HENDRA.storageState });
 
-  test("changes a lease's rent and collector", async ({ page }, testInfo) => {
+  test("changes a lease's deposit and collector", async ({
+    page,
+  }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
     const { orgId, card, property, tenant } = await openOwnLease(
       page,
@@ -241,7 +243,6 @@ test.describe("Admin of the whole organization", () => {
     await expect(form).toContainText(
       "Unit dan penyewa tidak bisa diganti. Untuk pindah unit, catat pindah keluar, lalu buat sewa baru.",
     );
-    await expect(form.getByLabel("Sewa per bulan")).toHaveValue("1.250.000");
     await expect(form.getByLabel("Uang jaminan")).toHaveValue("2.500.000");
     await expect(form.getByRole("combobox", { name: "Penagih" })).toHaveText(
       "Tidak ada",
@@ -251,21 +252,12 @@ test.describe("Admin of the whole organization", () => {
       form.getByRole("group", { name: "Mulai tagih dari" }),
     ).toHaveCount(0);
 
-    // No rent: the form says so and focuses the field.
-    await form.getByLabel("Sewa per bulan").fill("");
-    await form.getByRole("button", { name: "Simpan sewa" }).click();
-    await expect(
-      form.getByText("Isi sewa per bulan dengan angka."),
-    ).toBeVisible();
-    await expect(form.getByLabel("Sewa per bulan")).toBeFocused();
-
-    await form.getByLabel("Sewa per bulan").fill("1400000");
-    await expect(form.getByLabel("Sewa per bulan")).toHaveValue("1.400.000");
-    await expect(form).toContainText("Berlaku mulai tagihan berikutnya.");
+    await form.getByLabel("Uang jaminan").fill("3000000");
+    await expect(form.getByLabel("Uang jaminan")).toHaveValue("3.000.000");
     await choose(page, form, "Penagih", collector);
     const min = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
     expect(
-      await fontSize(form.getByText("Berlaku mulai tagihan berikutnya.")),
+      await fontSize(form.getByText("Isi 0 kalau tidak ada.")),
     ).toBeGreaterThanOrEqual(min);
     await expectTouchTarget(form.getByRole("button", { name: "Simpan sewa" }));
     await attachViewportScreenshot(page, testInfo, "lease-edit");
@@ -273,7 +265,7 @@ test.describe("Admin of the whole organization", () => {
     await form.getByRole("button", { name: "Simpan sewa" }).click();
     await expect(form).toHaveCount(0);
     await expect(visibleText(page, `Sewa ${UNIT} diperbarui.`)).toBeVisible();
-    await expect(card).toContainText("Rp1.400.000");
+    await expect(card).toContainText("Rp3.000.000");
     await expect(card).toContainText(collector);
 
     expect(outsideRequests).toEqual([]);
@@ -456,7 +448,7 @@ test.describe("Admin of the whole organization", () => {
 
     await page.getByRole("button", { name: "Ubah sewa" }).click();
     const form = page.getByRole("dialog", { name: "Ubah sewa" });
-    await form.getByLabel("Sewa per bulan").fill("1300000");
+    await form.getByLabel("Uang jaminan").fill("3000000");
 
     // Someone else records the move-out before this form is saved.
     await call<Lease>(

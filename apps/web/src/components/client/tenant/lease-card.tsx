@@ -64,7 +64,7 @@ export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
         </div>
 
         <div className="flex flex-col md:grid md:grid-cols-3 md:gap-x-6 md:gap-y-5">
-          <LeaseField label="Sewa per bulan">{lease.rent}</LeaseField>
+          <LeaseField label={lease.rentLabel}>{lease.rent}</LeaseField>
           <LeaseField label="Uang jaminan">{lease.deposit}</LeaseField>
           <LeaseField label="Penagih">
             {lease.collector === null ? (

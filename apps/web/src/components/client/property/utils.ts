@@ -1,3 +1,7 @@
+import {
+  shortestTerm,
+  TERM_PERIOD_WORDS,
+} from "@/components/client/lease/utils";
 import { ApiError } from "@/lib/api/errors";
 import type { SortOptions } from "@/components/client/list/type";
 import type {
@@ -7,7 +11,7 @@ import type {
   PropertyKind,
   Unit,
 } from "@/lib/api/generated/model";
-import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
+import { formatRupiah } from "@/lib/format/rupiah";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
 
 import type {
@@ -136,11 +140,16 @@ export function propertySummary(
 
 export const NO_RENT_TEXT = "Belum diisi";
 
-// A unit's usual rent: "Rp1.200.000", or "Belum diisi" when none is set.
-export function defaultRentText(unit: Pick<Unit, "defaultRent">): string {
-  return unit.defaultRent === undefined
-    ? NO_RENT_TEXT
-    : formatRupiah(unit.defaultRent);
+// A unit's usual rent: the price of its shortest term that has one, "Rp1.200.000" for a month,
+// "Rp3.500.000 per 3 bulan" or "Rp15.000.000 per tahun" for a longer term, or "Belum diisi" when
+// no term has a price in force.
+export function unitRentText(unit: Pick<Unit, "terms">): string {
+  const priced = unit.terms.filter((term) => term.price !== undefined);
+  const months = shortestTerm(priced);
+  const price = priced.find((term) => term.months === months)?.price;
+  if (months === null || price === undefined) return NO_RENT_TEXT;
+  const amount = formatRupiah(price);
+  return months === 1 ? amount : `${amount} per ${TERM_PERIOD_WORDS[months]}`;
 }
 
 export function unitOccupancyView(
@@ -167,7 +176,6 @@ export const UNIT_LABEL_MAX_LENGTH = 50;
 export const EMPTY_PROPERTY_NAME_MESSAGE = "Isi nama properti.";
 export const NO_KIND_MESSAGE = "Pilih jenis properti.";
 export const EMPTY_UNIT_LABEL_MESSAGE = "Isi nama unit.";
-export const BAD_RENT_MESSAGE = "Isi sewa dengan angka, atau kosongkan.";
 
 export function checkPropertyForm(
   values: PropertyFormValues,
@@ -190,17 +198,8 @@ export function checkUnitForm(values: UnitFormValues): UnitFormResult {
   const errors: UnitFormErrors = {};
   if (label === "") errors.label = EMPTY_UNIT_LABEL_MESSAGE;
 
-  // An empty rent means none: the field is optional and the API clears it when it is left out.
-  let defaultRent: number | undefined;
-  if (values.rent.trim() !== "") {
-    const rent = parseRupiahInput(values.rent);
-    if (rent === null || rent < 1) errors.defaultRent = BAD_RENT_MESSAGE;
-    else defaultRent = rent;
-  }
-
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return {
-    ok: true,
-    input: defaultRent === undefined ? { label } : { label, defaultRent },
-  };
+  // Only the label: a new unit gets its property kind's default term, and a changed one keeps
+  // its terms.
+  return { ok: true, input: { label } };
 }

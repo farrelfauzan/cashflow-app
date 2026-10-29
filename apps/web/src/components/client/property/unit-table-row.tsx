@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import type { Unit } from "@/lib/api/generated/model";
-import { defaultRentText, unitOccupancyView } from "./utils";
+import { unitRentText, unitOccupancyView } from "./utils";
 
 import { UnitTenant } from "./unit-tenant";
 
@@ -18,7 +18,7 @@ export function UnitTableRow({ unit, canManage, onEdit }: UnitTableRowProps) {
     <li className="grid min-h-14 grid-cols-[minmax(0,1fr)_180px_290px_96px] items-center gap-4 border-t px-5 py-1.5 first:border-t-0">
       <span className="truncate text-[17px] font-semibold">{unit.label}</span>
       <span className="text-base text-muted-foreground">
-        {defaultRentText(unit)}
+        {unitRentText(unit)}
       </span>
       <div className="min-w-0">
         <UnitTenant view={unitOccupancyView(unit)} className="text-base" />

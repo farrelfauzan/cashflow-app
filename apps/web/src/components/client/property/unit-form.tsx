@@ -1,7 +1,6 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Info } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
@@ -19,7 +18,6 @@ import {
   useCreateUnit,
   useUpdateUnit,
 } from "@/lib/api/generated/properties/properties";
-import { groupRupiahDigits } from "@/lib/format/rupiah-input";
 import {
   FIELD_HINT_CLASS,
   FIELD_LABEL_CLASS,
@@ -28,8 +26,6 @@ import {
   checkUnitForm,
 } from "./utils";
 import type { UnitFormErrors } from "./type";
-
-import { UnitRentField } from "./unit-rent-field";
 
 type UnitFormProps = {
   orgId: string;
@@ -41,10 +37,10 @@ type UnitFormProps = {
 };
 
 // The fields the API's errors can name; any other field goes to the alert.
-const FORM_FIELDS = ["label", "defaultRent"];
+const FORM_FIELDS = ["label"];
 
-// "Tambah unit" and "Ubah unit": the unit's name and its usual rent. The save button sits outside
-// the form, in the panel's footer, and submits it through its `form` attribute.
+// "Tambah unit" and "Ubah unit": the unit's name. The save button sits outside the form, in the
+// panel's footer, and submits it through its `form` attribute.
 export function UnitForm({
   orgId,
   propertyId,
@@ -55,14 +51,8 @@ export function UnitForm({
   const id = useId();
   const formId = `${id}-form`;
   const labelRef = useRef<HTMLInputElement>(null);
-  const rentRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [label, setLabel] = useState(unit?.label ?? "");
-  const [rent, setRent] = useState(
-    unit?.defaultRent === undefined
-      ? ""
-      : groupRupiahDigits(String(unit.defaultRent)),
-  );
   const [errors, setErrors] = useState<UnitFormErrors>({});
   const [alert, setAlert] = useState<string | null>(null);
 
@@ -96,15 +86,11 @@ export function UnitForm({
     });
   }
 
-  function focusField(field: keyof UnitFormErrors) {
-    (field === "label" ? labelRef : rentRef).current?.focus();
-  }
-
   function handleError(error: unknown) {
     const failed = toFormError(error, FORM_FIELDS);
-    if (failed.field === "label" || failed.field === "defaultRent") {
-      setErrors({ [failed.field]: failed.message });
-      focusField(failed.field);
+    if (failed.field === "label") {
+      setErrors({ label: failed.message });
+      labelRef.current?.focus();
     } else {
       setAlert(failed.message);
     }
@@ -115,10 +101,10 @@ export function UnitForm({
     if (saving) return;
 
     setAlert(null);
-    const checked = checkUnitForm({ label, rent });
+    const checked = checkUnitForm({ label });
     if (!checked.ok) {
       setErrors(checked.errors);
-      focusField(checked.errors.label !== undefined ? "label" : "defaultRent");
+      labelRef.current?.focus();
       return;
     }
     setErrors({});
@@ -178,29 +164,6 @@ export function UnitForm({
             </span>
           </p>
         </div>
-
-        <UnitRentField
-          inputRef={rentRef}
-          value={rent}
-          onChange={(text) => {
-            setRent(text);
-            clearError("defaultRent");
-          }}
-          error={errors.defaultRent}
-          disabled={saving}
-        />
-
-        {unit !== undefined && (
-          <div className="flex items-start gap-2.5 rounded-xl bg-muted px-3.5 py-3 text-foreground">
-            <Info
-              aria-hidden="true"
-              className="mt-0.5 size-5 shrink-0 text-primary"
-            />
-            <p className="text-sm leading-[1.45] md:text-base">
-              Mengubah sewa biasa tidak mengubah sewa yang sedang berjalan.
-            </p>
-          </div>
-        )}
       </form>
       <div className="flex gap-2.5 border-t px-6 py-4">
         <SheetClose asChild>
