@@ -32,14 +32,14 @@ func TestLeaseChargesOverHTTP(t *testing.T) {
 	resp, body := admin.do(http.MethodPost, orgPath+"/properties", apigen.PropertyInput{Name: "Kos Melati", Kind: apigen.Kos})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	melati := decode[apigen.Property](t, body)
-	resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: "Kamar 1"})
+	resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: "Kamar 1", Terms: monthly(850_000)})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	kamar1 := decode[apigen.Unit](t, body)
 	resp, body = admin.do(http.MethodPost, orgPath+"/tenants", apigen.TenantInput{Name: "Rina Wulandari", Phone: "0812 1717 5001"})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	rina := decode[apigen.Tenant](t, body)
 	resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-		"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01", "rentAmount": 850000,
+		"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01", "termMonths": 1,
 	})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	require.Contains(t, string(body), `"charges":[]`, "an empty list, never null")

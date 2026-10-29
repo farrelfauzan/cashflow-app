@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 // Canonical column names. Error messages name columns by these.
@@ -21,6 +23,7 @@ const (
 	colTenantName   = "tenant_name"
 	colPhone        = "phone"
 	colRent         = "rent"
+	colTerm         = "term"
 	colStartDate    = "start_date"
 	colDeposit      = "deposit"
 	colBillFrom     = "bill_from"
@@ -34,7 +37,7 @@ const MaxRows = 2000
 
 var requiredColumns = []string{colProperty, colUnit, colTenantName, colPhone, colRent, colStartDate}
 
-var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colDeposit, colBillFrom, colOldDueDay)
+var knownColumns = append(slices.Clone(requiredColumns), colPropertyKind, colTerm, colDeposit, colBillFrom, colOldDueDay)
 
 // The Indonesian column names. The template writes them, and the parser reads them as aliases.
 const (
@@ -44,6 +47,7 @@ const (
 	idTenantName   = "nama_penyewa"
 	idPhone        = "no_wa"
 	idRent         = "sewa"
+	idTerm         = "jangka_bulan"
 	idStartDate    = "tanggal_mulai"
 	idDeposit      = "jaminan"
 	idBillFrom     = "mulai_tagih"
@@ -57,6 +61,7 @@ var aliases = map[string]string{
 	idTenantName: colTenantName, "penyewa": colTenantName, "nama": colTenantName,
 	idPhone: colPhone, "nomor_wa": colPhone, "whatsapp": colPhone, "telepon": colPhone, "no_hp": colPhone,
 	idRent: colRent, "harga_sewa": colRent,
+	idTerm: colTerm, "jangka": colTerm, "jangka_sewa": colTerm,
 	idStartDate: colStartDate, "mulai_sewa": colStartDate,
 	idDeposit: colDeposit, "uang_jaminan": colDeposit,
 	idBillFrom: colBillFrom, "mulai_ditagih": colBillFrom, "tagih_mulai": colBillFrom,
@@ -246,4 +251,31 @@ func parseKind(s string) string {
 		return k
 	}
 	return s
+}
+
+// parseTerm reads a billing term in months: 1, 3, 6 or 12. An empty cell is 0, for the unit to
+// decide.
+func parseTerm(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, true
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || !tenant.ValidTerm(v) {
+		return 0, false
+	}
+	return v, true
+}
+
+// formatRupiah writes a whole rupiah amount with a dot between thousands, as in 1.250.000.
+func formatRupiah(v int64) string {
+	digits := strconv.FormatInt(v, 10)
+	var b strings.Builder
+	for i, d := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte('.')
+		}
+		b.WriteRune(d)
+	}
+	return b.String()
 }

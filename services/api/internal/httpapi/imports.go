@@ -101,7 +101,7 @@ func toAPIImportResult(res tenantimport.Result) apigen.ImportResult {
 		if v := row.Values; v != nil {
 			r.Values = &apigen.ImportRowValues{
 				StartDate: openapi_types.Date{Time: v.StartDate}, BilledFrom: openapi_types.Date{Time: v.BilledFrom},
-				RentAmount: v.Rent, DepositAmount: v.Deposit,
+				TermMonths: apigen.TermMonths(v.TermMonths), RentAmount: v.Rent, DepositAmount: v.Deposit,
 			}
 		}
 		out.Rows[i] = r

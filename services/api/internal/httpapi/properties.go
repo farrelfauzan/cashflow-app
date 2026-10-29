@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
@@ -138,7 +139,7 @@ func (s *Server) createUnit(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	u, err := s.Properties.CreateUnit(r.Context(), p, propertyID, property.UnitInput{Label: body.Label, DefaultRent: body.DefaultRent})
+	u, err := s.Properties.CreateUnit(r.Context(), p, propertyID, unitInput(body))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -161,12 +162,79 @@ func (s *Server) updateUnit(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	u, err := s.Properties.UpdateUnit(r.Context(), p, id, property.UnitInput{Label: body.Label, DefaultRent: body.DefaultRent})
+	u, err := s.Properties.UpdateUnit(r.Context(), p, id, unitInput(body))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, toAPIUnit(u))
+}
+
+func (s *Server) listUnitPrices(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "unitID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	prices, err := s.Properties.ListUnitPrices(r.Context(), p, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := make(apigen.UnitPriceHistory, len(prices))
+	for i, up := range prices {
+		out[i] = toAPIUnitPrice(up)
+	}
+	s.writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) createUnitPrice(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "unitID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	var body apigen.UnitPriceInput
+	if !s.decode(w, r, &body) {
+		return
+	}
+	up, err := s.Properties.CreateUnitPrice(r.Context(), p, id, property.PriceInput{
+		Months: int(body.Months), Amount: body.Amount, EffectiveFrom: body.EffectiveFrom.Time,
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusCreated, toAPIUnitPrice(up))
+}
+
+func unitInput(body apigen.UnitInput) property.UnitInput {
+	in := property.UnitInput{Label: body.Label}
+	if body.Terms != nil {
+		in.Terms = make([]property.TermInput, len(*body.Terms))
+		for i, t := range *body.Terms {
+			in.Terms[i] = property.TermInput{Months: int(t.Months), Price: t.Price}
+		}
+	}
+	return in
+}
+
+func toAPIUnitPrice(up property.UnitPrice) apigen.UnitPrice {
+	return apigen.UnitPrice{
+		Id: up.ID, Months: apigen.TermMonths(up.Months), Amount: up.Amount,
+		EffectiveFrom: openapi_types.Date{Time: up.EffectiveFrom}, RecordedAt: up.RecordedAt,
+		RecordedByName: up.RecordedByName,
+	}
 }
 
 func propertyInput(body apigen.PropertyInput) property.PropertyInput {
@@ -186,8 +254,17 @@ func toAPIProperty(p property.Property) apigen.Property {
 
 func toAPIUnit(u property.Unit) apigen.Unit {
 	out := apigen.Unit{
-		Id: u.ID, PropertyId: u.PropertyID, Label: u.Label, DefaultRent: u.DefaultRent, Occupied: u.Occupied,
+		Id: u.ID, PropertyId: u.PropertyID, Label: u.Label, Occupied: u.Occupied,
+		Terms:     make([]apigen.UnitTerm, len(u.Terms)),
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+	}
+	for i, t := range u.Terms {
+		out.Terms[i] = apigen.UnitTerm{Months: apigen.TermMonths(t.Months), Price: t.Price}
+		if t.Next != nil {
+			out.Terms[i].NextPrice = &apigen.ScheduledPrice{
+				Amount: t.Next.Amount, EffectiveFrom: openapi_types.Date{Time: t.Next.EffectiveFrom},
+			}
+		}
 	}
 	if u.CurrentTenant != nil {
 		out.CurrentTenant = &apigen.UnitTenant{Id: u.CurrentTenant.ID, Name: u.CurrentTenant.Name}

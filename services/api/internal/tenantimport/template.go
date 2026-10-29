@@ -16,18 +16,19 @@ const TemplateFilename = "template-impor-penyewa.csv"
 
 // templateColumns are the template's header, in the order an owner fills a row in.
 var templateColumns = []string{
-	idProperty, idPropertyKind, idUnit, idTenantName, idPhone, idRent, idStartDate, idBillFrom, idDeposit,
+	idProperty, idPropertyKind, idUnit, idTenantName, idPhone, idRent, idTerm, idStartDate, idBillFrom, idDeposit,
 }
 
 // templateRows are the example rows. The import refuses them by their phone numbers (see
 // isExamplePhone), so they only show the format. Phones are in the local form with dashes: the leading zero
 // and the dashes keep Excel from reading them as a number, and a leading + would make Excel read
 // the cell as a formula. Amounts are plain digits so no locale reads a thousands dot as a decimal
-// point; dates are day first, as Indonesians write them. The second row shows mulai_tagih: the
-// owner collected July to September by hand, so billing starts in October.
+// point; dates are day first, as Indonesians write them. The first row rents a kos room by the
+// month. The second rents a house by the year at a yearly price, and shows mulai_tagih: the
+// owner collected the first year by hand, so billing starts with the second.
 var templateRows = [][]string{
-	{"Kos Melati", "kos", "Kamar 1", "Rina Wulandari", "0812-0000-0001", "850000", "15/10/2026", "", "850000"},
-	{"Kontrakan Mawar", "kontrakan", "Rumah A", "Budi Santoso", "0812-0000-0002", "15000000", "01/07/2026", "01/10/2026", "0"},
+	{"Kos Melati", "kos", "Kamar 1", "Rina Wulandari", "0812-0000-0001", "850000", "1", "15/10/2026", "", "850000"},
+	{"Kontrakan Mawar", "kontrakan", "Rumah A", "Budi Santoso", "0812-0000-0002", "15000000", "12", "01/07/2025", "01/07/2026", "0"},
 }
 
 // isExamplePhone reports whether a normalized phone is one of the example rows' numbers. The

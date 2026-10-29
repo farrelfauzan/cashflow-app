@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +18,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
@@ -55,8 +58,12 @@ type Row struct {
 type Values struct {
 	StartDate time.Time
 	// BilledFrom is "Mulai tagih dari"; the start date when the cell is empty.
-	BilledFrom    time.Time
-	Rent, Deposit int64
+	BilledFrom time.Time
+	// TermMonths is the jangka_bulan cell, or the term resolved from the unit when it is empty.
+	TermMonths int
+	// Rent is the sewa cell, the unit's price for one whole term; nil when the cell is empty.
+	Rent    *int64
+	Deposit int64
 }
 
 // OK reports whether the row has no errors.
@@ -89,11 +96,13 @@ type Service struct {
 	authz      *authz.Service
 	properties *property.Service
 	tenants    *tenant.Service
+	clock      clock.Clock
 }
 
-// NewService returns a Service.
-func NewService(st *store.Store, az *authz.Service, props *property.Service, tenants *tenant.Service) *Service {
-	return &Service{store: st, authz: az, properties: props, tenants: tenants}
+// NewService returns a Service. c decides the import day, in Asia/Jakarta: the day unit prices
+// are checked on and new ones take effect.
+func NewService(st *store.Store, az *authz.Service, props *property.Service, tenants *tenant.Service, c clock.Clock) *Service {
+	return &Service{store: st, authz: az, properties: props, tenants: tenants, clock: c}
 }
 
 // Run imports the CSV in data. It needs tenant:manage and lease:manage for the whole
@@ -117,6 +126,9 @@ func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRu
 			row, err := s.importRow(ctx, tx, p, rec)
 			if err != nil {
 				return fmt.Errorf("line %d: %w", rec.Line, err)
+			}
+			if row.Values != nil && row.Values.TermMonths == 0 {
+				row.Values = nil // the term comes from the unit, which the row never reached
 			}
 			res.Rows[i] = row
 			res.Summary.add(row)
@@ -181,9 +193,13 @@ func (s *Service) importRow(ctx context.Context, tx pgx.Tx, p authz.Principal, r
 // input is a record turned into the services' inputs, already validated by them.
 type input struct {
 	property property.PropertyInput
-	unit     property.UnitInput
+	unit     property.UnitInput // the label only; the terms are resolved against the unit
 	tenant   tenant.Input
 	terms    tenant.Terms
+	// term is the jangka_bulan cell, 0 when it is empty.
+	term int
+	// rent is the sewa cell, 0 when it is empty.
+	rent int64
 }
 
 // check parses a record and validates it with the property and tenant rules, adding every
@@ -192,8 +208,15 @@ func check(rec record, row *Row) input {
 	fail := func(col, msg string) { row.Errors = append(row.Errors, RowError{Column: col, Message: msg}) }
 
 	rent, ok := parseRupiah(rec.get(colRent))
-	if !ok {
+	switch {
+	case !ok:
 		fail(colRent, "Harga sewa harus angka rupiah, contoh 850000 atau 850.000.")
+	case rec.get(colRent) != "" && rent <= 0:
+		fail(colRent, "Harga sewa harus lebih dari Rp0.")
+	}
+	term, ok := parseTerm(rec.get(colTerm))
+	if !ok {
+		fail(colTerm, termMessage)
 	}
 	deposit, ok := parseRupiah(rec.get(colDeposit))
 	if !ok {
@@ -209,27 +232,26 @@ func check(rec record, row *Row) input {
 	}
 	parsed := len(row.Errors) == 0
 	if parsed {
-		row.Values = &Values{StartDate: start, BilledFrom: billFrom, Rent: rent, Deposit: deposit}
+		row.Values = &Values{StartDate: start, BilledFrom: billFrom, TermMonths: term, Deposit: deposit}
 		if billFrom.IsZero() {
 			row.Values.BilledFrom = start
+		}
+		if rent > 0 {
+			row.Values.Rent = &rent
 		}
 	}
 	if note, ok := oldDueDayNote(rec.get(colOldDueDay), start); ok {
 		row.Notes = append(row.Notes, note)
 	}
 
-	var in input
+	in := input{term: term, rent: rent}
 	var err error
 	if in.property, err = property.ValidProperty(property.PropertyInput{
 		Name: rec.get(colProperty), Kind: parseKind(rec.get(colPropertyKind)),
 	}); err != nil {
 		addInputError(row, err)
 	}
-	unit := property.UnitInput{Label: rec.get(colUnit)}
-	if rent > 0 {
-		unit.DefaultRent = &rent // a new unit takes the lease's rent as its usual rent
-	}
-	if in.unit, err = property.ValidUnit(unit); err != nil {
+	if in.unit, err = property.ValidUnit(property.UnitInput{Label: rec.get(colUnit)}); err != nil {
 		addInputError(row, err)
 	}
 	if in.tenant, err = tenant.ValidTenant(tenant.Input{Name: rec.get(colTenantName), Phone: rec.get(colPhone)}); err != nil {
@@ -238,9 +260,11 @@ func check(rec record, row *Row) input {
 		fail(colPhone, "Ini baris contoh. Hapus baris ini sebelum mengimpor.")
 	}
 	if parsed {
+		// An empty term cell leaves the period start check to the lease, once the unit gives
+		// the term.
 		if in.terms, err = tenant.ValidTerms(tenant.Terms{
-			StartDate: start, RentAmount: rent, DepositAmount: deposit, BilledFrom: billFrom,
-		}); err != nil {
+			StartDate: start, DepositAmount: deposit, BilledFrom: billFrom,
+		}, term); err != nil {
 			addInputError(row, err)
 		}
 	}
@@ -261,15 +285,19 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 		return err
 	}
 
+	day := tenant.Today(s.clock)
 	unit, err := property.FindUnit(ctx, tx, org, prop.ID, in.unit.Label)
 	row.Unit = Matched
 	if errors.Is(err, property.ErrNotFound) {
-		unit, err = s.properties.CreateUnitTx(ctx, tx, p, prop.ID, in.unit)
+		unit, err = s.createUnit(ctx, tx, p, prop, in, row)
 		row.Unit = Created
+	} else if err == nil {
+		err = s.checkUnitPrice(ctx, tx, p, unit, in, row, day)
 	}
 	if err != nil {
 		return err
 	}
+	term := row.Values.TermMonths
 
 	tn, err := tenant.FindByPhone(ctx, tx, org, in.tenant.Phone)
 	row.Tenant = Matched
@@ -287,7 +315,7 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 		return &rowError{RowError{Column: colPhone, Message: msg}}
 	}
 
-	current, err := tenant.ActiveLeaseForUnit(ctx, tx, org, unit.ID)
+	current, err := tenant.ActiveLeaseForUnit(ctx, tx, org, unit.ID, day)
 	switch {
 	case err == nil && current.TenantID == tn.ID:
 		row.Lease = Matched
@@ -295,7 +323,7 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 		if billedFrom.IsZero() {
 			billedFrom = in.terms.StartDate
 		}
-		if current.RentAmount != in.terms.RentAmount || current.DepositAmount != in.terms.DepositAmount ||
+		if current.TermMonths != term || current.DepositAmount != in.terms.DepositAmount ||
 			!current.StartDate.Equal(in.terms.StartDate) || !current.BilledFrom.Equal(billedFrom) {
 			row.Notes = append(row.Notes, "Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya.")
 		}
@@ -305,9 +333,75 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 	case !errors.Is(err, tenant.ErrNotFound):
 		return err
 	}
-	_, err = s.tenants.CreateLeaseTx(ctx, tx, p, tenant.NewLease{TenantID: tn.ID, UnitID: unit.ID, Terms: in.terms})
+	_, err = s.tenants.CreateLeaseTx(ctx, tx, p, tenant.NewLease{TenantID: tn.ID, UnitID: unit.ID, TermMonths: term, Terms: in.terms})
 	row.Lease = Created
 	return err
+}
+
+// createUnit creates the row's unit offering exactly the row's term (its property kind's
+// default when the cell is empty), priced from the sewa cell, which a new unit needs. It sets
+// the row's resolved term.
+func (s *Service) createUnit(ctx context.Context, tx pgx.Tx, p authz.Principal, prop property.Property, in input, row *Row) (property.Unit, error) {
+	term := in.term
+	if term == 0 {
+		term = property.DefaultTerms(prop.Kind)[0]
+	}
+	row.Values.TermMonths = term
+	if in.rent == 0 {
+		return property.Unit{}, &rowError{RowError{Column: colRent, Message: noPriceMessage(term)}}
+	}
+	rent := in.rent
+	return s.properties.CreateUnitTx(ctx, tx, p, prop.ID, property.UnitInput{
+		Label: in.unit.Label, Terms: []property.TermInput{{Months: term, Price: &rent}},
+	})
+}
+
+// checkUnitPrice resolves the row's term against an existing unit and checks the sewa cell
+// against the unit's price for it on day: equal or empty when there is one, and otherwise
+// required and recorded as the unit's price from day. It sets the row's resolved term.
+func (s *Service) checkUnitPrice(ctx context.Context, tx pgx.Tx, p authz.Principal, unit property.Unit, in input, row *Row, day time.Time) error {
+	offered := make([]int, len(unit.Terms))
+	for i, t := range unit.Terms {
+		offered[i] = t.Months
+	}
+	term := in.term
+	switch {
+	case term != 0 && !slices.Contains(offered, term):
+		return &rowError{RowError{Column: colTerm, Message: notOfferedMessage(term)}}
+	case term != 0:
+	case slices.Contains(offered, 1):
+		term = 1
+	case len(offered) == 1:
+		term = offered[0]
+	default:
+		return &rowError{RowError{Column: colTerm, Message: "Isi jangka_bulan: unit ini menawarkan beberapa jangka sewa."}}
+	}
+	row.Values.TermMonths = term
+
+	price, err := tenant.PriceInForce(ctx, dbgen.New(tx), p.OrganizationID, unit.ID, term, day)
+	switch {
+	case errors.Is(err, tenant.ErrNoPrice) && in.rent == 0:
+		return &rowError{RowError{Column: colRent, Message: noPriceMessage(term)}}
+	case errors.Is(err, tenant.ErrNoPrice):
+		_, err = s.properties.CreateUnitPriceTx(ctx, tx, p, unit.ID, property.PriceInput{Months: term, Amount: in.rent, EffectiveFrom: day})
+		return err
+	case err != nil:
+		return err
+	case in.rent != 0 && in.rent != price:
+		return &rowError{RowError{Column: colRent, Message: fmt.Sprintf(
+			"Harga sewa berbeda dengan harga unit ini untuk %d bulan (Rp%s).", term, formatRupiah(price))}}
+	}
+	return nil
+}
+
+const termMessage = "Jangka sewa harus 1, 3, 6 atau 12 bulan."
+
+func noPriceMessage(term int) string {
+	return fmt.Sprintf("Harga sewa wajib diisi: unit ini belum punya harga untuk %d bulan.", term)
+}
+
+func notOfferedMessage(term int) string {
+	return fmt.Sprintf("Unit ini tidak menawarkan jangka sewa %d bulan.", term)
 }
 
 // rowError carries a row problem found while writing.
@@ -320,6 +414,7 @@ func asRowError(err error) (RowError, bool) {
 	var re *rowError
 	var propertyInput *property.InputError
 	var tenantInput *tenant.InputError
+	var termErr *tenant.TermError
 	switch {
 	case errors.As(err, &re):
 		return re.RowError, true
@@ -329,6 +424,10 @@ func asRowError(err error) (RowError, bool) {
 		return RowError{Column: tenantColumns[tenantInput.Field], Message: tenantInput.Message}, true
 	case errors.Is(err, tenant.ErrUnitOccupied):
 		return RowError{Column: colUnit, Message: "Unit ini masih disewa penyewa lain."}, true
+	case errors.As(err, &termErr) && errors.Is(err, tenant.ErrNoPrice):
+		return RowError{Column: colRent, Message: noPriceMessage(termErr.Months)}, true
+	case errors.As(err, &termErr):
+		return RowError{Column: colTerm, Message: notOfferedMessage(termErr.Months)}, true
 	case errors.Is(err, tenant.ErrPhoneTaken):
 		return RowError{Column: colPhone, Message: "Nomor ini sudah dipakai penyewa lain."}, true
 	case errors.Is(err, property.ErrNameTaken):
@@ -341,16 +440,19 @@ func asRowError(err error) (RowError, bool) {
 
 // The services name fields as their own inputs do; the import names the CSV columns.
 var (
-	propertyColumns = map[string]string{"name": colProperty, "kind": colPropertyKind, "label": colUnit, "defaultRent": colRent}
-	tenantColumns   = map[string]string{
-		"name": colTenantName, "phone": colPhone, "startDate": colStartDate, "rentAmount": colRent,
+	propertyColumns = map[string]string{
+		"name": colProperty, "kind": colPropertyKind, "label": colUnit, "terms": colTerm,
+		"months": colTerm, "amount": colRent,
+	}
+	tenantColumns = map[string]string{
+		"name": colTenantName, "phone": colPhone, "startDate": colStartDate, "termMonths": colTerm,
 		"depositAmount": colDeposit, "billedFrom": colBillFrom,
 	}
 )
 
 func addInputError(row *Row, err error) {
 	if re, ok := asRowError(err); ok {
-		// The rent column feeds both the unit's usual rent and the lease; report it once.
+		// One column can fail more than one rule; report it once.
 		for _, e := range row.Errors {
 			if e.Column == re.Column {
 				return

@@ -78,7 +78,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 		units := map[string]apigen.Unit{}
 		for _, label := range labels {
 			units[label] = decode[apigen.Unit](t, ok(t, c, http.MethodPost, path+"/properties/"+p.Id.String()+"/units",
-				apigen.UnitInput{Label: label}, http.StatusCreated))
+				apigen.UnitInput{Label: label, Terms: monthly(850_000)}, http.StatusCreated))
 		}
 		return p, units
 	}
@@ -89,7 +89,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 	lease := func(t *testing.T, c *client, path string, tn apigen.Tenant, u apigen.Unit, collector uuid.UUID) apigen.Lease {
 		t.Helper()
 		return decode[apigen.Lease](t, ok(t, c, http.MethodPost, path+"/leases", map[string]any{
-			"tenantId": tn.Id, "unitId": u.Id, "startDate": "2026-10-15", "rentAmount": 850000, "collectorMemberId": collector,
+			"tenantId": tn.Id, "unitId": u.Id, "startDate": "2026-10-15", "termMonths": 1, "collectorMemberId": collector,
 		}, http.StatusCreated))
 	}
 	leaseOf := func(t *testing.T, c *client, tn apigen.Tenant, id uuid.UUID) apigen.Lease {
@@ -175,24 +175,24 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 
 	t.Run("updateLease keeps the disabled collector it already has", func(t *testing.T) {
 		body := ok(t, admin, http.MethodPut, orgPath+"/leases/"+rinaLease.Id.String(), map[string]any{
-			"startDate": "2026-10-15", "rentAmount": 900000, "collectorMemberId": dimas.Id,
+			"startDate": "2026-10-15", "collectorMemberId": dimas.Id,
 		}, http.StatusOK)
 		require.Contains(t, string(body), `"active":false`)
 		got := decode[apigen.Lease](t, body)
-		require.Equal(t, int64(900000), got.RentAmount)
+		require.Equal(t, apigen.TermMonths(1), got.TermMonths)
 		require.Equal(t, dimas.Id, got.Collector.MemberId)
 	})
 
 	t.Run("a different disabled member is refused as collector", func(t *testing.T) {
 		setStatus(t, eko, apigen.MemberStatusDisabled)
 		resp, body := admin.do(http.MethodPut, orgPath+"/leases/"+rinaLease.Id.String(), map[string]any{
-			"startDate": "2026-10-15", "rentAmount": 900000, "collectorMemberId": eko.Id,
+			"startDate": "2026-10-15", "collectorMemberId": eko.Id,
 		})
 		requireInvalid(t, resp, body, "collectorMemberId")
 		require.Equal(t, dimas.Id, leaseOf(t, admin, rina, rinaLease.Id).Collector.MemberId)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-			"tenantId": agus.Id, "unitId": mawarUnits["Rumah B"].Id, "startDate": "2026-10-15", "rentAmount": 850000,
+			"tenantId": agus.Id, "unitId": mawarUnits["Rumah B"].Id, "startDate": "2026-10-15", "termMonths": 1,
 			"collectorMemberId": dimas.Id,
 		})
 		requireInvalid(t, resp, body, "collectorMemberId")
@@ -200,7 +200,7 @@ func TestDisabledCollectorOverHTTP(t *testing.T) {
 
 	t.Run("picking an active member reassigns the lease and lowers the count", func(t *testing.T) {
 		got := decode[apigen.Lease](t, ok(t, admin, http.MethodPut, orgPath+"/leases/"+agusLease.Id.String(), map[string]any{
-			"startDate": "2026-10-15", "rentAmount": 850000, "collectorMemberId": fitri.Id,
+			"startDate": "2026-10-15", "collectorMemberId": fitri.Id,
 		}, http.StatusOK))
 		require.Equal(t, fitri.Id, got.Collector.MemberId)
 		require.True(t, got.Collector.Active)

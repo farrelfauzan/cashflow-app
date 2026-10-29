@@ -270,3 +270,36 @@ func TestHeaderWarnings(t *testing.T) {
 		require.Equal(t, []Warning{oldDueDay, noBillFrom}, warnings)
 	})
 }
+
+func TestParseTerm(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		want int
+		ok   bool
+	}{
+		{"empty is left to the unit", "", 0, true},
+		{"one month", "1", 1, true},
+		{"a quarter, with spaces", " 3 ", 3, true},
+		{"half a year", "6", 6, true},
+		{"a year", "12", 12, true},
+		{"two months is not a term", "2", 0, false},
+		{"words are not read", "setahun", 0, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := parseTerm(tc.in)
+			require.Equal(t, tc.ok, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestFormatRupiah(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[int64]string{1: "1", 999: "999", 1_000: "1.000", 850_000: "850.000", 1_250_000: "1.250.000", 54_000_000: "54.000.000"} {
+		require.Equal(t, want, formatRupiah(in))
+	}
+}

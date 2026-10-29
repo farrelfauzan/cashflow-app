@@ -45,8 +45,8 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 
 	rina, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina Wulandari", Phone: "0812-7610-5001"})
 	require.NoError(t, err)
-	lease, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-		StartDate: day(2026, 10, 1), RentAmount: 850_000, CollectorMemberID: w.karyawanMemberID,
+	lease, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, TermMonths: 1, Terms: tenant.Terms{
+		StartDate: day(2026, 10, 1), CollectorMemberID: w.karyawanMemberID,
 	}})
 	require.NoError(t, err)
 
@@ -91,7 +91,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 			{ChargeTypeID: parkir.ID, Name: "Parkir", Amount: 100_000},
 			{ChargeTypeID: wifi.ID, Name: "Wi-Fi", Amount: 50_000},
 		}, got.Charges)
-		require.Equal(t, int64(850_000), got.RentAmount, "rent is untouched")
+		require.Equal(t, 1, got.TermMonths, "the term is untouched")
 
 		audit := env.AuditLog(t, w.org.ID)
 		require.Equal(t, "allow", audit[0].Decision)
@@ -163,8 +163,8 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 	t.Run("an ended lease takes no extras", func(t *testing.T) {
 		budi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Budi Santoso", Phone: "0812-7610-5002"})
 		require.NoError(t, err)
-		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar2.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 900_000,
+		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: budi.ID, UnitID: w.kamar2.ID, TermMonths: 1, Terms: tenant.Terms{
+			StartDate: day(2026, 10, 1),
 		}})
 		require.NoError(t, err)
 		_, err = env.Tenants.MoveOut(ctx, w.admin, l.ID, day(2026, 11, 1))
@@ -186,12 +186,12 @@ func TestLeaseChargesForAnAdminLimitedToOneProperty(t *testing.T) {
 
 	wifi, err := env.Tenants.CreateChargeType(ctx, w.admin, tenant.ChargeTypeInput{Name: "Wi-Fi"})
 	require.NoError(t, err)
-	terms := tenant.Terms{StartDate: day(2026, 10, 1), RentAmount: 800_000}
+	terms := tenant.Terms{StartDate: day(2026, 10, 1)}
 	rina, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina", Phone: "0812-7710-5001"})
 	require.NoError(t, err)
-	inMelati, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, Terms: terms})
+	inMelati, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.kamar1.ID, TermMonths: 1, Terms: terms})
 	require.NoError(t, err)
-	inMawar, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.rumahA.ID, Terms: terms})
+	inMawar, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: rina.ID, UnitID: w.rumahA.ID, TermMonths: 1, Terms: terms})
 	require.NoError(t, err)
 	wifiOnly := []tenant.ChargeInput{{ChargeTypeID: wifi.ID, Amount: 50_000}}
 
@@ -238,8 +238,8 @@ func TestLeaseChargesStayInsideTheirOrganization(t *testing.T) {
 	newLease := func(w world, phone string) tenant.Lease {
 		tn, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina", Phone: phone})
 		require.NoError(t, err)
-		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: w.kamar1.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 800_000,
+		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: w.kamar1.ID, TermMonths: 1, Terms: tenant.Terms{
+			StartDate: day(2026, 10, 1),
 		}})
 		require.NoError(t, err)
 		return l

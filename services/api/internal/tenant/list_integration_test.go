@@ -196,7 +196,7 @@ func TestTenantListSearchAndFilters(t *testing.T) {
 	require.NoError(t, err)
 
 	unit := func(p property.Property, label string) property.Unit {
-		u, err := env.Properties.CreateUnit(ctx, w.admin, p.ID, property.UnitInput{Label: label})
+		u, err := env.Properties.CreateUnit(ctx, w.admin, p.ID, property.UnitInput{Label: label, Terms: testenv.Monthly(850_000)})
 		require.NoError(t, err)
 		return u
 	}
@@ -209,8 +209,8 @@ func TestTenantListSearchAndFilters(t *testing.T) {
 		return tn
 	}
 	rent := func(tn tenant.Tenant, u property.Unit, start time.Time, collector uuid.UUID) tenant.Lease {
-		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, Terms: tenant.Terms{
-			StartDate: start, RentAmount: 800_000, CollectorMemberID: collector,
+		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, TermMonths: 1, Terms: tenant.Terms{
+			StartDate: start, CollectorMemberID: collector,
 		}})
 		require.NoError(t, err)
 		return l
@@ -346,7 +346,7 @@ func TestTenantListScope(t *testing.T) {
 	require.NoError(t, err)
 
 	unit := func(p property.Property, label string) property.Unit {
-		u, err := env.Properties.CreateUnit(ctx, w.admin, p.ID, property.UnitInput{Label: label})
+		u, err := env.Properties.CreateUnit(ctx, w.admin, p.ID, property.UnitInput{Label: label, Terms: testenv.Monthly(850_000)})
 		require.NoError(t, err)
 		return u
 	}
@@ -357,8 +357,8 @@ func TestTenantListScope(t *testing.T) {
 		return tn
 	}
 	rent := func(tn tenant.Tenant, u property.Unit, collector uuid.UUID) tenant.Lease {
-		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, Terms: tenant.Terms{
-			StartDate: day(2026, 10, 1), RentAmount: 800_000, CollectorMemberID: collector,
+		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, TermMonths: 1, Terms: tenant.Terms{
+			StartDate: day(2026, 10, 1), CollectorMemberID: collector,
 		}})
 		require.NoError(t, err)
 		return l
@@ -381,8 +381,8 @@ func TestTenantListScope(t *testing.T) {
 
 	slamet, err := env.Tenants.Create(ctx, b.admin, tenant.Input{Name: "Slamet Riyadi", Phone: "0896-7620-0001"})
 	require.NoError(t, err)
-	_, err = env.Tenants.CreateLease(ctx, b.admin, tenant.NewLease{TenantID: slamet.ID, UnitID: b.kamar1.ID, Terms: tenant.Terms{
-		StartDate: day(2026, 10, 1), RentAmount: 900_000,
+	_, err = env.Tenants.CreateLease(ctx, b.admin, tenant.NewLease{TenantID: slamet.ID, UnitID: b.kamar1.ID, TermMonths: 1, Terms: tenant.Terms{
+		StartDate: day(2026, 10, 1),
 	}})
 	require.NoError(t, err)
 

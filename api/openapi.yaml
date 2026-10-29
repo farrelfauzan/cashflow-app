@@ -462,6 +462,9 @@ paths:
       tags: [properties]
       operationId: createUnit
       summary: Add a unit to a property (needs unit:manage on that property)
+      description: >
+        The unit offers the terms given, or its property kind's default (see UnitInput.terms).
+        Prices given are recorded effective today; changes are audited.
       requestBody:
         required: true
         content:
@@ -493,7 +496,10 @@ paths:
     put:
       tags: [properties]
       operationId: updateUnit
-      summary: Change a unit's label or default rent (needs unit:manage on its property)
+      summary: Change a unit's label, offered terms or today's prices (needs unit:manage on its property)
+      description: >
+        See UnitInput.terms. A price that differs from the one in force today adds a row to the
+        unit's price history, effective today; nothing is ever overwritten. Audited.
       requestBody:
         required: true
         content:
@@ -511,6 +517,58 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409":
           description: "The property already has a unit with this label (code label_taken, field label)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/units/{unitId}/prices:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: unitId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [properties]
+      operationId: listUnitPrices
+      summary: A unit's price history (needs unit:read on its property)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnitPriceHistory" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [properties]
+      operationId: createUnitPrice
+      summary: Record a unit's new price for a term from a date (needs unit:manage on its property)
+      description: >
+        Adds a row to the append-only price history; the price in force on a day is the latest
+        row effective on or before it. Audited. Use it for a price that starts later; updateUnit
+        records a price effective today.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UnitPriceInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnitPrice" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: >
+            The unit does not offer this term (code term_not_offered, field months), or the
+            effective date is before today, in Asia/Jakarta, or (from slice 2) on or before the day
+            the unit's newest invoice was made (code price_too_early, field effectiveFrom).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -663,7 +721,10 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409":
-          description: "The unit already has an active lease (code unit_occupied, field unitId)"
+          description: >
+            The unit already has an active lease (code unit_occupied, field unitId), does not
+            offer the term (code term_not_offered, field termMonths), or has no price for the term
+            in force today (code no_price, field termMonths).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1268,12 +1329,98 @@ components:
           maxLength: 50
           description: Unique inside its property, ignoring case.
           example: Kamar 11
-        defaultRent:
+        terms:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: >
+            The billing terms the unit offers (decision 32), each month count once. On createUnit,
+            leaving it out offers the property kind's default: 12 months for a ruko, 1 month for
+            a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps
+            the offered terms and their prices. When given, the unit offers exactly these terms;
+            a lease keeps its term when the unit stops offering it. A term's price, when given and
+            different from the price in force today, is recorded as a new price effective today
+            (use createUnitPrice for a later date). An empty list, a repeated or unknown month
+            count is a 400 invalid_input on field terms.
+          items: { $ref: "#/components/schemas/UnitTermInput" }
+
+    TermMonths:
+      type: integer
+      enum: [1, 3, 6, 12]
+      description: A billing term in months (decision 32). The lease is billed once per term, in advance.
+      example: 12
+
+    UnitTermInput:
+      type: object
+      required: [months]
+      properties:
+        months: { $ref: "#/components/schemas/TermMonths" }
+        price:
           type: integer
           format: int64
           minimum: 1
-          description: Usual monthly rent in rupiah, a suggestion for new leases. Leave it out for none.
-          example: 1250000
+          description: Rent for one whole term in rupiah, typed by the owner (not months times a monthly rent).
+          example: 15000000
+
+    UnitTerm:
+      type: object
+      required: [months]
+      properties:
+        months: { $ref: "#/components/schemas/TermMonths" }
+        price:
+          type: integer
+          format: int64
+          description: >
+            Rent for one whole term in rupiah, in force today (Asia/Jakarta). Missing when no
+            price is in force yet; a lease on this term needs one.
+          example: 15000000
+        nextPrice: { $ref: "#/components/schemas/ScheduledPrice" }
+
+    ScheduledPrice:
+      type: object
+      description: The next price change after today, when one is scheduled.
+      required: [amount, effectiveFrom]
+      properties:
+        amount: { type: integer, format: int64, example: 16000000 }
+        effectiveFrom: { type: string, format: date, example: "2027-01-01" }
+
+    UnitPriceInput:
+      type: object
+      required: [months, amount, effectiveFrom]
+      properties:
+        months: { $ref: "#/components/schemas/TermMonths" }
+        amount: { type: integer, format: int64, minimum: 1, example: 16000000 }
+        effectiveFrom:
+          type: string
+          format: date
+          example: "2027-01-01"
+          description: >
+            The first day the price applies: today (Asia/Jakarta) or later, and from slice 2 after
+            the day the unit's newest invoice was made. An invoice takes the price in force on the
+            day it is made.
+
+    UnitPrice:
+      type: object
+      required: [id, months, amount, effectiveFrom, recordedAt]
+      properties:
+        id: { type: string, format: uuid }
+        months: { $ref: "#/components/schemas/TermMonths" }
+        amount: { type: integer, format: int64, example: 15000000 }
+        effectiveFrom: { type: string, format: date }
+        recordedAt: { type: string, format: date-time }
+        recordedByName:
+          type: string
+          description: >
+            The name of the member who recorded the price. Missing for the prices moved over from
+            each unit's usual rent and its lease's rent when terms were introduced.
+
+    UnitPriceHistory:
+      type: array
+      description: >
+        A unit's whole price history, the latest effective date first and, on the same date, the
+        latest recorded first; the first row for a term on or before today is its price in force.
+        Rows are never changed or removed. A plain array: a unit gathers a few rows a year.
+      items: { $ref: "#/components/schemas/UnitPrice" }
 
     UnitTenant:
       type: object
@@ -1284,12 +1431,15 @@ components:
 
     Unit:
       type: object
-      required: [id, propertyId, label, occupied, createdAt, updatedAt]
+      required: [id, propertyId, label, terms, occupied, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         propertyId: { type: string, format: uuid }
         label: { type: string }
-        defaultRent: { type: integer, format: int64 }
+        terms:
+          type: array
+          description: The terms the unit offers, fewest months first, each with its price in force today. At least one.
+          items: { $ref: "#/components/schemas/UnitTerm" }
         occupied:
           type: boolean
           description: >
@@ -1371,7 +1521,7 @@ components:
 
     Lease:
       type: object
-      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, enteredOn, billedFrom, rentAmount, depositAmount, status, charges, createdAt, updatedAt]
+      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, enteredOn, billedFrom, termMonths, depositAmount, status, charges, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
@@ -1383,8 +1533,9 @@ components:
           type: string
           format: date
           description: >
-            First day of the lease. Rent is billed in advance on this day of every month (the
-            last day of a shorter month when it is the 29th to 31st).
+            First day of the lease. Rent is billed in advance once per term, on this day of the
+            month every termMonths months (the last day of a shorter month when it is the 29th to
+            31st).
         endDate: { type: string, format: date, description: "Last day of the lease, set by move-out." }
         enteredOn:
           type: string
@@ -1396,8 +1547,8 @@ components:
           type: string
           format: date
           description: >
-            "Mulai tagih dari": the first period the app invoices, an anniversary of the start
-            date. It equals the start date unless the admin skipped periods the owner collected by
+            "Mulai tagih dari": the first period the app invoices, a period start of the lease's
+            term. It equals the start date unless the admin skipped periods the owner collected by
             hand.
         plannedEndDate:
           type: string
@@ -1405,13 +1556,23 @@ components:
           description: >
             "Rencana keluar": the tenant's planned last day, set with setLeasePlannedEnd. Missing
             when none is set; cleared by move-out.
-        rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
+        termMonths: { $ref: "#/components/schemas/TermMonths" }
+        periodRent:
+          type: integer
+          format: int64
+          description: >
+            Rent for one period of the lease's term, for display: the unit's price for that term in
+            force today (Asia/Jakarta). Missing when none is in force. Each invoice takes the price
+            in force on the day it is made; the lease holds no rent of its own.
+          example: 15000000
         depositAmount: { type: integer, format: int64, description: "Deposit held, in rupiah." }
         status: { $ref: "#/components/schemas/LeaseStatus" }
         collector: { $ref: "#/components/schemas/Collector" }
         charges:
           type: array
-          description: Fixed monthly extras on top of rent, by name. Always present, empty when none.
+          description: >
+            Fixed monthly extras on top of rent, by name. Always present, empty when none. From
+            slice 2 an invoice bills each one as its monthly amount times the term's months.
           items: { $ref: "#/components/schemas/LeaseCharge" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -1477,10 +1638,9 @@ components:
 
     LeaseTerms:
       type: object
-      required: [startDate, rentAmount]
+      required: [startDate]
       properties:
-        startDate: { type: string, format: date, example: "2026-11-15", description: "Also the day of the month rent is due." }
-        rentAmount: { type: integer, format: int64, minimum: 1, example: 1250000 }
+        startDate: { type: string, format: date, example: "2026-11-15", description: "Also the day of the month rent is due, once per term." }
         depositAmount: { type: integer, format: int64, minimum: 0, description: Defaults to 0. }
         collectorMemberId:
           type: string
@@ -1496,9 +1656,9 @@ components:
           example: "2026-10-15"
           description: >
             "Mulai tagih dari": the first period to invoice, to skip periods the owner collected
-            by hand. It must be an anniversary of the start date (the start date itself, or the
-            same day a whole number of months later, the last day of a shorter month for a start
-            on the 29th to 31st), and no later than the first anniversary after the later of the
+            by hand. It must be a period start of the lease's term (the start date itself, or the
+            same day a whole number of terms later, the last day of a shorter month for a start on
+            the 29th to 31st), and no later than the first period start after the later of the
             start date and the day the lease was entered. On createLease, leaving it out bills
             from the start date. On updateLease, leaving it out (or null) keeps the stored value,
             so editing another term never undoes a skipped billing start; to bill from the start
@@ -1521,10 +1681,15 @@ components:
       allOf:
         - $ref: "#/components/schemas/LeaseTerms"
         - type: object
-          required: [tenantId, unitId]
+          required: [tenantId, unitId, termMonths]
           properties:
             tenantId: { type: string, format: uuid }
             unitId: { type: string, format: uuid }
+            termMonths:
+              $ref: "#/components/schemas/TermMonths"
+              description: >
+                One of the terms the unit offers, with a price in force today; fixed for the life
+                of the lease (another term is a new lease).
 
     MoveOut:
       type: object
@@ -1571,13 +1736,26 @@ components:
       type: object
       description: >
         The lease terms as the API read them from the row, so a dry run shows exactly what will be
-        saved (for example a date read day first). Missing when the row's rent, deposit or start
-        date could not be read.
-      required: [startDate, billedFrom, rentAmount, depositAmount]
+        saved (for example a date read day first). Missing when the row's term, rent, deposit or
+        start date could not be read or resolved.
+      required: [startDate, billedFrom, termMonths, depositAmount]
       properties:
         startDate: { type: string, format: date }
         billedFrom: { type: string, format: date, description: "Mulai tagih dari; the start date when the cell is empty." }
-        rentAmount: { type: integer, format: int64, description: Monthly rent in rupiah. }
+        termMonths:
+          $ref: "#/components/schemas/TermMonths"
+          description: >
+            The jangka_bulan cell, or when it is empty: 1 when the unit offers it, else the unit's
+            only term; a unit the import creates offers its property kind's default (12 for a ruko,
+            otherwise 1). A term the unit does not offer is a row error on column term.
+        rentAmount:
+          type: integer
+          format: int64
+          description: >
+            The sewa cell: the unit's price for one whole term. Required when the unit has no price
+            for the term in force on the import day, and then recorded as its price from that day;
+            when the unit has one, it may be empty, and a different amount is a row error on column
+            rent. Missing when the cell is empty.
         depositAmount: { type: integer, format: int64, description: "Deposit in rupiah; 0 when the cell is empty." }
 
     ImportSummary:

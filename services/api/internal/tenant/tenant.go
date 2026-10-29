@@ -126,7 +126,7 @@ func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (li
 		}
 		q := dbgen.New(tx)
 		args := dbgen.ListTenantPageParams{
-			OrganizationID: p.OrganizationID, OrgWide: all, LeaseIds: []uuid.UUID{}, Today: today(s.clock),
+			OrganizationID: p.OrganizationID, OrgWide: all, LeaseIds: []uuid.UUID{}, Today: Today(s.clock),
 			Q: lq.Search.Text, PhoneNational: lq.Search.PhoneNational, PhoneDigits: lq.Search.PhoneDigits,
 			PropertyID:        uuid.NullUUID{UUID: lq.PropertyID, Valid: lq.PropertyID != uuid.Nil},
 			CollectorDisabled: lq.CollectorDisabled,
@@ -174,7 +174,7 @@ func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (li
 		for i, r := range leaseRows {
 			leases[i] = toLease(dbgen.GetLeaseDetailRow(r))
 		}
-		if err := attachCharges(ctx, q, p.OrganizationID, leases); err != nil {
+		if err := attachDetails(ctx, q, p.OrganizationID, args.Today, leases); err != nil {
 			return err
 		}
 		byTenant := map[uuid.UUID][]Lease{}
@@ -207,7 +207,7 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Ten
 	var out Tenant
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		row, leases, err := load(ctx, q, p.OrganizationID, id)
+		row, leases, err := load(ctx, q, p.OrganizationID, id, Today(s.clock))
 		if err != nil {
 			return err
 		}
@@ -282,7 +282,7 @@ func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, i
 	var out Tenant
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		_, leases, err := load(ctx, q, p.OrganizationID, id)
+		_, leases, err := load(ctx, q, p.OrganizationID, id, Today(s.clock))
 		if err != nil {
 			return err
 		}
@@ -381,7 +381,7 @@ func ReadViaLease(tenantID, propertyID, collectorUserID uuid.UUID) authz.Request
 	return authz.Request{Action: authz.ActionTenantRead, Resource: viaResource(tenantID, propertyID, collectorUserID)}
 }
 
-func load(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (dbgen.Tenant, []Lease, error) {
+func load(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID, day time.Time) (dbgen.Tenant, []Lease, error) {
 	r, err := q.GetTenant(ctx, dbgen.GetTenantParams{OrganizationID: org, ID: id})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, nil, ErrNotFound
@@ -397,7 +397,7 @@ func load(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (dbgen.Tenan
 	for i, row := range rows {
 		leases[i] = toLease(dbgen.GetLeaseDetailRow(row))
 	}
-	if err := attachCharges(ctx, q, org, leases); err != nil {
+	if err := attachDetails(ctx, q, org, day, leases); err != nil {
 		return r, nil, err
 	}
 	return r, leases, nil

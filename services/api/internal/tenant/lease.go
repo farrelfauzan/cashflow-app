@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,20 +37,25 @@ type Lease struct {
 	UnitLabel    string
 	PropertyID   uuid.UUID
 	PropertyName string
-	// StartDate is the first day; rent is due on its day of every month (decision 24).
+	// StartDate is the first day; rent is due on its day of the month once per term (decisions
+	// 24 and 32).
 	StartDate time.Time
 	EndDate   *time.Time // last day, set by move-out
 	// EnteredOn is the Asia/Jakarta day the lease was saved. A start date before it means the
 	// lease was entered late.
 	EnteredOn time.Time
-	// BilledFrom ("Mulai tagih dari") is the first period the app invoices, an anniversary of
-	// the start date.
+	// BilledFrom ("Mulai tagih dari") is the first period the app invoices, a period start of
+	// the lease's term.
 	BilledFrom time.Time
 	// PlannedEndDate ("Rencana keluar") is the tenant's planned last day, or nil.
 	PlannedEndDate *time.Time
-	RentAmount     int64
-	DepositAmount  int64
-	Status         string
+	// TermMonths is the billing term, fixed when the lease is created (decision 32).
+	TermMonths int
+	// PeriodRent is the unit's price for the lease's term in force today, for display, or nil
+	// when none is in force. Each invoice takes the price in force on the day it is made.
+	PeriodRent    *int64
+	DepositAmount int64
+	Status        string
 	// Collector is the member who collects from this tenant, if any. A collector who is
 	// disabled stays on the lease, with CollectorActive false, until an admin picks another.
 	CollectorMemberID uuid.UUID
@@ -65,7 +71,6 @@ type Lease struct {
 // Terms are the editable terms of a lease.
 type Terms struct {
 	StartDate     time.Time
-	RentAmount    int64
 	DepositAmount int64
 	// CollectorMemberID is a member id (not a staff user id); uuid.Nil means no collector.
 	CollectorMemberID uuid.UUID
@@ -78,11 +83,15 @@ type Terms struct {
 type NewLease struct {
 	TenantID uuid.UUID
 	UnitID   uuid.UUID
+	// TermMonths is one of the terms the unit offers, with a price in force today. It never
+	// changes: another term is a new lease.
+	TermMonths int
 	Terms
 }
 
-// CreateLease rents a unit to a tenant. It needs lease:manage on the unit's property, and the
-// unit must not have an active lease.
+// CreateLease rents a unit to a tenant. It needs lease:manage on the unit's property, the unit
+// must not have an active lease, and it must offer the term with a price in force today
+// (otherwise a *TermError on termMonths with ErrTermNotOffered or ErrNoPrice).
 func (s *Service) CreateLease(ctx context.Context, p authz.Principal, in NewLease) (Lease, error) {
 	var out Lease
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
@@ -95,7 +104,10 @@ func (s *Service) CreateLease(ctx context.Context, p authz.Principal, in NewLeas
 
 // CreateLeaseTx is CreateLease inside the caller's organization transaction.
 func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principal, in NewLease) (Lease, error) {
-	terms, err := ValidTerms(in.Terms)
+	if !ValidTerm(in.TermMonths) {
+		return Lease{}, &InputError{Field: "termMonths", Message: termMessage}
+	}
+	terms, err := ValidTerms(in.Terms, in.TermMonths)
 	if err != nil {
 		return Lease{}, err
 	}
@@ -107,11 +119,11 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	if err != nil {
 		return Lease{}, lookupError(err, "unitId", "Unit tidak ditemukan.")
 	}
-	enteredOn := today(s.clock)
+	enteredOn := Today(s.clock)
 	if terms.BilledFrom.IsZero() {
 		terms.BilledFrom = terms.StartDate
 	}
-	if err := checkBilledFrom(terms, enteredOn); err != nil {
+	if err := checkBilledFrom(terms, in.TermMonths, enteredOn); err != nil {
 		return Lease{}, err
 	}
 	collector, err := collectorUser(ctx, q, p.OrganizationID, terms.CollectorMemberID)
@@ -125,9 +137,18 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
 		return Lease{}, err
 	}
+	if !slices.Contains(unit.Terms, int16(in.TermMonths)) { //nolint:gosec // a valid term is 1 to 12
+		return Lease{}, &TermError{Err: ErrTermNotOffered, Field: "termMonths", Months: in.TermMonths}
+	}
+	if _, err := PriceInForce(ctx, q, p.OrganizationID, in.UnitID, in.TermMonths, enteredOn); err != nil {
+		if errors.Is(err, ErrNoPrice) {
+			return Lease{}, &TermError{Err: ErrNoPrice, Field: "termMonths", Months: in.TermMonths}
+		}
+		return Lease{}, err
+	}
 	err = q.CreateLease(ctx, dbgen.CreateLeaseParams{
 		ID: id, OrganizationID: p.OrganizationID, UnitID: in.UnitID, TenantID: in.TenantID,
-		StartDate: terms.StartDate, RentAmount: terms.RentAmount,
+		StartDate: terms.StartDate, TermMonths: int16(in.TermMonths), //nolint:gosec // a valid term is 1 to 12
 		DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 		EnteredOn: enteredOn, BilledFrom: terms.BilledFrom,
 	})
@@ -137,12 +158,12 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	if err != nil {
 		return Lease{}, fmt.Errorf("creating lease: %w", err)
 	}
-	return loadLease(ctx, q, p.OrganizationID, id)
+	return loadLease(ctx, q, p.OrganizationID, id, enteredOn)
 }
 
 // ActiveLeaseForUnit returns the unit's active lease, or ErrNotFound when the unit is free. It
-// does no permission check.
-func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID) (Lease, error) {
+// does no permission check. day is the day its PeriodRent is in force on.
+func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID, day time.Time) (Lease, error) {
 	q := dbgen.New(tx)
 	r, err := q.GetActiveLeaseForUnit(ctx, dbgen.GetActiveLeaseForUnitParams{OrganizationID: org, UnitID: unitID})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -151,18 +172,18 @@ func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID) (
 	if err != nil {
 		return Lease{}, fmt.Errorf("finding active lease: %w", err)
 	}
-	return loadLease(ctx, q, org, r.ID)
+	return loadLease(ctx, q, org, r.ID, day)
 }
 
-// UpdateLease changes the terms of an active lease. Each change is audited; a new rent applies
-// from the next invoice. Terms without a BilledFrom keep the stored one, so an edit of another
+// UpdateLease changes the terms of an active lease. Each change is audited. The billing term
+// never changes. Terms without a BilledFrom keep the stored one, so an edit of another
 // term never undoes a skipped billing start; when the start date changes and the kept value no
 // longer fits it, the update is refused on billedFrom. Terms that name the lease's current
 // collector keep them even when they have been disabled, so the lease stays editable until an
 // admin picks another; any other collector must be active. Slice 2 adds the rule that the start
 // date and BilledFrom lock once the lease has an invoice.
 func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UUID, t Terms) (Lease, error) {
-	terms, err := ValidTerms(t)
+	terms, err := ValidTerms(t, 0) // the term is the lease's own, checked once it is loaded
 	if err != nil {
 		return Lease{}, err
 	}
@@ -176,7 +197,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		if terms.BilledFrom.IsZero() {
 			terms.BilledFrom = current.BilledFrom
 		}
-		if err := checkBilledFrom(terms, current.EnteredOn); err != nil {
+		if err := checkBilledFrom(terms, current.TermMonths, current.EnteredOn); err != nil {
 			return err
 		}
 		if current.PlannedEndDate != nil && current.PlannedEndDate.Before(terms.StartDate) {
@@ -190,7 +211,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 			}
 		}
 		n, err := q.UpdateLeaseTerms(ctx, dbgen.UpdateLeaseTermsParams{
-			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate, RentAmount: terms.RentAmount,
+			OrganizationID: p.OrganizationID, ID: id, StartDate: terms.StartDate,
 			DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector, BilledFrom: terms.BilledFrom,
 		})
 		if err != nil {
@@ -199,7 +220,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		if n == 0 {
 			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
-		out, err = loadLease(ctx, q, p.OrganizationID, id)
+		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
 		return err
 	})
 	return out, err
@@ -222,7 +243,7 @@ func (s *Service) SetPlannedEnd(ctx context.Context, p authz.Principal, id uuid.
 			return err
 		}
 		if date != nil {
-			if err := checkPlannedEnd(current.StartDate, *date, today(s.clock)); err != nil {
+			if err := checkPlannedEnd(current.StartDate, *date, Today(s.clock)); err != nil {
 				return err
 			}
 		}
@@ -233,7 +254,7 @@ func (s *Service) SetPlannedEnd(ctx context.Context, p authz.Principal, id uuid.
 		if n == 0 {
 			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
-		out, err = loadLease(ctx, q, p.OrganizationID, id)
+		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
 		return err
 	})
 	return out, err
@@ -250,18 +271,18 @@ func checkPlannedEnd(start, end, now time.Time) error {
 	return nil
 }
 
-// checkBilledFrom checks that "Mulai tagih dari" is an anniversary of the start date, and no
-// later than the first anniversary after the later of the start date and the day the lease was
+// checkBilledFrom checks that "Mulai tagih dari" is a period start of the lease's term, and no
+// later than the first period start after the later of the start date and the day the lease was
 // entered, so an admin can skip at most the periods up to the current one.
-func checkBilledFrom(t Terms, enteredOn time.Time) error {
-	if err := checkAnniversary(t); err != nil {
+func checkBilledFrom(t Terms, term int, enteredOn time.Time) error {
+	if err := checkPeriodStart(t, term); err != nil {
 		return err
 	}
 	from := t.StartDate
 	if enteredOn.After(from) {
 		from = enteredOn
 	}
-	if latest := FirstAnniversaryAfter(t.StartDate, from); t.BilledFrom.After(latest) {
+	if latest := NextPeriodStart(t.StartDate, term, from); t.BilledFrom.After(latest) {
 		return &InputError{Field: "billedFrom", Message: "Mulai tagih paling lambat " + latest.Format("02/01/2006") + "."}
 	}
 	return nil
@@ -281,7 +302,7 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		if err != nil {
 			return err
 		}
-		if err := checkEndDate(current.StartDate, endDate, today(s.clock)); err != nil {
+		if err := checkEndDate(current.StartDate, endDate, Today(s.clock)); err != nil {
 			return err
 		}
 		n, err := q.EndLease(ctx, dbgen.EndLeaseParams{OrganizationID: p.OrganizationID, ID: id, EndDate: &endDate})
@@ -291,7 +312,7 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		if n == 0 {
 			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
-		out, err = loadLease(ctx, q, p.OrganizationID, id)
+		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
 		return err
 	})
 	return out, err
@@ -326,7 +347,7 @@ func (s *Service) loadActiveForChange(ctx context.Context, tx pgx.Tx, q *dbgen.Q
 	if err != nil {
 		return Lease{}, fmt.Errorf("locking lease: %w", err)
 	}
-	current, err := loadLease(ctx, q, p.OrganizationID, id)
+	current, err := loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
 	if err != nil {
 		return Lease{}, err
 	}
@@ -358,7 +379,8 @@ func collectorUser(ctx context.Context, q *dbgen.Queries, org, memberID uuid.UUI
 	return uuid.NullUUID{UUID: m.StaffUserID, Valid: true}, nil
 }
 
-func loadLease(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (Lease, error) {
+// loadLease loads one lease with its extras and its PeriodRent in force on day.
+func loadLease(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID, day time.Time) (Lease, error) {
 	r, err := q.GetLeaseDetail(ctx, dbgen.GetLeaseDetailParams{OrganizationID: org, ID: id})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Lease{}, ErrNotFound
@@ -367,10 +389,19 @@ func loadLease(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (Lease,
 		return Lease{}, fmt.Errorf("loading lease: %w", err)
 	}
 	out := []Lease{toLease(r)}
-	if err := attachCharges(ctx, q, org, out); err != nil {
+	if err := attachDetails(ctx, q, org, day, out); err != nil {
 		return Lease{}, err
 	}
 	return out[0], nil
+}
+
+// attachDetails fills in each lease's extras and PeriodRent in force on day, with one query
+// each for all of them.
+func attachDetails(ctx context.Context, q *dbgen.Queries, org uuid.UUID, day time.Time, leases []Lease) error {
+	if err := attachCharges(ctx, q, org, leases); err != nil {
+		return err
+	}
+	return attachPeriodRents(ctx, q, org, day, leases)
 }
 
 // lookupError turns a missing referenced record into an input error on the field that named it.
@@ -386,7 +417,7 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, UnitLabel: r.UnitLabel,
 		PropertyID: r.PropertyID, PropertyName: r.PropertyName,
 		StartDate: r.StartDate, EndDate: r.EndDate, EnteredOn: r.EnteredOn, BilledFrom: r.BilledFrom,
-		PlannedEndDate: r.PlannedEndDate, RentAmount: r.RentAmount,
+		PlannedEndDate: r.PlannedEndDate, TermMonths: int(r.TermMonths),
 		DepositAmount: r.DepositAmount, Status: r.Status, Charges: []Charge{},
 		CollectorMemberID: r.CollectorMemberID.UUID, CollectorUserID: r.CollectorStaffUserID.UUID,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -398,34 +429,42 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	return l
 }
 
-// ValidTerms checks lease terms and returns them with the dates as calendar days. Errors are
-// *InputError. A BilledFrom given must be an anniversary of the start date; a zero one is left
-// zero, for the service to fill in (the start date on create, the stored value on update), and
-// the latest allowed one depends on the day the lease was entered, so the service checks that.
-func ValidTerms(t Terms) (Terms, error) {
+// termMessage is the message for a term that is not one of TermMonths.
+const termMessage = "Jangka sewa harus 1, 3, 6 atau 12 bulan."
+
+// ValidTerms checks lease terms for a lease billed every term months and returns them with the
+// dates as calendar days. Errors are *InputError. A BilledFrom given must be a period start of
+// the term; a zero one is left zero, for the service to fill in (the start date on create, the
+// stored value on update), and the latest allowed one depends on the day the lease was entered,
+// so the service checks that. A term of 0 means it is not known yet (an update before the lease
+// is loaded, an import row whose term comes from its unit): the period start is then checked
+// by the service.
+func ValidTerms(t Terms, term int) (Terms, error) {
 	t.StartDate = calendarDay(t.StartDate)
 	t.BilledFrom = calendarDay(t.BilledFrom)
 	switch {
 	case t.StartDate.IsZero():
 		return t, &InputError{Field: "startDate", Message: "Tanggal mulai sewa wajib diisi."}
-	case t.RentAmount <= 0:
-		return t, &InputError{Field: "rentAmount", Message: "Harga sewa harus lebih dari Rp0."}
 	case t.DepositAmount < 0:
 		return t, &InputError{Field: "depositAmount", Message: "Deposit tidak boleh negatif."}
 	}
-	if t.BilledFrom.IsZero() {
+	if t.BilledFrom.IsZero() || term == 0 {
 		return t, nil
 	}
-	return t, checkAnniversary(t)
+	return t, checkPeriodStart(t, term)
 }
 
-// checkAnniversary checks that BilledFrom is the start date or one of its anniversaries.
-func checkAnniversary(t Terms) error {
-	if !IsAnniversary(t.StartDate, t.BilledFrom) {
+// checkPeriodStart checks that BilledFrom is the first day of one of the lease's periods.
+func checkPeriodStart(t Terms, term int) error {
+	if IsPeriodStart(t.StartDate, term, t.BilledFrom) {
+		return nil
+	}
+	if term == 1 {
 		return &InputError{Field: "billedFrom", Message: fmt.Sprintf(
 			"Mulai tagih harus jatuh pada tanggal tagih sewa ini (tanggal %d) dan tidak sebelum tanggal mulai.", t.StartDate.Day())}
 	}
-	return nil
+	return &InputError{Field: "billedFrom", Message: fmt.Sprintf(
+		"Mulai tagih harus jatuh pada awal periode sewa ini (tiap %d bulan sejak tanggal mulai).", term)}
 }
 
 // calendarDay keeps only the year, month and day of t, as midnight UTC, the way PostgreSQL
@@ -437,7 +476,7 @@ func calendarDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
-// today is the current calendar day in Asia/Jakarta.
-func today(c clock.Clock) time.Time {
+// Today is the current calendar day in Asia/Jakarta, as midnight UTC like a date column.
+func Today(c clock.Clock) time.Time {
 	return calendarDay(c.Now().In(clock.Jakarta))
 }

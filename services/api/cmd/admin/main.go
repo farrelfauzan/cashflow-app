@@ -158,7 +158,7 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 		Authz:      az,
 		Orgs:       org.NewService(st, az),
 		Members:    members,
-		Properties: property.NewService(st, az),
+		Properties: property.NewService(st, az, c),
 		Tenants:    tenant.NewService(st, az, c),
 	}, c)
 	if err != nil {

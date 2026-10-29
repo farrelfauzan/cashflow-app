@@ -50,6 +50,8 @@ func countAll(t *testing.T, env *testenv.Env, admin authz.Principal) counts {
 	return c
 }
 
+func rupiah(v int64) *int64 { return &v }
+
 func errorColumns(row tenantimport.Row) []string {
 	var out []string
 	for _, e := range row.Errors {
@@ -78,8 +80,10 @@ func TestImport(t *testing.T) {
 		}
 		require.Equal(t, tenantimport.Matched, res.Rows[3].Tenant, "line 5 finds Rina from line 2")
 		require.Equal(t, &tenantimport.Values{
-			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), BilledFrom: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Rent: 900_000,
-		}, res.Rows[1].Values, "the row shows the terms it would save: 01/10/2026 read day first, billed from the start, no deposit")
+			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), BilledFrom: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+			TermMonths: 1, Rent: rupiah(900_000),
+		}, res.Rows[1].Values, "the row shows the terms it would save: 01/10/2026 read day first, billed from the start, "+
+			"monthly as a new kos unit, no deposit")
 		require.Equal(t, counts{}, countAll(t, env, admin))
 		require.Len(t, env.AuditLog(t, o.ID), auditBefore, "the audit rows of a dry run roll back with it")
 	})
@@ -119,7 +123,12 @@ func TestImport(t *testing.T) {
 		units, err := env.AllUnits(ctx, admin, props[1].ID)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kamar 1", "Kamar 2", "Kamar 11"}, []string{units[0].Label, units[1].Label, units[2].Label})
-		require.Equal(t, int64(850_000), *units[0].DefaultRent, "a new unit takes the rent as its usual rent")
+		require.Equal(t, []property.UnitTerm{{Months: 1, Price: rupiah(850_000)}}, units[0].Terms,
+			"a new unit offers its kind's default term, priced from the rent")
+		ruko, err := env.AllUnits(ctx, admin, props[2].ID)
+		require.NoError(t, err)
+		require.Equal(t, []property.UnitTerm{{Months: 12, Price: rupiah(54_000_000)}}, ruko[0].Terms,
+			"a new ruko is let by the year, at the rent given")
 
 		tenants, err := env.AllTenants(ctx, admin)
 		require.NoError(t, err)
@@ -131,7 +140,8 @@ func TestImport(t *testing.T) {
 		}
 		require.Equal(t, "+6281281005002", budi.Phone)
 		require.Len(t, budi.Leases, 1)
-		require.Equal(t, int64(900_000), budi.Leases[0].RentAmount)
+		require.Equal(t, 1, budi.Leases[0].TermMonths)
+		require.Equal(t, int64(900_000), *budi.Leases[0].PeriodRent)
 		require.Zero(t, budi.Leases[0].DepositAmount)
 
 		var actions []string
@@ -243,11 +253,11 @@ func TestTemplate(t *testing.T) {
 		require.Equal(t, counts{}, countAll(t, env, admin))
 	})
 
-	t.Run("the header has the mulai_tagih column after tanggal_mulai", func(t *testing.T) {
+	t.Run("the header has jangka_bulan after sewa and mulai_tagih after tanggal_mulai", func(t *testing.T) {
 		data, err := env.Imports.Template(ctx, admin)
 		require.NoError(t, err)
 		header := strings.SplitN(strings.TrimPrefix(string(data), "\xef\xbb\xbf"), "\r\n", 2)[0]
-		require.Equal(t, "properti;jenis_properti;kamar;nama_penyewa;no_wa;sewa;tanggal_mulai;mulai_tagih;jaminan", header)
+		require.Equal(t, "properti;jenis_properti;kamar;nama_penyewa;no_wa;sewa;jangka_bulan;tanggal_mulai;mulai_tagih;jaminan", header)
 	})
 
 	t.Run("the template filled in with real numbers imports in a dry run without errors", func(t *testing.T) {
@@ -261,8 +271,11 @@ func TestTemplate(t *testing.T) {
 		require.Equal(t, 2, res.Summary.LeasesCreated)
 		require.Equal(t, time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), res.Rows[0].Values.BilledFrom,
 			"the first example leaves mulai_tagih empty, so it bills from the start date")
-		require.Equal(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), res.Rows[1].Values.BilledFrom,
-			"the second example skips July to September, collected by hand")
+		require.Equal(t, 1, res.Rows[0].Values.TermMonths)
+		require.Equal(t, time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), res.Rows[1].Values.BilledFrom,
+			"the second example skips the first year, collected by hand")
+		require.Equal(t, 12, res.Rows[1].Values.TermMonths)
+		require.Equal(t, int64(15_000_000), *res.Rows[1].Values.Rent)
 	})
 
 	t.Run("only those who may import may download it, and a refusal is audited", func(t *testing.T) {
@@ -299,10 +312,10 @@ func TestImportBilledFrom(t *testing.T) {
 		require.Equal(t, 4, res.Summary.RowsWithErrors)
 
 		require.True(t, res.Rows[0].OK(), "%v", res.Rows[0].Errors)
-		require.Equal(t, &tenantimport.Values{StartDate: d(2026, 9, 15), BilledFrom: d(2026, 10, 15), Rent: 850_000}, res.Rows[0].Values)
+		require.Equal(t, &tenantimport.Values{StartDate: d(2026, 9, 15), BilledFrom: d(2026, 10, 15), TermMonths: 1, Rent: rupiah(850_000)}, res.Rows[0].Values)
 
 		require.True(t, res.Rows[1].OK(), "%v", res.Rows[1].Errors)
-		require.Equal(t, &tenantimport.Values{StartDate: d(2026, 9, 15), BilledFrom: d(2026, 9, 15), Rent: 850_000}, res.Rows[1].Values,
+		require.Equal(t, &tenantimport.Values{StartDate: d(2026, 9, 15), BilledFrom: d(2026, 9, 15), TermMonths: 1, Rent: rupiah(850_000)}, res.Rows[1].Values,
 			"an empty cell bills from the start date")
 
 		require.Equal(t, []string{"bill_from"}, errorColumns(res.Rows[2]), "an unreadable date")
@@ -474,5 +487,119 @@ func TestImportEchoAndWarnings(t *testing.T) {
 		require.Equal(t, "kos melati", res.Rows[1].PropertyName, "as typed, not the stored spelling")
 		require.Equal(t, "KAMAR 2", res.Rows[1].UnitLabel)
 		require.Equal(t, "budi santoso", res.Rows[1].TenantName)
+	})
+}
+
+func TestImportTerms(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // 2 November 2026
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812851")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+	d := func(y int, m time.Month, day int) time.Time { return time.Date(y, m, day, 0, 0, 0, 0, time.UTC) }
+
+	melati, err := env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
+	require.NoError(t, err)
+	unit := func(label string, terms ...property.TermInput) property.Unit {
+		t.Helper()
+		u, err := env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label, Terms: terms})
+		require.NoError(t, err)
+		return u
+	}
+	monthlyAndYearly := []property.TermInput{{Months: 1, Price: rupiah(850_000)}, {Months: 12, Price: rupiah(9_000_000)}}
+	unit("Kamar 1", monthlyAndYearly...)
+	unit("Kamar 2", monthlyAndYearly...)
+	unit("Kamar 3", property.TermInput{Months: 3}, property.TermInput{Months: 12})
+	unit("Kamar 4", property.TermInput{Months: 12, Price: rupiah(10_000_000)})
+	unit("Kamar 5", property.TermInput{Months: 1})
+	kamar6 := unit("Kamar 6", property.TermInput{Months: 1})
+	unit("Kamar 7", property.TermInput{Months: 1, Price: rupiah(850_000)})
+
+	const header = "properti;jenis_properti;kamar;nama_penyewa;no_wa;sewa;jangka_bulan;tanggal_mulai\n"
+	row := func(prop, kind, unit, phone, rent, term string) string {
+		return strings.Join([]string{prop, kind, unit, "Penyewa " + phone, phone, rent, term, "01/11/2026"}, ";") + "\n"
+	}
+	tests := []struct {
+		name     string
+		row      string
+		wantCol  string // "" when the row is fine
+		wantMsg  string
+		wantTerm int // the resolved term of a fine row
+		wantRent *int64
+	}{
+		{"a term the unit offers, rent left empty", row("Kos Melati", "kos", "Kamar 1", "0812-8510-5001", "", "12"), "", "", 12, nil},
+		{"an empty term is 1 month when offered; a different rent is refused",
+			row("Kos Melati", "kos", "Kamar 2", "0812-8510-5002", "900.000", ""), "rent",
+			"Harga sewa berbeda dengan harga unit ini untuk 1 bulan (Rp850.000).", 0, nil},
+		{"an empty term with several terms but not 1 month", row("Kos Melati", "kos", "Kamar 3", "0812-8510-5003", "", ""), "term",
+			"Isi jangka_bulan: unit ini menawarkan beberapa jangka sewa.", 0, nil},
+		{"an empty term is the unit's only term; the equal rent is fine",
+			row("Kos Melati", "kos", "Kamar 4", "0812-8510-5004", "10.000.000", ""), "", "", 12, rupiah(10_000_000)},
+		{"no price yet and no rent", row("Kos Melati", "kos", "Kamar 5", "0812-8510-5005", "", ""), "rent",
+			"Harga sewa wajib diisi: unit ini belum punya harga untuk 1 bulan.", 0, nil},
+		{"no price yet: the rent becomes the price", row("Kos Melati", "kos", "Kamar 6", "0812-8510-5006", "800.000", "1"), "", "", 1, rupiah(800_000)},
+		{"a term the unit does not offer", row("Kos Melati", "kos", "Kamar 7", "0812-8510-5007", "", "6"), "term",
+			"Unit ini tidak menawarkan jangka sewa 6 bulan.", 0, nil},
+		{"an unknown term", row("Kos Melati", "kos", "Kamar 8", "0812-8510-5008", "850.000", "2"), "term",
+			"Jangka sewa harus 1, 3, 6 atau 12 bulan.", 0, nil},
+		{"a new unit offers the row's term", row("Kos Melati", "kos", "Kamar 9", "0812-8510-5009", "2.400.000", "3"), "", "", 3, rupiah(2_400_000)},
+		{"a new ruko offers 12 months", row("Ruko Godean", "ruko", "Ruko 1", "0812-8510-5010", "54.000.000", ""), "", "", 12, rupiah(54_000_000)},
+		{"a new unit needs a rent", row("Kos Melati", "kos", "Kamar 10", "0812-8510-5011", "", ""), "rent",
+			"Harga sewa wajib diisi: unit ini belum punya harga untuk 1 bulan.", 0, nil},
+	}
+	var good strings.Builder
+	good.WriteString(header)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := env.Imports.Run(ctx, admin, []byte(header+tc.row), true)
+			require.NoError(t, err)
+			r := res.Rows[0]
+			if tc.wantCol != "" {
+				require.Equal(t, []tenantimport.RowError{{Column: tc.wantCol, Message: tc.wantMsg}}, r.Errors)
+				return
+			}
+			require.True(t, r.OK(), "%v", r.Errors)
+			require.Equal(t, tc.wantTerm, r.Values.TermMonths)
+			require.Equal(t, tc.wantRent, r.Values.Rent)
+			good.WriteString(tc.row)
+		})
+	}
+
+	t.Run("a commit records the terms and prices", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, []byte(good.String()), false)
+		require.NoError(t, err)
+		require.True(t, res.Committed, "%+v", res.Rows)
+
+		history, err := env.Properties.ListUnitPrices(ctx, admin, kamar6.ID)
+		require.NoError(t, err)
+		require.Len(t, history, 1)
+		require.Equal(t, int64(800_000), history[0].Amount)
+		require.Equal(t, d(2026, 11, 2), history[0].EffectiveFrom, "effective the import day")
+		require.Equal(t, o.Admin.Name, *history[0].RecordedByName)
+
+		terms := map[string]int{}
+		tenants, err := env.AllTenants(ctx, admin)
+		require.NoError(t, err)
+		for _, tn := range tenants {
+			require.Len(t, tn.Leases, 1)
+			terms[tn.Leases[0].UnitLabel] = tn.Leases[0].TermMonths
+		}
+		require.Equal(t, map[string]int{"Kamar 1": 12, "Kamar 4": 12, "Kamar 6": 1, "Kamar 9": 3, "Ruko 1": 12}, terms)
+
+		units, err := env.AllUnits(ctx, admin, melati.ID)
+		require.NoError(t, err)
+		for _, u := range units {
+			if u.Label == "Kamar 9" {
+				require.Equal(t, []property.UnitTerm{{Months: 3, Price: rupiah(2_400_000)}}, u.Terms)
+			}
+		}
+	})
+
+	t.Run("a matched lease with another term is noted, not changed", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, []byte(header+row("Kos Melati", "kos", "Kamar 1", "0812-8510-5001", "", "")), true)
+		require.NoError(t, err)
+		require.True(t, res.Rows[0].OK(), "%v", res.Rows[0].Errors)
+		require.Equal(t, tenantimport.Matched, res.Rows[0].Lease)
+		require.Equal(t, 1, res.Rows[0].Values.TermMonths, "an empty cell is 1 month, which the unit offers")
+		require.Equal(t, []string{"Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya."}, res.Rows[0].Notes)
 	})
 }

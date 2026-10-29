@@ -104,6 +104,8 @@ func New(d Deps) *Server {
 				r.Get("/properties/{propertyID}/units", s.listUnits)
 				r.Post("/properties/{propertyID}/units", s.createUnit)
 				r.Put("/units/{unitID}", s.updateUnit)
+				r.Get("/units/{unitID}/prices", s.listUnitPrices)
+				r.Post("/units/{unitID}/prices", s.createUnitPrice)
 				r.Get("/tenants", s.listTenants)
 				r.Post("/tenants", s.createTenant)
 				r.Get("/tenants/{tenantID}", s.getTenant)
