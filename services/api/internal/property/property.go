@@ -235,6 +235,28 @@ func (s *Service) CreateTx(ctx context.Context, tx pgx.Tx, p authz.Principal, in
 	return Property{ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}, nil
 }
 
+// Get returns one property with its unit counts. It needs property:read on that property, so a
+// member whose roles are limited to other properties is refused.
+func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Property, error) {
+	var out Property
+	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		r, err := getProperty(ctx, dbgen.New(tx), p.OrganizationID, id)
+		if err != nil {
+			return err
+		}
+		if err := s.authz.Authorize(ctx, tx, p, propertyRequest(authz.ActionPropertyRead, id)); err != nil {
+			return err
+		}
+		out = Property{
+			ID: r.ID, Name: r.Name, Kind: r.Kind, Address: r.Address,
+			UnitCount: r.UnitCount, OccupiedUnitCount: r.OccupiedUnitCount,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+		return nil
+	})
+	return out, err
+}
+
 // Update changes a property's name, kind and address.
 func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, in PropertyInput) (Property, error) {
 	in, err := ValidProperty(in)

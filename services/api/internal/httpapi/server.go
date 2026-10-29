@@ -99,6 +99,7 @@ func New(d Deps) *Server {
 				r.Post("/members/{memberID}/invitation", s.resendMemberInvitation)
 				r.Get("/properties", s.listProperties)
 				r.Post("/properties", s.createProperty)
+				r.Get("/properties/{propertyID}", s.getProperty)
 				r.Put("/properties/{propertyID}", s.updateProperty)
 				r.Get("/properties/{propertyID}/units", s.listUnits)
 				r.Post("/properties/{propertyID}/units", s.createUnit)

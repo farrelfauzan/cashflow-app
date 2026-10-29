@@ -180,6 +180,9 @@ func TestPropertiesAndUnits(t *testing.T) {
 		require.Len(t, props, 3)
 		_, err = env.AllUnits(ctx, supervisor, melati.ID)
 		require.NoError(t, err)
+		got, err := env.Properties.Get(ctx, supervisor, melati.ID)
+		require.NoError(t, err)
+		require.Equal(t, melati.ID, got.ID)
 
 		_, err = env.Properties.Create(ctx, supervisor, property.PropertyInput{Name: "Kos Baru", Kind: property.KindKos})
 		require.ErrorIs(t, err, authz.ErrForbidden)
@@ -189,6 +192,8 @@ func TestPropertiesAndUnits(t *testing.T) {
 
 	t.Run("a karyawan cannot list properties, and the attempt is audited", func(t *testing.T) {
 		_, err := env.AllProperties(ctx, karyawan)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		_, err = env.Properties.Get(ctx, karyawan, melati.ID)
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		audit := env.AuditLog(t, o.ID)
 		require.Equal(t, "deny", audit[0].Decision)
@@ -235,6 +240,9 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 		props, err := env.AllProperties(ctx, limited)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kos Melati"}, names(props))
+		got, err := env.Properties.Get(ctx, limited, melati.ID)
+		require.NoError(t, err)
+		require.Equal(t, "Kos Melati", got.Name)
 	})
 
 	t.Run("she manages units in Kos Melati", func(t *testing.T) {
@@ -247,7 +255,9 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 	})
 
 	t.Run("she cannot touch Kontrakan Mawar", func(t *testing.T) {
-		_, err := env.AllUnits(ctx, limited, mawar.ID)
+		_, err := env.Properties.Get(ctx, limited, mawar.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		_, err = env.AllUnits(ctx, limited, mawar.ID)
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		_, err = env.Properties.CreateUnit(ctx, limited, mawar.ID, property.UnitInput{Label: "Rumah B"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
@@ -331,7 +341,9 @@ func TestPropertiesStayInsideTheirOrganization(t *testing.T) {
 	})
 
 	t.Run("B's records do not exist for A, even with the right ids", func(t *testing.T) {
-		_, err := env.AllUnits(ctx, adminA, propB.ID)
+		_, err := env.Properties.Get(ctx, adminA, propB.ID)
+		require.ErrorIs(t, err, property.ErrNotFound)
+		_, err = env.AllUnits(ctx, adminA, propB.ID)
 		require.ErrorIs(t, err, property.ErrNotFound)
 		_, err = env.Properties.CreateUnit(ctx, adminA, propB.ID, property.UnitInput{Label: "Rumah 2"})
 		require.ErrorIs(t, err, property.ErrNotFound)
@@ -486,11 +498,16 @@ func TestUnitOccupancy(t *testing.T) {
 		require.Equal(t, booked.TenantID, kamar4.CurrentTenant.ID)
 	})
 
-	t.Run("the occupied unit count is right on list and update", func(t *testing.T) {
+	t.Run("the occupied unit count is right on list, get and update", func(t *testing.T) {
 		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
 		require.Equal(t, int64(2), occupiedCount(t, props, melati.ID))
 		require.Equal(t, int64(1), occupiedCount(t, props, mawar.ID))
+
+		got, err := env.Properties.Get(ctx, admin, melati.ID)
+		require.NoError(t, err)
+		require.Equal(t, int64(2), got.OccupiedUnitCount)
+		require.Equal(t, int64(4), got.UnitCount)
 
 		updated, err := env.Properties.Update(ctx, admin, melati.ID, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
 		require.NoError(t, err)

@@ -52,6 +52,25 @@ func (s *Server) createProperty(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusCreated, toAPIProperty(prop))
 }
 
+func (s *Server) getProperty(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "propertyID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	prop, err := s.Properties.Get(r.Context(), p, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIProperty(prop))
+}
+
 func (s *Server) updateProperty(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFrom(r.Context())
 	if !ok {
