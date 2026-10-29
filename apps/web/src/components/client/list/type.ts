@@ -14,3 +14,18 @@ export type ListUrl = {
     options?: { replace?: boolean },
   ) => void;
 };
+
+// One choice of a list's "Urutkan" select: the value the API takes as `sort` and its label.
+export type SortOption<T extends string = string> = {
+  value: T;
+  label: string;
+};
+
+// A list's sort choices; the first is the API's default, which stays out of the URL.
+export type SortOptions<T extends string = string> = readonly [
+  SortOption<T>,
+  ...SortOption<T>[],
+];
+
+// The sorts of the lists that order by name or by when the row was added (members and tenants).
+export type AddedSort = "name" | "-name" | "createdAt" | "-createdAt";

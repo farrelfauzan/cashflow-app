@@ -5,12 +5,14 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { ListPagination } from "@/components/client/list/list-pagination";
+import { ListSortSelect } from "@/components/client/list/list-sort-select";
 import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
 import { useListUrl } from "@/components/client/list/use-list-url";
 import {
   PAGE_SIZE_PARAM,
   readPage,
   readPageSize,
+  readSort,
 } from "@/components/client/list/utils";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
@@ -24,6 +26,7 @@ import {
   READ_ONLY_NOTE,
   isPropertyMissing,
   propertyPermissions,
+  UNIT_SORT_OPTIONS,
   unitsReadOnly,
 } from "./utils";
 import type { PropertyPanelState, UnitPanelState } from "./type";
@@ -41,7 +44,7 @@ type PropertyUnitsViewProps = {
   organizationName: string;
 };
 
-// One property's page: one page of its units (page and size in the URL), and the panels that
+// One property's page: one page of its units (page, size and sort in the URL), and the panels that
 // change the property or a unit. The property comes from getProperty; its units load once it is
 // found.
 export function PropertyUnitsView({
@@ -53,12 +56,13 @@ export function PropertyUnitsView({
   const url = useListUrl();
   const page = readPage(url.searchParams);
   const pageSize = readPageSize(url.searchParams);
+  const sort = readSort(url.searchParams, UNIT_SORT_OPTIONS);
   const found = useGetProperty(orgId, propertyId);
   const property = found.data;
   const units = useListUnits(
     orgId,
     propertyId,
-    { page, pageSize },
+    { page, pageSize, sort },
     {
       query: {
         enabled: property !== undefined,
@@ -146,23 +150,32 @@ export function PropertyUnitsView({
           {permissions.canManageUnits && " Mulai dengan “Tambah unit”."}
         </p>
       ) : (
-        <div
-          aria-busy={units.isPlaceholderData}
-          className="flex flex-col gap-4 aria-busy:opacity-60"
-        >
-          <UnitList
-            units={units.data.items}
-            canManage={permissions.canManageUnits}
-            onEdit={(unitId) => openUnitPanel({ kind: "edit", unitId })}
+        <>
+          <ListSortSelect
+            options={UNIT_SORT_OPTIONS}
+            value={sort}
+            onChange={url.change}
           />
-          <ListPagination
-            page={page}
-            pageSize={pageSize}
-            total={units.data.total}
-            hrefFor={url.hrefFor}
-            onPageSizeChange={(size) => url.change({ [PAGE_SIZE_PARAM]: size })}
-          />
-        </div>
+          <div
+            aria-busy={units.isPlaceholderData}
+            className="flex flex-col gap-4 aria-busy:opacity-60"
+          >
+            <UnitList
+              units={units.data.items}
+              canManage={permissions.canManageUnits}
+              onEdit={(unitId) => openUnitPanel({ kind: "edit", unitId })}
+            />
+            <ListPagination
+              page={page}
+              pageSize={pageSize}
+              total={units.data.total}
+              hrefFor={url.hrefFor}
+              onPageSizeChange={(size) =>
+                url.change({ [PAGE_SIZE_PARAM]: size })
+              }
+            />
+          </div>
+        </>
       )}
 
       <PropertyPanel
