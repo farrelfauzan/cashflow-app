@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toFormError } from "@/lib/api/form-error";
 import type { Property, PropertyKind } from "@/lib/api/generated/model";
 import {
+  getGetPropertyQueryKey,
   getListPropertiesQueryKey,
   useCreateProperty,
   useUpdateProperty,
@@ -58,8 +59,17 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
     queryClient.invalidateQueries({
       queryKey: getListPropertiesQueryKey(orgId),
     });
+  // A changed property also refreshes its own page (getProperty), which the list key misses.
+  const invalidateOne = (saved: Property) =>
+    queryClient.invalidateQueries({
+      queryKey: getGetPropertyQueryKey(orgId, saved.id),
+    });
   const create = useCreateProperty({ mutation: { onSuccess: invalidate } });
-  const update = useUpdateProperty({ mutation: { onSuccess: invalidate } });
+  const update = useUpdateProperty({
+    mutation: {
+      onSuccess: (saved) => Promise.all([invalidate(), invalidateOne(saved)]),
+    },
+  });
   const saving = create.isPending || update.isPending;
 
   function clearError(field: keyof PropertyFormErrors) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Capability, Property, Unit } from "@/lib/api/generated/model";
+import { ApiError, NETWORK_ERROR_CODE } from "@/lib/api/errors";
 import { createAppAbility } from "@/lib/capabilities";
 
 import type { PropertyPermissions } from "./type";
@@ -11,6 +12,7 @@ import {
   defaultRentText,
   EMPTY_PROPERTY_NAME_MESSAGE,
   EMPTY_UNIT_LABEL_MESSAGE,
+  isPropertyMissing,
   NO_KIND_MESSAGE,
   NO_RENT_TEXT,
   occupancyText,
@@ -359,5 +361,37 @@ describe("checkUnitForm", () => {
     },
   ])("refuses $name", ({ values, errors }) => {
     expect(checkUnitForm(values)).toEqual({ ok: false, errors });
+  });
+});
+
+describe("isPropertyMissing", () => {
+  const apiError = (status: number, code: string) =>
+    new ApiError({ status, code, message: "x" });
+
+  it.each<{ name: string; error: unknown; want: boolean }>([
+    {
+      name: "an unknown property",
+      error: apiError(404, "not_found"),
+      want: true,
+    },
+    {
+      name: "a property outside the member's",
+      error: apiError(403, "forbidden"),
+      want: true,
+    },
+    { name: "no error", error: null, want: false },
+    {
+      name: "a server error",
+      error: apiError(500, "internal"),
+      want: false,
+    },
+    {
+      name: "no connection",
+      error: apiError(0, NETWORK_ERROR_CODE),
+      want: false,
+    },
+    { name: "a plain error", error: new Error("boom"), want: false },
+  ])("$name: $want", ({ error, want }) => {
+    expect(isPropertyMissing(error)).toBe(want);
   });
 });

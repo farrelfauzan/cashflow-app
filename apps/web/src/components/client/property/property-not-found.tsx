@@ -7,8 +7,8 @@ type PropertyNotFoundProps = {
   orgId: string;
 };
 
-// The property in the address is not among the properties the member may see: it does not exist,
-// or it is not assigned to them. The API gives no other way to tell the two apart.
+// The property in the address is not one the member may see: it does not exist, or it is not
+// assigned to them. Both read the same, so a limited member never learns which.
 export function PropertyNotFound({ orgId }: PropertyNotFoundProps) {
   return (
     <div className="flex flex-col items-start gap-4">
