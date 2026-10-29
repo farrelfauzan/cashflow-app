@@ -204,15 +204,15 @@ func (s *seeder) ensureChargeTypes(ctx context.Context) error {
 	for _, ct := range existing {
 		s.types[strings.ToLower(ct.Name)] = ct.ID
 	}
-	for _, name := range s.spec.ChargeTypes {
-		if _, ok := s.types[strings.ToLower(name)]; ok {
+	for _, spec := range s.spec.ChargeTypes {
+		if _, ok := s.types[strings.ToLower(spec.Name)]; ok {
 			continue
 		}
-		ct, err := s.d.Tenants.CreateChargeType(ctx, s.p, tenant.ChargeTypeInput{Name: name})
+		ct, err := s.d.Tenants.CreateChargeType(ctx, s.p, tenant.ChargeTypeInput{Name: spec.Name, Metered: spec.Metered})
 		if err != nil {
-			return fmt.Errorf("charge type %s: %w", name, err)
+			return fmt.Errorf("charge type %s: %w", spec.Name, err)
 		}
-		s.types[strings.ToLower(name)] = ct.ID
+		s.types[strings.ToLower(spec.Name)] = ct.ID
 	}
 	return nil
 }

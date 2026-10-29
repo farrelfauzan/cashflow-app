@@ -315,12 +315,13 @@ func TestSeedDemo(t *testing.T) {
 	t.Run("a few leases carry fixed extras", func(t *testing.T) {
 		types, err := env.Tenants.ListChargeTypes(ctx, adminA)
 		require.NoError(t, err)
-		var typeNames []string
+		metered := map[string]bool{}
 		for _, ct := range types {
-			require.False(t, ct.Metered, ct.Name)
-			typeNames = append(typeNames, ct.Name)
+			metered[ct.Name] = ct.Metered
 		}
-		require.Equal(t, []string{"Air", "Kebersihan", "Listrik", "Parkir", "Wi-Fi"}, typeNames)
+		require.Equal(t, map[string]bool{
+			"Air": true, "Kebersihan": false, "Listrik": true, "Parkir": false, "Wi-Fi": false,
+		}, metered, "listrik and air are billed from the meter, the rest are fixed")
 
 		got := map[string][]tenant.Charge{}
 		for _, tn := range tenantsA {
