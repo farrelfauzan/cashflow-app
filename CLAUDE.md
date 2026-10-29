@@ -234,11 +234,11 @@ of the same organization can do. Both must pass.
   the database. The data model supports them from day one, the editor screen is not designed yet.
 - **Intent of the built-in roles** (initial, confirm against the screens):
   - Supervisor: read everything, plus `payroll:approve` and `expense:approve`. No other writes.
-  - Admin: manage property, unit, tenant and lease (extra charges included); `charge:record`,
-    `payment:record`, `payment:check`, `correction:create`, `payroll:check`, `payroll:record`,
-    `expense:create`, members. Cannot approve. May grant the Admin and Karyawan roles
-    (`role:assign` on `role/admin` and `role/karyawan`), never Supervisor. Supervisors are set
-    when the organization is created.
+  - Admin: manage property, unit (its terms and prices included), tenant and lease (extra
+    charges included); `charge:record`, `payment:record`, `payment:check`, `correction:create`,
+    `payroll:check`, `payroll:record`, `expense:create`, members. Cannot approve. May grant the
+    Admin and Karyawan roles (`role:assign` on `role/admin` and `role/karyawan`), never
+    Supervisor. Supervisors are set when the organization is created.
   - Karyawan: `visit:*`, `cash:record` and `charge:record` (meter amounts) on assigned
     tenants, and read their own payslip and commission.
 - **Separation of duties** (guardrail): whoever checked a payroll run or created an expense
@@ -267,8 +267,9 @@ of the same organization can do. Both must pass.
 
 ## Domain model (minimum)
 
-organization, property, unit, tenant, lease, charge_type, lease_charge, metered_charge, invoice,
-invoice_line, payment, payment_allocation,
+organization, property, unit (with the terms it offers), unit_price (append-only price history
+per unit and term), tenant, lease (with its term), charge_type, lease_charge, metered_charge,
+invoice, invoice_line, payment, payment_allocation,
 payment_promise (+ promise_version), qris_attempt, va_account, cash_deposit, correction,
 employee, payroll_run, payslip, payroll_payment (manual record), share_holder, share_allocation (versioned
 per asset), message_log, audit_log, settings, staff_user, membership, role, role_assignment
@@ -295,15 +296,27 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 - **Idempotency**: QRIS tasks keyed by `transaction_id` and backed by a database UNIQUE
   constraint. Payroll payment records keyed by payslip id.
 - Refunds of double payments only with admin approval. The default is credit.
+- **Unit prices are append-only**: a price change adds a row with its effective date; rows are
+  never updated or deleted.
 - **Invoice lines are append-only**, inserted with their invoice, and add up to the invoice
   amount. A wrong line is fixed with a correction on the invoice, never by editing the line.
 
 ## Billing and reminders
 
-- Each lease bills on the anniversary of its own start date, in advance: a lease starting 15 Oct
-  has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due 15 Nov), and so on, with a full
-  first month and no proration. A start on the 29th to 31st is due on the last day of shorter
-  months, always counted from the start date (31 Jan, 28 Feb, 31 Mar).
+- A lease is billed every 1, 3, 6 or 12 months (its term, decision 32). A unit lists the terms
+  it offers, each with its own price typed by the owner, not months times the monthly rent;
+  by default a ruko offers 12 months and a kos or kontrakan 1, and at least one term stays on.
+  A lease picks one offered term when it is created and keeps it; another term is a new lease.
+- Each lease bills on the anniversary of its own start date, in advance, one period per term: a
+  monthly lease starting 15 Oct has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due
+  15 Nov), and so on; a 3-month one has 15 Oct to 14 Jan, then 15 Jan to 14 Apr. The first
+  period is full, with no proration. A start on the 29th to 31st is due on the last day of
+  shorter months, always counted from the start date (31 Jan, 28 Feb, 31 Mar).
+- Prices are an append-only history per unit and term (amount, effective-from date, who, when),
+  never edited or deleted. A period's rent is the price in force on the day its invoice is
+  made, so a new price reaches a monthly tenant at the next month's invoice and a yearly tenant
+  at the next yearly one; there is no price lock per lease. A price takes effect today or later,
+  never before an invoice already generated.
 - A lease starting within the lead time is invoiced as soon as it is saved (the daily run is the
   safety net); a lease booked further ahead is invoiced by the daily run, like any other. The
   start date can change only until the lease's first invoice exists. An invoice belongs to the
@@ -316,22 +329,25 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   is invoiced for every period since its start date, by default; its past periods are due on
   the day it is entered and its current period 7 days after. Started 15 Sep and entered 28 Oct
   gives 15 Sep to 14 Oct, due 28 Oct, and 15 Oct to 14 Nov, due 4 Nov, then 15 Nov as usual. The
-  admin can skip periods the owner collected by hand with "Mulai tagih dari" (an anniversary;
-  also an import column). A wrong invoice is fixed by a correction, never deleted.
+  admin can skip periods the owner collected by hand with "Mulai tagih dari" (a period start of
+  the lease's term; also an import column). A wrong invoice is fixed by a correction, never
+  deleted.
 - When a tenant says they will not continue, the admin sets the lease's planned end date
   ("Rencana keluar", the tenant's last day). No invoice is generated for a period that starts
   after it, and one already generated is cancelled by a correction with the reason "sewa tidak
-  diperpanjang"; its reminders stop, while older debt and its reminders stay. Money already paid
-  on a cancelled invoice goes back through FIFO and the rest becomes credit. Setting the date
+  diperpanjang"; its reminders stop, while older debt and its reminders stay. For a longer term
+  the rule applies per period of the term. Money already paid on a cancelled invoice goes back
+  through FIFO and the rest becomes credit. Setting the date
   checks `correction:create` as well as `lease:manage` when it cancels or restores an invoice.
   A move-out cancels, the same way, any invoice for a period that starts after its end date,
   before the arrears rule applies. A period the tenant started is billed in full, with no
   proration and no refund unless an admin approves one.
 - Invoices per period. Each invoice has lines: the rent plus the lease's extra charges (listrik,
-  air, Wi-Fi, parkir, kebersihan): fixed amounts set on the lease, and metered amounts recorded
-  per month and billed once, on the next invoice generated after they are recorded. Lines are
-  snapshotted when the invoice is generated and never recomputed; the invoice total is the one
-  amount FIFO allocation pays. A missing meter amount never delays the invoice.
+  air, Wi-Fi, parkir, kebersihan): fixed monthly amounts set on the lease, billed per period as
+  the amount times the term's months, and metered amounts recorded per month and billed once,
+  on the next invoice generated after they are recorded. Lines are snapshotted when the invoice
+  is generated and never recomputed; the invoice total is the one amount FIFO allocation pays.
+  A missing meter amount never delays the invoice.
 - A metered amount can be edited until an invoice line bills it; then it is locked (the service
   refuses and a trigger rejects the update), and fixes are corrections on the invoice. Metered
   usage recorded after the last regular invoice goes on one final invoice at move-out (at most
@@ -356,7 +372,8 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   clean income. It is shown per property and unit where a cost belongs to one, and both figures
   drill down to the underlying rows (invoice lines, expenses, payroll payments). Extra charges
   are not a separate report category. Open until the report design (slices 9 and 10): whether
-  rent counts as billed or collected, and how shared costs are attributed to units.
+  rent counts as billed or collected (it matters more for rent paid 3 to 12 months ahead), and
+  how shared costs are attributed to units.
 
 ## Payments
 
