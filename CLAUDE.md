@@ -13,8 +13,9 @@ summarizes, reminds and reports.
   built-in roles, members, `cmd/admin` to create organizations, properties, units, roles
   limited to one property, tenants, leases with move-out, and the tenant CSV import with its
   template. Its README says how to run it. Not built yet: invoices and everything after them
-  (phase B onward), including the extra charges designed for slice 2. Still open from slice 0:
-  VPS provider and staging.
+  (phase B onward), including the extra charges designed for slice 2. The VPS provider and
+  staging are planned for the last phase (F, slice 12, decision 31); until then checkpoints are
+  shown on a local machine.
 - **Web:** the scaffold plan is approved (decision 20) and the frontend is building `apps/web`.
   Create or change the scaffold only as part of that work. The designs for the login,
   organization picker and members screens are still awaiting approval.
