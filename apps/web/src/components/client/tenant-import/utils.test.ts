@@ -100,25 +100,47 @@ describe("templateDownloadHref", () => {
 });
 
 describe("checkProblem", () => {
-  const apiError = (status: number, message = "Pesan API.") =>
-    new ApiError({ status, code: "x", message, field: "file" });
+  const apiError = (
+    status: number,
+    code: string,
+    field?: string,
+    message = "Pesan API.",
+  ) => new ApiError({ status, code, message, field });
 
-  it("reads a 400 as a file the API cannot read, with its message", () => {
+  it("reads invalid_input on the file as a file the API cannot read, with its message", () => {
     expect(
-      checkProblem(apiError(400, "Kolom wajib tidak ada: no_wa.")),
+      checkProblem(
+        apiError(400, "invalid_input", "file", "Kolom wajib tidak ada: no_wa."),
+      ),
     ).toEqual({ kind: "unreadable", message: "Kolom wajib tidak ada: no_wa." });
   });
 
-  it.each([403, 413])("asks for another file after a %i", (status) => {
-    expect(checkProblem(apiError(status))).toEqual({
+  it("does not blame the file for invalid_input on another field", () => {
+    expect(checkProblem(apiError(400, "invalid_input", "dryRun"))).toEqual({
+      kind: "alert",
+      message: "Pesan API.",
+      chooseOther: false,
+    });
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [413, "too_large"],
+  ])("asks for another file after a %i %s", (status, code) => {
+    expect(checkProblem(apiError(status, code))).toEqual({
       kind: "alert",
       message: "Pesan API.",
       chooseOther: true,
     });
   });
 
-  it.each([0, 500, 503])("lets a %i be tried again", (status) => {
-    expect(checkProblem(apiError(status))).toEqual({
+  it.each([
+    [403, "bad_origin"],
+    [0, "network_error"],
+    [500, "internal"],
+    [503, "unavailable"],
+  ])("lets a %i %s be tried again with the same file", (status, code) => {
+    expect(checkProblem(apiError(status, code))).toEqual({
       kind: "alert",
       message: "Pesan API.",
       chooseOther: false,

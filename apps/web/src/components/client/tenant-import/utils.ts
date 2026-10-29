@@ -114,9 +114,11 @@ export function fileSizeText(sizeBytes: number): string {
   return `${kilobytes.toLocaleString("id-ID")} KB`;
 }
 
-// What a failed check means for step 1. A 400 is a file the API cannot read (missing columns,
-// no rows, too many); a 403 is a denial, and 413 a file the API found too large: both need
-// another file. Anything else (no connection, a server error) may pass on a second try.
+// What a failed check means for step 1, by the API's code (clients branch on code, not on the
+// HTTP status). invalid_input on the field "file" is a file the API cannot read (missing columns,
+// no rows, too many); forbidden is a denial and too_large a file the API found too large, and
+// both need another file. Anything else (no connection, a server error, a refused origin) is not
+// about the file, so the same file may be tried again.
 export function checkProblem(error: unknown): ChooseProblem {
   if (!(error instanceof ApiError)) {
     return {
@@ -125,13 +127,13 @@ export function checkProblem(error: unknown): ChooseProblem {
       chooseOther: false,
     };
   }
-  if (error.status === 400) {
+  if (error.code === "invalid_input" && error.field === "file") {
     return { kind: "unreadable", message: error.message };
   }
   return {
     kind: "alert",
     message: error.message,
-    chooseOther: error.status === 403 || error.status === 413,
+    chooseOther: error.code === "forbidden" || error.code === "too_large",
   };
 }
 
