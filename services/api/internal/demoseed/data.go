@@ -57,6 +57,13 @@ type chargeSpec struct {
 	Amount int64  // rupiah
 }
 
+// chargeTypeSpec is a kind of extra charge. A metered one (listrik, air) is billed from usage
+// recorded each month, so it is never a fixed lease charge.
+type chargeTypeSpec struct {
+	Name    string
+	Metered bool
+}
+
 type tenantSpec struct {
 	Name, Phone string
 	Leases      []leaseSpec
@@ -73,8 +80,8 @@ type orgSpec struct {
 	// Invited are added by the Actor afterwards, so a property limit can name a property.
 	Invited    []staffSpec
 	Properties []propertySpec
-	// ChargeTypes are the organization's kinds of extra charge, none of them metered.
-	ChargeTypes []string
+	// ChargeTypes are the organization's kinds of extra charge.
+	ChargeTypes []chargeTypeSpec
 	Tenants     []tenantSpec
 }
 
@@ -154,7 +161,10 @@ func demoOrgs(c clock.Clock) []orgSpec {
 					Units: units("Ruko", 1, 2), Rent: 4_500_000,
 				},
 			},
-			ChargeTypes: []string{"Listrik", "Air", chargeWiFi, chargeParkir, chargeKebersihan},
+			ChargeTypes: []chargeTypeSpec{
+				{Name: "Listrik", Metered: true}, {Name: "Air", Metered: true},
+				{Name: chargeWiFi}, {Name: chargeParkir}, {Name: chargeKebersihan},
+			},
 			Tenants: []tenantSpec{
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
 					{
