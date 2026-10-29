@@ -305,7 +305,8 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 
 - A lease is billed every 1, 3, 6 or 12 months (its term, decision 32). A unit lists the terms
   it offers, each with its own price typed by the owner, not months times the monthly rent;
-  by default a ruko offers 12 months and a kos or kontrakan 1, and at least one term stays on.
+  by default a ruko offers 12 months and a kos, kontrakan or other unit 1, and at least one term
+  stays on.
   A lease picks one offered term when it is created and keeps it; another term is a new lease.
 - Each lease bills on the anniversary of its own start date, in advance, one period per term: a
   monthly lease starting 15 Oct has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due
@@ -315,8 +316,9 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 - Prices are an append-only history per unit and term (amount, effective-from date, who, when),
   never edited or deleted. A period's rent is the price in force on the day its invoice is
   made, so a new price reaches a monthly tenant at the next month's invoice and a yearly tenant
-  at the next yearly one; there is no price lock per lease. A price takes effect today or later,
-  never before an invoice already generated.
+  at the next yearly one; there is no price lock per lease. A price takes effect today or later
+  (Asia/Jakarta) and after the day the unit's newest invoice was made; on the same effective date
+  the latest recorded row wins.
 - A lease starting within the lead time is invoiced as soon as it is saved (the daily run is the
   safety net); a lease booked further ahead is invoiced by the daily run, like any other. The
   start date can change only until the lease's first invoice exists. An invoice belongs to the
