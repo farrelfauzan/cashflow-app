@@ -2,7 +2,11 @@
 
 import { useState, type ReactNode } from "react";
 
+import { CancelBookingForm } from "@/components/client/lease/cancel-booking-form";
+import { LeaseEditForm } from "@/components/client/lease/lease-edit-form";
 import { LeaseForm } from "@/components/client/lease/lease-form";
+import { MoveOutForm } from "@/components/client/lease/move-out-form";
+import { PlannedEndForm } from "@/components/client/lease/planned-end-form";
 import { leaseFormSubtitle } from "@/components/client/lease/utils";
 import {
   Sheet,
@@ -14,7 +18,13 @@ import {
 import { cn } from "@/lib/utils";
 import type { OpenTenantPanel, TenantPanelState } from "./type";
 import {
+  bookingCancelledNotice,
+  LEASE_PANEL_TITLES,
+  leasePanelSubtitle,
   leaseSavedNotice,
+  leaseUpdatedNotice,
+  movedOutNotice,
+  plannedEndNotice,
   tenantAddedNotice,
   tenantSavedNotice,
 } from "./utils";
@@ -26,7 +36,7 @@ type TenantPanelProps = {
   orgId: string;
   // The subtitle while adding a tenant.
   organizationName: string;
-  // "Today" in Jakarta, for the lease form.
+  // "Today" in Jakarta, for the lease forms.
   today: string;
   canManageLeases: boolean;
   panel: TenantPanelState;
@@ -37,7 +47,9 @@ type TenantPanelProps = {
 // The side panel of the tenant screens (boards Penyewa-Tambah.dc.html and Sewa-Baru.dc.html):
 // from the right on iPad, the whole screen on the phone. "Tambah penyewa" goes on to "Penyewa
 // ditambahkan" and from there to "Sewakan unit" in the same panel. The lease form gets the wide
-// panel, so "Mulai tagih dari" stays in view next to the other fields.
+// panel, so "Mulai tagih dari" stays in view next to the other fields, and so does "Ubah sewa"
+// (Sewa-Ubah.dc.html). "Rencana keluar", "Catat pindah keluar" and "Batalkan sewa" (Sewa-Rencana,
+// Sewa-Pindah and Sewa-Batal) open from a lease's card in the narrow panel.
 export function TenantPanel({
   orgId,
   organizationName,
@@ -113,6 +125,70 @@ export function TenantPanel({
         />
       );
       break;
+    case "editLease":
+      title = LEASE_PANEL_TITLES.editLease;
+      subtitle = leasePanelSubtitle(shown.tenantName, shown.lease);
+      body = (
+        <LeaseEditForm
+          key={shown.lease.id}
+          orgId={orgId}
+          lease={shown.lease}
+          tenantName={shown.tenantName}
+          today={today}
+          onSaved={(lease) => {
+            onNotice(leaseUpdatedNotice(lease));
+            close();
+          }}
+        />
+      );
+      break;
+    case "plannedEnd":
+      title = LEASE_PANEL_TITLES.plannedEnd;
+      subtitle = leasePanelSubtitle(shown.tenantName, shown.lease);
+      body = (
+        <PlannedEndForm
+          key={shown.lease.id}
+          orgId={orgId}
+          lease={shown.lease}
+          today={today}
+          onSaved={(lease) => {
+            onNotice(plannedEndNotice(lease));
+            close();
+          }}
+        />
+      );
+      break;
+    case "moveOut":
+      title = LEASE_PANEL_TITLES.moveOut;
+      subtitle = leasePanelSubtitle(shown.tenantName, shown.lease);
+      body = (
+        <MoveOutForm
+          key={shown.lease.id}
+          orgId={orgId}
+          lease={shown.lease}
+          today={today}
+          onSaved={(lease) => {
+            onNotice(movedOutNotice(lease));
+            close();
+          }}
+        />
+      );
+      break;
+    case "cancelBooking":
+      title = LEASE_PANEL_TITLES.cancelBooking;
+      subtitle = leasePanelSubtitle(shown.tenantName, shown.lease);
+      body = (
+        <CancelBookingForm
+          key={shown.lease.id}
+          orgId={orgId}
+          lease={shown.lease}
+          onSaved={(lease) => {
+            onNotice(bookingCancelledNotice(lease));
+            close();
+          }}
+        />
+      );
+      break;
   }
 
   return (
@@ -126,7 +202,7 @@ export function TenantPanel({
         side="right"
         className={cn(
           "w-full gap-0 bg-card p-0 sm:max-w-none",
-          shown?.kind === "lease"
+          shown?.kind === "lease" || shown?.kind === "editLease"
             ? "md:w-[920px] md:max-w-full"
             : "md:w-[470px]",
         )}

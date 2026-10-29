@@ -29,8 +29,10 @@ import { LeaseInfoNote } from "./lease-info-note";
 
 type LeaseBillingFieldProps = {
   selectRef: RefObject<HTMLButtonElement | null>;
-  // A start date before today.
+  // A start date before the day the lease is entered.
   startDate: string;
+  // The day the lease is entered: today for a new lease, its enteredOn for one being changed.
+  enteredOn: string;
   today: string;
   billing: BillingChoice;
   onBillingChange: (billing: BillingChoice) => void;
@@ -42,12 +44,14 @@ type LeaseBillingFieldProps = {
   disabled: boolean;
 };
 
-// "Mulai tagih dari" for a lease entered late (board Sewa-Baru.dc.html): bill every period since
-// the start date, or start from a later anniversary the owner did not collect by hand. The note
-// under it says, with the real dates, which periods are invoiced and when they are due.
+// "Mulai tagih dari" for a lease entered late (boards Sewa-Baru.dc.html and Sewa-Ubah.dc.html):
+// bill every period since the start date, or start from a later anniversary the owner did not
+// collect by hand. The note under it says, with the real dates, which periods are invoiced and
+// when they are due.
 export function LeaseBillingField({
   selectRef,
   startDate,
+  enteredOn,
   today,
   billing,
   onBillingChange,
@@ -151,7 +155,7 @@ export function LeaseBillingField({
       </fieldset>
       {billingStart !== "" && (
         <LeaseInfoNote
-          text={billingExplanation(startDate, billingStart, today)}
+          text={billingExplanation(startDate, billingStart, enteredOn, today)}
         />
       )}
     </div>

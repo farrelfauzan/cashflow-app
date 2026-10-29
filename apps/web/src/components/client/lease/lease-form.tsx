@@ -3,22 +3,17 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
+import { DateField } from "@/components/client/form/date-field";
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { RupiahField } from "@/components/client/form/rupiah-field";
 import { SelectField } from "@/components/client/form/select-field";
-import {
-  FIELD_HINT_CLASS,
-  FIELD_LABEL_CLASS,
-  INPUT_CLASS,
-} from "@/components/client/form/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { SheetClose } from "@/components/ui/sheet";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError } from "@/lib/api/form-error";
-import { useListCollectorCandidates } from "@/lib/api/generated/members/members";
+import {
+  getListMembersQueryKey,
+  useListCollectorCandidates,
+} from "@/lib/api/generated/members/members";
 import type { Lease, Tenant } from "@/lib/api/generated/model";
 import {
   getGetPropertyQueryKey,
@@ -45,6 +40,7 @@ import {
   NO_PROPERTY_TEXT,
   billedFromOptions,
   checkLeaseForm,
+  collectorOptions,
   defaultBilledFrom,
   firstLeaseError,
   freeUnits,
@@ -58,6 +54,7 @@ import {
 
 import { LeaseBillingField } from "./lease-billing-field";
 import { LeaseInfoNote } from "./lease-info-note";
+import { LeasePanelFooter } from "./lease-panel-footer";
 
 type LeaseFormProps = {
   orgId: string;
@@ -130,7 +127,8 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
 
   const create = useCreateLease({
     mutation: {
-      // A new lease changes the tenant, the tenant list and the unit's and property's occupancy.
+      // A new lease changes the tenant, the tenant list, the unit's and property's occupancy, and
+      // its collector's lease count in the member list.
       onSuccess: () =>
         Promise.all(
           [
@@ -139,6 +137,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             getListUnitsQueryKey(orgId, propertyId),
             getListPropertiesQueryKey(orgId),
             getGetPropertyQueryKey(orgId, propertyId),
+            getListMembersQueryKey(orgId),
           ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
         ),
     },
@@ -285,43 +284,28 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             className="md:[grid-area:unit]"
           />
 
-          <div className="flex min-w-0 flex-col gap-2 md:[grid-area:start]">
-            <Label htmlFor={`${id}-start`} className={FIELD_LABEL_CLASS}>
-              Mulai sewa
-            </Label>
-            <Input
-              ref={startRef}
-              id={`${id}-start`}
-              name="startDate"
-              type="date"
-              value={startDate}
-              onChange={(event) => {
-                setStartDate(event.target.value);
-                clearError("startDate");
-                clearError("billedFrom");
-              }}
-              disabled={saving}
-              aria-invalid={errors.startDate !== undefined}
-              aria-describedby={
-                errors.startDate !== undefined
-                  ? `${id}-start-error ${id}-start-hint`
-                  : `${id}-start-hint`
-              }
-              className={INPUT_CLASS}
-            />
-            {errors.startDate !== undefined && (
-              <FieldError id={`${id}-start-error`} message={errors.startDate} />
-            )}
-            <p id={`${id}-start-hint`} className={FIELD_HINT_CLASS}>
-              {startDateHint(startDate)}
-            </p>
-          </div>
+          <DateField
+            inputRef={startRef}
+            label="Mulai sewa"
+            name="startDate"
+            value={startDate}
+            onChange={(next) => {
+              setStartDate(next);
+              clearError("startDate");
+              clearError("billedFrom");
+            }}
+            hint={startDateHint(startDate)}
+            error={errors.startDate}
+            disabled={saving}
+            className="md:[grid-area:start]"
+          />
 
           {timing === "past" && (
             <div className="min-w-0 md:[grid-area:billed]">
               <LeaseBillingField
                 selectRef={billedFromRef}
                 startDate={startDate}
+                enteredOn={today}
                 today={today}
                 billing={billing}
                 onBillingChange={(next) => {
@@ -392,13 +376,10 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             label="Penagih"
             value={collector}
             placeholder={NO_COLLECTOR_LABEL}
-            options={[
-              { value: NO_COLLECTOR, label: NO_COLLECTOR_LABEL },
-              ...(candidates.data?.candidates ?? []).map((candidate) => ({
-                value: candidate.memberId,
-                label: candidate.name,
-              })),
-            ]}
+            options={collectorOptions(
+              candidates.data?.candidates ?? [],
+              undefined,
+            )}
             onValueChange={(next) => {
               setCollector(next);
               clearError("collectorMemberId");
@@ -410,25 +391,13 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
           />
         </div>
       </form>
-      <div className="flex gap-2.5 border-t px-6 py-4 md:justify-end">
-        <SheetClose asChild>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-13 flex-1 rounded-xl border-[1.5px] bg-card text-[17px] font-semibold md:min-w-[140px] md:flex-none"
-          >
-            Batal
-          </Button>
-        </SheetClose>
-        <Button
-          type="submit"
-          form={formId}
-          disabled={saving}
-          className="h-13 flex-2 rounded-xl px-3 text-[17px] font-semibold whitespace-normal md:min-w-60 md:flex-none"
-        >
-          {saving ? "Menyimpan…" : "Simpan sewa"}
-        </Button>
-      </div>
+      <LeasePanelFooter
+        formId={formId}
+        cancelLabel="Batal"
+        submitLabel="Simpan sewa"
+        saving={saving}
+        wide
+      />
     </>
   );
 }

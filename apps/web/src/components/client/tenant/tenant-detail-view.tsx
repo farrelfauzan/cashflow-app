@@ -12,6 +12,7 @@ import { jakartaToday } from "@/lib/format/date";
 import type { TenantPanelState } from "./type";
 import {
   isNotFound,
+  leaseActions,
   leaseView,
   LOADING_TEXT,
   needsLease,
@@ -98,7 +99,14 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
             </Button>
           )}
           {orderedLeases(data.leases, today).map((lease) => (
-            <LeaseCard key={lease.id} lease={leaseView(lease, today)} />
+            <LeaseCard
+              key={lease.id}
+              lease={leaseView(lease, today)}
+              actions={leaseActions(lease, today, permissions.canManageLeases)}
+              onAction={(kind) =>
+                openPanel({ kind, lease, tenantName: data.name })
+              }
+            />
           ))}
         </>
       )}

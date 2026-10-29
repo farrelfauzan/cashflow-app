@@ -11,6 +11,12 @@ import { createAppAbility } from "@/lib/capabilities";
 
 import type { TenantListFilters } from "./type";
 import {
+  bookingCancelledNotice,
+  leaseActions,
+  leasePanelSubtitle,
+  leaseUpdatedNotice,
+  movedOutNotice,
+  plannedEndNotice,
   billedNote,
   checkTenantForm,
   CLEAR_FILTERS,
@@ -790,5 +796,103 @@ describe("isNotFound", () => {
     { name: "nothing", error: null, want: false },
   ])("$name: $want", ({ error, want }) => {
     expect(isNotFound(error)).toBe(want);
+  });
+});
+
+describe("leaseActions", () => {
+  it.each<{
+    name: string;
+    over: Partial<Lease>;
+    canManage: boolean;
+    want: object | null;
+  }>([
+    {
+      name: "a running lease: move-out",
+      over: {},
+      canManage: true,
+      want: { end: "moveOut" },
+    },
+    {
+      name: "a lease that starts today: move-out",
+      over: { startDate: TODAY },
+      canManage: true,
+      want: { end: "moveOut" },
+    },
+    {
+      name: "a booking: cancel",
+      over: { startDate: "2026-12-05" },
+      canManage: true,
+      want: { end: "cancelBooking" },
+    },
+    {
+      name: "an ended lease: none",
+      over: { status: "ended", endDate: "2026-10-01" },
+      canManage: true,
+      want: null,
+    },
+    {
+      name: "without lease:manage: none",
+      over: {},
+      canManage: false,
+      want: null,
+    },
+    {
+      name: "a booking without lease:manage: none",
+      over: { startDate: "2026-12-05" },
+      canManage: false,
+      want: null,
+    },
+  ])("$name", ({ over, canManage, want }) => {
+    expect(leaseActions(lease(over), TODAY, canManage)).toEqual(want);
+  });
+
+  it("follows lease:manage from the capabilities", () => {
+    const canManage = (access: Capability["access"]) =>
+      tenantPermissions(createAppAbility([{ action: "lease:manage", access }]))
+        .canManageLeases;
+    expect(leaseActions(lease(), TODAY, canManage("conditional"))).toEqual({
+      end: "moveOut",
+    });
+    expect(leaseActions(lease(), TODAY, canManage("deny"))).toBeNull();
+  });
+});
+
+describe("lease notices", () => {
+  const kamar = lease({ unitLabel: "Kamar 07", propertyName: "Kos Melati" });
+
+  it("names the tenant, unit and property in a lease panel's subtitle", () => {
+    expect(leasePanelSubtitle("Bu Rina Wulandari", kamar)).toBe(
+      "Bu Rina Wulandari · Kamar 07 · Kos Melati",
+    );
+  });
+
+  it.each([
+    {
+      name: "updated",
+      got: leaseUpdatedNotice(kamar),
+      want: "Sewa Kamar 07 diperbarui.",
+    },
+    {
+      name: "planned end set",
+      got: plannedEndNotice({ ...kamar, plannedEndDate: "2026-11-14" }),
+      want: "Rencana keluar Kamar 07: 14 Nov 2026.",
+    },
+    {
+      name: "planned end cleared",
+      got: plannedEndNotice(kamar),
+      want: "Rencana keluar Kamar 07 dihapus.",
+    },
+    {
+      name: "moved out",
+      got: movedOutNotice(kamar),
+      want: "Pindah keluar dicatat. Kamar 07 sekarang kosong.",
+    },
+    {
+      name: "booking cancelled",
+      got: bookingCancelledNotice(kamar),
+      want: "Sewa Kamar 07 dibatalkan. Unitnya kosong lagi.",
+    },
+  ])("$name", ({ got, want }) => {
+    expect(got).toBe(want);
   });
 });
