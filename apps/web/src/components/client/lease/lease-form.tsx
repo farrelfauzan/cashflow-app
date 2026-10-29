@@ -10,7 +10,10 @@ import { RupiahField } from "@/components/client/form/rupiah-field";
 import { SelectField } from "@/components/client/form/select-field";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError } from "@/lib/api/form-error";
-import { useListCollectorCandidates } from "@/lib/api/generated/members/members";
+import {
+  getListMembersQueryKey,
+  useListCollectorCandidates,
+} from "@/lib/api/generated/members/members";
 import type { Lease, Tenant } from "@/lib/api/generated/model";
 import {
   getGetPropertyQueryKey,
@@ -124,7 +127,8 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
 
   const create = useCreateLease({
     mutation: {
-      // A new lease changes the tenant, the tenant list and the unit's and property's occupancy.
+      // A new lease changes the tenant, the tenant list, the unit's and property's occupancy, and
+      // its collector's lease count in the member list.
       onSuccess: () =>
         Promise.all(
           [
@@ -133,6 +137,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             getListUnitsQueryKey(orgId, propertyId),
             getListPropertiesQueryKey(orgId),
             getGetPropertyQueryKey(orgId, propertyId),
+            getListMembersQueryKey(orgId),
           ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
         ),
     },
