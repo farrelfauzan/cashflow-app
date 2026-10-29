@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { CancelBookingForm } from "@/components/client/lease/cancel-booking-form";
+import { LeaseChargesForm } from "@/components/client/lease/lease-charges-form";
 import { LeaseEditForm } from "@/components/client/lease/lease-edit-form";
 import { LeaseForm } from "@/components/client/lease/lease-form";
 import { MoveOutForm } from "@/components/client/lease/move-out-form";
@@ -20,6 +21,7 @@ import type { OpenTenantPanel, TenantPanelState } from "./type";
 import {
   bookingCancelledNotice,
   LEASE_PANEL_TITLES,
+  leaseChargesNotice,
   leasePanelSubtitle,
   leaseSavedNotice,
   leaseUpdatedNotice,
@@ -39,6 +41,8 @@ type TenantPanelProps = {
   // "Today" in Jakarta, for the lease forms.
   today: string;
   canManageLeases: boolean;
+  // "Tambah jenis biaya baru" in "Biaya tambahan".
+  canAddChargeType: boolean;
   panel: TenantPanelState;
   onPanelChange: (panel: TenantPanelState) => void;
   onNotice: (notice: string) => void;
@@ -48,13 +52,15 @@ type TenantPanelProps = {
 // from the right on iPad, the whole screen on the phone. "Tambah penyewa" goes on to "Penyewa
 // ditambahkan" and from there to "Sewakan unit" in the same panel. The lease form gets the wide
 // panel, so "Mulai tagih dari" stays in view next to the other fields, and so does "Ubah sewa"
-// (Sewa-Ubah.dc.html). "Rencana keluar", "Catat pindah keluar" and "Batalkan sewa" (Sewa-Rencana,
-// Sewa-Pindah and Sewa-Batal) open from a lease's card in the narrow panel.
+// (Sewa-Ubah.dc.html). "Biaya tambahan", "Rencana keluar", "Catat pindah keluar" and "Batalkan
+// sewa" (Sewa-Biaya, Sewa-Rencana, Sewa-Pindah and Sewa-Batal) open from a lease's card in the
+// narrow panel.
 export function TenantPanel({
   orgId,
   organizationName,
   today,
   canManageLeases,
+  canAddChargeType,
   panel,
   onPanelChange,
   onNotice,
@@ -137,6 +143,22 @@ export function TenantPanel({
           today={today}
           onSaved={(lease) => {
             onNotice(leaseUpdatedNotice(lease));
+            close();
+          }}
+        />
+      );
+      break;
+    case "charges":
+      title = LEASE_PANEL_TITLES.charges;
+      subtitle = leasePanelSubtitle(shown.tenantName, shown.lease);
+      body = (
+        <LeaseChargesForm
+          key={shown.lease.id}
+          orgId={orgId}
+          lease={shown.lease}
+          canAddChargeType={canAddChargeType}
+          onSaved={(lease) => {
+            onNotice(leaseChargesNotice(lease));
             close();
           }}
         />

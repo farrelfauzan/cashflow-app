@@ -28,12 +28,15 @@ export type TenantPermissions = {
   canEditTenant: boolean;
   // "Sewakan unit", and the to-do banner about tenants whose collector was disabled.
   canManageLeases: boolean;
+  // "Tambah jenis biaya baru" in "Biaya tambahan": the API adds a charge type only with
+  // lease:manage for the whole organization, since a type is used by every property.
+  canAddChargeType: boolean;
 };
 
-// The changes to an active lease, each opened from its card: "Ubah sewa", "Rencana keluar",
-// "Catat pindah keluar", and "Batalkan sewa" for a booking.
+// The changes to an active lease, each opened from its card: "Ubah sewa", "Biaya tambahan",
+// "Rencana keluar", "Catat pindah keluar", and "Batalkan sewa" for a booking.
 export type LeasePanelKind =
-  "editLease" | "plannedEnd" | "moveOut" | "cancelBooking";
+  "editLease" | "charges" | "plannedEnd" | "moveOut" | "cancelBooking";
 
 // The side panel of the tenant screens; one at a time. The tenant is the one the API returned
 // (after adding) or the one on the page (editing, renting a unit). A lease panel carries the
@@ -96,8 +99,9 @@ export type TenantRowView = {
   status: StatusView;
 };
 
-// The buttons on an active lease's card for a member with lease:manage. "Ubah sewa" and "Rencana
-// keluar" always show; the last one is "Catat pindah keluar", or "Batalkan sewa" for a booking.
+// The buttons on an active lease's card for a member with lease:manage. "Ubah sewa", "Biaya
+// tambahan" and "Rencana keluar" always show; the last one is "Catat pindah keluar", or
+// "Batalkan sewa" for a booking.
 export type LeaseActions = {
   end: "moveOut" | "cancelBooking";
 };

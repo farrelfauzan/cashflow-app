@@ -188,6 +188,7 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
         organizationName={organizationName}
         today={today}
         canManageLeases={permissions.canManageLeases}
+        canAddChargeType={permissions.canAddChargeType}
         panel={panel}
         onPanelChange={setPanel}
         onNotice={setNotice}

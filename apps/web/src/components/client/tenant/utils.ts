@@ -196,6 +196,7 @@ export function tenantPermissions(ability: AppAbility): TenantPermissions {
     canAddTenant: ability.can("manage", everywhere("tenant")),
     canEditTenant: ability.can("manage", "tenant"),
     canManageLeases: ability.can("manage", "lease"),
+    canAddChargeType: ability.can("manage", everywhere("lease")),
   };
 }
 
@@ -382,6 +383,12 @@ export function leaseActions(
   return { end: lease.startDate > today ? "cancelBooking" : "moveOut" };
 }
 
+// The buttons in an active lease card's footer, in the board's order: "Biaya tambahan", "Rencana
+// keluar", then "Catat pindah keluar" or "Batalkan sewa". "Ubah sewa" sits in the card's header.
+export function leaseFooterKinds(actions: LeaseActions): LeasePanelKind[] {
+  return ["charges", "plannedEnd", actions.end];
+}
+
 // An outline button in a lease card's footer: full width and stacked on the phone, in a row on
 // iPad, 48px tall.
 export const LEASE_ACTION_CLASS =
@@ -390,6 +397,7 @@ export const LEASE_ACTION_CLASS =
 // The lease panels' titles, also the labels of the card's buttons that open them.
 export const LEASE_PANEL_TITLES: Record<LeasePanelKind, string> = {
   editLease: "Ubah sewa",
+  charges: "Biaya tambahan",
   plannedEnd: "Rencana keluar",
   moveOut: "Catat pindah keluar",
   cancelBooking: "Batalkan sewa",
@@ -414,6 +422,10 @@ export function plannedEndNotice(
   return lease.plannedEndDate === undefined
     ? `Rencana keluar ${lease.unitLabel} dihapus.`
     : `Rencana keluar ${lease.unitLabel}: ${formatDate(lease.plannedEndDate)}.`;
+}
+
+export function leaseChargesNotice(lease: Pick<Lease, "unitLabel">): string {
+  return `Biaya tambahan ${lease.unitLabel} disimpan.`;
 }
 
 export function movedOutNotice(lease: Pick<Lease, "unitLabel">): string {
