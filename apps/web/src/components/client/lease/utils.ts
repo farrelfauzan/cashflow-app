@@ -70,9 +70,9 @@ export function addDays(date: string, days: number): string {
   return isoDate(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
-// The anniversary rule mirrors the API's (services/api/internal/tenant/anniversary.go:
-// Anniversary, IsAnniversary, FirstAnniversaryAfter), which stays the judge: its 400 on
-// billedFrom is shown under the field.
+// The period rule mirrors the API's (services/api/internal/tenant/period.go: PeriodStart,
+// PeriodIndex, IsPeriodStart, NextPeriodStart), which stays the judge: its 400 on billedFrom is
+// shown under the field. A period lasts the lease's term, 1, 3, 6 or 12 months.
 
 // The start date plus n months (n >= 0). When that month is shorter than the start day it is the
 // month's last day, always counted from the start date: 31 Jan gives 28 Feb, then 31 Mar.
@@ -92,25 +92,50 @@ function monthsBetween(start: string, date: string): number {
   return (year - startYear) * 12 + (month - startMonth);
 }
 
-// Whether date is the start date or one of its anniversaries.
-export function isAnniversary(start: string, date: string): boolean {
-  if (date < start) return false;
-  return anniversary(start, monthsBetween(start, date)) === date;
+// The day the lease's n-th period (n >= 0) begins: n terms after the start date.
+export function periodStart(
+  start: string,
+  term: TermMonths,
+  n: number,
+): string {
+  return anniversary(start, n * term);
 }
 
-// The first anniversary strictly after date; the start date for a date before it.
-export function firstAnniversaryAfter(start: string, date: string): string {
-  if (date < start) return start;
-  let n = monthsBetween(start, date);
-  while (anniversary(start, n) <= date) n++;
-  return anniversary(start, n);
+// The n of the period date falls in, or -1 for a date before the start.
+function periodIndex(start: string, term: TermMonths, date: string): number {
+  if (date < start) return -1;
+  let n = Math.floor(monthsBetween(start, date) / term);
+  while (n > 0 && periodStart(start, term, n) > date) n--;
+  while (periodStart(start, term, n + 1) <= date) n++;
+  return n;
 }
 
-// The anniversary that begins the period date falls in (date on or after the start).
-export function periodStartOn(start: string, date: string): string {
-  let n = monthsBetween(start, date);
-  while (n > 0 && anniversary(start, n) > date) n--;
-  return anniversary(start, n);
+// Whether date is the first day of one of the lease's periods.
+export function isPeriodStart(
+  start: string,
+  term: TermMonths,
+  date: string,
+): boolean {
+  const n = periodIndex(start, term, date);
+  return n >= 0 && periodStart(start, term, n) === date;
+}
+
+// The first period start strictly after date; the start date for a date before it.
+export function nextPeriodStart(
+  start: string,
+  term: TermMonths,
+  date: string,
+): string {
+  return periodStart(start, term, periodIndex(start, term, date) + 1);
+}
+
+// The start of the period date falls in (date on or after the start).
+export function periodStartOn(
+  start: string,
+  term: TermMonths,
+  date: string,
+): string {
+  return periodStart(start, term, Math.max(periodIndex(start, term, date), 0));
 }
 
 export function startTiming(start: string, today: string): StartTiming {
@@ -119,22 +144,24 @@ export function startTiming(start: string, today: string): StartTiming {
   return "today";
 }
 
-// The later anniversaries "Mulai tagih dari" may pick for a lease that started before the day it
-// is entered: from the second period up to the first anniversary after that day, as the API
-// allows (no later than the first anniversary after the later of the start date and the day it
+// The later period starts "Mulai tagih dari" may pick for a lease that started before the day it
+// is entered: from the second period up to the first period start after that day, as the API
+// allows (no later than the first period start after the later of the start date and the day it
 // is entered). That day is today for a new lease and the lease's enteredOn for one being changed.
 // The start date itself is the first radio choice.
 export function billedFromOptions(
   start: string,
   enteredOn: string,
+  term: TermMonths,
 ): DateOption[] {
-  const latest = firstAnniversaryAfter(
+  const latest = nextPeriodStart(
     start,
+    term,
     enteredOn > start ? enteredOn : start,
   );
   const options: DateOption[] = [];
   for (let n = 1; ; n++) {
-    const date = anniversary(start, n);
+    const date = periodStart(start, term, n);
     if (date > latest) break;
     options.push({ value: date, label: formatDate(date) });
   }
@@ -165,8 +192,9 @@ export function billingExplanation(
   billedFrom: string,
   enteredOn: string,
   today: string,
+  term: TermMonths,
 ): string {
-  const current = periodStartOn(start, enteredOn);
+  const current = periodStartOn(start, term, enteredOn);
   const currentDue = formatDayMonth(addDays(enteredOn, 7));
   const pastDue =
     enteredOn === today
@@ -356,7 +384,7 @@ export function checkLeaseForm(
       : undefined;
   if (
     billedFrom !== undefined &&
-    !billedFromOptions(values.startDate, today).some(
+    !billedFromOptions(values.startDate, today, values.termMonths ?? 1).some(
       (option) => option.value === billedFrom,
     )
   ) {
@@ -448,7 +476,7 @@ export function keepsDisabledCollector(
 // date is unchanged (the API keeps the stored value) and the new start date when it changed.
 export function checkLeaseTerms(
   values: LeaseTermsValues,
-  lease: Pick<Lease, "startDate" | "enteredOn">,
+  lease: Pick<Lease, "startDate" | "enteredOn" | "termMonths">,
 ): LeaseTermsResult {
   const errors: LeaseFormErrors = {};
   const startOk = isCalendarDate(values.startDate);
@@ -460,7 +488,11 @@ export function checkLeaseTerms(
       billedFrom = values.startDate;
     } else {
       billedFrom = values.billedFrom;
-      const offered = billedFromOptions(values.startDate, lease.enteredOn);
+      const offered = billedFromOptions(
+        values.startDate,
+        lease.enteredOn,
+        lease.termMonths,
+      );
       if (!offered.some((option) => option.value === billedFrom)) {
         errors.billedFrom = NO_BILLED_FROM_MESSAGE;
       }
@@ -528,9 +560,12 @@ export const MOVE_OUT_EFFECTS: readonly string[] = [
 export function plannedEndSuggestion(
   start: string,
   today: string,
+  term: TermMonths,
 ): PlannedEndSuggestion {
   const nextStart =
-    start > today ? anniversary(start, 1) : firstAnniversaryAfter(start, today);
+    start > today
+      ? periodStart(start, term, 1)
+      : nextPeriodStart(start, term, today);
   return { date: addDays(nextStart, -1), nextStart };
 }
 

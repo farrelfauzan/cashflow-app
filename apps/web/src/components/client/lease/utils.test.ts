@@ -44,10 +44,11 @@ import {
   billingExplanation,
   checkLeaseForm,
   defaultBilledFrom,
-  firstAnniversaryAfter,
   firstLeaseError,
   freeUnits,
-  isAnniversary,
+  isPeriodStart,
+  nextPeriodStart,
+  periodStart,
   isCalendarDate,
   isLeaseFormField,
   leaseFormSubtitle,
@@ -180,7 +181,7 @@ describe("anniversary", () => {
 });
 
 // TestIsAnniversary.
-describe("isAnniversary", () => {
+describe("isPeriodStart, monthly", () => {
   it.each([
     {
       name: "the start date itself",
@@ -279,12 +280,12 @@ describe("isAnniversary", () => {
       want: false,
     },
   ])("$name", ({ start, date, want }) => {
-    expect(isAnniversary(start, date)).toBe(want);
+    expect(isPeriodStart(start, 1, date)).toBe(want);
   });
 });
 
 // TestFirstAnniversaryAfter.
-describe("firstAnniversaryAfter", () => {
+describe("nextPeriodStart, monthly", () => {
   it.each([
     {
       name: "d before the start is the start",
@@ -377,10 +378,10 @@ describe("firstAnniversaryAfter", () => {
       want: "2028-02-29",
     },
   ])("$name", ({ start, date, want }) => {
-    const got = firstAnniversaryAfter(start, date);
+    const got = nextPeriodStart(start, 1, date);
     expect(got).toBe(want);
     if (date >= start) expect(got > date).toBe(true);
-    expect(isAnniversary(start, got)).toBe(true);
+    expect(isPeriodStart(start, 1, got)).toBe(true);
   });
 });
 
@@ -423,7 +424,7 @@ describe("periodStartOn", () => {
       want: "2027-02-28",
     },
   ])("$name", ({ start, date, want }) => {
-    expect(periodStartOn(start, date)).toBe(want);
+    expect(periodStartOn(start, 1, date)).toBe(want);
   });
 });
 
@@ -458,10 +459,10 @@ describe("dates", () => {
 
 describe("billedFromOptions", () => {
   const values = (start: string, today: string) =>
-    billedFromOptions(start, today).map((option) => option.value);
+    billedFromOptions(start, today, 1).map((option) => option.value);
 
   it("offers the later anniversaries up to the first one after today (the board's case)", () => {
-    expect(billedFromOptions("2026-09-15", TODAY)).toEqual([
+    expect(billedFromOptions("2026-09-15", TODAY, 1)).toEqual([
       { value: "2026-10-15", label: "15 Okt 2026" },
       { value: "2026-11-15", label: "15 Nov 2026" },
     ]);
@@ -495,9 +496,9 @@ describe("billedFromOptions", () => {
   });
 
   it("offers every option as an anniversary the API accepts", () => {
-    for (const option of billedFromOptions("2025-12-31", TODAY)) {
-      expect(isAnniversary("2025-12-31", option.value)).toBe(true);
-      expect(option.value <= firstAnniversaryAfter("2025-12-31", TODAY)).toBe(
+    for (const option of billedFromOptions("2025-12-31", TODAY, 1)) {
+      expect(isPeriodStart("2025-12-31", 1, option.value)).toBe(true);
+      expect(option.value <= nextPeriodStart("2025-12-31", 1, TODAY)).toBe(
         true,
       );
     }
@@ -507,13 +508,13 @@ describe("billedFromOptions", () => {
 describe("defaultBilledFrom", () => {
   it("starts on the period running today", () => {
     expect(
-      defaultBilledFrom(billedFromOptions("2026-09-15", TODAY), TODAY),
+      defaultBilledFrom(billedFromOptions("2026-09-15", TODAY, 1), TODAY),
     ).toBe("2026-10-15");
   });
 
   it("starts on the next anniversary in the first period", () => {
     expect(
-      defaultBilledFrom(billedFromOptions("2026-10-15", TODAY), TODAY),
+      defaultBilledFrom(billedFromOptions("2026-10-15", TODAY, 1), TODAY),
     ).toBe("2026-11-15");
   });
 
@@ -524,35 +525,45 @@ describe("defaultBilledFrom", () => {
 
 describe("billingExplanation", () => {
   it("bills every period since the start: past periods today, the current one in 7 days (CLAUDE.md's example)", () => {
-    expect(billingExplanation("2026-09-15", "2026-09-15", TODAY, TODAY)).toBe(
+    expect(
+      billingExplanation("2026-09-15", "2026-09-15", TODAY, TODAY, 1),
+    ).toBe(
       "Tanggal mulai ini sudah lewat, jadi setiap bulan sejak 15 Sep 2026 ikut ditagih. Bulan yang sudah lewat jatuh tempo hari ini (28 Okt); bulan berjalan jatuh tempo 4 Nov. Kalau pemilik sudah menerima uang sewa bulan-bulan itu langsung, pilih bulan mulai tagih yang lebih baru.",
     );
   });
 
   it("bills from the current period only", () => {
-    expect(billingExplanation("2026-09-15", "2026-10-15", TODAY, TODAY)).toBe(
+    expect(
+      billingExplanation("2026-09-15", "2026-10-15", TODAY, TODAY, 1),
+    ).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 15 Okt 2026 ikut ditagih, jatuh tempo 4 Nov.",
     );
   });
 
   it("a lease in its first period bills that period, due in 7 days", () => {
-    expect(billingExplanation("2026-10-15", "2026-10-15", TODAY, TODAY)).toBe(
+    expect(
+      billingExplanation("2026-10-15", "2026-10-15", TODAY, TODAY, 1),
+    ).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 15 Okt 2026 ikut ditagih, jatuh tempo 4 Nov.",
     );
   });
 
   it("billing from the next anniversary leaves the owner every period so far", () => {
-    expect(billingExplanation("2026-09-15", "2026-11-15", TODAY, TODAY)).toBe(
+    expect(
+      billingExplanation("2026-09-15", "2026-11-15", TODAY, TODAY, 1),
+    ).toBe(
       "Bulan sebelum 15 Nov 2026 tidak ditagih. Tagihan pertama untuk bulan mulai 15 Nov 2026, jatuh tempo 15 Nov.",
     );
   });
 
   it("finds the current period of a 31st start at a month end", () => {
-    expect(billingExplanation("2026-08-31", "2026-09-30", TODAY, TODAY)).toBe(
+    expect(
+      billingExplanation("2026-08-31", "2026-09-30", TODAY, TODAY, 1),
+    ).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 30 Sep 2026 ikut ditagih, jatuh tempo 4 Nov.",
     );
     expect(
-      billingExplanation("2026-08-31", "2026-08-31", TODAY, TODAY),
+      billingExplanation("2026-08-31", "2026-08-31", TODAY, TODAY, 1),
     ).toContain("setiap bulan sejak 31 Agu 2026 ikut ditagih");
   });
 
@@ -563,6 +574,7 @@ describe("billingExplanation", () => {
         "2026-11-20",
         "2026-12-28",
         "2026-12-28",
+        1,
       ),
     ).toContain("bulan berjalan jatuh tempo 4 Jan");
   });
@@ -848,7 +860,7 @@ describe("form fields", () => {
 describe("billingExplanation for a lease being changed", () => {
   it("names the day the lease was entered when it is not today", () => {
     expect(
-      billingExplanation("2026-09-15", "2026-09-15", "2026-10-20", TODAY),
+      billingExplanation("2026-09-15", "2026-09-15", "2026-10-20", TODAY, 1),
     ).toBe(
       "Tanggal mulai ini sudah lewat, jadi setiap bulan sejak 15 Sep 2026 ikut ditagih. Bulan yang sudah lewat jatuh tempo 20 Okt, hari sewa ini dimasukkan; bulan berjalan jatuh tempo 27 Okt. Kalau pemilik sudah menerima uang sewa bulan-bulan itu langsung, pilih bulan mulai tagih yang lebih baru.",
     );
@@ -856,12 +868,12 @@ describe("billingExplanation for a lease being changed", () => {
 
   it("counts the current period from the day it was entered", () => {
     expect(
-      billingExplanation("2026-08-15", "2026-09-15", "2026-09-20", TODAY),
+      billingExplanation("2026-08-15", "2026-09-15", "2026-09-20", TODAY, 1),
     ).toBe(
       "Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak 15 Sep 2026 ikut ditagih, jatuh tempo 27 Sep.",
     );
     expect(
-      billingExplanation("2026-08-15", "2026-10-15", "2026-09-20", TODAY),
+      billingExplanation("2026-08-15", "2026-10-15", "2026-09-20", TODAY, 1),
     ).toBe(
       "Bulan sebelum 15 Okt 2026 tidak ditagih. Tagihan pertama untuk bulan mulai 15 Okt 2026, jatuh tempo 15 Okt.",
     );
@@ -871,7 +883,7 @@ describe("billingExplanation for a lease being changed", () => {
 describe("billedFromOptions for a lease being changed", () => {
   it("stops at the first anniversary after the day it was entered, not today", () => {
     expect(
-      billedFromOptions("2026-08-15", "2026-09-20").map((o) => o.value),
+      billedFromOptions("2026-08-15", "2026-09-20", 1).map((o) => o.value),
     ).toEqual(["2026-09-15", "2026-10-15"]);
   });
 });
@@ -1027,6 +1039,82 @@ describe("collectors", () => {
   });
 });
 
+describe("periods of a longer term", () => {
+  it.each([
+    {
+      name: "a 3-month lease from 31 Jan keeps counting from the start date",
+      start: "2026-01-31",
+      term: 3,
+      want: ["2026-01-31", "2026-04-30", "2026-07-31", "2026-10-31"],
+    },
+    {
+      name: "a 6-month lease from 15 Sep",
+      start: "2026-09-15",
+      term: 6,
+      want: ["2026-09-15", "2027-03-15", "2027-09-15", "2028-03-15"],
+    },
+    {
+      name: "a yearly lease from 29 Feb falls on 28 Feb in common years",
+      start: "2024-02-29",
+      term: 12,
+      want: ["2024-02-29", "2025-02-28", "2026-02-28", "2027-02-28"],
+    },
+  ] as const)("$name", ({ start, term, want }) => {
+    expect([0, 1, 2, 3].map((n) => periodStart(start, term, n))).toEqual(want);
+    for (const date of want)
+      expect(isPeriodStart(start, term, date)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "a monthly anniversary inside a yearly period",
+      date: "2026-10-15",
+      want: false,
+    },
+    { name: "the yearly anniversary", date: "2027-09-15", want: true },
+    { name: "a day before the start", date: "2026-09-14", want: false },
+  ])("$name is a period start of a yearly lease: $want", ({ date, want }) => {
+    expect(isPeriodStart("2026-09-15", 12, date)).toBe(want);
+  });
+
+  it("finds the period a date falls in and the next one", () => {
+    expect(periodStartOn("2025-09-15", 12, TODAY)).toBe("2026-09-15");
+    expect(nextPeriodStart("2025-09-15", 12, TODAY)).toBe("2027-09-15");
+    expect(periodStartOn("2026-09-15", 3, TODAY)).toBe("2026-09-15");
+    expect(nextPeriodStart("2026-09-15", 3, TODAY)).toBe("2026-12-15");
+  });
+
+  it("offers yearly billing starts up to the first one after today", () => {
+    // Started 15 Sep 2024, entered 28 Oct 2026: periods from 15 Sep 2024, 2025 and 2026, and the
+    // API allows up to the next period start, 15 Sep 2027.
+    expect(
+      billedFromOptions("2024-09-15", TODAY, 12).map((option) => option.value),
+    ).toEqual(["2025-09-15", "2026-09-15", "2027-09-15"]);
+    expect(
+      defaultBilledFrom(billedFromOptions("2024-09-15", TODAY, 12), TODAY),
+    ).toBe("2026-09-15");
+  });
+
+  it("offers 3-monthly billing starts, never a monthly anniversary", () => {
+    expect(
+      billedFromOptions("2026-03-15", TODAY, 3).map((option) => option.value),
+    ).toEqual(["2026-06-15", "2026-09-15", "2026-12-15"]);
+  });
+
+  it("explains the yearly period running today", () => {
+    expect(
+      billingExplanation("2025-09-15", "2026-09-15", TODAY, TODAY, 12),
+    ).toContain("sejak 15 Sep 2026 ikut ditagih, jatuh tempo 4 Nov");
+  });
+
+  it("suggests the day before the next yearly period as the planned end", () => {
+    expect(plannedEndSuggestion("2025-09-15", TODAY, 12)).toEqual({
+      date: "2027-09-14",
+      nextStart: "2027-09-15",
+    });
+  });
+});
+
 describe("checkLeaseTerms", () => {
   const values = (over: Partial<LeaseTermsValues> = {}): LeaseTermsValues => ({
     startDate: "2026-09-15",
@@ -1040,6 +1128,43 @@ describe("checkLeaseTerms", () => {
   const onTime = leaseOf({ startDate: "2026-09-15", enteredOn: "2026-09-15" });
   // Entered late, on 28 Oct.
   const late = leaseOf({ startDate: "2026-09-15", enteredOn: TODAY });
+  // An imported yearly lease that started in 2024, whose first year the owner collected by hand.
+  const yearly = leaseOf({
+    startDate: "2024-09-15",
+    enteredOn: TODAY,
+    billedFrom: "2025-09-15",
+    termMonths: 12,
+  });
+
+  it("keeps a skipped year on a yearly lease", () => {
+    const checked = checkLeaseTerms(
+      values({
+        startDate: "2024-09-15",
+        billing: "pick",
+        billedFrom: "2025-09-15",
+      }),
+      yearly,
+    );
+    expect(checked).toMatchObject({
+      ok: true,
+      input: { startDate: "2024-09-15", billedFrom: "2025-09-15" },
+    });
+  });
+
+  it("refuses a monthly anniversary as the billing start of a yearly lease", () => {
+    const checked = checkLeaseTerms(
+      values({
+        startDate: "2024-09-15",
+        billing: "pick",
+        billedFrom: "2025-10-15",
+      }),
+      yearly,
+    );
+    expect(checked).toEqual({
+      ok: false,
+      errors: { billedFrom: NO_BILLED_FROM_MESSAGE },
+    });
+  });
 
   it("sends the whole terms, leaving billedFrom out for an unchanged start", () => {
     expect(checkLeaseTerms(values({ collector: "m-1" }), onTime)).toEqual({
@@ -1166,7 +1291,7 @@ describe("plannedEndSuggestion", () => {
       want: { date: "2027-01-04", nextStart: "2027-01-05" },
     },
   ])("$name", ({ start, today, want }) => {
-    expect(plannedEndSuggestion(start, today)).toEqual(want);
+    expect(plannedEndSuggestion(start, today, 1)).toEqual(want);
   });
 
   it("says why in the hint", () => {

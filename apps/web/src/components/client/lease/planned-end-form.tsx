@@ -45,7 +45,7 @@ export function PlannedEndForm({
   const refresh = useRefreshLease(orgId);
   const dateRef = useRef<HTMLInputElement>(null);
   const [suggestion] = useState(() =>
-    plannedEndSuggestion(lease.startDate, today),
+    plannedEndSuggestion(lease.startDate, today, lease.termMonths),
   );
   const [date, setDate] = useState(
     () => lease.plannedEndDate ?? suggestion.date,

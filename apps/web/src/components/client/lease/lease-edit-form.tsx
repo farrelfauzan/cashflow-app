@@ -84,7 +84,9 @@ export function LeaseEditForm({
 
   const box = editStartBox(startDate, lease.enteredOn, today);
   const options =
-    box === "billing" ? billedFromOptions(startDate, lease.enteredOn) : [];
+    box === "billing"
+      ? billedFromOptions(startDate, lease.enteredOn, lease.termMonths)
+      : [];
   const billedFrom = options.some((o) => o.value === chosenBilledFrom)
     ? chosenBilledFrom
     : defaultBilledFrom(options, lease.enteredOn);
@@ -204,6 +206,7 @@ export function LeaseEditForm({
                 startDate={startDate}
                 enteredOn={lease.enteredOn}
                 today={today}
+                term={lease.termMonths}
                 billing={billing}
                 onBillingChange={(next) => {
                   setBilling(next);

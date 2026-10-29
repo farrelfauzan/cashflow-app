@@ -8,6 +8,7 @@ import {
   SELECT_ITEM_CLASS,
   SELECT_TRIGGER_CLASS,
 } from "@/components/client/form/utils";
+import type { TermMonths } from "@/lib/api/generated/model";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -34,6 +35,8 @@ type LeaseBillingFieldProps = {
   // The day the lease is entered: today for a new lease, its enteredOn for one being changed.
   enteredOn: string;
   today: string;
+  // The lease's term: its periods, and so the billing-start choices, last this many months.
+  term: TermMonths;
   billing: BillingChoice;
   onBillingChange: (billing: BillingChoice) => void;
   options: readonly DateOption[];
@@ -53,6 +56,7 @@ export function LeaseBillingField({
   startDate,
   enteredOn,
   today,
+  term,
   billing,
   onBillingChange,
   options,
@@ -155,7 +159,13 @@ export function LeaseBillingField({
       </fieldset>
       {billingStart !== "" && (
         <LeaseInfoNote
-          text={billingExplanation(startDate, billingStart, enteredOn, today)}
+          text={billingExplanation(
+            startDate,
+            billingStart,
+            enteredOn,
+            today,
+            term,
+          )}
         />
       )}
     </div>

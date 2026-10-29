@@ -112,13 +112,17 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   );
   const free = freeUnits(units.data?.items ?? []);
   const unit = free.find((candidate) => candidate.id === unitId);
+  // The term the lease will take; the billing-start choices step by it (monthly until a unit is
+  // chosen).
+  const term = leaseTermFor(unit);
 
   const candidates = useListCollectorCandidates(orgId, fresh);
 
   const timing = isCalendarDate(startDate)
     ? startTiming(startDate, today)
     : null;
-  const options = timing === "past" ? billedFromOptions(startDate, today) : [];
+  const options =
+    timing === "past" ? billedFromOptions(startDate, today, term ?? 1) : [];
   const billedFrom = options.some((o) => o.value === chosenBilledFrom)
     ? chosenBilledFrom
     : defaultBilledFrom(options, today);
@@ -198,7 +202,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
       {
         tenantId: tenant.id,
         unitId: unit === undefined ? "" : unitId,
-        termMonths: leaseTermFor(unit),
+        termMonths: term,
         startDate,
         billing,
         billedFrom,
@@ -299,6 +303,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
                 startDate={startDate}
                 enteredOn={today}
                 today={today}
+                term={term ?? 1}
                 billing={billing}
                 onBillingChange={(next) => {
                   setBilling(next);
