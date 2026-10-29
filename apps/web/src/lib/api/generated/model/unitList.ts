@@ -9,9 +9,4 @@ import type { Unit } from './unit';
 
 export type UnitList = PageInfo & {
   items: Unit[];
-  /**
-     * The same rows as items. Kept until the web reads items; then removed.
-     * @deprecated
-     */
-  units: Unit[];
 };

@@ -30,7 +30,7 @@ func (s *Server) listProperties(w http.ResponseWriter, r *http.Request) {
 		items[i] = toAPIProperty(prop)
 	}
 	s.writeJSON(w, http.StatusOK, apigen.PropertyList{
-		Items: items, Properties: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+		Items: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
 	})
 }
 
@@ -119,7 +119,7 @@ func (s *Server) listUnits(w http.ResponseWriter, r *http.Request) {
 		items[i] = toAPIUnit(u)
 	}
 	s.writeJSON(w, http.StatusOK, apigen.UnitList{
-		Items: items, Units: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+		Items: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
 	})
 }
 

@@ -9,9 +9,4 @@ import type { Tenant } from './tenant';
 
 export type TenantList = PageInfo & {
   items: Tenant[];
-  /**
-     * The same rows as items. Kept until the web reads items; then removed.
-     * @deprecated
-     */
-  tenants: Tenant[];
 };

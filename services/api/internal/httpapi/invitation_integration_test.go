@@ -62,7 +62,7 @@ func TestMemberInvitationOverHTTP(t *testing.T) {
 		resp, data := admin.do(http.MethodGet, orgPath+"/members", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Contains(t, string(data), `"invitation":null`)
-		for _, m := range decode[apigen.MemberList](t, data).Members {
+		for _, m := range decode[apigen.MemberList](t, data).Items {
 			require.Nil(t, m.Invitation, m.Name)
 			require.Nil(t, m.FirstSignInAt, "%s signed in but has not opened the organization", m.Name)
 		}
@@ -71,7 +71,7 @@ func TestMemberInvitationOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		resp, data = admin.do(http.MethodGet, orgPath+"/members", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		for _, m := range decode[apigen.MemberList](t, data).Members {
+		for _, m := range decode[apigen.MemberList](t, data).Items {
 			if m.UserId == o.Admin.UserID {
 				require.NotNil(t, m.FirstSignInAt, m.Name)
 				require.True(t, env.Clock.Now().Equal(*m.FirstSignInAt))
@@ -166,7 +166,7 @@ func TestMemberInvitationOverHTTP(t *testing.T) {
 
 		resp, data = admin.do(http.MethodGet, orgPath+"/members", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		for _, m := range decode[apigen.MemberList](t, data).Members {
+		for _, m := range decode[apigen.MemberList](t, data).Items {
 			if m.Id == joko.Id {
 				require.Equal(t, apigen.NotSent, m.Invitation.State)
 			}
@@ -218,7 +218,7 @@ func TestMemberInvitationOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		resp, data = admin.do(http.MethodGet, orgPath+"/members", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		for _, m := range decode[apigen.MemberList](t, data).Members {
+		for _, m := range decode[apigen.MemberList](t, data).Items {
 			if m.Id == eko.Id {
 				require.NotNil(t, m.FirstSignInAt)
 				require.True(t, env.Clock.Now().Equal(*m.FirstSignInAt))

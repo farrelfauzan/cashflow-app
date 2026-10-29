@@ -18,7 +18,7 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errMissingContext)
 		return
 	}
-	lp, ok := s.readListParams(w, r)
+	lp, ok := s.readListParams(w, r, withPropertyID, withCollectorDisabled)
 	if !ok {
 		return
 	}
@@ -35,7 +35,7 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) {
 		items[i] = toAPITenant(t)
 	}
 	s.writeJSON(w, http.StatusOK, apigen.TenantList{
-		Items: items, Tenants: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+		Items: items, Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
 	})
 }
 

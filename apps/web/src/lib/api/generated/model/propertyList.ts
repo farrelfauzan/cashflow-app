@@ -9,9 +9,4 @@ import type { Property } from './property';
 
 export type PropertyList = PageInfo & {
   items: Property[];
-  /**
-     * The same rows as items. Kept until the web reads items; then removed.
-     * @deprecated
-     */
-  properties: Property[];
 };
