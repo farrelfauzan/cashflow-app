@@ -7,6 +7,7 @@
 import type { Collector } from './collector';
 import type { LeaseCharge } from './leaseCharge';
 import type { LeaseStatus } from './leaseStatus';
+import type { TermMonths } from './termMonths';
 
 export interface Lease {
   id: string;
@@ -15,23 +16,24 @@ export interface Lease {
   unitLabel: string;
   propertyId: string;
   propertyName: string;
-  /** First day of the lease. Rent is billed in advance on this day of every month (the last day of a shorter month when it is the 29th to 31st). */
+  /** First day of the lease. Rent is billed in advance once per term, on this day of the month every termMonths months (the last day of a shorter month when it is the 29th to 31st). */
   startDate: string;
   /** Last day of the lease, set by move-out. */
   endDate?: string;
   /** The day the lease was saved, in Asia/Jakarta, set by the server. A lease whose start date is before it was entered late: from slice 2 its past periods are due on this day. */
   enteredOn: string;
-  /** "Mulai tagih dari": the first period the app invoices, an anniversary of the start date. It equals the start date unless the admin skipped periods the owner collected by hand. */
+  /** "Mulai tagih dari": the first period the app invoices, a period start of the lease's term. It equals the start date unless the admin skipped periods the owner collected by hand. */
   billedFrom: string;
   /** "Rencana keluar": the tenant's planned last day, set with setLeasePlannedEnd. Missing when none is set; cleared by move-out. */
   plannedEndDate?: string;
-  /** Monthly rent in rupiah. */
-  rentAmount: number;
+  termMonths: TermMonths;
+  /** Rent for one period of the lease's term, for display: the unit's price for that term in force today (Asia/Jakarta). Missing when none is in force. Each invoice takes the price in force on the day it is made; the lease holds no rent of its own. */
+  periodRent?: number;
   /** Deposit held, in rupiah. */
   depositAmount: number;
   status: LeaseStatus;
   collector?: Collector;
-  /** Fixed monthly extras on top of rent, by name. Always present, empty when none. */
+  /** Fixed monthly extras on top of rent, by name. Always present, empty when none. From slice 2 an invoice bills each one as its monthly amount times the term's months. */
   charges: LeaseCharge[];
   createdAt: string;
   updatedAt: string;

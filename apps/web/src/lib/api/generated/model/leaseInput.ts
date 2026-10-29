@@ -5,8 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { LeaseTerms } from './leaseTerms';
+import type { TermMonths } from './termMonths';
 
 export type LeaseInput = LeaseTerms & {
   tenantId: string;
   unitId: string;
+  /** One of the terms the unit offers, with a price in force today; fixed for the life of the lease (another term is a new lease). */
+  termMonths: TermMonths;
 };
