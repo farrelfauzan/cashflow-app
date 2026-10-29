@@ -356,9 +356,12 @@ test.describe("Admin of the whole organization", () => {
     await expect(second).toContainText("Rp1.500.000");
     await expect(second).toContainText("Tidak ada");
     await expect(second.getByText("Biaya tambahan tetap")).toHaveCount(0);
-    // Pak Hendra may change both active leases (lease-changes.spec.ts covers what the buttons
-    // do); extra charges and invoices are not on this page yet.
+    // Pak Hendra may change both active leases (lease-changes.spec.ts and lease-charges.spec.ts
+    // cover what the buttons do); invoices are not on this page yet.
     for (const card of [first, second]) {
+      await expect(
+        card.getByRole("button", { name: "Biaya tambahan", exact: true }),
+      ).toBeVisible();
       await expect(
         card.getByRole("button", { name: "Rencana keluar" }),
       ).toBeVisible();
@@ -370,7 +373,10 @@ test.describe("Admin of the whole organization", () => {
       2,
     );
     await expect(
-      page.getByRole("button", { name: /Biaya tambahan|Lihat tagihan/ }),
+      page.getByRole("button", { name: "Biaya tambahan", exact: true }),
+    ).toHaveCount(2);
+    await expect(
+      page.getByRole("button", { name: /Lihat tagihan/ }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: /Biaya tambahan|Lihat tagihan/ }),

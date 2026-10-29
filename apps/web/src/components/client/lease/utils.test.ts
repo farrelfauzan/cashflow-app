@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import type { Lease, Unit } from "@/lib/api/generated/model";
+import type { ChargeType, Lease, Unit } from "@/lib/api/generated/model";
 
-import type { LeaseFormValues, LeaseTermsValues } from "./type";
+import type { ChargeRow, LeaseFormValues, LeaseTermsValues } from "./type";
 import {
+  BAD_CHARGE_AMOUNT_MESSAGE,
+  chargeAmountId,
+  chargeAmountLabel,
+  chargeApiFields,
+  chargeEntriesFromLease,
+  chargeRowForApiField,
+  chargeRows,
+  checkChargeTypeName,
+  checkLeaseCharges,
+  EMPTY_CHARGE_TYPE_NAME_MESSAGE,
+  LONG_CHARGE_TYPE_NAME_MESSAGE,
+  meteredChargeTypeAddedText,
+  withChargeAmount,
+  withChargeChecked,
   cancelBookingText,
   checkLeaseTerms,
   checkMoveOut,
@@ -1194,6 +1208,207 @@ describe("lease copy", () => {
     expect(leaseUnitText(leaseOf())).toBe("Kamar 07 · Kos Melati");
     expect(cancelBookingText("2026-12-05")).toBe(
       "Sewa ini belum dimulai (mulai 5 Des 2026). Kalau dibatalkan, unit langsung kosong lagi dan sewa ini tidak akan pernah ditagih.",
+    );
+  });
+});
+
+describe("lease charges", () => {
+  const type = (id: string, name: string, metered = false): ChargeType => ({
+    id,
+    name,
+    metered,
+    createdAt: "2026-10-28T03:00:00Z",
+    updatedAt: "2026-10-28T03:00:00Z",
+  });
+  const TYPES = [
+    type("t-air", "Air", true),
+    type("t-clean", "Kebersihan"),
+    type("t-park", "Parkir"),
+    type("t-wifi", "Wi-Fi"),
+  ];
+  const row = (
+    over: Partial<ChargeRow> & { chargeTypeId: string },
+  ): ChargeRow => ({
+    name: over.chargeTypeId,
+    checked: true,
+    amount: "",
+    ...over,
+  });
+
+  it("prefills the lease's charges, checked, with grouped amounts", () => {
+    expect(
+      chargeEntriesFromLease([
+        { chargeTypeId: "t-wifi", name: "Wi-Fi", amount: 50_000 },
+        { chargeTypeId: "t-clean", name: "Kebersihan", amount: 1_250_000 },
+      ]),
+    ).toEqual({
+      "t-wifi": { checked: true, amount: "50.000" },
+      "t-clean": { checked: true, amount: "1.250.000" },
+    });
+    expect(chargeEntriesFromLease([])).toEqual({});
+  });
+
+  it("has one row per non-metered type, in the API's order", () => {
+    const entries = chargeEntriesFromLease([
+      { chargeTypeId: "t-wifi", name: "Wi-Fi", amount: 50_000 },
+    ]);
+    expect(chargeRows(TYPES, entries)).toEqual([
+      {
+        chargeTypeId: "t-clean",
+        name: "Kebersihan",
+        checked: false,
+        amount: "",
+      },
+      { chargeTypeId: "t-park", name: "Parkir", checked: false, amount: "" },
+      {
+        chargeTypeId: "t-wifi",
+        name: "Wi-Fi",
+        checked: true,
+        amount: "50.000",
+      },
+    ]);
+    expect(chargeRows([type("t-air", "Air", true)], {})).toEqual([]);
+    expect(chargeRows([], entries)).toEqual([]);
+  });
+
+  it("checks a row when an amount is typed into it", () => {
+    const typed = withChargeAmount({}, "t-park", "10.000");
+    expect(typed).toEqual({ "t-park": { checked: true, amount: "10.000" } });
+    // Emptying the field leaves the checkbox as it is.
+    expect(withChargeAmount(typed, "t-park", "")).toEqual({
+      "t-park": { checked: true, amount: "" },
+    });
+    const unchecked = { "t-park": { checked: false, amount: "" } };
+    expect(withChargeAmount(unchecked, "t-park", "")).toEqual(unchecked);
+  });
+
+  it("keeps the typed text when a row is unchecked", () => {
+    const entries = { "t-wifi": { checked: true, amount: "50.000" } };
+    const unchecked = withChargeChecked(entries, "t-wifi", false);
+    expect(unchecked).toEqual({
+      "t-wifi": { checked: false, amount: "50.000" },
+    });
+    expect(withChargeChecked(unchecked, "t-wifi", true)).toEqual(entries);
+    expect(withChargeChecked({}, "t-new", true)).toEqual({
+      "t-new": { checked: true, amount: "" },
+    });
+  });
+
+  it("sends the checked rows in display order, as integers", () => {
+    expect(
+      checkLeaseCharges([
+        row({ chargeTypeId: "t-clean", amount: "25.000" }),
+        row({ chargeTypeId: "t-park", checked: false, amount: "10.000" }),
+        row({ chargeTypeId: "t-wifi", amount: "1.250.000" }),
+      ]),
+    ).toEqual({
+      ok: true,
+      input: {
+        charges: [
+          { chargeTypeId: "t-clean", amount: 25_000 },
+          { chargeTypeId: "t-wifi", amount: 1_250_000 },
+        ],
+      },
+      sent: ["t-clean", "t-wifi"],
+    });
+  });
+
+  it("sends an empty set when no row is checked, removing every extra", () => {
+    expect(
+      checkLeaseCharges([
+        row({ chargeTypeId: "t-wifi", checked: false, amount: "50.000" }),
+      ]),
+    ).toEqual({ ok: true, input: { charges: [] }, sent: [] });
+    expect(checkLeaseCharges([])).toEqual({
+      ok: true,
+      input: { charges: [] },
+      sent: [],
+    });
+  });
+
+  it.each([
+    { name: "empty", amount: "" },
+    { name: "zero", amount: "0" },
+    { name: "spaces", amount: "  " },
+  ])("refuses a checked row with an amount that is $name", ({ amount }) => {
+    expect(
+      checkLeaseCharges([
+        row({ chargeTypeId: "t-clean", amount: "25.000" }),
+        row({ chargeTypeId: "t-park", amount }),
+        row({ chargeTypeId: "t-wifi", amount: "" }),
+        row({ chargeTypeId: "t-x", checked: false, amount: "" }),
+      ]),
+    ).toEqual({
+      ok: false,
+      errors: {
+        "t-park": BAD_CHARGE_AMOUNT_MESSAGE,
+        "t-wifi": BAD_CHARGE_AMOUNT_MESSAGE,
+      },
+      first: "t-park",
+    });
+  });
+
+  it("maps an API field on charges[i] back to the row sent at index i", () => {
+    const sent = ["t-clean", "t-wifi"];
+    expect(chargeApiFields(sent)).toEqual([
+      "charges[0].amount",
+      "charges[0].chargeTypeId",
+      "charges[1].amount",
+      "charges[1].chargeTypeId",
+    ]);
+    expect(chargeRowForApiField("charges[1].amount", sent)).toBe("t-wifi");
+    expect(chargeRowForApiField("charges[0].chargeTypeId", sent)).toBe(
+      "t-clean",
+    );
+    expect(chargeRowForApiField("charges[2].amount", sent)).toBeNull();
+    expect(chargeRowForApiField("charges", sent)).toBeNull();
+    expect(chargeRowForApiField("charges[0].name", sent)).toBeNull();
+    expect(chargeRowForApiField(null, sent)).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "a name",
+      input: "Air galon",
+      want: { ok: true, name: "Air galon" },
+    },
+    {
+      name: "trimmed",
+      input: "  Parkir  ",
+      want: { ok: true, name: "Parkir" },
+    },
+    {
+      name: "empty",
+      input: "",
+      want: { ok: false, error: EMPTY_CHARGE_TYPE_NAME_MESSAGE },
+    },
+    {
+      name: "only spaces",
+      input: "   ",
+      want: { ok: false, error: EMPTY_CHARGE_TYPE_NAME_MESSAGE },
+    },
+    {
+      name: "50 characters",
+      input: "a".repeat(50),
+      want: { ok: true, name: "a".repeat(50) },
+    },
+    {
+      name: "51 characters",
+      input: "a".repeat(51),
+      want: { ok: false, error: LONG_CHARGE_TYPE_NAME_MESSAGE },
+    },
+  ])("checks a new type's name: $name", ({ input, want }) => {
+    expect(checkChargeTypeName(input)).toEqual(want);
+  });
+
+  it("words the rows and the metered line", () => {
+    expect(chargeAmountLabel("Wi-Fi")).toBe("Jumlah Wi-Fi");
+    expect(chargeAmountId("f1", "t-wifi")).toBe("f1-t-wifi-amount");
+    expect(meteredChargeTypeAddedText("Listrik")).toBe(
+      "Jenis biaya Listrik ditambahkan. Biaya dari meteran dicatat tiap bulan, jadi tidak diatur di sini.",
+    );
+    expect(LONG_CHARGE_TYPE_NAME_MESSAGE).toBe(
+      "Nama biaya paling panjang 50 huruf.",
     );
   });
 });
