@@ -1,9 +1,18 @@
 "use client";
 
 import { useAbility } from "@casl/react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { ListPagination } from "@/components/client/list/list-pagination";
+import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
+import { useListUrl } from "@/components/client/list/use-list-url";
+import {
+  PAGE_SIZE_PARAM,
+  readPage,
+  readPageSize,
+} from "@/components/client/list/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import {
@@ -26,16 +35,25 @@ type MembersViewProps = {
   roleGuide: ReactNode;
 };
 
-// The members screen: the list, and the panels that change it. What shows comes from the
-// signed-in member's capabilities (getOrgMe); after every change the list query is invalidated
-// and loads again from the API.
+// The members screen: one page of the list (page and size in the URL), and the panels that
+// change it. The panels get the members on the current page, since "Atur" opens from a visible
+// row. What shows comes from the signed-in member's capabilities (getOrgMe); after every change
+// the list query is invalidated and loads again from the API.
 export function MembersView({
   orgId,
   organizationName,
   roleGuide,
 }: MembersViewProps) {
   const orgMe = useGetOrgMe(orgId);
-  const members = useListMembers(orgId, { pageSize: 100 });
+  const url = useListUrl();
+  const page = readPage(url.searchParams);
+  const pageSize = readPageSize(url.searchParams);
+  const members = useListMembers(
+    orgId,
+    { page, pageSize },
+    { query: { placeholderData: keepPreviousData } },
+  );
+  useLastPageRedirect(url, page, pageSize, members.data);
   const ability = useAbility<AppAbility>();
   const properties = useListProperties(
     orgId,
@@ -48,7 +66,7 @@ export function MembersView({
 
   const permissions = memberPermissions(ability);
   const names = useMemo(
-    () => propertyNames(properties.data?.properties ?? []),
+    () => propertyNames(properties.data?.items ?? []),
     [properties.data],
   );
 
@@ -94,22 +112,34 @@ export function MembersView({
       ) : orgMe.data === undefined || members.data === undefined ? (
         <p className="text-base text-muted-foreground">Memuat…</p>
       ) : (
-        <MemberList
-          orgId={orgId}
-          members={members.data.members}
-          ownMembershipId={orgMe.data.membershipId}
-          permissions={permissions}
-          propertyNames={names}
-          onManage={(memberId) => openPanel({ kind: "access", memberId })}
-        />
+        <div
+          aria-busy={members.isPlaceholderData}
+          className="flex flex-col gap-4 aria-busy:opacity-60"
+        >
+          <MemberList
+            orgId={orgId}
+            members={members.data.items}
+            ownMembershipId={orgMe.data.membershipId}
+            permissions={permissions}
+            propertyNames={names}
+            onManage={(memberId) => openPanel({ kind: "access", memberId })}
+          />
+          <ListPagination
+            page={page}
+            pageSize={pageSize}
+            total={members.data.total}
+            hrefFor={url.hrefFor}
+            onPageSizeChange={(size) => url.change({ [PAGE_SIZE_PARAM]: size })}
+          />
+        </div>
       )}
 
       <MemberPanel
         orgId={orgId}
         organizationName={organizationName}
         panel={panel}
-        members={members.data?.members ?? []}
-        properties={properties.data?.properties ?? []}
+        members={members.data?.items ?? []}
+        properties={properties.data?.items ?? []}
         propertyNames={names}
         roleGuide={roleGuide}
         onPanelChange={setPanel}

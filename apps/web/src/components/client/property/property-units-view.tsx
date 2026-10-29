@@ -1,8 +1,17 @@
 "use client";
 
 import { useAbility } from "@casl/react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { ListPagination } from "@/components/client/list/list-pagination";
+import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
+import { useListUrl } from "@/components/client/list/use-list-url";
+import {
+  PAGE_SIZE_PARAM,
+  readPage,
+  readPageSize,
+} from "@/components/client/list/utils";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
 import {
@@ -31,27 +40,35 @@ type PropertyUnitsViewProps = {
   organizationName: string;
 };
 
-// One property's page: its units, and the panels that change the property or a unit. The
-// property comes from the list of properties the member may see (there is no request for one);
-// its units load once it is found.
+// One property's page: one page of its units (page and size in the URL), and the panels that
+// change the property or a unit. The property comes from the list of properties the member may
+// see (there is no request for one); its units load once it is found.
 export function PropertyUnitsView({
   orgId,
   propertyId,
   organizationName,
 }: PropertyUnitsViewProps) {
   const orgMe = useGetOrgMe(orgId);
+  const url = useListUrl();
+  const page = readPage(url.searchParams);
+  const pageSize = readPageSize(url.searchParams);
+  // Until a getProperty endpoint exists, the lookup reads at most 100 properties.
   const properties = useListProperties(orgId, { pageSize: 100 });
-  const property = properties.data?.properties.find(
+  const property = properties.data?.items.find(
     (candidate) => candidate.id === propertyId,
   );
   const units = useListUnits(
     orgId,
     propertyId,
-    { pageSize: 100 },
+    { page, pageSize },
     {
-      query: { enabled: property !== undefined },
+      query: {
+        enabled: property !== undefined,
+        placeholderData: keepPreviousData,
+      },
     },
   );
+  useLastPageRedirect(url, page, pageSize, units.data);
   const [propertyPanel, setPropertyPanel] = useState<PropertyPanelState>({
     kind: "closed",
   });
@@ -124,24 +141,36 @@ export function PropertyUnitsView({
         />
       ) : units.data === undefined ? (
         <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>
-      ) : units.data.units.length === 0 ? (
+      ) : units.data.total === 0 ? (
         <p className="text-base text-muted-foreground">
           Belum ada unit di properti ini.
           {permissions.canManageUnits && " Mulai dengan “Tambah unit”."}
         </p>
       ) : (
-        <UnitList
-          units={units.data.units}
-          canManage={permissions.canManageUnits}
-          onEdit={(unitId) => openUnitPanel({ kind: "edit", unitId })}
-        />
+        <div
+          aria-busy={units.isPlaceholderData}
+          className="flex flex-col gap-4 aria-busy:opacity-60"
+        >
+          <UnitList
+            units={units.data.items}
+            canManage={permissions.canManageUnits}
+            onEdit={(unitId) => openUnitPanel({ kind: "edit", unitId })}
+          />
+          <ListPagination
+            page={page}
+            pageSize={pageSize}
+            total={units.data.total}
+            hrefFor={url.hrefFor}
+            onPageSizeChange={(size) => url.change({ [PAGE_SIZE_PARAM]: size })}
+          />
+        </div>
       )}
 
       <PropertyPanel
         orgId={orgId}
         organizationName={organizationName}
         panel={propertyPanel}
-        properties={properties.data.properties}
+        properties={properties.data.items}
         onPanelChange={setPropertyPanel}
         onNotice={setNotice}
       />
@@ -150,7 +179,7 @@ export function PropertyUnitsView({
         propertyId={property.id}
         propertyName={property.name}
         panel={unitPanel}
-        units={units.data?.units ?? []}
+        units={units.data?.items ?? []}
         onPanelChange={setUnitPanel}
         onNotice={setNotice}
       />

@@ -1,5 +1,16 @@
+import {
+  readChoice,
+  readSearch,
+  SEARCH_PARAM,
+  searchQuery,
+} from "@/components/client/list/utils";
 import { ApiError } from "@/lib/api/errors";
-import type { Lease, Tenant } from "@/lib/api/generated/model";
+import {
+  ListTenantsStatus,
+  type Lease,
+  type Property,
+  type Tenant,
+} from "@/lib/api/generated/model";
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
 import { formatRupiah } from "@/lib/format/rupiah";
@@ -9,10 +20,8 @@ import type {
   ChipTone,
   FilterOption,
   LeaseView,
-  StatusFilter,
-  StatusTone,
   StatusView,
-  TenantFilters,
+  TenantListFilters,
   TenantPermissions,
   TenantRowView,
 } from "./type";
@@ -25,15 +34,26 @@ export const NO_COLLECTOR = "Tidak ada";
 export const NO_PLANNED_END = "Belum diatur";
 export const FLAGGED_CHIP = "Belum punya penagih";
 
+// The select value that means no filter; it never goes into the URL.
 export const ALL_PROPERTIES = "all";
+export const ALL_STATUSES = "all";
 export const ALL_PROPERTIES_LABEL = "Semua properti";
 export const ALL_STATUSES_LABEL = "Semua status";
 
-export const NO_FILTERS: TenantFilters = {
-  search: "",
-  propertyId: ALL_PROPERTIES,
-  status: "all",
-  flaggedOnly: false,
+// The URL search params the tenant filters live in, next to the list's page, size and search.
+export const PROPERTY_PARAM = "propertyId";
+export const STATUS_PARAM = "status";
+export const COLLECTOR_DISABLED_PARAM = "collectorDisabled";
+
+// The statuses the API accepts; any other value in the URL counts as no status filter.
+const TENANT_STATUSES = Object.values(ListTenantsStatus);
+
+// Takes the search and every filter off in one change ("Hapus pencarian").
+export const CLEAR_FILTERS: Readonly<Record<string, null>> = {
+  [SEARCH_PARAM]: null,
+  [PROPERTY_PARAM]: null,
+  [STATUS_PARAM]: null,
+  [COLLECTOR_DISABLED_PARAM]: null,
 };
 
 export const STATUS_FILTER_OPTIONS: readonly FilterOption[] = [
@@ -110,10 +130,6 @@ export function isFlagged(tenant: Tenant): boolean {
   );
 }
 
-export function flaggedCount(tenants: readonly Tenant[]): number {
-  return tenants.filter(isFlagged).length;
-}
-
 export function flagBannerTitle(count: number): string {
   return `${count} penyewa belum punya penagih`;
 }
@@ -173,87 +189,48 @@ export function tenantPermissions(ability: AppAbility): TenantPermissions {
   return { canManageLeases: ability.can("manage", "lease") };
 }
 
-// Search: a query made only of digits and phone punctuation is a phone number, compared as
-// national digits so "0812 3456", "0812-3456" and "+62 812 3456" all find 0812-3456-xxxx. Fewer
-// digits than this are too common to say anything about a number.
-const PHONE_QUERY = /^[\d\s()+-]+$/;
-export const PHONE_MIN_DIGITS = 3;
+// A property id as the API parses it; anything else (a link cut short in a chat) is not one.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function nationalDigits(input: string): string {
-  const digits = input.replace(/\D/g, "");
-  return digits.startsWith("62") ? `0${digits.slice(2)}` : digits;
+// The tenant filters in the URL. A status outside the API's list, a property that is not an id
+// or any collectorDisabled other than "true" counts as not set, so a hand-edited URL never makes
+// the API answer 400.
+export function readTenantFilters(params: URLSearchParams): TenantListFilters {
+  const propertyId = params.get(PROPERTY_PARAM) ?? "";
+  return {
+    q: searchQuery(readSearch(params)),
+    propertyId: UUID_PATTERN.test(propertyId) ? propertyId : undefined,
+    status: readChoice(params, STATUS_PARAM, TENANT_STATUSES),
+    collectorDisabled:
+      params.get(COLLECTOR_DISABLED_PARAM) === "true" ? true : undefined,
+  };
 }
 
-export function matchesSearch(tenant: Tenant, search: string): boolean {
-  const query = search.trim().toLowerCase();
-  if (query === "") return true;
-  if (tenant.name.toLowerCase().includes(query)) return true;
-  if (
-    tenant.leases.some((lease) => lease.unitLabel.toLowerCase().includes(query))
-  ) {
-    return true;
-  }
-  if (!PHONE_QUERY.test(query)) return false;
-  // Digits that start with 62 may be the country code or just part of the number: try both.
-  const typed = query.replace(/\D/g, "");
-  const phone = nationalDigits(tenant.phone);
+// Whether the search or a filter narrows the list: then an empty answer is "Tidak ada penyewa
+// yang cocok", not "Belum ada penyewa".
+export function isFiltering(filters: TenantListFilters): boolean {
   return (
-    typed.length >= PHONE_MIN_DIGITS &&
-    (phone.includes(nationalDigits(query)) || phone.includes(typed))
+    filters.q !== undefined ||
+    filters.propertyId !== undefined ||
+    filters.status !== undefined ||
+    filters.collectorDisabled !== undefined
   );
 }
 
-// The property filter keeps a tenant with a lease in that property, whichever lease is first;
-// the status filter follows the status the row shows.
-export function filterTenants(
-  tenants: readonly Tenant[],
-  filters: TenantFilters,
-  today: string,
-): Tenant[] {
-  return tenants.filter((tenant) => {
-    if (!matchesSearch(tenant, filters.search)) return false;
-    if (
-      filters.propertyId !== ALL_PROPERTIES &&
-      !tenant.leases.some((lease) => lease.propertyId === filters.propertyId)
-    ) {
-      return false;
-    }
-    if (
-      filters.status !== "all" &&
-      tenantStatusView(tenant, today).tone !== filters.status
-    ) {
-      return false;
-    }
-    return !filters.flaggedOnly || isFlagged(tenant);
-  });
+// A select's value as a URL param: "Semua ..." removes the param.
+export function filterParam(value: string, allValue: string): string | null {
+  return value === allValue ? null : value;
 }
 
-export function isFiltering(filters: TenantFilters): boolean {
-  return (
-    filters.search.trim() !== "" ||
-    filters.propertyId !== ALL_PROPERTIES ||
-    filters.status !== "all" ||
-    filters.flaggedOnly
-  );
-}
-
-// The properties the tenants' leases are in, by name.
-export function propertyOptions(tenants: readonly Tenant[]): FilterOption[] {
-  const names = new Map<string, string>();
-  for (const tenant of tenants) {
-    for (const lease of tenant.leases) {
-      names.set(lease.propertyId, lease.propertyName);
-    }
-  }
-  return [...names]
-    .map(([value, label]) => ({ value, label }))
-    .sort((a, b) => a.label.localeCompare(b.label, "id"));
-}
-
-// The status filter's value from the select's string: an unknown value means no filter.
-export function toStatusFilter(value: string): StatusFilter {
-  const found = STATUS_FILTER_OPTIONS.find((option) => option.value === value);
-  return found === undefined ? "all" : (found.value as StatusTone);
+// The property filter's choices, in the API's order (by name).
+export function propertyFilterOptions(
+  properties: readonly Property[],
+): FilterOption[] {
+  return properties.map((property) => ({
+    value: property.id,
+    label: property.name,
+  }));
 }
 
 // The calendar day before a YYYY-MM-DD date. Plain UTC date arithmetic: no timezone can move it.
