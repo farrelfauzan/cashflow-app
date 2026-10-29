@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
 import { memberStatusView, roleChips } from "./utils";
-import type { PropertyNames } from "./type";
 
 import { ManageMemberButton } from "./manage-member-button";
 import { MemberStatusLabel } from "./member-status-label";
@@ -18,7 +17,6 @@ type MemberTableRowProps = {
   isSelf: boolean;
   canManage: boolean;
   canResend: boolean;
-  propertyNames: PropertyNames;
   onManage: (memberId: string) => void;
 };
 
@@ -29,7 +27,6 @@ export function MemberTableRow({
   isSelf,
   canManage,
   canResend,
-  propertyNames,
   onManage,
 }: MemberTableRowProps) {
   const status = memberStatusView(member);
@@ -51,7 +48,7 @@ export function MemberTableRow({
         </span>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {roleChips(member.roles, propertyNames).map((chip) => (
+        {roleChips(member.roles).map((chip) => (
           <RoleChip key={chip.id} chip={chip} />
         ))}
       </div>
