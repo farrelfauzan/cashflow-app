@@ -5,12 +5,14 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { ListPagination } from "@/components/client/list/list-pagination";
+import { ListSortSelect } from "@/components/client/list/list-sort-select";
 import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
 import { useListUrl } from "@/components/client/list/use-list-url";
 import {
   PAGE_SIZE_PARAM,
   readPage,
   readPageSize,
+  readSort,
 } from "@/components/client/list/utils";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
@@ -21,6 +23,7 @@ import {
   ONLY_ASSIGNED_NOTE,
   READ_ONLY_NOTE,
   propertiesReadOnly,
+  PROPERTY_SORT_OPTIONS,
   propertyPermissions,
 } from "./utils";
 import type { PropertyPanelState } from "./type";
@@ -35,7 +38,7 @@ type PropertiesViewProps = {
   organizationName: string;
 };
 
-// The properties screen: one page of the list (page and size in the URL), and the panel that
+// The properties screen: one page of the list (page, size and sort in the URL), and the panel that
 // adds or changes one. What shows comes from the signed-in member's capabilities (getOrgMe);
 // after every change the list query is invalidated and loads again from the API, occupancy
 // included.
@@ -47,9 +50,10 @@ export function PropertiesView({
   const url = useListUrl();
   const page = readPage(url.searchParams);
   const pageSize = readPageSize(url.searchParams);
+  const sort = readSort(url.searchParams, PROPERTY_SORT_OPTIONS);
   const properties = useListProperties(
     orgId,
-    { page, pageSize },
+    { page, pageSize, sort },
     { query: { placeholderData: keepPreviousData } },
   );
   useLastPageRedirect(url, page, pageSize, properties.data);
@@ -112,24 +116,33 @@ export function PropertiesView({
           {permissions.canAddProperty && " Mulai dengan “Tambah properti”."}
         </p>
       ) : (
-        <div
-          aria-busy={properties.isPlaceholderData}
-          className="flex flex-col gap-4 aria-busy:opacity-60"
-        >
-          <PropertyList
-            orgId={orgId}
-            properties={properties.data.items}
-            canEdit={permissions.canEditProperty}
-            onEdit={(propertyId) => openPanel({ kind: "edit", propertyId })}
+        <>
+          <ListSortSelect
+            options={PROPERTY_SORT_OPTIONS}
+            value={sort}
+            onChange={url.change}
           />
-          <ListPagination
-            page={page}
-            pageSize={pageSize}
-            total={properties.data.total}
-            hrefFor={url.hrefFor}
-            onPageSizeChange={(size) => url.change({ [PAGE_SIZE_PARAM]: size })}
-          />
-        </div>
+          <div
+            aria-busy={properties.isPlaceholderData}
+            className="flex flex-col gap-4 aria-busy:opacity-60"
+          >
+            <PropertyList
+              orgId={orgId}
+              properties={properties.data.items}
+              canEdit={permissions.canEditProperty}
+              onEdit={(propertyId) => openPanel({ kind: "edit", propertyId })}
+            />
+            <ListPagination
+              page={page}
+              pageSize={pageSize}
+              total={properties.data.total}
+              hrefFor={url.hrefFor}
+              onPageSizeChange={(size) =>
+                url.change({ [PAGE_SIZE_PARAM]: size })
+              }
+            />
+          </div>
+        </>
       )}
 
       <PropertyPanel
