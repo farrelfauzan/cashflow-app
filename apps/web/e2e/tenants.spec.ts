@@ -143,16 +143,13 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       visibleText(page, "Semua penyewa Griya Sejahtera dan sewanya."),
     ).toBeVisible();
-    // Adding tenants is e2e/tenant-forms.spec.ts; importing them comes later.
+    // Adding tenants is e2e/tenant-forms.spec.ts, importing them e2e/tenant-import.spec.ts.
     await expect(
       page.getByRole("button", { name: "Tambah penyewa" }),
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Impor dari spreadsheet" }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Impor dari spreadsheet" }),
-    ).toHaveCount(0);
+    ).toHaveAttribute("href", /\/o\/[0-9a-f-]{36}\/tenants\/import$/);
 
     await expect(seededRows(list)).toHaveCount(7);
     // Rina has two leases; the newest active one comes first, and it has no collector.

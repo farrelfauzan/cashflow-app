@@ -28,6 +28,9 @@ export type TenantPermissions = {
   canEditTenant: boolean;
   // "Sewakan unit", and the to-do banner about tenants whose collector was disabled.
   canManageLeases: boolean;
+  // "Impor dari spreadsheet": the API takes an import only with tenant:manage and lease:manage
+  // for the whole organization, so a member limited to some properties does not see it.
+  canImport: boolean;
 };
 
 // The changes to an active lease, each opened from its card: "Ubah sewa", "Rencana keluar",

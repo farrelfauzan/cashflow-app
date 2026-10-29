@@ -196,6 +196,9 @@ export function tenantPermissions(ability: AppAbility): TenantPermissions {
     canAddTenant: ability.can("manage", everywhere("tenant")),
     canEditTenant: ability.can("manage", "tenant"),
     canManageLeases: ability.can("manage", "lease"),
+    canImport:
+      ability.can("manage", everywhere("tenant")) &&
+      ability.can("manage", everywhere("lease")),
   };
 }
 
