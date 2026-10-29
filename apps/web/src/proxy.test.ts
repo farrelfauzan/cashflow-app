@@ -23,6 +23,34 @@ function forwardedRequestHeader(response: Response, name: string) {
   };
 }
 
+describe("proxy at the root", () => {
+  it.each([
+    { name: "without a session", path: "/", cookie: "", want: "/login" },
+    {
+      name: "with an empty cookie",
+      path: "/",
+      cookie: "cf_session=",
+      want: "/login",
+    },
+    {
+      name: "with a session",
+      path: "/",
+      cookie: "cf_session=tok",
+      want: "/organizations",
+    },
+    {
+      name: "with a session and a query",
+      path: "/?next=%2F%2Fevil.com",
+      cookie: "cf_session=tok",
+      want: "/organizations",
+    },
+  ])("redirects $name to $want", ({ path, cookie, want }) => {
+    const response = proxy(request(path, cookie ? { cookie } : {}));
+    expect(response.status).toBe(307);
+    expect(getRedirectUrl(response)).toBe(`${ORIGIN}${want}`);
+  });
+});
+
 describe("proxy without a session", () => {
   it.each([
     {
@@ -102,7 +130,8 @@ describe("proxy matcher", () => {
     { path: "/t/secret-token", want: false },
     { path: "/api/me", want: false },
     { path: "/api/orgs/org-1/members", want: false },
-    { path: "/", want: false },
+    { path: "/", want: true },
+    { path: "/?utm=1", want: true },
   ])("matches $path: $want", ({ path, want }) => {
     expect(
       unstable_doesMiddlewareMatch({ config, url: `${ORIGIN}${path}` }),
