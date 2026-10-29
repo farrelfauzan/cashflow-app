@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
 import { memberStatusView, roleChips, STATUS_TONE_CLASS } from "./utils";
-import type { PropertyNames } from "./type";
 
 import { ManageMemberButton } from "./manage-member-button";
 import { OwnMemberChip } from "./own-member-chip";
@@ -17,7 +16,6 @@ type MemberCardProps = {
   isSelf: boolean;
   canManage: boolean;
   canResend: boolean;
-  propertyNames: PropertyNames;
   onManage: (memberId: string) => void;
 };
 
@@ -29,7 +27,6 @@ export function MemberCard({
   isSelf,
   canManage,
   canResend,
-  propertyNames,
   onManage,
 }: MemberCardProps) {
   const status = memberStatusView(member);
@@ -62,7 +59,7 @@ export function MemberCard({
         )}
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {roleChips(member.roles, propertyNames).map((chip) => (
+        {roleChips(member.roles).map((chip) => (
           <RoleChip key={chip.id} chip={chip} />
         ))}
       </div>

@@ -75,5 +75,3 @@ export type RoleChip = {
   label: string;
   property: string | null;
 };
-
-export type PropertyNames = ReadonlyMap<string, string>;

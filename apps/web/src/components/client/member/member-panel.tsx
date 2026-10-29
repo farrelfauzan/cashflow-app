@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Member, Property } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
-import type { MemberPanelState, PropertyNames, OpenPanel } from "./type";
+import type { MemberPanelState, OpenPanel } from "./type";
 
 import { InviteMemberForm } from "./invite-member-form";
 import { InviteResult } from "./invite-result";
@@ -23,7 +23,6 @@ type MemberPanelProps = {
   panel: MemberPanelState;
   members: readonly Member[];
   properties: readonly Property[];
-  propertyNames: PropertyNames;
   roleGuide: ReactNode;
   onPanelChange: (panel: MemberPanelState) => void;
   onNotice: (notice: string) => void;
@@ -37,7 +36,6 @@ export function MemberPanel({
   panel,
   members,
   properties,
-  propertyNames,
   roleGuide,
   onPanelChange,
   onNotice,
@@ -92,9 +90,7 @@ export function MemberPanel({
     case "invited":
       title = "Anggota ditambahkan";
       subtitle = organizationName;
-      body = (
-        <InviteResult member={shown.member} propertyNames={propertyNames} />
-      );
+      body = <InviteResult member={shown.member} />;
       break;
     case "roles":
       title = "Arti tiap peran";
