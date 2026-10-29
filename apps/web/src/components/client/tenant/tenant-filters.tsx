@@ -1,8 +1,12 @@
 "use client";
 
 import { ListSearchField } from "@/components/client/list/list-search-field";
-import type { ListUrl } from "@/components/client/list/type";
-import { SEARCH_PARAM } from "@/components/client/list/utils";
+import { ListSortSelect } from "@/components/client/list/list-sort-select";
+import type { AddedSort, ListUrl } from "@/components/client/list/type";
+import {
+  ADDED_SORT_OPTIONS,
+  SEARCH_PARAM,
+} from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import type { FilterOption, TenantListFilters } from "./type";
 import {
@@ -25,17 +29,21 @@ type TenantFiltersProps = {
   // The search as typed, from the URL.
   search: string;
   filters: TenantListFilters;
+  // The sort, from the URL.
+  sort: AddedSort;
   // The property filter's choices; null hides it (the member cannot read properties, or they
   // did not load).
   properties: readonly FilterOption[] | null;
   onChange: ListUrl["change"];
 };
 
-// Search, "Semua properti" and "Semua status" (and the flagged filter when it is on). Each change
-// goes into the URL and the API narrows the list.
+// Search, "Semua properti" and "Semua status", then "Urutkan" on its own line (the search would be
+// squeezed on iPad if it shared the row), and the flagged filter when it is on. Each change goes
+// into the URL and the API narrows or orders the list.
 export function TenantFilters({
   search,
   filters,
+  sort,
   properties,
   onChange,
 }: TenantFiltersProps) {
@@ -83,6 +91,11 @@ export function TenantFilters({
           />
         </div>
       </div>
+      <ListSortSelect
+        options={ADDED_SORT_OPTIONS}
+        value={sort}
+        onChange={onChange}
+      />
       {filters.collectorDisabled === true && (
         <FlaggedFilterChip
           onClear={() => onChange({ [COLLECTOR_DISABLED_PARAM]: null })}

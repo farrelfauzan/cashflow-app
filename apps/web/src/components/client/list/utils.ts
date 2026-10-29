@@ -1,4 +1,4 @@
-import type { PageItem } from "./type";
+import type { AddedSort, PageItem, SortOption, SortOptions } from "./type";
 
 // Page sizes the member can choose; the API allows 1 to 100 and answers 20 by default.
 export const PAGE_SIZES = [20, 50, 100] as const;
@@ -18,6 +18,7 @@ export const PAGINATION_LABEL = "Halaman";
 export const PREVIOUS_LABEL = "Sebelumnya";
 export const NEXT_LABEL = "Berikutnya";
 export const PAGE_SIZE_LABEL = "Baris per halaman";
+export const SORT_LABEL = "Urutkan";
 
 const NUMBER_FORMAT = new Intl.NumberFormat("id-ID", {
   useGrouping: true,
@@ -121,6 +122,14 @@ export const PAGE_SIZE_PARAM = "pageSize";
 export const SEARCH_PARAM = "q";
 export const SORT_PARAM = "sort";
 
+// The sort choices of the members and tenants lists; the API's default (name) comes first.
+export const ADDED_SORT_OPTIONS: SortOptions<AddedSort> = [
+  { value: "name", label: "Nama A–Z" },
+  { value: "-name", label: "Nama Z–A" },
+  { value: "-createdAt", label: "Terbaru ditambahkan" },
+  { value: "createdAt", label: "Terlama ditambahkan" },
+];
+
 // How long the search waits after the last key before it asks the API.
 export const SEARCH_DELAY_MS = 300;
 
@@ -172,6 +181,21 @@ export function readChoice<T extends string>(
 ): T | undefined {
   const raw = params.get(name);
   return allowed.find((value) => value === raw);
+}
+
+// The sort in the URL when it is one of `options`, otherwise the first (the default), so a
+// hand-edited URL never makes the API answer 400.
+export function readSort<T extends string>(
+  params: URLSearchParams,
+  options: SortOptions<T>,
+): T {
+  const values = options.map((option: SortOption<T>) => option.value);
+  return readChoice(params, SORT_PARAM, values) ?? options[0].value;
+}
+
+// A sort as a URL param: the default (the first option) is left out of the URL.
+export function sortParam(value: string, options: SortOptions): string | null {
+  return value === options[0].value ? null : value;
 }
 
 // The address after `changes` (null removes a param). Changing anything but the page (a search,

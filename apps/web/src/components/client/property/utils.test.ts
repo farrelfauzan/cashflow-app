@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Capability, Property, Unit } from "@/lib/api/generated/model";
 import { ApiError, NETWORK_ERROR_CODE } from "@/lib/api/errors";
+import { readSort } from "@/components/client/list/utils";
 import { createAppAbility } from "@/lib/capabilities";
 
 import type { PropertyPermissions } from "./type";
@@ -19,9 +20,11 @@ import {
   propertiesReadOnly,
   propertyKindLabel,
   PROPERTY_KINDS,
+  PROPERTY_SORT_OPTIONS,
   propertyPermissions,
   propertySummary,
   unitCountText,
+  UNIT_SORT_OPTIONS,
   unitOccupancyView,
   unitsReadOnly,
 } from "./utils";
@@ -393,5 +396,31 @@ describe("isPropertyMissing", () => {
     { name: "a plain error", error: new Error("boom"), want: false },
   ])("$name: $want", ({ error, want }) => {
     expect(isPropertyMissing(error)).toBe(want);
+  });
+});
+
+describe("sort options", () => {
+  it("offers the properties sorts, the API default first", () => {
+    expect(PROPERTY_SORT_OPTIONS.map((o) => [o.value, o.label])).toEqual([
+      ["name", "Nama A–Z"],
+      ["-name", "Nama Z–A"],
+    ]);
+    expect(
+      readSort(new URLSearchParams("sort=-name"), PROPERTY_SORT_OPTIONS),
+    ).toBe("-name");
+    expect(
+      readSort(new URLSearchParams("sort=label"), PROPERTY_SORT_OPTIONS),
+    ).toBe("name");
+  });
+
+  it("offers the units sorts, the API default first", () => {
+    expect(UNIT_SORT_OPTIONS.map((o) => [o.value, o.label])).toEqual([
+      ["label", "Nama unit A–Z"],
+      ["-label", "Nama unit Z–A"],
+    ]);
+    expect(
+      readSort(new URLSearchParams("sort=-label"), UNIT_SORT_OPTIONS),
+    ).toBe("-label");
+    expect(readSort(new URLSearchParams(""), UNIT_SORT_OPTIONS)).toBe("label");
   });
 });

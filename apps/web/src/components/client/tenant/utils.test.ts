@@ -13,6 +13,9 @@ import type { TenantListFilters } from "./type";
 import {
   bookingCancelledNotice,
   leaseActions,
+  leaseChargesNotice,
+  leaseFooterKinds,
+  LEASE_PANEL_TITLES,
   leasePanelSubtitle,
   leaseUpdatedNotice,
   movedOutNotice,
@@ -384,6 +387,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canEditTenant: true,
         canManageLeases: true,
         canImport: true,
+        canAddChargeType: true,
       },
     },
     {
@@ -397,6 +401,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canEditTenant: true,
         canManageLeases: true,
         canImport: false,
+        canAddChargeType: false,
       },
     },
     {
@@ -411,6 +416,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canEditTenant: false,
         canManageLeases: false,
         canImport: false,
+        canAddChargeType: false,
       },
     },
     {
@@ -421,6 +427,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canEditTenant: true,
         canManageLeases: false,
         canImport: false,
+        canAddChargeType: false,
       },
     },
   ])("$name", ({ capabilities, want }) => {
@@ -922,6 +929,48 @@ describe("leaseActions", () => {
   });
 });
 
+describe("canAddChargeType", () => {
+  it.each<{ name: string; access: Capability["access"] | null; want: boolean }>(
+    [
+      {
+        name: "lease:manage for the whole organization",
+        access: "allow",
+        want: true,
+      },
+      {
+        name: "lease:manage on some properties",
+        access: "conditional",
+        want: false,
+      },
+      { name: "lease:manage denied", access: "deny", want: false },
+      { name: "lease:manage not listed", access: null, want: false },
+    ],
+  )("$name", ({ access, want }) => {
+    const capabilities: Capability[] =
+      access === null ? [] : [{ action: "lease:manage", access }];
+    expect(
+      tenantPermissions(createAppAbility(capabilities)).canAddChargeType,
+    ).toBe(want);
+  });
+});
+
+describe("leaseFooterKinds", () => {
+  it("puts Biaya tambahan first, then Rencana keluar and the end", () => {
+    const labels = (end: "moveOut" | "cancelBooking") =>
+      leaseFooterKinds({ end }).map((kind) => LEASE_PANEL_TITLES[kind]);
+    expect(labels("moveOut")).toEqual([
+      "Biaya tambahan",
+      "Rencana keluar",
+      "Catat pindah keluar",
+    ]);
+    expect(labels("cancelBooking")).toEqual([
+      "Biaya tambahan",
+      "Rencana keluar",
+      "Batalkan sewa",
+    ]);
+  });
+});
+
 describe("lease notices", () => {
   const kamar = lease({ unitLabel: "Kamar 07", propertyName: "Kos Melati" });
 
@@ -946,6 +995,11 @@ describe("lease notices", () => {
       name: "planned end cleared",
       got: plannedEndNotice(kamar),
       want: "Rencana keluar Kamar 07 dihapus.",
+    },
+    {
+      name: "charges saved",
+      got: leaseChargesNotice(kamar),
+      want: "Biaya tambahan Kamar 07 disimpan.",
     },
     {
       name: "moved out",

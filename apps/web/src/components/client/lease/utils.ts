@@ -1,7 +1,9 @@
 import type {
+  ChargeType,
   Collector,
   CollectorCandidate,
   Lease,
+  LeaseCharge,
   LeaseInput,
   LeaseTerms,
   Unit,
@@ -13,11 +15,17 @@ import { groupRupiahDigits } from "@/lib/format/rupiah-input";
 
 import type {
   BillingChoice,
+  ChargeEntries,
+  ChargeEntry,
+  ChargeErrors,
+  ChargeRow,
+  ChargeTypeNameCheck,
   CollectorOption,
   DateCheck,
   DateOption,
   EditStartBox,
   LeaseAmounts,
+  LeaseChargesResult,
   LeaseFormErrors,
   LeaseFormField,
   LeaseFormResult,
@@ -570,3 +578,164 @@ export function cancelBookingText(start: string): string {
 
 export const CANCEL_BOOKING_HINT =
   "Diisi otomatis sama dengan tanggal mulai. Sewa yang belum dimulai hanya bisa dibatalkan dengan tanggal itu.";
+
+// "Biaya tambahan" (boards Sewa-Biaya.dc.html and Sewa-Biaya-Phone.dc.html): the lease's fixed
+// extras, set as a whole. The API checks the same rules and its message wins.
+
+export const LEASE_CHARGES_INTRO =
+  "Biaya yang jumlahnya sama setiap bulan. Ditambahkan ke tagihan di atas sewa, mulai tagihan berikutnya. Hanya angka.";
+export const METERED_CHARGES_NOTE =
+  "Listrik dan air yang dicatat dari meteran tidak diatur di sini. Jumlahnya dicatat tiap bulan.";
+export const LOADING_CHARGE_TYPES_TEXT = "Memuat…";
+export const NO_FIXED_CHARGE_TYPES_TEXT = "Belum ada jenis biaya tetap.";
+export const BAD_CHARGE_AMOUNT_MESSAGE =
+  "Isi jumlahnya dengan angka, paling sedikit Rp1.";
+
+export const ADD_CHARGE_TYPE_LABEL = "Tambah jenis biaya baru";
+export const NEW_CHARGE_TYPE_TITLE = "Jenis biaya baru";
+export const CHARGE_TYPE_NAME_LABEL = "Nama biaya";
+export const CHARGE_TYPE_NAME_PLACEHOLDER = "Contoh: Air galon";
+export const CHARGE_TYPE_METERED_LABEL =
+  "Jumlahnya berbeda tiap bulan (dicatat dari meteran)";
+export const CREATE_CHARGE_TYPE_LABEL = "Tambah jenis biaya";
+export const NEW_CHARGE_TYPE_HINT =
+  "Jenis biaya baru dipakai untuk semua properti.";
+
+// The API's limit on a charge type's name (ChargeTypeInput), counted in characters.
+export const CHARGE_TYPE_NAME_MAX_LENGTH = 50;
+export const EMPTY_CHARGE_TYPE_NAME_MESSAGE = "Isi nama biaya.";
+export const LONG_CHARGE_TYPE_NAME_MESSAGE = `Nama biaya paling panjang ${CHARGE_TYPE_NAME_MAX_LENGTH} huruf.`;
+
+// The API field "Jenis biaya baru" shows its errors under; any other goes to the box's alert.
+export const CHARGE_TYPE_API_FIELDS: readonly string[] = ["name"];
+
+const NO_ENTRY: ChargeEntry = { checked: false, amount: "" };
+
+// A row's amount input id, under the form's own id, so the form can focus it.
+export function chargeAmountId(formId: string, chargeTypeId: string): string {
+  return `${formId}-${chargeTypeId}-amount`;
+}
+
+// The amount field's accessible name in a row: "Jumlah Wi-Fi".
+export function chargeAmountLabel(name: string): string {
+  return `Jumlah ${name}`;
+}
+
+// After a metered type is added: it has no row here.
+export function meteredChargeTypeAddedText(name: string): string {
+  return `Jenis biaya ${name} ditambahkan. Biaya dari meteran dicatat tiap bulan, jadi tidak diatur di sini.`;
+}
+
+// The form's starting entries: the lease's charges, checked, with their amounts.
+export function chargeEntriesFromLease(
+  charges: readonly LeaseCharge[],
+): ChargeEntries {
+  const entries: Record<string, ChargeEntry> = {};
+  for (const charge of charges) {
+    entries[charge.chargeTypeId] = {
+      checked: true,
+      amount: groupRupiahDigits(String(charge.amount)),
+    };
+  }
+  return entries;
+}
+
+// One row per non-metered charge type, in the API's order (by name). Metered types are recorded
+// every month instead, so they are never fixed charges.
+export function chargeRows(
+  types: readonly ChargeType[],
+  entries: ChargeEntries,
+): ChargeRow[] {
+  return types
+    .filter((type) => !type.metered)
+    .map((type) => ({
+      chargeTypeId: type.id,
+      name: type.name,
+      ...(entries[type.id] ?? NO_ENTRY),
+    }));
+}
+
+// A row's amount typed: typing into an unchecked row checks it. Emptying the field leaves the
+// checkbox as it is.
+export function withChargeAmount(
+  entries: ChargeEntries,
+  chargeTypeId: string,
+  amount: string,
+): ChargeEntries {
+  const entry = entries[chargeTypeId] ?? NO_ENTRY;
+  return {
+    ...entries,
+    [chargeTypeId]: { checked: entry.checked || amount !== "", amount },
+  };
+}
+
+// A row checked or unchecked. Unchecking keeps the typed text; the row is just not sent.
+export function withChargeChecked(
+  entries: ChargeEntries,
+  chargeTypeId: string,
+  checked: boolean,
+): ChargeEntries {
+  const entry = entries[chargeTypeId] ?? NO_ENTRY;
+  return { ...entries, [chargeTypeId]: { ...entry, checked } };
+}
+
+// What "Simpan biaya tambahan" checks and sends: the checked rows in display order, each with a
+// whole amount of at least 1 sent as an integer. No checked row sends [], which removes every
+// extra.
+export function checkLeaseCharges(
+  rows: readonly ChargeRow[],
+): LeaseChargesResult {
+  const errors: ChargeErrors = {};
+  let first: string | null = null;
+  const charges: { chargeTypeId: string; amount: number }[] = [];
+  for (const row of rows) {
+    if (!row.checked) continue;
+    const amount = parseRupiahInput(row.amount);
+    if (amount === null || amount < 1) {
+      errors[row.chargeTypeId] = BAD_CHARGE_AMOUNT_MESSAGE;
+      first ??= row.chargeTypeId;
+      continue;
+    }
+    charges.push({ chargeTypeId: row.chargeTypeId, amount });
+  }
+  if (first !== null) return { ok: false, errors, first };
+  return {
+    ok: true,
+    input: { charges },
+    sent: charges.map((charge) => charge.chargeTypeId),
+  };
+}
+
+const CHARGE_API_FIELD = /^charges\[(\d+)\]\.(amount|chargeTypeId)$/;
+
+// The API fields that can name a row of a request: charges[i].amount and charges[i].chargeTypeId
+// for every index sent. Any other field (such as "charges") goes to the alert.
+export function chargeApiFields(sent: readonly string[]): string[] {
+  return sent.flatMap((_, i) => [
+    `charges[${i}].amount`,
+    `charges[${i}].chargeTypeId`,
+  ]);
+}
+
+// The charge type id of the row an API field names, from the rows in the order they were sent;
+// null for a field that names no row sent.
+export function chargeRowForApiField(
+  field: string | null,
+  sent: readonly string[],
+): string | null {
+  if (field === null) return null;
+  const match = CHARGE_API_FIELD.exec(field);
+  if (match === null) return null;
+  return sent[Number(match[1])] ?? null;
+}
+
+// "Nama biaya": not empty and at most CHARGE_TYPE_NAME_MAX_LENGTH characters once trimmed.
+export function checkChargeTypeName(name: string): ChargeTypeNameCheck {
+  const trimmed = name.trim();
+  if (trimmed === "")
+    return { ok: false, error: EMPTY_CHARGE_TYPE_NAME_MESSAGE };
+  if ([...trimmed].length > CHARGE_TYPE_NAME_MAX_LENGTH) {
+    return { ok: false, error: LONG_CHARGE_TYPE_NAME_MESSAGE };
+  }
+  return { ok: true, name: trimmed };
+}

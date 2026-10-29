@@ -8,10 +8,12 @@ import { ListPagination } from "@/components/client/list/list-pagination";
 import { useLastPageRedirect } from "@/components/client/list/use-last-page-redirect";
 import { useListUrl } from "@/components/client/list/use-list-url";
 import {
+  ADDED_SORT_OPTIONS,
   PAGE_SIZE_PARAM,
   readPage,
   readPageSize,
   readSearch,
+  readSort,
 } from "@/components/client/list/utils";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
@@ -47,7 +49,7 @@ type TenantsViewProps = {
 };
 
 // The tenant list: one page of the tenants the member may see, with the lease they live in. The
-// page, size, search and filters live in the URL and the API applies them. What shows beyond
+// page, size, search, filters and sort live in the URL and the API applies them. What shows beyond
 // that (the banner, the property filter, "Tambah penyewa") comes from the member's capabilities
 // (getOrgMe).
 export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
@@ -60,9 +62,10 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
   const pageSize = readPageSize(url.searchParams);
   const search = readSearch(url.searchParams);
   const filters = readTenantFilters(url.searchParams);
+  const sort = readSort(url.searchParams, ADDED_SORT_OPTIONS);
   const tenants = useListTenants(
     orgId,
-    { page, pageSize, ...filters },
+    { page, pageSize, sort, ...filters },
     { query: { placeholderData: keepPreviousData } },
   );
   useLastPageRedirect(url, page, pageSize, tenants.data);
@@ -156,6 +159,7 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
           <TenantFilters
             search={search}
             filters={filters}
+            sort={sort}
             properties={propertyOptions}
             onChange={url.change}
           />
@@ -188,6 +192,7 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
         organizationName={organizationName}
         today={today}
         canManageLeases={permissions.canManageLeases}
+        canAddChargeType={permissions.canAddChargeType}
         panel={panel}
         onPanelChange={setPanel}
         onNotice={setNotice}

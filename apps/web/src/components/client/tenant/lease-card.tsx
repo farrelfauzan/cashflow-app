@@ -2,7 +2,11 @@
 
 import { Button } from "@/components/ui/button";
 import type { LeaseActions, LeasePanelKind, LeaseView } from "./type";
-import { LEASE_ACTION_CLASS, LEASE_PANEL_TITLES } from "./utils";
+import {
+  LEASE_ACTION_CLASS,
+  LEASE_PANEL_TITLES,
+  leaseFooterKinds,
+} from "./utils";
 
 import { LeaseCharges } from "./lease-charges";
 import { LeaseField } from "./lease-field";
@@ -18,7 +22,8 @@ type LeaseCardProps = {
 // One lease of the tenant (boards Penyewa-Sewa.dc.html and Penyewa-Sewa-Phone.dc.html): the unit
 // and its status, the terms, who collects, and the dates. On an active lease a member with
 // lease:manage gets "Ubah sewa" (in the header on iPad, above the card on the phone) and a footer
-// with "Rencana keluar" and "Catat pindah keluar", or "Batalkan sewa" for a booking.
+// with "Biaya tambahan", "Rencana keluar" and "Catat pindah keluar", or "Batalkan sewa" for a
+// booking.
 export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
   return (
     <>
@@ -110,22 +115,17 @@ export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
 
         {actions !== null && (
           <div className="mt-3 flex flex-col gap-2.5 border-t pt-4 md:mt-0 md:flex-row">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onAction("plannedEnd")}
-              className={LEASE_ACTION_CLASS}
-            >
-              {LEASE_PANEL_TITLES.plannedEnd}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onAction(actions.end)}
-              className={LEASE_ACTION_CLASS}
-            >
-              {LEASE_PANEL_TITLES[actions.end]}
-            </Button>
+            {leaseFooterKinds(actions).map((kind) => (
+              <Button
+                key={kind}
+                type="button"
+                variant="outline"
+                onClick={() => onAction(kind)}
+                className={LEASE_ACTION_CLASS}
+              >
+                {LEASE_PANEL_TITLES[kind]}
+              </Button>
+            ))}
           </div>
         )}
       </section>

@@ -1,4 +1,8 @@
-import type { LeaseInput, LeaseTerms } from "@/lib/api/generated/model";
+import type {
+  LeaseChargesInput,
+  LeaseInput,
+  LeaseTerms,
+} from "@/lib/api/generated/model";
 
 // When the lease starts, against today in Jakarta: a lease entered late, one that starts today,
 // or a booking.
@@ -79,3 +83,35 @@ export type PlannedEndSuggestion = {
   date: string;
   nextStart: string;
 };
+
+// "Biaya tambahan" (boards Sewa-Biaya.dc.html and Sewa-Biaya-Phone.dc.html).
+
+// What the form holds for one charge type: whether it is checked, and the amount field's text
+// (digits and dots, empty for none). An unchecked row keeps its text but is not sent.
+export type ChargeEntry = {
+  checked: boolean;
+  amount: string;
+};
+
+// The entries by charge type id; a type without one is unchecked and empty.
+export type ChargeEntries = Readonly<Record<string, ChargeEntry>>;
+
+// One row of the form: a non-metered charge type and its entry.
+export type ChargeRow = ChargeEntry & {
+  chargeTypeId: string;
+  name: string;
+};
+
+// The message under each bad row, by charge type id.
+export type ChargeErrors = Partial<Record<string, string>>;
+
+// What the check sends: the request, and the charge type id of the row sent at each index, so
+// an API error on charges[i] goes back under its row. Or the rows' errors, and the first bad
+// row in display order.
+export type LeaseChargesResult =
+  | { ok: true; input: LeaseChargesInput; sent: readonly string[] }
+  | { ok: false; errors: ChargeErrors; first: string };
+
+// "Nama biaya" in "Jenis biaya baru": the trimmed name to send, or the message under the field.
+export type ChargeTypeNameCheck =
+  { ok: true; name: string } | { ok: false; error: string };

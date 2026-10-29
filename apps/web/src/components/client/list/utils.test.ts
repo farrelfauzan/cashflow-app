@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { PageItem } from "./type";
+import type { PageItem, SortOptions } from "./type";
 import {
+  ADDED_SORT_OPTIONS,
   clampPage,
   listHref,
   pageAfterOverflow,
@@ -9,7 +10,9 @@ import {
   readPage,
   readPageSize,
   readSearch,
+  readSort,
   searchQuery,
+  sortParam,
   ELLIPSIS,
   PAGE_SIZES,
   pageCount,
@@ -312,6 +315,55 @@ describe("readChoice", () => {
     { name: "a value in another case", query: "status=Active" },
   ])("is undefined for $name", ({ query }) => {
     expect(readChoice(params(query), "status", statuses)).toBeUndefined();
+  });
+});
+
+describe("sort", () => {
+  const options: SortOptions = [
+    { value: "label", label: "Nama unit A–Z" },
+    { value: "-label", label: "Nama unit Z–A" },
+  ];
+
+  it.each([
+    { name: "a missing param", query: "", want: "label" },
+    { name: "the default", query: "sort=label", want: "label" },
+    { name: "an offered value", query: "sort=-label", want: "-label" },
+    { name: "a value outside the list", query: "sort=name", want: "label" },
+    { name: "a value in another case", query: "sort=-Label", want: "label" },
+    { name: "an empty value", query: "sort=", want: "label" },
+  ])("reads $name", ({ query, want }) => {
+    expect(readSort(params(query), options)).toBe(want);
+  });
+
+  it("leaves the default out of the URL and keeps the others", () => {
+    expect(sortParam("label", options)).toBeNull();
+    expect(sortParam("-label", options)).toBe("-label");
+  });
+
+  it("goes back to page 1 and keeps the search and filters on a change", () => {
+    const path = "/orgs/o1/tenants";
+    const current = params("page=3&q=gita&status=active");
+    expect(
+      listHref(path, current, { sort: sortParam("-label", options) }),
+    ).toBe(`${path}?q=gita&status=active&sort=-label`);
+    expect(
+      listHref(path, params("page=3&q=gita&sort=-label"), {
+        sort: sortParam("label", options),
+      }),
+    ).toBe(`${path}?q=gita`);
+  });
+
+  it("offers the members and tenants sorts, the API default first", () => {
+    expect(ADDED_SORT_OPTIONS.map((o) => [o.value, o.label])).toEqual([
+      ["name", "Nama A–Z"],
+      ["-name", "Nama Z–A"],
+      ["-createdAt", "Terbaru ditambahkan"],
+      ["createdAt", "Terlama ditambahkan"],
+    ]);
+    expect(readSort(params("sort=-createdAt"), ADDED_SORT_OPTIONS)).toBe(
+      "-createdAt",
+    );
+    expect(readSort(params("sort=email"), ADDED_SORT_OPTIONS)).toBe("name");
   });
 });
 
