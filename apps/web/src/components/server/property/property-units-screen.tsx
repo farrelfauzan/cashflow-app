@@ -5,9 +5,8 @@ type PropertyUnitsScreenProps = {
   params: Promise<{ orgId: string; propertyId: string }>;
 };
 
-// One property's units (boards Properti-Unit.html and Properti-Unit-Phone.html). There is no
-// "get one property" request: the client view finds the property in the list the member may see
-// and says so when it is not there.
+// One property's units (boards Properti-Unit.html and Properti-Unit-Phone.html). The client view
+// loads the property with getProperty and says so when the member may not see it.
 export async function PropertyUnitsScreen({
   params,
 }: PropertyUnitsScreenProps) {

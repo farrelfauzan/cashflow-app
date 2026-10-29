@@ -13,6 +13,7 @@ import { SheetClose } from "@/components/ui/sheet";
 import { toFormError } from "@/lib/api/form-error";
 import type { Unit } from "@/lib/api/generated/model";
 import {
+  getGetPropertyQueryKey,
   getListPropertiesQueryKey,
   getListUnitsQueryKey,
   useCreateUnit,
@@ -71,9 +72,14 @@ export function UnitForm({
       queryKey: getListUnitsQueryKey(orgId, propertyId),
     });
   const invalidateProperties = () =>
-    queryClient.invalidateQueries({
-      queryKey: getListPropertiesQueryKey(orgId),
-    });
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: getListPropertiesQueryKey(orgId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: getGetPropertyQueryKey(orgId, propertyId),
+      }),
+    ]);
   const create = useCreateUnit({
     mutation: {
       onSuccess: () => Promise.all([invalidateUnits(), invalidateProperties()]),

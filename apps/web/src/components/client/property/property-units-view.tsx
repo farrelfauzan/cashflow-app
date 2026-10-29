@@ -15,13 +15,14 @@ import {
 import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
 import {
-  useListProperties,
+  useGetProperty,
   useListUnits,
 } from "@/lib/api/generated/properties/properties";
 import type { AppAbility } from "@/lib/capabilities";
 import {
   LOADING_TEXT,
   READ_ONLY_NOTE,
+  isPropertyMissing,
   propertyPermissions,
   unitsReadOnly,
 } from "./utils";
@@ -41,8 +42,8 @@ type PropertyUnitsViewProps = {
 };
 
 // One property's page: one page of its units (page and size in the URL), and the panels that
-// change the property or a unit. The property comes from the list of properties the member may
-// see (there is no request for one); its units load once it is found.
+// change the property or a unit. The property comes from getProperty; its units load once it is
+// found.
 export function PropertyUnitsView({
   orgId,
   propertyId,
@@ -52,11 +53,8 @@ export function PropertyUnitsView({
   const url = useListUrl();
   const page = readPage(url.searchParams);
   const pageSize = readPageSize(url.searchParams);
-  // Until a getProperty endpoint exists, the lookup reads at most 100 properties.
-  const properties = useListProperties(orgId, { pageSize: 100 });
-  const property = properties.data?.items.find(
-    (candidate) => candidate.id === propertyId,
-  );
+  const found = useGetProperty(orgId, propertyId);
+  const property = found.data;
   const units = useListUnits(
     orgId,
     propertyId,
@@ -79,7 +77,8 @@ export function PropertyUnitsView({
   const [notice, setNotice] = useState("");
 
   const permissions = propertyPermissions(useAbility<AppAbility>());
-  const failed = orgMe.isError ? orgMe.error : properties.error;
+  const missing = isPropertyMissing(found.error);
+  const failed = orgMe.isError ? orgMe.error : missing ? null : found.error;
 
   function openPropertyPanel(next: PropertyPanelState) {
     setNotice("");
@@ -97,15 +96,15 @@ export function PropertyUnitsView({
         message={toFormError(failed, []).message}
         onRetry={() => {
           void orgMe.refetch();
-          void properties.refetch();
+          void found.refetch();
         }}
       />
     );
   }
-  if (orgMe.data === undefined || properties.data === undefined) {
+  if (missing) return <PropertyNotFound orgId={orgId} />;
+  if (orgMe.data === undefined || property === undefined) {
     return <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>;
   }
-  if (property === undefined) return <PropertyNotFound orgId={orgId} />;
 
   return (
     <div className="flex flex-col gap-4 md:gap-[22px]">
@@ -170,7 +169,7 @@ export function PropertyUnitsView({
         orgId={orgId}
         organizationName={organizationName}
         panel={propertyPanel}
-        properties={properties.data.items}
+        properties={[property]}
         onPanelChange={setPropertyPanel}
         onNotice={setNotice}
       />

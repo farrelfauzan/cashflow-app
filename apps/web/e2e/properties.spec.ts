@@ -3,6 +3,7 @@ import {
   test,
   type Locator,
   type Page,
+  type PlaywrightWorkerArgs,
   type TestInfo,
 } from "@playwright/test";
 
@@ -73,6 +74,30 @@ function propertyRow(list: Locator, name: string): Locator {
 
 function unitRow(list: Locator, label: string): Locator {
   return list.getByRole("listitem").filter({ hasText: label });
+}
+
+// A property's id, read through the API as Pak Hendra (Admin of the whole of Griya Sejahtera), for
+// a test whose member may not list it. `home` is the organization's page URL.
+async function propertyIdAsHendra(
+  playwright: PlaywrightWorkerArgs["playwright"],
+  testInfo: TestInfo,
+  home: string,
+  name: string,
+): Promise<string> {
+  const orgId = new URL(home).pathname.split("/")[2];
+  const api = await playwright.request.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    storageState: HENDRA.storageState,
+  });
+  const response = await api.get(`/api/orgs/${orgId}/properties?pageSize=100`);
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    items: { id: string; name: string }[];
+  };
+  await api.dispose();
+  const id = body.items.find((property) => property.name === name)?.id;
+  if (id === undefined) throw new Error(`${name} is not seeded`);
+  return id;
 }
 
 // Opens a property's page from the list by its "Buka unit" link.
@@ -293,8 +318,15 @@ test.describe("Admin of the whole organization", () => {
     await page.getByRole("button", { name: "Ubah properti" }).click();
     const again = page.getByRole("dialog", { name: "Ubah properti" });
     await expect(again.getByLabel("Nama properti")).toHaveValue(renamed);
-    await again.getByRole("button", { name: "Batal" }).click();
+    // Saved from its own page, the property's line under the name follows (getProperty).
+    await again
+      .getByLabel("Alamat (boleh dikosongkan)")
+      .fill("Jl. Cempaka No. 11, Bantul");
+    await again.getByRole("button", { name: "Simpan properti" }).click();
     await expect(again).toHaveCount(0);
+    await expect(
+      visibleText(page, "Jl. Cempaka No. 11, Bantul · Ruko · 0 unit"),
+    ).toBeVisible();
 
     expect(outsideRequests).toEqual([]);
   });
@@ -358,6 +390,8 @@ test.describe("Admin of the whole organization", () => {
     const first = unitRow(units, "Kamar 01");
     await expect(first).toContainText("Rp1.250.000");
     await expect(first).toContainText("Kosong");
+    // The unit count under the property's name follows.
+    await expect(visibleText(page, "Kos · 1 unit")).toBeVisible();
 
     // A second unit without a rent.
     await page.getByRole("button", { name: "Tambah unit" }).click();
@@ -471,6 +505,7 @@ test.describe("Admin limited to one property", () => {
 
   test("sees only her property, cannot add one and cannot open another", async ({
     page,
+    playwright,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
     const list = await openProperties(page, SARI, GRIYA);
@@ -503,12 +538,24 @@ test.describe("Admin limited to one property", () => {
       page.getByRole("button", { name: "Tambah unit" }),
     ).toBeVisible();
 
-    // A property she cannot see is not found.
+    // A property that does not exist, and one that exists outside hers (getProperty answers
+    // 404 and 403), both read "Properti tidak ditemukan".
     const home = page.url().replace(/\/properties\/[0-9a-f-]{36}$/, "");
     await page.goto(`${home}/properties/00000000-0000-4000-8000-000000000000`);
     await expect(
       page.getByRole("heading", { level: 1, name: "Properti tidak ditemukan" }),
     ).toBeVisible();
+    const mawarId = await propertyIdAsHendra(
+      playwright,
+      testInfo,
+      home,
+      "Kontrakan Mawar",
+    );
+    await page.goto(`${home}/properties/${mawarId}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Properti tidak ditemukan" }),
+    ).toBeVisible();
+    await expect(visibleText(page, "Kontrakan Mawar")).toHaveCount(0);
     await page
       .getByRole("link", { name: "Kembali ke daftar properti" })
       .click();
