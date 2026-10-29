@@ -20,6 +20,7 @@ import { useGetOrgMe } from "@/lib/api/generated/members/members";
 import { useListProperties } from "@/lib/api/generated/properties/properties";
 import { useListTenants } from "@/lib/api/generated/tenants/tenants";
 import type { AppAbility } from "@/lib/capabilities";
+import { orgPath } from "@/lib/org-path";
 import { jakartaToday } from "@/lib/format/date";
 import {
   CLEAR_FILTERS,
@@ -121,6 +122,9 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
         organizationName={organizationName}
         canAdd={permissions.canAddTenant && !empty}
         onAdd={addTenant}
+        importHref={
+          permissions.canImport ? orgPath(orgId, "tenants/import") : null
+        }
       />
 
       <p

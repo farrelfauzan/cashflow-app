@@ -386,6 +386,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canAddTenant: true,
         canEditTenant: true,
         canManageLeases: true,
+        canImport: true,
         canAddChargeType: true,
       },
     },
@@ -399,6 +400,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canAddTenant: false,
         canEditTenant: true,
         canManageLeases: true,
+        canImport: false,
         canAddChargeType: false,
       },
     },
@@ -413,6 +415,7 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canAddTenant: false,
         canEditTenant: false,
         canManageLeases: false,
+        canImport: false,
         canAddChargeType: false,
       },
     },
@@ -423,11 +426,61 @@ describe("tenantPermissions for the tenant and lease controls", () => {
         canAddTenant: true,
         canEditTenant: true,
         canManageLeases: false,
+        canImport: false,
         canAddChargeType: false,
       },
     },
   ])("$name", ({ capabilities, want }) => {
     expect(permissions(capabilities)).toEqual(want);
+  });
+});
+
+describe("tenantPermissions for the import", () => {
+  it.each<{ name: string; capabilities: Capability[]; want: boolean }>([
+    {
+      name: "tenant:manage and lease:manage for the whole organization",
+      capabilities: [
+        { action: "tenant:manage", access: "allow" },
+        { action: "lease:manage", access: "allow" },
+      ],
+      want: true,
+    },
+    {
+      name: "tenant:manage limited to some properties",
+      capabilities: [
+        { action: "tenant:manage", access: "conditional" },
+        { action: "lease:manage", access: "allow" },
+      ],
+      want: false,
+    },
+    {
+      name: "lease:manage limited to some properties",
+      capabilities: [
+        { action: "tenant:manage", access: "allow" },
+        { action: "lease:manage", access: "conditional" },
+      ],
+      want: false,
+    },
+    {
+      name: "lease:manage denied",
+      capabilities: [
+        { action: "tenant:manage", access: "allow" },
+        { action: "lease:manage", access: "deny" },
+      ],
+      want: false,
+    },
+    {
+      name: "read only",
+      capabilities: [
+        { action: "tenant:read", access: "allow" },
+        { action: "lease:read", access: "allow" },
+      ],
+      want: false,
+    },
+  ])("$name", ({ capabilities, want }) => {
+    expect(tenantPermissions(createAppAbility(capabilities)).canImport).toBe(
+      want,
+    );
   });
 });
 
