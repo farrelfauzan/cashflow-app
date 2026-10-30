@@ -12,7 +12,7 @@ import type {
 } from "@/lib/api/generated/model";
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
-import { parseRupiahInput } from "@/lib/format/rupiah";
+import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { groupRupiahDigits } from "@/lib/format/rupiah-input";
 
 import type {
@@ -35,6 +35,8 @@ import type {
   LeaseTermsValues,
   PlannedEndSuggestion,
   StartTiming,
+  TermOption,
+  TermPeriodNames,
 } from "./type";
 
 // Calendar dates here are YYYY-MM-DD strings. They compare correctly as strings, and the math is
@@ -70,9 +72,11 @@ export function addDays(date: string, days: number): string {
   return isoDate(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
-// The period rule mirrors the API's (services/api/internal/tenant/period.go: PeriodStart,
-// PeriodIndex, IsPeriodStart, NextPeriodStart), which stays the judge: its 400 on billedFrom is
-// shown under the field. A period lasts the lease's term, 1, 3, 6 or 12 months.
+// The period rule mirrors the API's (services/api/internal/tenant/anniversary.go: Anniversary, and
+// period.go: PeriodStart, PeriodIndex, IsPeriodStart, NextPeriodStart), which stays the judge: its
+// 400 on billedFrom is shown under the field. A lease is billed once per term (1, 3, 6 or 12
+// months); its periods start on the start date and the same day whole terms later. Go takes the
+// term before the date; here it comes last, after the arguments the monthly rule always had.
 
 // The start date plus n months (n >= 0). When that month is shorter than the start day it is the
 // month's last day, always counted from the start date: 31 Jan gives 28 Feb, then 31 Mar.
@@ -92,50 +96,53 @@ function monthsBetween(start: string, date: string): number {
   return (year - startYear) * 12 + (month - startMonth);
 }
 
-// The day the lease's n-th period (n >= 0) begins: n terms after the start date.
+// The day the lease's n-th period (n >= 0) begins: the start date plus n terms, with the month-end
+// rule of anniversary, so it is always counted from the start date (a 3-month lease from 30 Nov
+// has 28 Feb, then 30 May).
 export function periodStart(
   start: string,
-  term: TermMonths,
   n: number,
+  term: TermMonths,
 ): string {
   return anniversary(start, n * term);
 }
 
 // The n of the period date falls in, or -1 for a date before the start.
-function periodIndex(start: string, term: TermMonths, date: string): number {
+function periodIndex(start: string, date: string, term: TermMonths): number {
   if (date < start) return -1;
+  // A guess from the calendar months between them; the loops correct it by a period or so.
   let n = Math.floor(monthsBetween(start, date) / term);
-  while (n > 0 && periodStart(start, term, n) > date) n--;
-  while (periodStart(start, term, n + 1) <= date) n++;
+  while (n > 0 && periodStart(start, n, term) > date) n--;
+  while (periodStart(start, n + 1, term) <= date) n++;
   return n;
 }
 
-// Whether date is the first day of one of the lease's periods.
+// Whether date is the start date or the start of a later period of the term.
 export function isPeriodStart(
   start: string,
-  term: TermMonths,
   date: string,
+  term: TermMonths,
 ): boolean {
-  const n = periodIndex(start, term, date);
-  return n >= 0 && periodStart(start, term, n) === date;
+  const n = periodIndex(start, date, term);
+  return n >= 0 && periodStart(start, n, term) === date;
 }
 
 // The first period start strictly after date; the start date for a date before it.
 export function nextPeriodStart(
   start: string,
-  term: TermMonths,
   date: string,
+  term: TermMonths,
 ): string {
-  return periodStart(start, term, periodIndex(start, term, date) + 1);
+  return periodStart(start, periodIndex(start, date, term) + 1, term);
 }
 
 // The start of the period date falls in (date on or after the start).
 export function periodStartOn(
   start: string,
-  term: TermMonths,
   date: string,
+  term: TermMonths,
 ): string {
-  return periodStart(start, term, Math.max(periodIndex(start, term, date), 0));
+  return periodStart(start, Math.max(0, periodIndex(start, date, term)), term);
 }
 
 export function startTiming(start: string, today: string): StartTiming {
@@ -156,12 +163,12 @@ export function billedFromOptions(
 ): DateOption[] {
   const latest = nextPeriodStart(
     start,
-    term,
     enteredOn > start ? enteredOn : start,
+    term,
   );
   const options: DateOption[] = [];
   for (let n = 1; ; n++) {
-    const date = periodStart(start, term, n);
+    const date = periodStart(start, n, term);
     if (date > latest) break;
     options.push({ value: date, label: formatDate(date) });
   }
@@ -182,9 +189,22 @@ export function defaultBilledFrom(
   return chosen;
 }
 
+// How the lease forms name one period of each term. A monthly lease keeps the words the boards
+// use ("bulan"); a longer term says "periode 3 bulan" or "tahun".
+export const TERM_PERIOD_NAMES: Record<TermMonths, TermPeriodNames> = {
+  1: { noun: "bulan", short: "bulan", plural: "bulan-bulan" },
+  3: { noun: "periode 3 bulan", short: "periode", plural: "periode-periode" },
+  6: { noun: "periode 6 bulan", short: "periode", plural: "periode-periode" },
+  12: { noun: "tahun", short: "tahun", plural: "tahun-tahun" },
+};
+
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 // The box under "Mulai tagih dari" for a start before the day the lease is entered, with the real
 // dates. Past periods are due on that day and the period running then 7 days after (CLAUDE.md "A
-// lease entered late"); billing from the next anniversary leaves them all to the owner, and its
+// lease entered late"); billing from the next period start leaves them all to the owner, and its
 // invoice comes as usual. For a new lease that day is today; for a lease being changed it is its
 // enteredOn, named as such.
 export function billingExplanation(
@@ -194,31 +214,53 @@ export function billingExplanation(
   today: string,
   term: TermMonths,
 ): string {
-  const current = periodStartOn(start, term, enteredOn);
+  const { noun, short, plural } = TERM_PERIOD_NAMES[term];
+  const current = periodStartOn(start, enteredOn, term);
   const currentDue = formatDayMonth(addDays(enteredOn, 7));
   const pastDue =
     enteredOn === today
       ? `hari ini (${formatDayMonth(enteredOn)})`
       : `${formatDayMonth(enteredOn)}, hari sewa ini dimasukkan`;
   if (billedFrom > enteredOn) {
-    return `Bulan sebelum ${formatDate(billedFrom)} tidak ditagih. Tagihan pertama untuk bulan mulai ${formatDate(billedFrom)}, jatuh tempo ${formatDayMonth(billedFrom)}.`;
+    return `${capitalized(short)} sebelum ${formatDate(billedFrom)} tidak ditagih. Tagihan pertama untuk ${short} mulai ${formatDate(billedFrom)}, jatuh tempo ${formatDayMonth(billedFrom)}.`;
   }
   if (billedFrom === current) {
-    return `Tanggal mulai ini sudah lewat, jadi bulan berjalan sejak ${formatDate(billedFrom)} ikut ditagih, jatuh tempo ${currentDue}.`;
+    return `Tanggal mulai ini sudah lewat, jadi ${short} berjalan sejak ${formatDate(billedFrom)} ikut ditagih, jatuh tempo ${currentDue}.`;
   }
-  return `Tanggal mulai ini sudah lewat, jadi setiap bulan sejak ${formatDate(billedFrom)} ikut ditagih. Bulan yang sudah lewat jatuh tempo ${pastDue}; bulan berjalan jatuh tempo ${currentDue}. Kalau pemilik sudah menerima uang sewa bulan-bulan itu langsung, pilih bulan mulai tagih yang lebih baru.`;
+  return `Tanggal mulai ini sudah lewat, jadi setiap ${noun} sejak ${formatDate(billedFrom)} ikut ditagih. ${capitalized(short)} yang sudah lewat jatuh tempo ${pastDue}; ${short} berjalan jatuh tempo ${currentDue}. Kalau pemilik sudah menerima uang sewa ${plural} itu langsung, pilih ${short} mulai tagih yang lebih baru.`;
+}
+
+// The first radio: "Tagih semua bulan sejak tanggal mulai", "Tagih semua tahun sejak tanggal mulai".
+export function billAllLabel(term: TermMonths): string {
+  return `Tagih semua ${TERM_PERIOD_NAMES[term].noun} sejak tanggal mulai`;
 }
 
 // The first radio's line: "Semua bulan sejak 15 Sep 2026 dibuatkan tagihan."
-export function billAllHint(start: string): string {
-  return `Semua bulan sejak ${formatDate(start)} dibuatkan tagihan.`;
+export function billAllHint(start: string, term: TermMonths): string {
+  return `Semua ${TERM_PERIOD_NAMES[term].noun} sejak ${formatDate(start)} dibuatkan tagihan.`;
 }
 
-export const BILL_PICK_HINT =
-  "Bulan sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.";
+// The second radio: "Mulai dari bulan yang saya pilih", "Mulai dari periode yang saya pilih".
+export function billPickLabel(term: TermMonths): string {
+  return `Mulai dari ${TERM_PERIOD_NAMES[term].short} yang saya pilih`;
+}
 
-export const BILL_PICK_SELECT_HINT =
-  "Pilihan bulan hanya berlaku kalau opsi kedua dipilih.";
+export function billPickHint(term: TermMonths): string {
+  return `${capitalized(TERM_PERIOD_NAMES[term].short)} sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.`;
+}
+
+// The period select's accessible name: "Bulan mulai tagih", "Tahun mulai tagih".
+export function billedFromSelectLabel(term: TermMonths): string {
+  return `${capitalized(TERM_PERIOD_NAMES[term].short)} mulai tagih`;
+}
+
+export function billPickSelectHint(term: TermMonths): string {
+  return `Pilihan ${TERM_PERIOD_NAMES[term].short} hanya berlaku kalau opsi kedua dipilih.`;
+}
+
+export function noBilledFromMessage(term: TermMonths): string {
+  return `Pilih ${TERM_PERIOD_NAMES[term].short} mulai tagih.`;
+}
 
 export const BOOKING_NOTE =
   "Tanggal mulai ada di masa depan, jadi sewa ini dihitung sebagai pesanan: unit langsung terisi, dan tagihan pertama dibuat menjelang tanggal mulai. Pilihan Mulai tagih dari tidak diperlukan.";
@@ -226,13 +268,21 @@ export const BOOKING_NOTE =
 const MONTH_END_NOTE =
   "Tanggal 29 sampai 31 jatuh di hari terakhir bulan yang lebih pendek.";
 
-// The hint under "Mulai sewa", with the day of the chosen date.
-export function startDateHint(start: string): string {
-  if (!isCalendarDate(start)) {
-    return `Juga jadi tanggal tagihan tiap bulan. ${MONTH_END_NOTE}`;
+// The hint under "Mulai sewa", with the day of the chosen date: the day of the month for a term in
+// months, the day and month for a yearly lease.
+export function startDateHint(start: string, term: TermMonths): string {
+  const every = `Juga jadi tanggal tagihan tiap ${TERM_PERIOD_WORDS[term]}.`;
+  if (!isCalendarDate(start)) return `${every} ${MONTH_END_NOTE}`;
+  if (term === 12) {
+    const dayMonth = formatDayMonth(start);
+    return `${every} Mulai ${dayMonth}, jatuh tempo tiap ${dayMonth}. ${MONTH_END_NOTE}`;
   }
   const day = parts(start)[2];
-  return `Juga jadi tanggal tagihan tiap bulan. Mulai tanggal ${day}, jatuh tempo tiap tanggal ${day}. ${MONTH_END_NOTE}`;
+  const due =
+    term === 1
+      ? `jatuh tempo tiap tanggal ${day}`
+      : `jatuh tempo tanggal ${day} tiap ${TERM_PERIOD_WORDS[term]}`;
+  return `${every} Mulai tanggal ${day}, ${due}. ${MONTH_END_NOTE}`;
 }
 
 // The panel's subtitle: "Bu Dewi Lestari · 0812-3456-7899".
@@ -264,17 +314,76 @@ export function shortestTerm(
   return shortest;
 }
 
-// The term a new lease takes until the form has a term picker: the shortest term with a price in
-// force, else the shortest term the unit offers (the API then answers no_price), else null.
+// The term "Masa sewa" starts on for a unit: its shortest term with a price in force, or null when
+// no unit is chosen or none of its terms has a price (a lease on an unpriced term is refused with
+// no_price, so the form says so before sending).
 export function leaseTermFor(
   unit: Pick<Unit, "terms"> | undefined,
 ): TermMonths | null {
-  const terms = unit?.terms ?? [];
-  return (
-    shortestTerm(terms.filter((term) => term.price !== undefined)) ??
-    shortestTerm(terms)
+  return shortestTerm(
+    (unit?.terms ?? []).filter((term) => term.price !== undefined),
   );
 }
+
+// The term "Masa sewa" shows: the one chosen while the unit still offers it with a price, else
+// the unit's default (leaseTermFor). The choice is null until the admin picks one, and goes back
+// to null when the unit changes.
+export function selectedTerm(
+  unit: Pick<Unit, "terms"> | undefined,
+  chosen: TermMonths | null,
+): TermMonths | null {
+  const offered = (unit?.terms ?? []).some(
+    (term) => term.months === chosen && term.price !== undefined,
+  );
+  return offered ? chosen : leaseTermFor(unit);
+}
+
+// The term a "Masa sewa" value names, when the unit offers it; null for anything else.
+export function termFromValue(
+  unit: Pick<Unit, "terms"> | undefined,
+  value: string,
+): TermMonths | null {
+  return (
+    (unit?.terms ?? []).find((term) => String(term.months) === value)?.months ??
+    null
+  );
+}
+
+// One "Masa sewa" choice: "Per tahun · Rp15.000.000", or "Per 3 bulan · belum ada harga" for a
+// term with no price in force, which cannot be picked.
+export function termOptionLabel(
+  term: Pick<UnitTerm, "months" | "price">,
+): string {
+  const price =
+    term.price === undefined ? NO_TERM_PRICE_TEXT : formatRupiah(term.price);
+  return `Per ${TERM_PERIOD_WORDS[term.months]} · ${price}`;
+}
+
+// The unit's terms as "Masa sewa" choices, shortest first; none before a unit is chosen.
+export function termOptions(
+  unit: Pick<Unit, "terms"> | undefined,
+): TermOption[] {
+  return [...(unit?.terms ?? [])]
+    .sort((a, b) => a.months - b.months)
+    .map((term) => ({
+      value: String(term.months),
+      label: termOptionLabel(term),
+      disabled: term.price === undefined,
+    }));
+}
+
+// The hint under "Masa sewa": how often the chosen term is billed. A period's rent is the unit's
+// price in force on the day its invoice is made (CLAUDE.md "Billing and reminders").
+export function termHint(term: TermMonths | null): string {
+  if (term === null) return TERM_NO_CHOICE_HINT;
+  return `Tagihan dibuat sekali tiap ${TERM_PERIOD_WORDS[term]}, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.`;
+}
+
+export const NO_TERM_PRICE_TEXT = "belum ada harga";
+export const TERM_NO_UNIT_PLACEHOLDER = "Pilih unit dulu";
+export const TERM_PLACEHOLDER = "Pilih masa sewa";
+export const TERM_NO_CHOICE_HINT =
+  "Pilihan masa sewa dan harganya mengikuti unit.";
 
 // The collector select's choices: "Tidak ada", then the candidates. The lease's own collector is
 // added when they are no longer a candidate (a disabled member), so the select can still show
@@ -310,15 +419,15 @@ export const DEPOSIT_HINT = "Isi 0 kalau tidak ada.";
 export const NO_PROPERTY_MESSAGE = "Pilih properti.";
 export const NO_UNIT_MESSAGE = "Pilih unit.";
 export const NO_START_MESSAGE = "Isi tanggal mulai sewa.";
-export const NO_BILLED_FROM_MESSAGE = "Pilih bulan mulai tagih.";
-export const NO_TERM_MESSAGE =
-  "Unit ini belum punya jangka sewa. Pilih unit lain atau atur unitnya dulu.";
+export const NO_PRICE_MESSAGE =
+  "Unit ini belum punya harga sewa. Atur harganya di halaman properti.";
 export const BAD_DEPOSIT_MESSAGE =
   "Isi uang jaminan dengan angka, atau kosongkan.";
 
 // The fields the API's errors can name; any other field goes to the alert.
 export const LEASE_API_FIELDS: readonly LeaseFormField[] = [
   "unitId",
+  "termMonths",
   "startDate",
   "billedFrom",
   "depositAmount",
@@ -329,6 +438,7 @@ export const LEASE_API_FIELDS: readonly LeaseFormField[] = [
 export const LEASE_FIELD_ORDER: readonly LeaseFormField[] = [
   "propertyId",
   "unitId",
+  "termMonths",
   "startDate",
   "billedFrom",
   "depositAmount",
@@ -360,10 +470,10 @@ export function checkDeposit(
 }
 
 // What the lease form checks before it sends anything, and the request it sends: amounts as
-// integers, the unit's term (leaseTermFor), billedFrom only for a start before today with the second
-// choice, the deposit and the collector only when given. A chosen unit with no term (the API
-// always gives one) is refused under the unit. The Go API validates everything again and its
-// message wins.
+// integers, the chosen term, billedFrom (a period start of that term) only for a start before
+// today with the second choice, the deposit and the collector only when given. A chosen unit with
+// no priced term is refused under "Masa sewa", as the API would with no_price. The Go API
+// validates everything again and its message wins.
 export function checkLeaseForm(
   values: LeaseFormValues,
   propertyId: string,
@@ -372,7 +482,7 @@ export function checkLeaseForm(
   const errors: LeaseFormErrors = {};
   if (propertyId === "") errors.propertyId = NO_PROPERTY_MESSAGE;
   if (values.unitId === "") errors.unitId = NO_UNIT_MESSAGE;
-  else if (values.termMonths === null) errors.unitId = NO_TERM_MESSAGE;
+  else if (values.termMonths === null) errors.termMonths = NO_PRICE_MESSAGE;
   const startOk = isCalendarDate(values.startDate);
   if (!startOk) errors.startDate = NO_START_MESSAGE;
 
@@ -384,11 +494,12 @@ export function checkLeaseForm(
       : undefined;
   if (
     billedFrom !== undefined &&
-    !billedFromOptions(values.startDate, today, values.termMonths ?? 1).some(
+    values.termMonths !== null &&
+    !billedFromOptions(values.startDate, today, values.termMonths).some(
       (option) => option.value === billedFrom,
     )
   ) {
-    errors.billedFrom = NO_BILLED_FROM_MESSAGE;
+    errors.billedFrom = noBilledFromMessage(values.termMonths);
   }
 
   const deposit = checkDeposit(values, errors);
@@ -472,7 +583,7 @@ export function keepsDisabledCollector(
 // What "Ubah sewa" checks and sends. PUT replaces the terms, so the whole LeaseTerms goes: the
 // deposit (0 when empty) and the collector only when one is chosen ("Tidak ada" clears it).
 // billedFrom follows the API's rule for a lease being changed: while "Mulai tagih dari" shows, the
-// start date for the first choice or the chosen anniversary; otherwise left out when the start
+// start date for the first choice or the chosen period start; otherwise left out when the start
 // date is unchanged (the API keeps the stored value) and the new start date when it changed.
 export function checkLeaseTerms(
   values: LeaseTermsValues,
@@ -494,7 +605,7 @@ export function checkLeaseTerms(
         lease.termMonths,
       );
       if (!offered.some((option) => option.value === billedFrom)) {
-        errors.billedFrom = NO_BILLED_FROM_MESSAGE;
+        errors.billedFrom = noBilledFromMessage(lease.termMonths);
       }
     }
   } else if (startOk && values.startDate !== lease.startDate) {
@@ -541,22 +652,28 @@ export const EFFECTS_TITLE = "Yang terjadi setelah ini";
 export const PLANNED_END_API_FIELDS: readonly string[] = ["plannedEndDate"];
 export const MOVE_OUT_API_FIELDS: readonly string[] = ["endDate"];
 
-export const PLANNED_END_EFFECTS: readonly string[] = [
-  "Tidak ada tagihan baru untuk bulan yang mulai sesudah tanggal itu.",
-  "Bulan yang sudah mulai tetap ditagih penuh, tanpa potongan.",
-  'Tagihan bulan sesudahnya yang sudah terlanjur dibuat dibatalkan otomatis, dan tercatat sebagai koreksi dengan alasan "sewa tidak diperpanjang".',
-  "Tunggakan lama tetap ditagih seperti biasa.",
-];
+// What a planned end does, per period of the lease's term.
+export function plannedEndEffects(term: TermMonths): string[] {
+  const { noun, short } = TERM_PERIOD_NAMES[term];
+  return [
+    `Tidak ada tagihan baru untuk ${noun} yang mulai sesudah tanggal itu.`,
+    `${capitalized(noun)} yang sudah mulai tetap ditagih penuh, tanpa potongan.`,
+    `Tagihan ${short} sesudahnya yang sudah terlanjur dibuat dibatalkan otomatis, dan tercatat sebagai koreksi dengan alasan "sewa tidak diperpanjang".`,
+    "Tunggakan lama tetap ditagih seperti biasa.",
+  ];
+}
 
-export const MOVE_OUT_EFFECTS: readonly string[] = [
-  "Unit langsung kosong dan bisa disewakan lagi.",
-  "Tagihan untuk bulan yang mulai sesudah tanggal itu dibatalkan.",
-  "Rencana keluar yang sudah diisi ikut dihapus.",
-  "Kalau masih ada tunggakan, aplikasi mengikuti aturan usaha di Pengaturan: potong uang jaminan dulu, atau tetap ditagih.",
-];
+export function moveOutEffects(term: TermMonths): string[] {
+  return [
+    "Unit langsung kosong dan bisa disewakan lagi.",
+    `Tagihan untuk ${TERM_PERIOD_NAMES[term].noun} yang mulai sesudah tanggal itu dibatalkan.`,
+    "Rencana keluar yang sudah diisi ikut dihapus.",
+    "Kalau masih ada tunggakan, aplikasi mengikuti aturan usaha di Pengaturan: potong uang jaminan dulu, atau tetap ditagih.",
+  ];
+}
 
-// The suggested last day: the day before the next period starts, so the tenant stops before a
-// new month. For a booking that is the day before its second period.
+// The suggested last day: the day before the next period of the term starts, so the tenant
+// stops before a new one. For a booking that is the day before its second period.
 export function plannedEndSuggestion(
   start: string,
   today: string,
@@ -564,13 +681,16 @@ export function plannedEndSuggestion(
 ): PlannedEndSuggestion {
   const nextStart =
     start > today
-      ? periodStart(start, term, 1)
-      : nextPeriodStart(start, term, today);
+      ? periodStart(start, 1, term)
+      : nextPeriodStart(start, today, term);
   return { date: addDays(nextStart, -1), nextStart };
 }
 
-export function plannedEndHint(suggestion: PlannedEndSuggestion): string {
-  return `Usulan: ${formatDate(suggestion.date)}, sehari sebelum bulan berikutnya (${formatDayMonth(suggestion.nextStart)}) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.`;
+export function plannedEndHint(
+  suggestion: PlannedEndSuggestion,
+  term: TermMonths,
+): string {
+  return `Usulan: ${formatDate(suggestion.date)}, sehari sebelum ${TERM_PERIOD_NAMES[term].noun} berikutnya (${formatDayMonth(suggestion.nextStart)}) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.`;
 }
 
 export function currentPlannedEndText(date: string): string {
@@ -622,6 +742,14 @@ export const CANCEL_BOOKING_HINT =
 
 export const LEASE_CHARGES_INTRO =
   "Biaya yang jumlahnya sama setiap bulan. Ditambahkan ke tagihan di atas sewa, mulai tagihan berikutnya. Hanya angka.";
+// For a lease billed every 3, 6 or 12 months: the fixed charges are monthly amounts, so each
+// invoice bills them times the term's months (CLAUDE.md "Billing and reminders"). None for a
+// monthly lease.
+export function chargesTermHint(term: TermMonths): string | null {
+  if (term === 1) return null;
+  return `Biaya tetap ditagih per bulan × ${term} bulan di setiap tagihan.`;
+}
+
 export const METERED_CHARGES_NOTE =
   "Listrik dan air yang dicatat dari meteran tidak diatur di sini. Jumlahnya dicatat tiap bulan.";
 export const LOADING_CHARGE_TYPES_TEXT = "Memuat…";

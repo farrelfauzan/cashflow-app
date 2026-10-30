@@ -9,7 +9,7 @@ import type { Lease } from "@/lib/api/generated/model";
 import { useMoveOut } from "@/lib/api/generated/tenants/tenants";
 import {
   MOVE_OUT_API_FIELDS,
-  MOVE_OUT_EFFECTS,
+  moveOutEffects,
   checkMoveOut,
   moveOutHint,
 } from "./utils";
@@ -104,7 +104,7 @@ export function MoveOutForm({
           error={error}
           disabled={saving}
         />
-        <LeaseEffectsBox items={MOVE_OUT_EFFECTS} />
+        <LeaseEffectsBox items={moveOutEffects(lease.termMonths)} />
       </form>
       <LeasePanelFooter
         formId={formId}

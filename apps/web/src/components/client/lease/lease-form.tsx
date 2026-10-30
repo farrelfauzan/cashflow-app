@@ -14,7 +14,7 @@ import {
   getListMembersQueryKey,
   useListCollectorCandidates,
 } from "@/lib/api/generated/members/members";
-import type { Lease, Tenant } from "@/lib/api/generated/model";
+import type { Lease, TermMonths, Tenant } from "@/lib/api/generated/model";
 import {
   getGetPropertyQueryKey,
   getListPropertiesQueryKey,
@@ -46,9 +46,14 @@ import {
   freeUnits,
   isCalendarDate,
   isLeaseFormField,
-  leaseTermFor,
+  selectedTerm,
   startDateHint,
   startTiming,
+  TERM_NO_UNIT_PLACEHOLDER,
+  TERM_PLACEHOLDER,
+  termFromValue,
+  termHint,
+  termOptions,
 } from "./utils";
 
 import { LeaseBillingField } from "./lease-billing-field";
@@ -64,17 +69,18 @@ type LeaseFormProps = {
 };
 
 // "Sewakan unit" (boards Sewa-Baru.dc.html and Sewa-Baru-Phone.dc.html): the property and one of
-// its free units, the start date, "Mulai tagih dari" for a start before today, the deposit, and
-// the collector. The lease takes the unit's term from leaseTermFor. On the phone the fields stack
-// in that order; on iPad the billing choice has the right half of the wide panel to itself, so it
-// stays in view. The save button sits in the panel's footer and submits the form through its
-// `form` attribute.
+// its free units, "Masa sewa" (one of the unit's terms, with its price), the start date, "Mulai
+// tagih dari" for a start before today, the deposit, and the collector. On the phone the fields
+// stack in that order; on iPad "Masa sewa" takes the left half's width so its price fits, and the
+// billing choice has the right half of the wide panel to itself, so it stays in view. The save button sits in the
+// panel's footer and submits the form through its `form` attribute.
 export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   const id = useId();
   const formId = `${id}-form`;
   const queryClient = useQueryClient();
   const propertyRef = useRef<HTMLButtonElement>(null);
   const unitRef = useRef<HTMLButtonElement>(null);
+  const termRef = useRef<HTMLButtonElement>(null);
   const startRef = useRef<HTMLInputElement>(null);
   const billedFromRef = useRef<HTMLButtonElement>(null);
   const depositRef = useRef<HTMLInputElement>(null);
@@ -82,6 +88,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
 
   const [chosenProperty, setChosenProperty] = useState("");
   const [unitId, setUnitId] = useState("");
+  const [chosenTerm, setChosenTerm] = useState<TermMonths | null>(null);
   const [startDate, setStartDate] = useState("");
   const [billing, setBilling] = useState<BillingChoice>("start");
   const [chosenBilledFrom, setChosenBilledFrom] = useState("");
@@ -112,9 +119,9 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   );
   const free = freeUnits(units.data?.items ?? []);
   const unit = free.find((candidate) => candidate.id === unitId);
-  // The term the lease will take; the billing-start choices step by it (monthly until a unit is
-  // chosen).
-  const term = leaseTermFor(unit);
+  const termMonths = selectedTerm(unit, chosenTerm);
+  // The billing words and choices follow the term; monthly until a priced term is chosen.
+  const term = termMonths ?? 1;
 
   const candidates = useListCollectorCandidates(orgId, fresh);
 
@@ -122,7 +129,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
     ? startTiming(startDate, today)
     : null;
   const options =
-    timing === "past" ? billedFromOptions(startDate, today, term ?? 1) : [];
+    timing === "past" ? billedFromOptions(startDate, today, term) : [];
   const billedFrom = options.some((o) => o.value === chosenBilledFrom)
     ? chosenBilledFrom
     : defaultBilledFrom(options, today);
@@ -164,6 +171,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
     const ref = {
       propertyId: propertyRef,
       unitId: unitRef,
+      termMonths: termRef,
       startDate: startRef,
       billedFrom: billedFromRef,
       depositAmount: depositRef,
@@ -202,7 +210,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
       {
         tenantId: tenant.id,
         unitId: unit === undefined ? "" : unitId,
-        termMonths: term,
+        termMonths,
         startDate,
         billing,
         billedFrom,
@@ -241,7 +249,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
           <FormAlert message={toFormError(properties.error, []).message} />
         )}
 
-        <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'prop_unit_billed'_'deposit_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
+        <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'prop_unit_billed'_'term_term_billed'_'deposit_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
           <SelectField
             triggerRef={propertyRef}
             label="Properti"
@@ -251,8 +259,10 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             onValueChange={(next) => {
               setChosenProperty(next);
               setUnitId("");
+              setChosenTerm(null);
               clearError("propertyId");
               clearError("unitId");
+              clearError("termMonths");
             }}
             hint={
               properties.data !== undefined && propertyItems.length === 0
@@ -272,12 +282,34 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             options={free.map((u) => ({ value: u.id, label: u.label }))}
             onValueChange={(next) => {
               setUnitId(next);
+              setChosenTerm(null);
               clearError("unitId");
+              clearError("termMonths");
+              clearError("billedFrom");
             }}
             hint={unitHint}
             error={errors.unitId}
             disabled={saving || propertyId === ""}
             className="md:[grid-area:unit]"
+          />
+
+          <SelectField
+            triggerRef={termRef}
+            label="Masa sewa"
+            value={termMonths === null ? "" : String(termMonths)}
+            placeholder={
+              unit === undefined ? TERM_NO_UNIT_PLACEHOLDER : TERM_PLACEHOLDER
+            }
+            options={termOptions(unit)}
+            onValueChange={(next) => {
+              setChosenTerm(termFromValue(unit, next));
+              clearError("termMonths");
+              clearError("billedFrom");
+            }}
+            hint={termHint(termMonths)}
+            error={errors.termMonths}
+            disabled={saving || unit === undefined}
+            className="md:[grid-area:term]"
           />
 
           <DateField
@@ -290,7 +322,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
               clearError("startDate");
               clearError("billedFrom");
             }}
-            hint={startDateHint(startDate)}
+            hint={startDateHint(startDate, term)}
             error={errors.startDate}
             disabled={saving}
             className="md:[grid-area:start]"
@@ -303,7 +335,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
                 startDate={startDate}
                 enteredOn={today}
                 today={today}
-                term={term ?? 1}
+                termMonths={term}
                 billing={billing}
                 onBillingChange={(next) => {
                   setBilling(next);

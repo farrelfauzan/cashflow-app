@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { FIELD_HINT_CLASS } from "@/components/client/form/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import type { ChargeType, Lease } from "@/lib/api/generated/model";
@@ -19,6 +20,7 @@ import {
   chargeEntriesFromLease,
   chargeRowForApiField,
   chargeRows,
+  chargesTermHint,
   checkLeaseCharges,
   LEASE_CHARGES_INTRO,
   LOADING_CHARGE_TYPES_TEXT,
@@ -44,9 +46,10 @@ type LeaseChargesFormProps = {
 };
 
 // "Biaya tambahan" (boards Sewa-Biaya.dc.html and Sewa-Biaya-Phone.dc.html): the lease's fixed
-// monthly extras. One row per non-metered charge type, loaded fresh each time the panel opens;
-// the lease's charges start checked. Saving sends the whole set, so a row left unchecked is
-// removed. A member who may manage leases everywhere can add a charge type here.
+// monthly extras, which a lease on a longer term bills times its months (said under the intro).
+// One row per non-metered charge type, loaded fresh each time the panel opens; the lease's charges
+// start checked. Saving sends the whole set, so a row left unchecked is removed. A member who may
+// manage leases everywhere can add a charge type here.
 export function LeaseChargesForm({
   orgId,
   lease,
@@ -67,6 +70,7 @@ export function LeaseChargesForm({
   const [alert, setAlert] = useState<string | null>(null);
   const [boxOpen, setBoxOpen] = useState(false);
   const [meteredAdded, setMeteredAdded] = useState<string | null>(null);
+  const termHint = chargesTermHint(lease.termMonths);
 
   const save = useSetLeaseCharges({
     mutation: { onSuccess: (saved) => refresh(saved, false) },
@@ -191,6 +195,7 @@ export function LeaseChargesForm({
         <p className="text-[15px] leading-[1.55] md:text-base">
           {LEASE_CHARGES_INTRO}
         </p>
+        {termHint !== null && <p className={FIELD_HINT_CLASS}>{termHint}</p>}
         {list}
         <LeaseInfoNote text={METERED_CHARGES_NOTE} />
         {meteredAdded !== null && (

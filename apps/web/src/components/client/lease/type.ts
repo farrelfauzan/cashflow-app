@@ -9,7 +9,7 @@ import type {
 // or a booking.
 export type StartTiming = "past" | "today" | "future";
 
-// "Mulai tagih dari": bill every period since the start date, or from a later anniversary.
+// "Mulai tagih dari": bill every period since the start date, or from a later period start.
 export type BillingChoice = "start" | "pick";
 
 // One choice of the anniversary select.
@@ -37,7 +37,7 @@ export type LeaseFormValues = LeaseTermsValues & {
   tenantId: string;
   // "" until chosen.
   unitId: string;
-  // The chosen unit's shortest term; null when no unit is chosen or it offers none.
+  // "Masa sewa": a priced term of the chosen unit; null when no unit is chosen or none is priced.
   termMonths: TermMonths | null;
 };
 
@@ -45,6 +45,7 @@ export type LeaseFormValues = LeaseTermsValues & {
 export type LeaseFormField =
   | "propertyId"
   | "unitId"
+  | "termMonths"
   | "startDate"
   | "billedFrom"
   | "depositAmount"
@@ -61,6 +62,25 @@ export type LeaseTermsResult =
 // What sits under "Mulai sewa" in "Ubah sewa": the billing choice for a lease entered late, the
 // booking note for a start after today, or nothing.
 export type EditStartBox = "billing" | "booking" | "none";
+
+// One choice of "Masa sewa": a term the unit offers, disabled while it has no price.
+export type TermOption = {
+  // The term's months as text ("12"); a select item holds a string.
+  value: string;
+  // "Per tahun · Rp15.000.000" or "Per 3 bulan · belum ada harga".
+  label: string;
+  disabled: boolean;
+};
+
+// How the lease forms name one billing period of a term, in a sentence.
+export type TermPeriodNames = {
+  // "bulan", "periode 3 bulan", "periode 6 bulan", "tahun".
+  noun: string;
+  // Once the length is clear from the sentence: "bulan", "periode", "periode", "tahun".
+  short: string;
+  // "bulan-bulan", "periode-periode", "periode-periode", "tahun-tahun".
+  plural: string;
+};
 
 // One choice of the collector select.
 export type CollectorOption = {
