@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type RefObject } from "react";
+import { useId, type Ref } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import {
@@ -32,7 +32,8 @@ import {
 import { LeaseInfoNote } from "./lease-info-note";
 
 type LeaseBillingFieldProps = {
-  selectRef: RefObject<HTMLButtonElement | null>;
+  // For moving focus from outside: a ref object, or a callback such as react-hook-form's.
+  selectRef: Ref<HTMLButtonElement>;
   // A start date before the day the lease is entered.
   startDate: string;
   // The day the lease is entered: today for a new lease, its enteredOn for one being changed.

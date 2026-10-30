@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type {
   ChargeType,
   Collector,
@@ -27,10 +29,12 @@ import type {
   DateOption,
   EditStartBox,
   LeaseChargesResult,
+  LeaseFormContext,
   LeaseFormErrors,
-  LeaseFormField,
+  LeaseFormFields,
   LeaseFormResult,
   LeaseFormValues,
+  LeaseTermsFields,
   LeaseTermsResult,
   LeaseTermsValues,
   PlannedEndSuggestion,
@@ -454,37 +458,14 @@ export const BAD_DEPOSIT_MESSAGE =
   "Isi uang jaminan dengan angka, atau kosongkan.";
 
 // The fields the API's errors can name; any other field goes to the alert.
-export const LEASE_API_FIELDS: readonly LeaseFormField[] = [
+export const LEASE_API_FIELDS = [
   "unitId",
   "termMonths",
   "startDate",
   "billedFrom",
   "depositAmount",
   "collectorMemberId",
-];
-
-// The fields in the form's order, for moving focus to the first bad one.
-export const LEASE_FIELD_ORDER: readonly LeaseFormField[] = [
-  "propertyId",
-  "unitId",
-  "termMonths",
-  "startDate",
-  "billedFrom",
-  "depositAmount",
-  "collectorMemberId",
-];
-
-export function firstLeaseError(
-  errors: LeaseFormErrors,
-): LeaseFormField | null {
-  return LEASE_FIELD_ORDER.find((field) => errors[field] !== undefined) ?? null;
-}
-
-export function isLeaseFormField(
-  field: string | null,
-): field is LeaseFormField {
-  return LEASE_FIELD_ORDER.some((known) => known === field);
-}
+] as const;
 
 // The deposit of a lease form as an integer, undefined when the field is empty. A message goes
 // into errors for a deposit that is typed but not a whole amount.
@@ -550,6 +531,111 @@ export function checkLeaseForm(
   return { ok: true, input };
 }
 
+// The fields "Sewakan unit" and "Ubah sewa" share, as the form holds them. Each is named as the
+// API names it, so an API error lands under its own field. The deposit is the field's text
+// (digits and dots, empty for none) and the collector a member id or NO_COLLECTOR.
+const leaseTermsFields = {
+  startDate: z.string(),
+  billing: z.enum(["start", "pick"]),
+  // The period start picked in "Mulai tagih dari"; the one the select shows is shownBilledFrom.
+  billedFrom: z.string(),
+  depositAmount: z.string(),
+  collectorMemberId: z.string(),
+};
+
+// "Sewakan unit" as the form holds it: the property, unit and term picked ("" or null until
+// one is), which may no longer be shown (leaseFormValues).
+export const leaseFormFieldsSchema = z.object({
+  propertyId: z.string(),
+  unitId: z.string(),
+  termMonths: z.number().nullable(),
+  ...leaseTermsFields,
+});
+
+export const LEASE_FORM_DEFAULTS: LeaseFormFields = {
+  propertyId: "",
+  unitId: "",
+  termMonths: null,
+  startDate: "",
+  billing: "start",
+  billedFrom: "",
+  depositAmount: "",
+  collectorMemberId: NO_COLLECTOR,
+};
+
+// Puts each message of a lease check under its field, where zodResolver shows it.
+function addLeaseIssues<T>(
+  errors: LeaseFormErrors,
+  ctx: z.RefinementCtx<T>,
+): void {
+  for (const [field, message] of Object.entries(errors)) {
+    if (message !== undefined) {
+      ctx.addIssue({ code: "custom", message, path: [field] });
+    }
+  }
+}
+
+// The "Mulai tagih dari" date the select shows: the one picked while it is still a choice, else
+// the default for the day the lease is entered.
+export function shownBilledFrom(
+  options: readonly DateOption[],
+  picked: string,
+  enteredOn: string,
+): string {
+  return options.some((option) => option.value === picked)
+    ? picked
+    : defaultBilledFrom(options, enteredOn);
+}
+
+// "Mulai tagih dari"'s choices in "Sewakan unit": only for a start date before today.
+export function newLeaseBilledFromOptions(
+  start: string,
+  today: string,
+  term: TermMonths,
+): DateOption[] {
+  return isCalendarDate(start) && startTiming(start, today) === "past"
+    ? billedFromOptions(start, today, term)
+    : [];
+}
+
+// "Sewakan unit" as it shows: the unit only while it is a free unit of the shown property, the
+// term the select shows (selectedTerm), and the "Mulai tagih dari" date the select shows.
+export function leaseFormValues(
+  fields: LeaseFormFields,
+  context: LeaseFormContext,
+): LeaseFormValues {
+  const termMonths = selectedTerm(context.unit, fields.termMonths);
+  const options = newLeaseBilledFromOptions(
+    fields.startDate,
+    context.today,
+    termMonths ?? 1,
+  );
+  return {
+    tenantId: context.tenantId,
+    unitId: context.unit?.id ?? "",
+    termMonths,
+    startDate: fields.startDate,
+    billing: fields.billing,
+    billedFrom: shownBilledFrom(options, fields.billedFrom, context.today),
+    deposit: fields.depositAmount,
+    collector: fields.collectorMemberId,
+  };
+}
+
+// "Sewakan unit"'s checks (checkLeaseForm) on what the form shows, giving the LeaseInput it sends.
+export function leaseFormSchema(context: LeaseFormContext) {
+  return leaseFormFieldsSchema.transform((fields, ctx) => {
+    const checked = checkLeaseForm(
+      leaseFormValues(fields, context),
+      context.propertyId,
+      context.today,
+    );
+    if (checked.ok) return checked.input;
+    addLeaseIssues(checked.errors, ctx);
+    return z.NEVER;
+  });
+}
+
 // "Ubah sewa" (boards Sewa-Ubah.dc.html and Sewa-Ubah-Phone.dc.html).
 
 export const EDIT_LEASE_NOTE =
@@ -558,12 +644,12 @@ export const DISABLED_COLLECTOR_HINT =
   "Penagih ini sudah dinonaktifkan. Pilih penagih baru.";
 
 // The fields the API's errors on a lease's terms can name; any other field goes to the alert.
-export const LEASE_TERMS_API_FIELDS: readonly LeaseFormField[] = [
+export const LEASE_TERMS_API_FIELDS = [
   "startDate",
   "billedFrom",
   "depositAmount",
   "collectorMemberId",
-];
+] as const;
 
 // What shows under "Mulai sewa" while a lease's terms are changed: "Mulai tagih dari" for a start
 // before the day the lease was entered (a lease entered late, the only case the API lets skip
@@ -653,6 +739,64 @@ export function checkLeaseTerms(
   }
   if (billedFrom !== undefined) input.billedFrom = billedFrom;
   return { ok: true, input };
+}
+
+// "Ubah sewa" as the form holds it.
+export const leaseTermsFieldsSchema = z.object(leaseTermsFields);
+
+// The form's starting values (leaseTermsValues), under the API's field names.
+export function leaseTermsDefaults(
+  lease: Pick<
+    Lease,
+    "startDate" | "billedFrom" | "depositAmount" | "collector"
+  >,
+): LeaseTermsFields {
+  const values = leaseTermsValues(lease);
+  return {
+    startDate: values.startDate,
+    billing: values.billing,
+    billedFrom: values.billedFrom,
+    depositAmount: values.deposit,
+    collectorMemberId: values.collector,
+  };
+}
+
+// "Mulai tagih dari"'s choices in "Ubah sewa": only for a start date before the day the lease was
+// entered (editStartBox "billing").
+export function changedLeaseBilledFromOptions(
+  start: string,
+  lease: Pick<Lease, "enteredOn" | "termMonths">,
+): DateOption[] {
+  return isCalendarDate(start) && start < lease.enteredOn
+    ? billedFromOptions(start, lease.enteredOn, lease.termMonths)
+    : [];
+}
+
+// "Ubah sewa" as it shows: the "Mulai tagih dari" date is the one the select shows.
+export function leaseTermsFormValues(
+  fields: LeaseTermsFields,
+  lease: Pick<Lease, "enteredOn" | "termMonths">,
+): LeaseTermsValues {
+  const options = changedLeaseBilledFromOptions(fields.startDate, lease);
+  return {
+    startDate: fields.startDate,
+    billing: fields.billing,
+    billedFrom: shownBilledFrom(options, fields.billedFrom, lease.enteredOn),
+    deposit: fields.depositAmount,
+    collector: fields.collectorMemberId,
+  };
+}
+
+// "Ubah sewa"'s checks (checkLeaseTerms) on what the form shows, giving the LeaseTerms it sends.
+export function leaseTermsSchema(
+  lease: Pick<Lease, "startDate" | "enteredOn" | "termMonths">,
+) {
+  return leaseTermsFieldsSchema.transform((fields, ctx) => {
+    const checked = checkLeaseTerms(leaseTermsFormValues(fields, lease), lease);
+    if (checked.ok) return checked.input;
+    addLeaseIssues(checked.errors, ctx);
+    return z.NEVER;
+  });
 }
 
 // "Unit: Kamar 07 · Kos Melati".

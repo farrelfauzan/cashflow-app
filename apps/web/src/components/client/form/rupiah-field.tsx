@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode, type RefObject } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,8 @@ import { FIELD_HINT_CLASS, FIELD_LABEL_CLASS } from "./utils";
 import { RupiahInput } from "./rupiah-input";
 
 type RupiahFieldProps = {
-  inputRef: RefObject<HTMLInputElement | null>;
+  // For moving focus from outside: a ref object, or a callback such as react-hook-form's.
+  inputRef: Ref<HTMLInputElement>;
   label: string;
   // The input's name, the API field it fills ("depositAmount").
   name: string;

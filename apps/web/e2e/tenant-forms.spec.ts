@@ -366,7 +366,17 @@ test.describe("Admin of the whole organization", () => {
     await expectTouchTarget(rent);
     await rent.click();
     const lease = page.getByRole("dialog", { name: "Sewakan unit" });
+    // Nothing chosen yet: each field says what it misses, and the first one takes the focus.
+    await lease.getByRole("button", { name: "Simpan sewa" }).click();
+    await expect(lease.getByText("Pilih properti.")).toBeVisible();
+    await expect(lease.getByText("Isi tanggal mulai sewa.")).toBeVisible();
+    await expect(
+      lease.getByRole("combobox", { name: "Properti" }),
+    ).toBeFocused();
+    // Choosing the property clears its own message, not the start date's.
     await choose(page, lease, "Properti", property.name);
+    await expect(lease.getByText("Pilih properti.")).toHaveCount(0);
+    await expect(lease.getByText("Isi tanggal mulai sewa.")).toBeVisible();
     await choose(page, lease, "Unit", unit.label);
 
     // A booking: the board's note, no "Mulai tagih dari".
@@ -394,6 +404,8 @@ test.describe("Admin of the whole organization", () => {
     await expect(lease.getByText(OCCUPIED_MESSAGE)).toBeVisible();
     const unitSelect = lease.getByRole("combobox", { name: "Unit" });
     await expect(unitSelect).toHaveAttribute("aria-invalid", "true");
+    // The API names the unit: its select takes the focus.
+    await expect(unitSelect).toBeFocused();
     // The unit list reloads, so the taken unit is no longer offered.
     await expect(unitSelect).toHaveText("Pilih unit");
     await expect(lease).toContainText(NO_FREE_UNIT_TEXT);
