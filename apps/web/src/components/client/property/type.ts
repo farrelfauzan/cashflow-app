@@ -61,14 +61,31 @@ export type UnitTermRow = {
   priceText: string;
 };
 
-export type UnitFormValues = {
-  label: string;
-  // Always the four terms, shortest first.
-  terms: readonly UnitTermRow[];
+// The fifth row of "Masa sewa dan harga": the unit's one custom term (decision 33). While
+// `showsSaved` is true the row is the saved unit's custom term ("Per 4 bulan") and behaves like a
+// standard row; otherwise it is "Lainnya", with "Jumlah bulan" and a price. A saved custom term
+// unticked and ticked again turns into "Lainnya" with its months typed in, so another count can be
+// chosen.
+export type UnitCustomTermRow = {
+  checked: boolean;
+  showsSaved: boolean;
+  // "Jumlah bulan": digits only, "" for none.
+  monthsText: string;
+  // The price typed for it (digits grouped with dots, "" for none).
+  priceText: string;
 };
 
-export type UnitFormErrors = Partial<Record<"label" | "terms", string>> & {
-  // Under a term's price field.
+export type UnitFormValues = {
+  label: string;
+  // Always the four standard terms, shortest first.
+  terms: readonly UnitTermRow[];
+  custom: UnitCustomTermRow;
+};
+
+export type UnitFormErrors = Partial<
+  Record<"label" | "terms" | "customMonths" | "customPrice", string>
+> & {
+  // Under a standard term's price field.
   prices?: Partial<Record<TermMonths, string>>;
 };
 
@@ -81,6 +98,15 @@ export type UnitTermRowView =
       kind: "input";
       nextPrice: ScheduledPrice | undefined;
       lastPrice: number | undefined;
+    };
+
+// What the custom row shows: the saved unit's custom term as a standard row would, or "Lainnya"
+// with "Jumlah bulan" and a price field.
+export type UnitCustomTermView =
+  | { kind: "saved"; months: TermMonths; term: UnitTermRowView }
+  | {
+      kind: "lainnya";
+      price: Extract<UnitTermRowView, { kind: "input" }>;
     };
 
 // The latest price on or before today of each term in a unit's history.
