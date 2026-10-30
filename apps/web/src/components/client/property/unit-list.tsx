@@ -1,19 +1,26 @@
 "use client";
 
 import type { Unit } from "@/lib/api/generated/model";
+import type { UnitRowAction } from "./type";
 
 import { UnitCard } from "./unit-card";
 import { UnitTableRow } from "./unit-table-row";
 
 type UnitListProps = {
   units: readonly Unit[];
-  canManage: boolean;
+  action: UnitRowAction;
   onEdit: (unitId: string) => void;
+  onShowPrices: (unitId: string) => void;
 };
 
 // The units of one property, in the API's order: a table on iPad, cards on the phone (boards
 // Properti-Unit.html and Properti-Unit-Phone.html). Only one of the two is displayed.
-export function UnitList({ units, canManage, onEdit }: UnitListProps) {
+export function UnitList({
+  units,
+  action,
+  onEdit,
+  onShowPrices,
+}: UnitListProps) {
   return (
     <>
       <section className="hidden overflow-hidden rounded-2xl border bg-card lg:block">
@@ -31,8 +38,9 @@ export function UnitList({ units, canManage, onEdit }: UnitListProps) {
             <UnitTableRow
               key={unit.id}
               unit={unit}
-              canManage={canManage}
+              action={action}
               onEdit={onEdit}
+              onShowPrices={onShowPrices}
             />
           ))}
         </ul>
@@ -43,8 +51,9 @@ export function UnitList({ units, canManage, onEdit }: UnitListProps) {
           <UnitCard
             key={unit.id}
             unit={unit}
-            canManage={canManage}
+            action={action}
             onEdit={onEdit}
+            onShowPrices={onShowPrices}
           />
         ))}
       </ul>

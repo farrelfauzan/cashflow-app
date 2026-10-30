@@ -32,6 +32,14 @@ export type PropertyPanelState =
 export type UnitPanelState =
   { kind: "closed" } | { kind: "add" } | { kind: "edit"; unitId: string };
 
+// The read-only "Harga unit" panel of a member who may read units but not change them.
+export type UnitPricesPanelState =
+  { kind: "closed" } | { kind: "open"; unitId: string };
+
+// The button at the end of a unit's row: "Ubah" for a member who manages units, "Harga" for one
+// who may only read them.
+export type UnitRowAction = "edit" | "prices" | "none";
+
 export type OpenPropertyPanel = Exclude<PropertyPanelState, { kind: "closed" }>;
 
 export type OpenUnitPanel = Exclude<UnitPanelState, { kind: "closed" }>;
@@ -124,6 +132,15 @@ export type UnitPriceHistoryRowView = {
   // "Mulai 1 Jan 2027 · dicatat Pak Hendra Gunawan, 30 Okt 2026".
   detail: string;
   chip: "Akan berlaku" | "Berlaku sekarang" | null;
+};
+
+// One offered term in "Harga unit": "Per tahun", its price in force ("Rp15.000.000", or "Belum ada
+// harga") and the price still to come ("Mulai 1 Jan 2027: Rp16.000.000"), if any.
+export type UnitPriceTermView = {
+  months: TermMonths;
+  label: string;
+  price: string;
+  next: string | null;
 };
 
 export type UnitPriceFormValues = {

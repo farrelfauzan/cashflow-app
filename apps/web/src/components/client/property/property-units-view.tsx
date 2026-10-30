@@ -27,9 +27,14 @@ import {
   isPropertyMissing,
   propertyPermissions,
   UNIT_SORT_OPTIONS,
+  unitRowAction,
   unitsReadOnly,
 } from "./utils";
-import type { PropertyPanelState, UnitPanelState } from "./type";
+import type {
+  PropertyPanelState,
+  UnitPanelState,
+  UnitPricesPanelState,
+} from "./type";
 
 import { PropertyLoadError } from "./property-load-error";
 import { PropertyNotFound } from "./property-not-found";
@@ -37,6 +42,7 @@ import { PropertyPanel } from "./property-panel";
 import { PropertyUnitsHeader } from "./property-units-header";
 import { UnitList } from "./unit-list";
 import { UnitPanel } from "./unit-panel";
+import { UnitPricesPanel } from "./unit-prices-panel";
 
 type PropertyUnitsViewProps = {
   orgId: string;
@@ -77,10 +83,14 @@ export function PropertyUnitsView({
   const [unitPanel, setUnitPanel] = useState<UnitPanelState>({
     kind: "closed",
   });
+  const [pricesPanel, setPricesPanel] = useState<UnitPricesPanelState>({
+    kind: "closed",
+  });
   // A short confirmation after a panel closes, announced to screen readers.
   const [notice, setNotice] = useState("");
 
-  const permissions = propertyPermissions(useAbility<AppAbility>());
+  const ability = useAbility<AppAbility>();
+  const permissions = propertyPermissions(ability);
   const missing = isPropertyMissing(found.error);
   const failed = orgMe.isError ? orgMe.error : missing ? null : found.error;
 
@@ -162,8 +172,11 @@ export function PropertyUnitsView({
           >
             <UnitList
               units={units.data.items}
-              canManage={permissions.canManageUnits}
+              action={unitRowAction(permissions, ability)}
               onEdit={(unitId) => openUnitPanel({ kind: "edit", unitId })}
+              onShowPrices={(unitId) =>
+                setPricesPanel({ kind: "open", unitId })
+              }
             />
             <ListPagination
               page={page}
@@ -195,6 +208,13 @@ export function PropertyUnitsView({
         units={units.data?.items ?? []}
         onPanelChange={setUnitPanel}
         onNotice={setNotice}
+      />
+      <UnitPricesPanel
+        orgId={orgId}
+        propertyName={property.name}
+        panel={pricesPanel}
+        units={units.data?.items ?? []}
+        onPanelChange={setPricesPanel}
       />
     </div>
   );

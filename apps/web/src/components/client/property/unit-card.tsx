@@ -2,18 +2,31 @@
 
 import { Button } from "@/components/ui/button";
 import type { Unit } from "@/lib/api/generated/model";
-import { unitRentText, unitOccupancyView } from "./utils";
+import type { UnitRowAction } from "./type";
+import {
+  PRICES_BUTTON_TEXT,
+  pricesButtonLabel,
+  unitRentText,
+  unitOccupancyView,
+} from "./utils";
 
 import { UnitTenant } from "./unit-tenant";
 
 type UnitCardProps = {
   unit: Unit;
-  canManage: boolean;
+  action: UnitRowAction;
   onEdit: (unitId: string) => void;
+  onShowPrices: (unitId: string) => void;
 };
 
-// One unit on the phone: label, usual rent, who is in it, and "Ubah".
-export function UnitCard({ unit, canManage, onEdit }: UnitCardProps) {
+// One unit on the phone: label, usual rent, who is in it, and "Ubah" (or "Harga" for a member who
+// may only read units).
+export function UnitCard({
+  unit,
+  action,
+  onEdit,
+  onShowPrices,
+}: UnitCardProps) {
   return (
     <li className="flex items-center justify-between gap-2.5 rounded-[14px] border bg-card py-3 pr-3.5 pl-4">
       <div className="flex min-w-0 flex-col gap-1">
@@ -25,7 +38,7 @@ export function UnitCard({ unit, canManage, onEdit }: UnitCardProps) {
           <UnitTenant view={unitOccupancyView(unit)} className="text-[15px]" />
         </div>
       </div>
-      {canManage && (
+      {action === "edit" && (
         <Button
           type="button"
           variant="outline"
@@ -34,6 +47,17 @@ export function UnitCard({ unit, canManage, onEdit }: UnitCardProps) {
           className="rounded-xl border-[1.5px] bg-card px-[18px] text-[15px] font-semibold"
         >
           Ubah
+        </Button>
+      )}
+      {action === "prices" && (
+        <Button
+          type="button"
+          variant="outline"
+          aria-label={pricesButtonLabel(unit.label)}
+          onClick={() => onShowPrices(unit.id)}
+          className="rounded-xl border-[1.5px] bg-card px-[18px] text-[15px] font-semibold"
+        >
+          {PRICES_BUTTON_TEXT}
         </Button>
       )}
     </li>

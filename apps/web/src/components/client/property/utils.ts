@@ -36,6 +36,8 @@ import type {
   UnitPriceFormResult,
   UnitPriceFormValues,
   UnitPriceHistoryRowView,
+  UnitPriceTermView,
+  UnitRowAction,
   UnitTermRow,
   UnitTermRowView,
 } from "./type";
@@ -91,6 +93,16 @@ export function propertyPermissions(ability: AppAbility): PropertyPermissions {
       ability.can("read", "property") &&
       !ability.can("read", everywhere("property")),
   };
+}
+
+// The button at the end of each unit's row. Reading units is enough to see their prices (the API's
+// listUnitPrices needs unit:read).
+export function unitRowAction(
+  permissions: PropertyPermissions,
+  ability: AppAbility,
+): UnitRowAction {
+  if (permissions.canManageUnits) return "edit";
+  return ability.can("read", "unit") ? "prices" : "none";
 }
 
 // The list of properties changes nothing for this member.
@@ -510,6 +522,31 @@ export function changePriceLabel(months: TermMonths): string {
 // "Mulai 1 Jan 2027: Rp1.600.000".
 export function nextPriceText(next: ScheduledPrice): string {
   return `Mulai ${formatDate(next.effectiveFrom)}: ${formatRupiah(next.amount)}`;
+}
+
+export const UNIT_PRICES_TITLE = "Harga unit";
+export const PRICES_BUTTON_TEXT = "Harga";
+
+// "Lihat harga Kamar 3", the name of a unit's "Harga" button.
+export function pricesButtonLabel(unitLabel: string): string {
+  return `Lihat harga ${unitLabel}`;
+}
+export const NO_PRICE_TEXT = "Belum ada harga";
+
+// "Harga unit": the unit's offered terms, shortest first, each with its price in force and the one
+// still to come.
+export function unitPriceTermViews(
+  unit: Pick<Unit, "terms">,
+): UnitPriceTermView[] {
+  return [...unit.terms]
+    .sort((a, b) => a.months - b.months)
+    .map((term) => ({
+      months: term.months,
+      label: termLabel(term.months),
+      price:
+        term.price === undefined ? NO_PRICE_TEXT : formatRupiah(term.price),
+      next: term.nextPrice === undefined ? null : nextPriceText(term.nextPrice),
+    }));
 }
 
 // "Riwayat harga": the API's rows in its order (latest effective date first). The first row of a
