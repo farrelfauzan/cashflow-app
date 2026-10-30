@@ -1,11 +1,13 @@
+import type { z } from "zod";
+
 import type {
-  PropertyInput,
-  PropertyKind,
   ScheduledPrice,
   TermMonths,
   UnitInput,
   UnitPriceInput,
 } from "@/lib/api/generated/model";
+
+import type { propertyFormSchema } from "./utils";
 
 export type PropertyPermissions = {
   // "Tambah properti": the API accepts it only with property:manage for the whole organization,
@@ -36,22 +38,8 @@ export type OpenPropertyPanel = Exclude<PropertyPanelState, { kind: "closed" }>;
 
 export type OpenUnitPanel = Exclude<UnitPanelState, { kind: "closed" }>;
 
-export type PropertyFormValues = {
-  name: string;
-  // null until a kind is chosen when adding.
-  kind: PropertyKind | null;
-  address: string;
-};
-
-// "address" is never found by the form (any text is fine); it is where an API error on it is
-// shown.
-export type PropertyFormErrors = Partial<
-  Record<"name" | "kind" | "address", string>
->;
-
-export type PropertyFormResult =
-  | { ok: true; input: PropertyInput }
-  | { ok: false; errors: PropertyFormErrors };
+// The property form's fields as typed; kind is unset until one is chosen when adding.
+export type PropertyFormValues = z.input<typeof propertyFormSchema>;
 
 // One row of "Masa sewa dan harga": whether the unit offers the term, and the price typed for it
 // (digits grouped with dots, "" for none).

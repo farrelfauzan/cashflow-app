@@ -263,14 +263,21 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByText("Pilih jenis properti.")).toBeVisible();
     await expect(panel.getByLabel("Nama properti")).toBeFocused();
 
-    // A name another property already has comes back from the API under the name field.
+    // Editing a field clears its own error only; it is checked again on the next save.
     await panel.getByLabel("Nama properti").fill("kos melati");
+    await expect(panel.getByText("Isi nama properti.")).toHaveCount(0);
+    await expect(panel.getByText("Pilih jenis properti.")).toBeVisible();
     await panel.getByRole("radio", { name: "Kos" }).check();
+    await expect(panel.getByText("Pilih jenis properti.")).toHaveCount(0);
+
+    // A name another property already has comes back from the API under the name field, which
+    // takes the focus.
     await panel.getByRole("button", { name: "Simpan properti" }).click();
     await expect(panel.getByLabel("Nama properti")).toHaveAttribute(
       "aria-invalid",
       "true",
     );
+    await expect(panel.getByLabel("Nama properti")).toBeFocused();
     await expect(panel.getByRole("alert")).toBeVisible();
     await expect(panel).toBeVisible();
     await panel.getByRole("button", { name: "Batal" }).click();

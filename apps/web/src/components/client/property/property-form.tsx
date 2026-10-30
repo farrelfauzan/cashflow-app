@@ -1,17 +1,18 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId } from "react";
+import { Controller } from "react-hook-form";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SheetClose } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { toFormError } from "@/lib/api/form-error";
-import type { Property, PropertyKind } from "@/lib/api/generated/model";
+import type { Property } from "@/lib/api/generated/model";
 import {
   getGetPropertyQueryKey,
   getListPropertiesQueryKey,
@@ -25,9 +26,8 @@ import {
   PROPERTY_ADDRESS_MAX_LENGTH,
   PROPERTY_NAME_MAX_LENGTH,
   TEXTAREA_CLASS,
-  checkPropertyForm,
+  propertyFormSchema,
 } from "./utils";
-import type { PropertyFormErrors } from "./type";
 
 import { PropertyKindField } from "./property-kind-field";
 
@@ -39,21 +39,26 @@ type PropertyFormProps = {
 };
 
 // The fields the API's errors can name; any other field goes to the alert.
-const FORM_FIELDS = ["name", "kind", "address"];
+const FORM_FIELDS = ["name", "kind", "address"] as const;
 
 // "Tambah properti" and "Ubah properti": name, kind and address. The save button sits outside
 // the form, in the panel's footer, and submits it through its `form` attribute.
 export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
   const id = useId();
   const formId = `${id}-form`;
-  const nameRef = useRef<HTMLInputElement>(null);
-  const addressRef = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
-  const [name, setName] = useState(property?.name ?? "");
-  const [kind, setKind] = useState<PropertyKind | null>(property?.kind ?? null);
-  const [address, setAddress] = useState(property?.address ?? "");
-  const [errors, setErrors] = useState<PropertyFormErrors>({});
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, field, showApiError, alert } = useApiForm({
+    schema: propertyFormSchema,
+    defaultValues: {
+      name: property?.name ?? "",
+      kind: property?.kind,
+      address: property?.address ?? "",
+    },
+    apiFields: FORM_FIELDS,
+  });
+  const { errors } = form.formState;
+  const nameError = errors.name?.message;
+  const addressError = errors.address?.message;
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -72,87 +77,48 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
   });
   const saving = create.isPending || update.isPending;
 
-  function clearError(field: keyof PropertyFormErrors) {
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[field];
-      return next;
-    });
-  }
-
-  function handleError(error: unknown) {
-    const failed = toFormError(error, FORM_FIELDS);
-    if (failed.field === null) {
-      setAlert(failed.message);
-      return;
-    }
-    setErrors({ [failed.field]: failed.message });
-    if (failed.field === "name") nameRef.current?.focus();
-    if (failed.field === "address") addressRef.current?.focus();
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit((input) => {
     if (saving) return;
-
-    setAlert(null);
-    const checked = checkPropertyForm({ name, kind, address });
-    if (!checked.ok) {
-      setErrors(checked.errors);
-      if (checked.errors.name !== undefined) nameRef.current?.focus();
-      return;
-    }
-    setErrors({});
-
-    const options = { onSuccess: onSaved, onError: handleError };
+    const options = { onSuccess: onSaved, onError: showApiError };
     if (property === undefined) {
-      create.mutate({ orgId, data: checked.input }, options);
+      create.mutate({ orgId, data: input }, options);
     } else {
-      update.mutate(
-        { orgId, propertyId: property.id, data: checked.input },
-        options,
-      );
+      update.mutate({ orgId, propertyId: property.id, data: input }, options);
     }
-  }
+  });
 
   return (
     <>
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
+        {alert !== undefined && <FormAlert message={alert} />}
 
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-name`} className={FIELD_LABEL_CLASS}>
             Nama properti
           </Label>
           <Input
-            ref={nameRef}
             id={`${id}-name`}
-            name="name"
             type="text"
             autoComplete="off"
             maxLength={PROPERTY_NAME_MAX_LENGTH}
             placeholder="Contoh: Kos Melati"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              clearError("name");
-            }}
+            {...field("name")}
             disabled={saving}
-            aria-invalid={errors.name !== undefined}
+            aria-invalid={nameError !== undefined}
             aria-describedby={
-              errors.name !== undefined
+              nameError !== undefined
                 ? `${id}-name-error ${id}-name-hint`
                 : `${id}-name-hint`
             }
             className={INPUT_CLASS}
           />
-          {errors.name !== undefined && (
-            <FieldError id={`${id}-name-error`} message={errors.name} />
+          {nameError !== undefined && (
+            <FieldError id={`${id}-name-error`} message={nameError} />
           )}
           <p id={`${id}-name-hint`} className={FIELD_HINT_CLASS}>
             Satu nama hanya untuk satu properti.
@@ -163,14 +129,20 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
           </p>
         </div>
 
-        <PropertyKindField
-          value={kind}
-          onChange={(next) => {
-            setKind(next);
-            clearError("kind");
-          }}
-          error={errors.kind}
-          disabled={saving}
+        <Controller
+          control={form.control}
+          name="kind"
+          render={({ field: kind }) => (
+            <PropertyKindField
+              value={kind.value ?? null}
+              onChange={(next) => {
+                kind.onChange(next);
+                form.clearErrors("kind");
+              }}
+              error={errors.kind?.message}
+              disabled={saving}
+            />
+          )}
         />
 
         <div className="flex flex-col gap-2">
@@ -178,28 +150,22 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
             Alamat (boleh dikosongkan)
           </Label>
           <Textarea
-            ref={addressRef}
             id={`${id}-address`}
-            name="address"
             autoComplete="off"
             maxLength={PROPERTY_ADDRESS_MAX_LENGTH}
             placeholder="Contoh: Jl. Melati No. 12, Sleman"
-            value={address}
-            onChange={(event) => {
-              setAddress(event.target.value);
-              clearError("address");
-            }}
+            {...field("address")}
             disabled={saving}
-            aria-invalid={errors.address !== undefined}
+            aria-invalid={addressError !== undefined}
             aria-describedby={
-              errors.address !== undefined
+              addressError !== undefined
                 ? `${id}-address-error ${id}-address-hint`
                 : `${id}-address-hint`
             }
             className={TEXTAREA_CLASS}
           />
-          {errors.address !== undefined && (
-            <FieldError id={`${id}-address-error`} message={errors.address} />
+          {addressError !== undefined && (
+            <FieldError id={`${id}-address-error`} message={addressError} />
           )}
           <p id={`${id}-address-hint`} className={FIELD_HINT_CLASS}>
             Dipakai di pesan WhatsApp dan laporan.
