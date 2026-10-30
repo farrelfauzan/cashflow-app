@@ -762,6 +762,20 @@ describe("billedNote", () => {
       billedNote(lease({ startDate: "2026-09-30", billedFrom: "2026-11-01" })),
     ).toBe("30 Sep sampai 31 Okt dianggap sudah ditagih sendiri oleh pemilik");
   });
+
+  it("carries the year for a longer term", () => {
+    expect(
+      billedNote(
+        lease({
+          startDate: "2025-09-15",
+          billedFrom: "2026-09-15",
+          termMonths: 12,
+        }),
+      ),
+    ).toBe(
+      "15 Sep 2025 sampai 14 Sep 2026 dianggap sudah ditagih sendiri oleh pemilik",
+    );
+  });
 });
 
 describe("leaseRentLabel", () => {

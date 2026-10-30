@@ -115,6 +115,7 @@ export function LeaseEditForm({
     const ref = {
       propertyId: null,
       unitId: null,
+      termMonths: null,
       startDate: startRef,
       billedFrom: billedFromRef,
       depositAmount: depositRef,
@@ -189,7 +190,7 @@ export function LeaseEditForm({
               clearError("startDate");
               clearError("billedFrom");
             }}
-            hint={startDateHint(startDate)}
+            hint={startDateHint(startDate, lease.termMonths)}
             error={errors.startDate}
             disabled={saving}
             className="md:[grid-area:start]"
@@ -206,7 +207,7 @@ export function LeaseEditForm({
                 startDate={startDate}
                 enteredOn={lease.enteredOn}
                 today={today}
-                term={lease.termMonths}
+                termMonths={lease.termMonths}
                 billing={billing}
                 onBillingChange={(next) => {
                   setBilling(next);

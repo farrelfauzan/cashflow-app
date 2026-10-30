@@ -26,7 +26,8 @@ type SelectFieldProps = {
   // "" shows the placeholder.
   value: string;
   placeholder: string;
-  options: readonly { value: string; label: string }[];
+  // A disabled choice shows but cannot be picked.
+  options: readonly { value: string; label: string; disabled?: boolean }[];
   onValueChange: (value: string) => void;
   // Under the field; null for none.
   hint: string | null;
@@ -83,6 +84,7 @@ export function SelectField({
             <SelectItem
               key={option.value}
               value={option.value}
+              disabled={option.disabled}
               className={SELECT_ITEM_CLASS}
             >
               {option.label}

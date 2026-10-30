@@ -6,6 +6,7 @@ import type { ImportRow, ImportSummary } from "@/lib/api/generated/model";
 import {
   alsoCreatedText,
   checkProblem,
+  COLUMN_NOTES,
   chooseAction,
   commitButton,
   createdCounts,
@@ -18,6 +19,8 @@ import {
   importRowView,
   indonesianColumn,
   isTooLarge,
+  OPTIONAL_COLUMNS,
+  REQUIRED_COLUMNS,
   MAX_FILE_BYTES,
   stepHeading,
   stepProgressText,
@@ -195,6 +198,40 @@ describe("chooseAction", () => {
   });
 });
 
+describe("format card", () => {
+  // The template's header (services/api/internal/tenantimport/template.go templateColumns).
+  const TEMPLATE = [
+    "properti",
+    "jenis_properti",
+    "kamar",
+    "nama_penyewa",
+    "no_wa",
+    "sewa",
+    "jangka_bulan",
+    "tanggal_mulai",
+    "mulai_tagih",
+    "jaminan",
+  ];
+
+  it("lists every template column once, each group in the template's order", () => {
+    const inTemplateOrder = (columns: readonly string[]) =>
+      TEMPLATE.filter((column) => columns.includes(column));
+    expect([...REQUIRED_COLUMNS]).toEqual(inTemplateOrder(REQUIRED_COLUMNS));
+    expect([...OPTIONAL_COLUMNS]).toEqual(inTemplateOrder(OPTIONAL_COLUMNS));
+    expect([...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS].sort()).toEqual(
+      [...TEMPLATE].sort(),
+    );
+  });
+
+  it("explains sewa, jangka_bulan and mulai_tagih in that order", () => {
+    expect(COLUMN_NOTES).toEqual([
+      "sewa: harga satu periode. Boleh dikosongkan kalau unit sudah punya harga untuk jangka itu.",
+      "jangka_bulan: 1, 3, 6 atau 12. Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).",
+      "mulai_tagih: awal periode pertama yang ditagih. Kosongkan untuk menagih sejak tanggal mulai sewa.",
+    ]);
+  });
+});
+
 describe("indonesianColumn", () => {
   it.each([
     ["property", "properti"],
@@ -202,6 +239,7 @@ describe("indonesianColumn", () => {
     ["tenant_name", "nama_penyewa"],
     ["phone", "no_wa"],
     ["rent", "sewa"],
+    ["term", "jangka_bulan"],
     ["start_date", "tanggal_mulai"],
     ["deposit", "jaminan"],
     ["property_kind", "jenis_properti"],
@@ -220,7 +258,7 @@ describe("importRowView", () => {
       lineLabel: "Baris 2",
       status: { label: "Siap", tone: "ready" },
       tenantName: "Mas Wahyu Hidayat",
-      placeText: "Kamar 11 · Kos Melati · Rp1.300.000",
+      placeText: "Kamar 11 · Kos Melati · Per bulan · Rp1.300.000",
       datesText: "Mulai 1 Okt 2026",
       createdChips: ["Unit baru", "Penyewa baru", "Sewa baru"],
       errors: [],
@@ -239,8 +277,36 @@ describe("importRowView", () => {
         },
       }),
     );
-    expect(view.placeText).toBe("Kamar 11 · Kos Melati");
+    expect(view.placeText).toBe("Kamar 11 · Kos Melati · Per tahun");
   });
+
+  it.each([
+    {
+      termMonths: 3,
+      want: "Kamar 11 · Kos Melati · Per 3 bulan · Rp3.600.000",
+    },
+    {
+      termMonths: 6,
+      want: "Kamar 11 · Kos Melati · Per 6 bulan · Rp3.600.000",
+    },
+    { termMonths: 12, want: "Kamar 11 · Kos Melati · Per tahun · Rp3.600.000" },
+  ] as const)(
+    "names the row's term of $termMonths months",
+    ({ termMonths, want }) => {
+      const view = importRowView(
+        row({
+          values: {
+            startDate: "2026-10-01",
+            billedFrom: "2026-10-01",
+            termMonths,
+            rentAmount: 3_600_000,
+            depositAmount: 0,
+          },
+        }),
+      );
+      expect(view.placeText).toBe(want);
+    },
+  );
 
   it("adds the billing start when it differs from the start date", () => {
     const view = importRowView(

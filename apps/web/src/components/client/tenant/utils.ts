@@ -340,11 +340,13 @@ export function previousDay(date: string): string {
 }
 
 // "Mulai tagih dari" is later than the start date when the admin skipped the periods the owner
-// collected by hand; the note says which days those are.
+// collected by hand; the note says which days those are. A longer term's skipped periods span a
+// year or more, so they carry the year ("15 Sep 2025 sampai 14 Sep 2026").
 export function billedNote(lease: Lease): string | null {
   if (lease.billedFrom === lease.startDate) return null;
-  const from = formatDayMonth(lease.startDate);
-  const to = formatDayMonth(previousDay(lease.billedFrom));
+  const format = lease.termMonths === 1 ? formatDayMonth : formatDate;
+  const from = format(lease.startDate);
+  const to = format(previousDay(lease.billedFrom));
   return `${from} sampai ${to} dianggap sudah ditagih sendiri oleh pemilik`;
 }
 

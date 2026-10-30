@@ -47,23 +47,38 @@ import {
   firstLeaseError,
   freeUnits,
   isPeriodStart,
-  nextPeriodStart,
-  periodStart,
   isCalendarDate,
   isLeaseFormField,
   leaseFormSubtitle,
-  NO_BILLED_FROM_MESSAGE,
+  nextPeriodStart,
+  noBilledFromMessage,
   NO_COLLECTOR,
   NO_PROPERTY_MESSAGE,
   NO_START_MESSAGE,
   NO_UNIT_MESSAGE,
   periodStartOn,
-  NO_TERM_MESSAGE,
+  NO_PRICE_MESSAGE,
   leaseTermFor,
   shortestTerm,
   TERM_PERIOD_WORDS,
   startDateHint,
   startTiming,
+  billAllLabel,
+  billedFromSelectLabel,
+  billPickHint,
+  billPickLabel,
+  billPickSelectHint,
+  chargesTermHint,
+  moveOutEffects,
+  NO_TERM_PRICE_TEXT,
+  periodStart,
+  plannedEndEffects,
+  selectedTerm,
+  TERM_NO_CHOICE_HINT,
+  termFromValue,
+  termHint,
+  termOptionLabel,
+  termOptions,
 } from "./utils";
 
 const TODAY = "2026-10-28";
@@ -180,7 +195,7 @@ describe("anniversary", () => {
   });
 });
 
-// TestIsAnniversary.
+// TestIsAnniversary, through a monthly lease's period starts.
 describe("isPeriodStart, monthly", () => {
   it.each([
     {
@@ -280,11 +295,11 @@ describe("isPeriodStart, monthly", () => {
       want: false,
     },
   ])("$name", ({ start, date, want }) => {
-    expect(isPeriodStart(start, 1, date)).toBe(want);
+    expect(isPeriodStart(start, date, 1)).toBe(want);
   });
 });
 
-// TestFirstAnniversaryAfter.
+// TestFirstAnniversaryAfter, through a monthly lease's period starts.
 describe("nextPeriodStart, monthly", () => {
   it.each([
     {
@@ -378,10 +393,10 @@ describe("nextPeriodStart, monthly", () => {
       want: "2028-02-29",
     },
   ])("$name", ({ start, date, want }) => {
-    const got = nextPeriodStart(start, 1, date);
+    const got = nextPeriodStart(start, date, 1);
     expect(got).toBe(want);
     if (date >= start) expect(got > date).toBe(true);
-    expect(isPeriodStart(start, 1, got)).toBe(true);
+    expect(isPeriodStart(start, got, 1)).toBe(true);
   });
 });
 
@@ -424,7 +439,7 @@ describe("periodStartOn", () => {
       want: "2027-02-28",
     },
   ])("$name", ({ start, date, want }) => {
-    expect(periodStartOn(start, 1, date)).toBe(want);
+    expect(periodStartOn(start, date, 1)).toBe(want);
   });
 });
 
@@ -497,8 +512,8 @@ describe("billedFromOptions", () => {
 
   it("offers every option as an anniversary the API accepts", () => {
     for (const option of billedFromOptions("2025-12-31", TODAY, 1)) {
-      expect(isPeriodStart("2025-12-31", 1, option.value)).toBe(true);
-      expect(option.value <= nextPeriodStart("2025-12-31", 1, TODAY)).toBe(
+      expect(isPeriodStart("2025-12-31", option.value, 1)).toBe(true);
+      expect(option.value <= nextPeriodStart("2025-12-31", TODAY, 1)).toBe(
         true,
       );
     }
@@ -582,7 +597,7 @@ describe("billingExplanation", () => {
 
 describe("copy", () => {
   it("names the start date in the first radio's line", () => {
-    expect(billAllHint("2026-09-15")).toBe(
+    expect(billAllHint("2026-09-15", 1)).toBe(
       "Semua bulan sejak 15 Sep 2026 dibuatkan tagihan.",
     );
   });
@@ -601,7 +616,7 @@ describe("copy", () => {
       want: "Juga jadi tanggal tagihan tiap bulan. Tanggal 29 sampai 31 jatuh di hari terakhir bulan yang lebih pendek.",
     },
   ])("the start hint for '$start'", ({ start, want }) => {
-    expect(startDateHint(start)).toBe(want);
+    expect(startDateHint(start, 1)).toBe(want);
   });
 
   it("names the tenant and their number in the subtitle", () => {
@@ -665,9 +680,9 @@ describe("leaseTermFor", () => {
       want: 12,
     },
     {
-      name: "the shortest term when none is priced",
+      name: "no term when none is priced",
       terms: [{ months: 6 }, { months: 3 }],
-      want: 3,
+      want: null,
     },
     { name: "no term", terms: [], want: null },
   ] as const)("takes $want for $name", ({ terms, want }) => {
@@ -687,6 +702,461 @@ describe("TERM_PERIOD_WORDS", () => {
       6: "6 bulan",
       12: "tahun",
     });
+  });
+});
+
+describe("termOptions", () => {
+  it("lists the unit's terms shortest first, an unpriced one disabled", () => {
+    expect(
+      termOptions({
+        terms: [
+          { months: 12, price: 15_000_000 },
+          { months: 3 },
+          { months: 1, price: 1_250_000 },
+          { months: 6, price: 7_000_000 },
+        ],
+      }),
+    ).toEqual([
+      { value: "1", label: "Per bulan · Rp1.250.000", disabled: false },
+      { value: "3", label: "Per 3 bulan · belum ada harga", disabled: true },
+      { value: "6", label: "Per 6 bulan · Rp7.000.000", disabled: false },
+      { value: "12", label: "Per tahun · Rp15.000.000", disabled: false },
+    ]);
+  });
+
+  it("lists nothing before a unit is chosen", () => {
+    expect(termOptions(undefined)).toEqual([]);
+  });
+
+  it.each([
+    { months: 1, price: 1_250_000, want: "Per bulan · Rp1.250.000" },
+    { months: 3, price: 3_500_000, want: "Per 3 bulan · Rp3.500.000" },
+    {
+      months: 6,
+      price: undefined,
+      want: `Per 6 bulan · ${NO_TERM_PRICE_TEXT}`,
+    },
+    { months: 12, price: 15_000_000, want: "Per tahun · Rp15.000.000" },
+  ] as const)("labels $months months as '$want'", ({ months, price, want }) => {
+    expect(termOptionLabel({ months, price })).toBe(want);
+  });
+});
+
+describe("selectedTerm", () => {
+  const unit = {
+    terms: [
+      { months: 1 as const, price: 1_250_000 },
+      { months: 3 as const },
+      { months: 12 as const, price: 13_500_000 },
+    ],
+  };
+
+  it.each([
+    { name: "the default before a choice", chosen: null, want: 1 },
+    { name: "a priced choice", chosen: 12, want: 12 },
+    { name: "the default over an unpriced choice", chosen: 3, want: 1 },
+    { name: "the default over a term not offered", chosen: 6, want: 1 },
+  ] as const)("shows $name", ({ chosen, want }) => {
+    expect(selectedTerm(unit, chosen)).toBe(want);
+  });
+
+  it("shows nothing without a unit or without a priced term", () => {
+    expect(selectedTerm(undefined, 12)).toBeNull();
+    expect(selectedTerm({ terms: [{ months: 12 }] }, 12)).toBeNull();
+  });
+
+  it("reads a select value as an offered term", () => {
+    expect(termFromValue(unit, "12")).toBe(12);
+    expect(termFromValue(unit, "6")).toBeNull();
+    expect(termFromValue(undefined, "1")).toBeNull();
+  });
+});
+
+describe("termHint", () => {
+  it.each([
+    {
+      term: 1,
+      want: "Tagihan dibuat sekali tiap bulan, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.",
+    },
+    {
+      term: 3,
+      want: "Tagihan dibuat sekali tiap 3 bulan, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.",
+    },
+    {
+      term: 6,
+      want: "Tagihan dibuat sekali tiap 6 bulan, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.",
+    },
+    {
+      term: 12,
+      want: "Tagihan dibuat sekali tiap tahun, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.",
+    },
+  ] as const)("says how often $term months is billed", ({ term, want }) => {
+    const unit = {
+      terms: [{ months: term, price: 1_250_000 }],
+    };
+    expect(termHint(unit, term)).toEqual({
+      text: want,
+      tone: "muted",
+    });
+  });
+
+  it("says where the choices come from before a unit is chosen", () => {
+    expect(termHint(undefined, null)).toEqual({
+      text: TERM_NO_CHOICE_HINT,
+      tone: "muted",
+    });
+  });
+
+  it("warns as soon as the chosen unit has no priced term", () => {
+    const unit = { terms: [{ months: 1 as const }, { months: 12 as const }] };
+    expect(termHint(unit, null)).toEqual({
+      text: NO_PRICE_MESSAGE,
+      tone: "warning",
+    });
+  });
+});
+
+// The longer terms against the API's PeriodStart rule (services/api/internal/tenant/period.go).
+describe("period starts of longer terms", () => {
+  it.each([
+    {
+      name: "3 months on",
+      start: "2026-09-15",
+      n: 1,
+      term: 3,
+      want: "2026-12-15",
+    },
+    {
+      name: "6 months on",
+      start: "2026-09-15",
+      n: 1,
+      term: 6,
+      want: "2027-03-15",
+    },
+    {
+      name: "a year on",
+      start: "2026-09-15",
+      n: 1,
+      term: 12,
+      want: "2027-09-15",
+    },
+    {
+      name: "a 31 Jan start, 3 months on",
+      start: "2027-01-31",
+      n: 1,
+      term: 3,
+      want: "2027-04-30",
+    },
+    {
+      name: "a 31 Jan start, 6 months on",
+      start: "2027-01-31",
+      n: 1,
+      term: 6,
+      want: "2027-07-31",
+    },
+    {
+      name: "a 30 Nov start, 3 months on is 28 Feb",
+      start: "2026-11-30",
+      n: 1,
+      term: 3,
+      want: "2027-02-28",
+    },
+    {
+      name: "a 30 Nov start, 6 months on is back on the 30th",
+      start: "2026-11-30",
+      n: 2,
+      term: 3,
+      want: "2027-05-30",
+    },
+    {
+      name: "29 Feb, a year on is 28 Feb",
+      start: "2028-02-29",
+      n: 1,
+      term: 12,
+      want: "2029-02-28",
+    },
+    {
+      name: "29 Feb, four years on is 29 Feb again",
+      start: "2028-02-29",
+      n: 4,
+      term: 12,
+      want: "2032-02-29",
+    },
+  ] as const)("$name", ({ start, n, term, want }) => {
+    expect(periodStart(start, n, term)).toBe(want);
+  });
+
+  it.each([
+    { start: "2026-09-15", date: "2026-12-15", term: 3, want: true },
+    { start: "2026-09-15", date: "2026-10-15", term: 3, want: false },
+    { start: "2026-09-15", date: "2027-03-15", term: 6, want: true },
+    { start: "2026-09-15", date: "2026-12-15", term: 6, want: false },
+    { start: "2026-09-15", date: "2027-09-15", term: 12, want: true },
+    { start: "2026-09-15", date: "2027-03-15", term: 12, want: false },
+    { start: "2027-01-31", date: "2027-04-30", term: 3, want: true },
+    { start: "2027-01-31", date: "2027-02-28", term: 3, want: false },
+    { start: "2028-02-29", date: "2029-02-28", term: 12, want: true },
+    { start: "2028-02-29", date: "2029-03-01", term: 12, want: false },
+    { start: "2026-09-15", date: "2026-06-15", term: 3, want: false },
+  ] as const)(
+    "$date is a period start of $start every $term months: $want",
+    ({ start, date, term, want }) => {
+      expect(isPeriodStart(start, date, term)).toBe(want);
+    },
+  );
+
+  it.each([
+    { start: "2026-09-15", date: "2026-10-30", term: 3, want: "2026-12-15" },
+    { start: "2026-09-15", date: "2026-12-15", term: 3, want: "2027-03-15" },
+    { start: "2026-09-15", date: "2026-10-30", term: 6, want: "2027-03-15" },
+    { start: "2026-09-15", date: "2026-10-30", term: 12, want: "2027-09-15" },
+    { start: "2026-09-15", date: "2026-08-01", term: 12, want: "2026-09-15" },
+    { start: "2028-02-29", date: "2031-03-01", term: 12, want: "2032-02-29" },
+  ] as const)(
+    "the next period start of $start every $term months after $date is $want",
+    ({ start, date, term, want }) => {
+      expect(nextPeriodStart(start, date, term)).toBe(want);
+    },
+  );
+
+  it.each([
+    { start: "2026-09-15", date: "2026-10-30", term: 3, want: "2026-09-15" },
+    { start: "2026-09-15", date: "2027-01-02", term: 3, want: "2026-12-15" },
+    { start: "2026-09-15", date: "2027-09-14", term: 12, want: "2026-09-15" },
+    { start: "2027-01-31", date: "2027-05-01", term: 3, want: "2027-04-30" },
+  ] as const)(
+    "the period of $start every $term months running on $date starts $want",
+    ({ start, date, term, want }) => {
+      expect(periodStartOn(start, date, term)).toBe(want);
+    },
+  );
+});
+
+describe("billedFromOptions of longer terms", () => {
+  // Started 15 Sep 2026 and entered 30 Oct 2026, as in CLAUDE.md's example of a lease entered late.
+  const ENTERED = "2026-10-30";
+  const values = (start: string, enteredOn: string, term: 3 | 6 | 12) =>
+    billedFromOptions(start, enteredOn, term).map((option) => option.value);
+
+  it.each([
+    { term: 3, want: [{ value: "2026-12-15", label: "15 Des 2026" }] },
+    { term: 6, want: [{ value: "2027-03-15", label: "15 Mar 2027" }] },
+    { term: 12, want: [{ value: "2027-09-15", label: "15 Sep 2027" }] },
+  ] as const)(
+    "offers only the next period start of $term months while in the first period",
+    ({ term, want }) => {
+      expect(billedFromOptions("2026-09-15", ENTERED, term)).toEqual(want);
+      expect(
+        defaultBilledFrom(
+          billedFromOptions("2026-09-15", ENTERED, term),
+          ENTERED,
+        ),
+      ).toBe(want[0].value);
+    },
+  );
+
+  it("steps by whole terms for a lease several periods old", () => {
+    expect(values("2025-09-15", ENTERED, 3)).toEqual([
+      "2025-12-15",
+      "2026-03-15",
+      "2026-06-15",
+      "2026-09-15",
+      "2026-12-15",
+    ]);
+    expect(values("2024-09-15", ENTERED, 12)).toEqual([
+      "2025-09-15",
+      "2026-09-15",
+      "2027-09-15",
+    ]);
+    expect(
+      defaultBilledFrom(billedFromOptions("2024-09-15", ENTERED, 12), ENTERED),
+    ).toBe("2026-09-15");
+  });
+
+  it("counts a 31 Jan start's month ends from the start date", () => {
+    expect(values("2027-01-31", "2027-08-15", 3)).toEqual([
+      "2027-04-30",
+      "2027-07-31",
+      "2027-10-31",
+    ]);
+    expect(values("2027-01-31", "2027-08-15", 6)).toEqual([
+      "2027-07-31",
+      "2028-01-31",
+    ]);
+    expect(values("2027-01-31", "2028-03-01", 12)).toEqual([
+      "2028-01-31",
+      "2029-01-31",
+    ]);
+  });
+
+  it("keeps a 29 Feb yearly start on the last day of February", () => {
+    expect(values("2028-02-29", "2029-06-01", 12)).toEqual([
+      "2029-02-28",
+      "2030-02-28",
+    ]);
+  });
+
+  it.each([
+    { start: "2026-09-15", entered: ENTERED, term: 3 },
+    { start: "2025-12-31", entered: ENTERED, term: 3 },
+    { start: "2025-08-31", entered: ENTERED, term: 6 },
+    { start: "2023-02-28", entered: ENTERED, term: 12 },
+    { start: "2028-02-29", entered: "2031-03-01", term: 12 },
+    { start: "2026-10-30", entered: ENTERED, term: 12 },
+  ] as const)(
+    "never offers past the API's latest period start ($start every $term months)",
+    ({ start, entered, term }) => {
+      const latest = nextPeriodStart(
+        start,
+        entered > start ? entered : start,
+        term,
+      );
+      const options = billedFromOptions(start, entered, term);
+      expect(options.length).toBeGreaterThan(0);
+      expect(options.at(-1)?.value).toBe(latest);
+      for (const option of options) {
+        expect(isPeriodStart(start, option.value, term)).toBe(true);
+        expect(option.value <= latest).toBe(true);
+      }
+    },
+  );
+});
+
+describe("billing copy of longer terms", () => {
+  const ENTERED = "2026-10-30";
+
+  it.each([
+    {
+      term: 3,
+      want: [
+        "Tagih semua periode 3 bulan sejak tanggal mulai",
+        "Semua periode 3 bulan sejak 15 Sep 2026 dibuatkan tagihan.",
+        "Mulai dari periode yang saya pilih",
+        "Periode sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.",
+        "Periode mulai tagih",
+        "Pilihan periode hanya berlaku kalau opsi kedua dipilih.",
+        "Pilih periode mulai tagih.",
+      ],
+    },
+    {
+      term: 6,
+      want: [
+        "Tagih semua periode 6 bulan sejak tanggal mulai",
+        "Semua periode 6 bulan sejak 15 Sep 2026 dibuatkan tagihan.",
+        "Mulai dari periode yang saya pilih",
+        "Periode sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.",
+        "Periode mulai tagih",
+        "Pilihan periode hanya berlaku kalau opsi kedua dipilih.",
+        "Pilih periode mulai tagih.",
+      ],
+    },
+    {
+      term: 12,
+      want: [
+        "Tagih semua tahun sejak tanggal mulai",
+        "Semua tahun sejak 15 Sep 2026 dibuatkan tagihan.",
+        "Mulai dari tahun yang saya pilih",
+        "Tahun sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.",
+        "Tahun mulai tagih",
+        "Pilihan tahun hanya berlaku kalau opsi kedua dipilih.",
+        "Pilih tahun mulai tagih.",
+      ],
+    },
+    {
+      term: 1,
+      want: [
+        "Tagih semua bulan sejak tanggal mulai",
+        "Semua bulan sejak 15 Sep 2026 dibuatkan tagihan.",
+        "Mulai dari bulan yang saya pilih",
+        "Bulan sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.",
+        "Bulan mulai tagih",
+        "Pilihan bulan hanya berlaku kalau opsi kedua dipilih.",
+        "Pilih bulan mulai tagih.",
+      ],
+    },
+  ] as const)("names the periods of $term months", ({ term, want }) => {
+    expect([
+      billAllLabel(term),
+      billAllHint("2026-09-15", term),
+      billPickLabel(term),
+      billPickHint(term),
+      billedFromSelectLabel(term),
+      billPickSelectHint(term),
+      noBilledFromMessage(term),
+    ]).toEqual(want);
+  });
+
+  it.each([
+    {
+      term: 3,
+      billedFrom: "2026-09-15",
+      want: "Tanggal mulai ini sudah lewat, jadi periode berjalan sejak 15 Sep 2026 ikut ditagih, jatuh tempo 6 Nov.",
+    },
+    {
+      term: 3,
+      billedFrom: "2026-12-15",
+      want: "Periode sebelum 15 Des 2026 tidak ditagih. Tagihan pertama untuk periode mulai 15 Des 2026, jatuh tempo 15 Des.",
+    },
+    {
+      term: 6,
+      billedFrom: "2026-09-15",
+      want: "Tanggal mulai ini sudah lewat, jadi periode berjalan sejak 15 Sep 2026 ikut ditagih, jatuh tempo 6 Nov.",
+    },
+    {
+      term: 12,
+      billedFrom: "2027-09-15",
+      want: "Tahun sebelum 15 Sep 2027 tidak ditagih. Tagihan pertama untuk tahun mulai 15 Sep 2027, jatuh tempo 15 Sep.",
+    },
+  ] as const)(
+    "explains billing from $billedFrom every $term months for a start on 15 Sep 2026",
+    ({ term, billedFrom, want }) => {
+      expect(
+        billingExplanation("2026-09-15", billedFrom, ENTERED, ENTERED, term),
+      ).toBe(want);
+    },
+  );
+
+  it.each([
+    {
+      term: 3,
+      start: "2026-03-15",
+      want: "Tanggal mulai ini sudah lewat, jadi setiap periode 3 bulan sejak 15 Mar 2026 ikut ditagih. Periode yang sudah lewat jatuh tempo hari ini (30 Okt); periode berjalan jatuh tempo 6 Nov. Kalau pemilik sudah menerima uang sewa periode-periode itu langsung, pilih periode mulai tagih yang lebih baru.",
+    },
+    {
+      term: 12,
+      start: "2025-03-15",
+      want: "Tanggal mulai ini sudah lewat, jadi setiap tahun sejak 15 Mar 2025 ikut ditagih. Tahun yang sudah lewat jatuh tempo hari ini (30 Okt); tahun berjalan jatuh tempo 6 Nov. Kalau pemilik sudah menerima uang sewa tahun-tahun itu langsung, pilih tahun mulai tagih yang lebih baru.",
+    },
+  ] as const)(
+    "explains billing every past period of $term months",
+    ({ term, start, want }) => {
+      expect(billingExplanation(start, start, ENTERED, ENTERED, term)).toBe(
+        want,
+      );
+    },
+  );
+
+  it.each([
+    {
+      term: 3,
+      want: "Juga jadi tanggal tagihan tiap 3 bulan. Mulai tanggal 15, jatuh tempo tanggal 15 tiap 3 bulan. Tanggal 29 sampai 31 jatuh di hari terakhir bulan yang lebih pendek.",
+    },
+    {
+      term: 6,
+      want: "Juga jadi tanggal tagihan tiap 6 bulan. Mulai tanggal 15, jatuh tempo tanggal 15 tiap 6 bulan. Tanggal 29 sampai 31 jatuh di hari terakhir bulan yang lebih pendek.",
+    },
+    {
+      term: 12,
+      want: "Juga jadi tanggal tagihan tiap tahun. Mulai 15 Sep, jatuh tempo tiap 15 Sep. Tanggal 29 sampai 31 jatuh di hari terakhir bulan yang lebih pendek.",
+    },
+  ] as const)("the start hint for $term months", ({ term, want }) => {
+    expect(startDateHint("2026-09-15", term)).toBe(want);
+  });
+
+  it("the start hint for a longer term without a date", () => {
+    expect(startDateHint("", 12)).toBe(
+      "Juga jadi tanggal tagihan tiap tahun. Tanggal 29 sampai 31 jatuh di hari terakhir bulan yang lebih pendek.",
+    );
   });
 });
 
@@ -720,15 +1190,15 @@ describe("checkLeaseForm", () => {
     expect(checked.ok && checked.input.depositAmount).toBe(0);
   });
 
-  it("sends the unit's shortest term", () => {
+  it("sends the chosen term", () => {
     const checked = checkLeaseForm(values({ termMonths: 12 }), "p", TODAY);
     expect(checked.ok && checked.input.termMonths).toBe(12);
   });
 
-  it("refuses a unit with no term under the unit", () => {
+  it("refuses a unit with no priced term under Masa sewa", () => {
     expect(checkLeaseForm(values({ termMonths: null }), "p", TODAY)).toEqual({
       ok: false,
-      errors: { unitId: NO_TERM_MESSAGE },
+      errors: { termMonths: NO_PRICE_MESSAGE },
     });
   });
 
@@ -796,6 +1266,29 @@ describe("checkLeaseForm", () => {
     expect(checked.ok && "billedFrom" in checked.input).toBe(false);
   });
 
+  it("checks billedFrom against the chosen term's period starts", () => {
+    const yearly = (billedFrom: string) =>
+      checkLeaseForm(
+        values({
+          startDate: "2025-09-15",
+          billing: "pick",
+          billedFrom,
+          termMonths: 12,
+        }),
+        "p",
+        TODAY,
+      );
+    const sent = yearly("2026-09-15");
+    expect(sent.ok && sent.input).toMatchObject({
+      termMonths: 12,
+      billedFrom: "2026-09-15",
+    });
+    expect(yearly("2025-10-15")).toEqual({
+      ok: false,
+      errors: { billedFrom: noBilledFromMessage(12) },
+    });
+  });
+
   it("refuses a billedFrom the API would refuse", () => {
     expect(
       checkLeaseForm(
@@ -807,7 +1300,7 @@ describe("checkLeaseForm", () => {
         "p",
         TODAY,
       ),
-    ).toEqual({ ok: false, errors: { billedFrom: NO_BILLED_FROM_MESSAGE } });
+    ).toEqual({ ok: false, errors: { billedFrom: noBilledFromMessage(1) } });
   });
 
   it("finds every missing field", () => {
@@ -1039,82 +1532,6 @@ describe("collectors", () => {
   });
 });
 
-describe("periods of a longer term", () => {
-  it.each([
-    {
-      name: "a 3-month lease from 31 Jan keeps counting from the start date",
-      start: "2026-01-31",
-      term: 3,
-      want: ["2026-01-31", "2026-04-30", "2026-07-31", "2026-10-31"],
-    },
-    {
-      name: "a 6-month lease from 15 Sep",
-      start: "2026-09-15",
-      term: 6,
-      want: ["2026-09-15", "2027-03-15", "2027-09-15", "2028-03-15"],
-    },
-    {
-      name: "a yearly lease from 29 Feb falls on 28 Feb in common years",
-      start: "2024-02-29",
-      term: 12,
-      want: ["2024-02-29", "2025-02-28", "2026-02-28", "2027-02-28"],
-    },
-  ] as const)("$name", ({ start, term, want }) => {
-    expect([0, 1, 2, 3].map((n) => periodStart(start, term, n))).toEqual(want);
-    for (const date of want)
-      expect(isPeriodStart(start, term, date)).toBe(true);
-  });
-
-  it.each([
-    {
-      name: "a monthly anniversary inside a yearly period",
-      date: "2026-10-15",
-      want: false,
-    },
-    { name: "the yearly anniversary", date: "2027-09-15", want: true },
-    { name: "a day before the start", date: "2026-09-14", want: false },
-  ])("$name is a period start of a yearly lease: $want", ({ date, want }) => {
-    expect(isPeriodStart("2026-09-15", 12, date)).toBe(want);
-  });
-
-  it("finds the period a date falls in and the next one", () => {
-    expect(periodStartOn("2025-09-15", 12, TODAY)).toBe("2026-09-15");
-    expect(nextPeriodStart("2025-09-15", 12, TODAY)).toBe("2027-09-15");
-    expect(periodStartOn("2026-09-15", 3, TODAY)).toBe("2026-09-15");
-    expect(nextPeriodStart("2026-09-15", 3, TODAY)).toBe("2026-12-15");
-  });
-
-  it("offers yearly billing starts up to the first one after today", () => {
-    // Started 15 Sep 2024, entered 28 Oct 2026: periods from 15 Sep 2024, 2025 and 2026, and the
-    // API allows up to the next period start, 15 Sep 2027.
-    expect(
-      billedFromOptions("2024-09-15", TODAY, 12).map((option) => option.value),
-    ).toEqual(["2025-09-15", "2026-09-15", "2027-09-15"]);
-    expect(
-      defaultBilledFrom(billedFromOptions("2024-09-15", TODAY, 12), TODAY),
-    ).toBe("2026-09-15");
-  });
-
-  it("offers 3-monthly billing starts, never a monthly anniversary", () => {
-    expect(
-      billedFromOptions("2026-03-15", TODAY, 3).map((option) => option.value),
-    ).toEqual(["2026-06-15", "2026-09-15", "2026-12-15"]);
-  });
-
-  it("explains the yearly period running today", () => {
-    expect(
-      billingExplanation("2025-09-15", "2026-09-15", TODAY, TODAY, 12),
-    ).toContain("sejak 15 Sep 2026 ikut ditagih, jatuh tempo 4 Nov");
-  });
-
-  it("suggests the day before the next yearly period as the planned end", () => {
-    expect(plannedEndSuggestion("2025-09-15", TODAY, 12)).toEqual({
-      date: "2027-09-14",
-      nextStart: "2027-09-15",
-    });
-  });
-});
-
 describe("checkLeaseTerms", () => {
   const values = (over: Partial<LeaseTermsValues> = {}): LeaseTermsValues => ({
     startDate: "2026-09-15",
@@ -1162,7 +1579,7 @@ describe("checkLeaseTerms", () => {
     );
     expect(checked).toEqual({
       ok: false,
-      errors: { billedFrom: NO_BILLED_FROM_MESSAGE },
+      errors: { billedFrom: noBilledFromMessage(12) },
     });
   });
 
@@ -1222,7 +1639,7 @@ describe("checkLeaseTerms", () => {
         values({ billing: "pick", billedFrom: "2026-12-15" }),
         late,
       ),
-    ).toEqual({ ok: false, errors: { billedFrom: NO_BILLED_FROM_MESSAGE } });
+    ).toEqual({ ok: false, errors: { billedFrom: noBilledFromMessage(1) } });
   });
 
   it("ignores the second choice once the block is hidden", () => {
@@ -1294,9 +1711,59 @@ describe("plannedEndSuggestion", () => {
     expect(plannedEndSuggestion(start, today, 1)).toEqual(want);
   });
 
+  it.each([
+    {
+      name: "a quarterly lease: the day before its next quarter",
+      start: "2026-09-15",
+      term: 3,
+      want: { date: "2026-12-14", nextStart: "2026-12-15" },
+    },
+    {
+      name: "a half-yearly 31 Jan start: the day before 31 Jul",
+      start: "2026-01-31",
+      term: 6,
+      want: { date: "2027-01-30", nextStart: "2027-01-31" },
+    },
+    {
+      name: "a yearly lease: the day before its next year",
+      start: "2026-09-15",
+      term: 12,
+      want: { date: "2027-09-14", nextStart: "2027-09-15" },
+    },
+    {
+      name: "a yearly booking: the day before its second year",
+      start: "2026-12-05",
+      term: 12,
+      want: { date: "2027-12-04", nextStart: "2027-12-05" },
+    },
+    {
+      name: "a yearly 29 Feb start: the day before 28 Feb",
+      start: "2024-02-29",
+      term: 12,
+      want: { date: "2027-02-27", nextStart: "2027-02-28" },
+    },
+  ] as const)("$name", ({ start, term, want }) => {
+    expect(plannedEndSuggestion(start, TODAY, term)).toEqual(want);
+  });
+
+  it.each([
+    {
+      term: 3,
+      want: "Usulan: 14 Des 2026, sehari sebelum periode 3 bulan berikutnya (15 Des) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.",
+    },
+    {
+      term: 12,
+      want: "Usulan: 14 Des 2026, sehari sebelum tahun berikutnya (15 Des) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.",
+    },
+  ] as const)("names the next period of $term months", ({ term, want }) => {
+    expect(
+      plannedEndHint({ date: "2026-12-14", nextStart: "2026-12-15" }, term),
+    ).toBe(want);
+  });
+
   it("says why in the hint", () => {
     expect(
-      plannedEndHint({ date: "2026-11-14", nextStart: "2026-11-15" }),
+      plannedEndHint({ date: "2026-11-14", nextStart: "2026-11-15" }, 1),
     ).toBe(
       "Usulan: 14 Nov 2026, sehari sebelum bulan berikutnya (15 Nov) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.",
     );
@@ -1304,6 +1771,58 @@ describe("plannedEndSuggestion", () => {
       "Rencana keluar saat ini: 14 Nov 2026. Menghapusnya mengembalikan tagihan yang tadi dibatalkan.",
     );
   });
+});
+
+describe("planned end and move-out effects", () => {
+  it("keeps the monthly words", () => {
+    expect(plannedEndEffects(1)).toEqual([
+      "Tidak ada tagihan baru untuk bulan yang mulai sesudah tanggal itu.",
+      "Bulan yang sudah mulai tetap ditagih penuh, tanpa potongan.",
+      'Tagihan bulan sesudahnya yang sudah terlanjur dibuat dibatalkan otomatis, dan tercatat sebagai koreksi dengan alasan "sewa tidak diperpanjang".',
+      "Tunggakan lama tetap ditagih seperti biasa.",
+    ]);
+    expect(moveOutEffects(1)[1]).toBe(
+      "Tagihan untuk bulan yang mulai sesudah tanggal itu dibatalkan.",
+    );
+  });
+
+  it.each([
+    {
+      term: 3,
+      want: [
+        "Tidak ada tagihan baru untuk periode 3 bulan yang mulai sesudah tanggal itu.",
+        "Periode 3 bulan yang sudah mulai tetap ditagih penuh, tanpa potongan.",
+        'Tagihan periode sesudahnya yang sudah terlanjur dibuat dibatalkan otomatis, dan tercatat sebagai koreksi dengan alasan "sewa tidak diperpanjang".',
+      ],
+      moveOut:
+        "Tagihan untuk periode 3 bulan yang mulai sesudah tanggal itu dibatalkan.",
+    },
+    {
+      term: 6,
+      want: [
+        "Tidak ada tagihan baru untuk periode 6 bulan yang mulai sesudah tanggal itu.",
+        "Periode 6 bulan yang sudah mulai tetap ditagih penuh, tanpa potongan.",
+        'Tagihan periode sesudahnya yang sudah terlanjur dibuat dibatalkan otomatis, dan tercatat sebagai koreksi dengan alasan "sewa tidak diperpanjang".',
+      ],
+      moveOut:
+        "Tagihan untuk periode 6 bulan yang mulai sesudah tanggal itu dibatalkan.",
+    },
+    {
+      term: 12,
+      want: [
+        "Tidak ada tagihan baru untuk tahun yang mulai sesudah tanggal itu.",
+        "Tahun yang sudah mulai tetap ditagih penuh, tanpa potongan.",
+        'Tagihan tahun sesudahnya yang sudah terlanjur dibuat dibatalkan otomatis, dan tercatat sebagai koreksi dengan alasan "sewa tidak diperpanjang".',
+      ],
+      moveOut: "Tagihan untuk tahun yang mulai sesudah tanggal itu dibatalkan.",
+    },
+  ] as const)(
+    "names the periods of $term months",
+    ({ term, want, moveOut }) => {
+      expect(plannedEndEffects(term).slice(0, 3)).toEqual(want);
+      expect(moveOutEffects(term)[1]).toBe(moveOut);
+    },
+  );
 });
 
 describe("checkPlannedEnd", () => {
@@ -1369,6 +1888,26 @@ describe("lease copy", () => {
     expect(cancelBookingText("2026-12-05")).toBe(
       "Sewa ini belum dimulai (mulai 5 Des 2026). Kalau dibatalkan, unit langsung kosong lagi dan sewa ini tidak akan pernah ditagih.",
     );
+  });
+});
+
+describe("chargesTermHint", () => {
+  it.each([
+    { term: 1, want: null },
+    {
+      term: 3,
+      want: "Biaya tetap ditagih per bulan × 3 bulan di setiap tagihan.",
+    },
+    {
+      term: 6,
+      want: "Biaya tetap ditagih per bulan × 6 bulan di setiap tagihan.",
+    },
+    {
+      term: 12,
+      want: "Biaya tetap ditagih per bulan × 12 bulan di setiap tagihan.",
+    },
+  ] as const)("for $term months: $want", ({ term, want }) => {
+    expect(chargesTermHint(term)).toBe(want);
   });
 });
 

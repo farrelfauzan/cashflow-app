@@ -1,3 +1,4 @@
+import { TERM_PERIOD_WORDS } from "@/components/client/lease/utils";
 import { ApiError, GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
 import { API_BASE_PATH } from "@/lib/api/client";
 import type { ImportRow, ImportSummary } from "@/lib/api/generated/model";
@@ -39,7 +40,8 @@ export const EMPTY_CELL = "—";
 export const ROW_LIST_LABEL = "Baris berkas";
 
 // The format card (boards Impor.dc.html and Impor-Phone.dc.html), with the Indonesian column
-// names the template writes.
+// names the template writes, each group in the template's order
+// (services/api/internal/tenantimport/template.go).
 export const TEMPLATE_EXAMPLE_TEXT =
   "Template berisi dua baris contoh. Hapus baris contoh sebelum mengimpor.";
 export const REQUIRED_COLUMNS = [
@@ -52,11 +54,22 @@ export const REQUIRED_COLUMNS = [
 ] as const;
 export const OPTIONAL_COLUMNS = [
   "jenis_properti",
-  "jaminan",
+  "jangka_bulan",
   "mulai_tagih",
+  "jaminan",
 ] as const;
+export const RENT_NOTE =
+  "sewa: harga satu periode. Boleh dikosongkan kalau unit sudah punya harga untuk jangka itu.";
+export const TERM_NOTE =
+  "jangka_bulan: 1, 3, 6 atau 12. Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).";
 export const BILL_FROM_NOTE =
-  "mulai_tagih: bulan pertama yang ditagih. Kosongkan untuk menagih sejak tanggal mulai sewa.";
+  "mulai_tagih: awal periode pertama yang ditagih. Kosongkan untuk menagih sejak tanggal mulai sewa.";
+// The notes under the columns, in the template's order.
+export const COLUMN_NOTES: readonly string[] = [
+  RENT_NOTE,
+  TERM_NOTE,
+  BILL_FROM_NOTE,
+];
 export const OLD_DUE_DAY_NOTE =
   "Kolom jatuh_tempo dari template lama tidak dipakai lagi.";
 export const LIMITS_TEXT =
@@ -167,6 +180,7 @@ const INDONESIAN_COLUMNS: Readonly<Record<string, string>> = {
   tenant_name: "nama_penyewa",
   phone: "no_wa",
   rent: "sewa",
+  term: "jangka_bulan",
   start_date: "tanggal_mulai",
   deposit: "jaminan",
   property_kind: "jenis_properti",
@@ -192,11 +206,15 @@ function cell(value: string): string {
   return value === "" ? EMPTY_CELL : value;
 }
 
-// The rent shows only when the row's sewa cell has one; an empty cell uses the unit's price.
+// "Kamar 1 · Kos Melati · Per tahun · Rp15.000.000": the term once the row's terms could be read,
+// and the rent only when the row's sewa cell has one (an empty cell uses the unit's price).
 function rowPlaceText(row: ImportRow): string {
   const parts = [cell(row.unitLabel), cell(row.propertyName)];
-  const rent = row.values?.rentAmount;
-  if (rent !== undefined) parts.push(formatRupiah(rent));
+  if (row.values !== undefined) {
+    parts.push(`Per ${TERM_PERIOD_WORDS[row.values.termMonths]}`);
+    const rent = row.values.rentAmount;
+    if (rent !== undefined) parts.push(formatRupiah(rent));
+  }
   return parts.join(" · ");
 }
 

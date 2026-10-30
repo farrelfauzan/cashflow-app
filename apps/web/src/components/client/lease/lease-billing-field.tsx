@@ -8,7 +8,6 @@ import {
   SELECT_ITEM_CLASS,
   SELECT_TRIGGER_CLASS,
 } from "@/components/client/form/utils";
-import type { TermMonths } from "@/lib/api/generated/model";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -18,12 +17,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { TermMonths } from "@/lib/api/generated/model";
 import type { BillingChoice, DateOption } from "./type";
 import {
-  BILL_PICK_HINT,
-  BILL_PICK_SELECT_HINT,
   billAllHint,
+  billAllLabel,
+  billedFromSelectLabel,
   billingExplanation,
+  billPickHint,
+  billPickLabel,
+  billPickSelectHint,
 } from "./utils";
 
 import { LeaseInfoNote } from "./lease-info-note";
@@ -35,12 +38,12 @@ type LeaseBillingFieldProps = {
   // The day the lease is entered: today for a new lease, its enteredOn for one being changed.
   enteredOn: string;
   today: string;
-  // The lease's term: its periods, and so the billing-start choices, last this many months.
-  term: TermMonths;
+  // The lease's term: the periods the choices and the note name.
+  termMonths: TermMonths;
   billing: BillingChoice;
   onBillingChange: (billing: BillingChoice) => void;
   options: readonly DateOption[];
-  // The anniversary the select shows.
+  // The period start the select shows.
   billedFrom: string;
   onBilledFromChange: (date: string) => void;
   error: string | undefined;
@@ -48,7 +51,7 @@ type LeaseBillingFieldProps = {
 };
 
 // "Mulai tagih dari" for a lease entered late (boards Sewa-Baru.dc.html and Sewa-Ubah.dc.html):
-// bill every period since the start date, or start from a later anniversary the owner did not
+// bill every period since the start date, or start from a later period the owner did not
 // collect by hand. The note under it says, with the real dates, which periods are invoiced and
 // when they are due.
 export function LeaseBillingField({
@@ -56,7 +59,7 @@ export function LeaseBillingField({
   startDate,
   enteredOn,
   today,
-  term,
+  termMonths,
   billing,
   onBillingChange,
   options,
@@ -96,10 +99,10 @@ export function LeaseBillingField({
             />
             <span className="flex flex-col gap-0.5">
               <span className="text-base font-semibold">
-                Tagih semua bulan sejak tanggal mulai
+                {billAllLabel(termMonths)}
               </span>
               <span className="text-sm leading-[1.45] text-muted-foreground md:text-[15px]">
-                {billAllHint(startDate)}
+                {billAllHint(startDate, termMonths)}
               </span>
             </span>
           </Label>
@@ -114,10 +117,10 @@ export function LeaseBillingField({
             />
             <span className="flex flex-col gap-0.5">
               <span className="text-base font-semibold">
-                Mulai dari bulan yang saya pilih
+                {billPickLabel(termMonths)}
               </span>
               <span className="text-sm leading-[1.45] text-muted-foreground md:text-[15px]">
-                {BILL_PICK_HINT}
+                {billPickHint(termMonths)}
               </span>
             </span>
           </Label>
@@ -130,7 +133,7 @@ export function LeaseBillingField({
           >
             <SelectTrigger
               ref={selectRef}
-              aria-label="Bulan mulai tagih"
+              aria-label={billedFromSelectLabel(termMonths)}
               aria-invalid={error !== undefined}
               aria-describedby={
                 error !== undefined ? `${errorId} ${hintId}` : hintId
@@ -153,7 +156,7 @@ export function LeaseBillingField({
           </Select>
           {error !== undefined && <FieldError id={errorId} message={error} />}
           <p id={hintId} className={FIELD_HINT_CLASS}>
-            {BILL_PICK_SELECT_HINT}
+            {billPickSelectHint(termMonths)}
           </p>
         </div>
       </fieldset>
@@ -164,7 +167,7 @@ export function LeaseBillingField({
             billingStart,
             enteredOn,
             today,
-            term,
+            termMonths,
           )}
         />
       )}

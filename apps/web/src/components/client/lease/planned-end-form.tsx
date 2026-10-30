@@ -10,9 +10,9 @@ import type { Lease } from "@/lib/api/generated/model";
 import { useSetLeasePlannedEnd } from "@/lib/api/generated/tenants/tenants";
 import {
   PLANNED_END_API_FIELDS,
-  PLANNED_END_EFFECTS,
   checkPlannedEnd,
   currentPlannedEndText,
+  plannedEndEffects,
   plannedEndHint,
   plannedEndSuggestion,
 } from "./utils";
@@ -31,9 +31,9 @@ type PlannedEndFormProps = {
 };
 
 // "Rencana keluar" (boards Sewa-Rencana.dc.html and Sewa-Rencana-Phone.dc.html): the tenant's
-// planned last day, suggested as the day before the next period starts, what that does, and,
-// when one is set, "Hapus rencana keluar". The API also needs correction:create when the date
-// cancels an invoice; its refusal shows in the alert.
+// planned last day, suggested as the day before the next period of its term starts, what that
+// does, and, when one is set, "Hapus rencana keluar". The API also needs correction:create when
+// the date cancels an invoice; its refusal shows in the alert.
 export function PlannedEndForm({
   orgId,
   lease,
@@ -114,11 +114,11 @@ export function PlannedEndForm({
             setDate(next);
             setError(undefined);
           }}
-          hint={plannedEndHint(suggestion)}
+          hint={plannedEndHint(suggestion, lease.termMonths)}
           error={error}
           disabled={saving}
         />
-        <LeaseEffectsBox items={PLANNED_END_EFFECTS} />
+        <LeaseEffectsBox items={plannedEndEffects(lease.termMonths)} />
         {lease.plannedEndDate !== undefined && (
           <div className="flex flex-col gap-2 border-t pt-4">
             <p className="text-sm leading-normal text-muted-foreground md:text-base">
