@@ -18,10 +18,10 @@ import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Impor penyewa", against the real API (seed-demo data). Pak Hendra is Admin of the whole of
 // Griya Sejahtera and Supervisor in Kost Putri Anggrek; Mbak Sari is Admin limited to Kos Melati.
-// Only one test saves anything through the import: a new property "Wisma Impor ..." (sorting
+// Only one test saves anything through the import: a new property "Wisma Uji Impor ..." (sorting
 // after every seeded property) with two tenants whose names start with W and Y (sorting after
 // every seeded tenant) and numbers 0813-5..., which no other spec uses. The term test makes its own
-// property "Wisma Impor Jangka ..." and its unit through the API. Every name and number is unique
+// property "Wisma Uji Impor Jangka ..." and its unit through the API. Every name and number is unique
 // to the run, project and retry. The file's contents are never logged.
 
 const GRIYA = "Griya Sejahtera";
@@ -194,7 +194,7 @@ test.describe("Admin of the whole organization", () => {
     const outsideRequests = trackOutsideRequests(page);
     await openImport(page);
 
-    const property = uniqueName(testInfo, "Wisma Impor Galat");
+    const property = uniqueName(testInfo, "Wisma Uji Impor Galat");
     await chooseFile(
       page,
       "penyewa-salah.csv",
@@ -298,7 +298,7 @@ test.describe("Admin of the whole organization", () => {
       page.getByRole("button", { name: "Periksa berkas" }),
     ).toBeDisabled();
 
-    const property = uniqueName(testInfo, "Wisma Impor");
+    const property = uniqueName(testInfo, "Wisma Uji Impor");
     const first = uniqueName(testInfo, "Wiwik Pratiwi");
     const second = uniqueName(testInfo, "Yoga Permana");
     const firstStart = tenthOfMonth(-2);
@@ -442,7 +442,7 @@ test.describe("Admin of the whole organization", () => {
     ).toBeVisible();
 
     // A kos unit of the test's own that is rented by the month only.
-    const property = uniqueName(testInfo, "Wisma Impor Jangka");
+    const property = uniqueName(testInfo, "Wisma Uji Impor Jangka");
     const created = await page.request.post(`/api/orgs/${orgId}/properties`, {
       data: { name: property, kind: "kos", address: "" },
     });
@@ -514,7 +514,7 @@ test.describe("Admin of the whole organization", () => {
       "kecil.csv",
       csv(HEADER, [
         [
-          uniqueName(testInfo, "Wisma Impor Kecil"),
+          uniqueName(testInfo, "Wisma Uji Impor Kecil"),
           "kos",
           "Kamar 1",
           uniqueName(testInfo, "Wulan Kecil"),
@@ -546,7 +546,7 @@ test.describe("Admin of the whole organization", () => {
       "tanpa-mulai-tagih.csv",
       csv(header, [
         [
-          uniqueName(testInfo, "Wisma Impor Catatan"),
+          uniqueName(testInfo, "Wisma Uji Impor Catatan"),
           "kos",
           "Kamar 1",
           uniqueName(testInfo, "Wulan Catatan"),

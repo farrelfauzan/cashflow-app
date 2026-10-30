@@ -4,13 +4,17 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { openListPageOf } from "./support/list-pages";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
 // "Anggota tim": the list, and inviting, changing, disabling and enabling a member, against the
 // real API with the devlog WhatsApp fake. Pak Hendra is Admin of the whole of Griya Sejahtera
 // and Supervisor in Kost Putri Anggrek. Tests change only members they invite themselves, never
-// a seeded one.
+// a seeded one. The list sorts by name and shows 20 a page, and every run adds members to a
+// database that may be reused: invited members get names no run repeats that sort after every
+// seeded member (they have no honorific, and the seeded ones start with Bu, Mas, Mbak, Pak or
+// Ibu), so the seeded rows keep the first page, and each test opens the page its member is on.
 
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
@@ -31,6 +35,18 @@ function inviteNumber(testInfo: TestInfo, testDigit: number): string {
   }
   const project = testInfo.project.name === "phone" ? "2" : "1";
   return `0812-9${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
+}
+
+// A name no other run, project or retry uses; it starts with W or Y, so it sorts after "Pak
+// Hendra Gunawan" and every other seeded member.
+function memberName(testInfo: TestInfo, base: string): string {
+  const run = process.env.E2E_RUN_ID;
+  if (run === undefined || !/^\d{4}$/.test(run)) {
+    throw new Error("E2E_RUN_ID is set by playwright.config.ts");
+  }
+  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
+  return `${base} ${run} ${project}${retry}`;
 }
 
 async function openMembers(page: Page, organization: string) {
@@ -135,10 +151,7 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const name =
-      testInfo.project.name === "phone"
-        ? "Mbak Dewi Kartika"
-        : "Mas Rizal Fauzi";
+    const name = memberName(testInfo, "Wahyu Rizal Fauzi");
     const phone = inviteNumber(testInfo, 1);
     const list = await openMembers(page, GRIYA);
 
@@ -157,6 +170,8 @@ test.describe("Admin of the whole organization", () => {
     );
     await done.getByRole("button", { name: "Selesai" }).click();
     await expect(panel).toHaveCount(0);
+    // The new member sorts after the seeded ones, so it is on a later page of the list.
+    await openListPageOf(page, "members", name);
 
     const row = list.getByRole("listitem").filter({ hasText: phone });
     await expect(row).toContainText(name);
@@ -237,10 +252,7 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const name =
-      testInfo.project.name === "phone"
-        ? "Mas Teguh Santoso"
-        : "Mbak Ratna Kusuma";
+    const name = memberName(testInfo, "Yanti Ratna Kusuma");
     const phone = inviteNumber(testInfo, 2);
     const list = await openMembers(page, GRIYA);
 
@@ -262,6 +274,7 @@ test.describe("Admin of the whole organization", () => {
       `${name} sudah ditambahkan sebagai Karyawan.`,
     );
     await done.getByRole("button", { name: "Selesai" }).click();
+    await openListPageOf(page, "members", name);
     await expect(
       list.getByRole("listitem").filter({ hasText: phone }),
     ).toBeVisible();

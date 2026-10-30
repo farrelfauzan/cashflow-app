@@ -27,6 +27,8 @@ import type {
   UnitFormErrors,
   UnitFormResult,
   UnitFormValues,
+  UnitCustomTermRow,
+  UnitCustomTermView,
   LastTermPrices,
   UnitOccupancyView,
   UnitPriceFormErrors,
@@ -198,6 +200,9 @@ export const propertyFormSchema = z.object({
 });
 
 export const NO_TERM_MESSAGE = "Pilih minimal satu masa sewa.";
+export const EMPTY_CUSTOM_MONTHS_MESSAGE = "Isi jumlah bulan.";
+export const STANDARD_CUSTOM_MONTHS_MESSAGE =
+  "Untuk 1, 3, 6 atau 12 bulan, centang pilihannya di atas.";
 
 export function checkUnitForm(
   values: UnitFormValues,
@@ -207,32 +212,30 @@ export function checkUnitForm(
   const errors: UnitFormErrors = {};
   if (label === "") errors.label = EMPTY_UNIT_LABEL_MESSAGE;
   const checked = values.terms.filter((row) => row.checked);
-  const custom = customTerms(unit);
-  if (checked.length + custom.length === 0) errors.terms = NO_TERM_MESSAGE;
+  if (checked.length === 0 && !values.custom.checked) {
+    errors.terms = NO_TERM_MESSAGE;
+  }
   // A price of Rp0 is refused under its own field, as "Ubah harga" does.
   for (const row of checked) {
     if (unitTermRowView(unit, row.months).kind === "priced") continue;
-    if (row.priceText !== "" && parseRupiahInput(row.priceText) === 0) {
+    if (isZeroPrice(row.priceText)) {
       errors.prices = { ...errors.prices, [row.months]: ZERO_PRICE_MESSAGE };
     }
   }
+  Object.assign(errors, checkCustomTerm(values.custom, unit));
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
+  const custom = customTermInput(values.custom, unit);
   return {
     ok: true,
     input: {
       label,
-      terms: [...checked.map((row) => termInput(row, unit)), ...custom],
+      terms: [
+        ...checked.map((row) => termInput(row, unit)),
+        ...(custom === null ? [] : [custom]),
+      ],
     },
   };
-}
-
-// The unit's terms the form has no row for (a custom term, decision 33), sent as they are so a
-// save keeps them and their prices.
-function customTerms(unit: Pick<Unit, "terms"> | undefined): UnitTermInput[] {
-  return (unit?.terms ?? [])
-    .filter((term) => !UNIT_TERM_CHOICES.includes(term.months))
-    .map((term) => ({ months: term.months }));
 }
 
 // A checked term as the API takes it: its price only when the admin typed one in a field the row
@@ -249,6 +252,136 @@ function termInput(
   return price === null
     ? { months: row.months }
     : { months: row.months, price };
+}
+
+function isZeroPrice(priceText: string): boolean {
+  return priceText !== "" && parseRupiahInput(priceText) === 0;
+}
+
+// The friendly checks of the custom row. The API judges the month count (2 to 60, not a standard
+// term) and its message shows under "Masa sewa dan harga"; the browser only catches an empty
+// "Jumlah bulan" and a standard term typed there.
+function checkCustomTerm(
+  custom: UnitCustomTermRow,
+  unit: Pick<Unit, "terms"> | undefined,
+): Pick<UnitFormErrors, "customMonths" | "customPrice"> {
+  const errors: Pick<UnitFormErrors, "customMonths" | "customPrice"> = {};
+  if (!custom.checked) return errors;
+  const view = customTermView(custom, unit);
+  if (view.kind === "lainnya") {
+    if (custom.monthsText === "") {
+      errors.customMonths = EMPTY_CUSTOM_MONTHS_MESSAGE;
+    } else if (UNIT_TERM_CHOICES.includes(Number(custom.monthsText))) {
+      errors.customMonths = STANDARD_CUSTOM_MONTHS_MESSAGE;
+    }
+  }
+  const showsPriceField = view.kind === "lainnya" || view.term.kind === "input";
+  if (showsPriceField && isZeroPrice(custom.priceText)) {
+    errors.customPrice = ZERO_PRICE_MESSAGE;
+  }
+  return errors;
+}
+
+// The custom row as the API takes it, or null when it is not ticked. Like a standard row, its
+// price goes only when typed in a field the row shows: a saved custom term with a price in force
+// sends none and keeps its price.
+function customTermInput(
+  custom: UnitCustomTermRow,
+  unit: Pick<Unit, "terms"> | undefined,
+): UnitTermInput | null {
+  if (!custom.checked) return null;
+  const view = customTermView(custom, unit);
+  const months = view.kind === "saved" ? view.months : customMonths(custom);
+  if (months === null) return null;
+  if (view.kind === "saved" && view.term.kind === "priced") return { months };
+  const price =
+    custom.priceText === "" ? null : parseRupiahInput(custom.priceText);
+  return price === null ? { months } : { months, price };
+}
+
+// The month count typed in "Jumlah bulan", or null for none.
+export function customMonths(custom: UnitCustomTermRow): TermMonths | null {
+  return custom.monthsText === "" ? null : Number(custom.monthsText);
+}
+
+// "Jumlah bulan" keeps only the digits of what was typed or pasted.
+export function monthsDigits(text: string): string {
+  return text.replace(/\D/g, "");
+}
+
+// The custom term the saved unit offers (any month count other than 1, 3, 6 and 12), or null.
+export function savedCustomTerm(
+  unit: Pick<Unit, "terms"> | undefined,
+): TermMonths | null {
+  const term = unit?.terms.find((t) => !UNIT_TERM_CHOICES.includes(t.months));
+  return term?.months ?? null;
+}
+
+// The custom row "Masa sewa dan harga" starts with: the saved unit's custom term, ticked, or
+// "Lainnya", unticked, when it has none (always when adding a unit).
+export function initialCustomTermRow(
+  unit: Pick<Unit, "terms"> | undefined,
+): UnitCustomTermRow {
+  const saved = savedCustomTerm(unit);
+  return {
+    checked: saved !== null,
+    showsSaved: saved !== null,
+    monthsText: saved === null ? "" : String(saved),
+    priceText: "",
+  };
+}
+
+// Ticking or unticking the custom row. Ticking a saved custom term again after unticking it
+// turns the row into "Lainnya" with its month count typed in, so the admin can choose another.
+export function toggleCustomTerm(
+  custom: UnitCustomTermRow,
+  checked: boolean,
+): UnitCustomTermRow {
+  if (checked && !custom.checked && custom.showsSaved) {
+    return { ...custom, checked, showsSaved: false };
+  }
+  return { ...custom, checked };
+}
+
+// What the custom row shows: the saved custom term like a standard row, or "Lainnya" with its
+// fields. The price field of "Lainnya" says what an empty field means for the typed month count:
+// a count the history has a price for gets that price back.
+export function customTermView(
+  custom: UnitCustomTermRow,
+  unit: Pick<Unit, "terms"> | undefined,
+  lastPrices: LastTermPrices = {},
+): UnitCustomTermView {
+  const saved = savedCustomTerm(unit);
+  if (custom.showsSaved && saved !== null) {
+    return {
+      kind: "saved",
+      months: saved,
+      term: unitTermRowView(unit, saved, lastPrices),
+    };
+  }
+  const months = customMonths(custom);
+  return {
+    kind: "lainnya",
+    price: {
+      kind: "input",
+      nextPrice: undefined,
+      lastPrice: months === null ? undefined : lastPrices[months],
+    },
+  };
+}
+
+export const CUSTOM_TERM_LABEL = "Lainnya";
+export const CUSTOM_MONTHS_LABEL = "Jumlah bulan";
+// The range decision 33 allows; a hint only, the API judges it.
+export const CUSTOM_MONTHS_HINT = "2 sampai 60 bulan, selain 3, 6 dan 12.";
+
+// The price field of "Lainnya": "Harga per 4 bulan" once a month count is typed, "Harga per
+// periode" before.
+export function customTermPriceLabel(custom: UnitCustomTermRow): string {
+  const months = customMonths(custom);
+  return months === null || months < 1
+    ? "Harga per periode"
+    : termPriceLabel(months);
 }
 
 // The terms a unit may offer, shortest first: the rows of "Masa sewa dan harga".
@@ -321,11 +454,21 @@ export function termPriceHint(
 }
 
 // The admin unchecked a term the unit offers: leases on it go on as before.
+// A saved custom term is dropped when its row is unticked, or re-ticked as "Lainnya" with another
+// month count.
 export function dropsOfferedTerm(
   unit: Pick<Unit, "terms"> | undefined,
   rows: readonly UnitTermRow[],
+  custom: UnitCustomTermRow,
 ): boolean {
   if (unit === undefined) return false;
+  const saved = savedCustomTerm(unit);
+  if (
+    saved !== null &&
+    !(custom.checked && (custom.showsSaved || customMonths(custom) === saved))
+  ) {
+    return true;
+  }
   return rows.some(
     (row) =>
       !row.checked && unit.terms.some((term) => term.months === row.months),

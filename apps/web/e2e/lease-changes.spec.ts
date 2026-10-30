@@ -9,7 +9,6 @@ import {
 import type {
   CollectorCandidateList,
   Lease,
-  Property,
   Tenant,
   Unit,
 } from "../src/lib/api/generated/model";
@@ -18,19 +17,19 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Ubah sewa", "Rencana keluar", "Catat pindah keluar" and "Batalkan sewa" on a lease's card,
 // against the real API (seed-demo data). Pak Hendra is Admin of the whole of Griya Sejahtera and
 // Supervisor in Kost Putri Anggrek; Mbak Sari is Admin limited to Kos Melati. Each test changes
-// only rows it creates itself: its own property, unit, tenant and lease, with names and numbers no
-// other run, project, test or retry uses. Tenant names start with W or Y, so they sort after every
+// only rows it creates itself: its own unit, tenant and lease, in a property reused across runs
+// (support/property-fixtures.ts), with names and numbers no other run, project, test or retry uses. Tenant names start with W or Y, so they sort after every
 // seeded tenant.
 
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
-const UNIT = "Kamar 1";
 const LEASE_ENDED_MESSAGE = "Sewa ini sudah berakhir dan tidak bisa diubah.";
 const LEASE_BUTTONS =
   /^(Ubah sewa|Rencana keluar|Catat pindah keluar|Batalkan sewa)$/;
@@ -139,7 +138,9 @@ async function call<T>(
   return (await response.json()) as T;
 }
 
-// A property and unit of the test's own, a tenant and their lease starting on `start`.
+// A reused property ("Wisma Tetap ...", found or made once), a unit of the test's own (named
+// uniquely per run, as the property keeps every run's units), a tenant and their lease starting on
+// `start`.
 async function createLease(
   page: Page,
   orgId: string,
@@ -147,19 +148,19 @@ async function createLease(
   names: { property: string; tenant: string; testDigit: number },
   start: string,
 ) {
-  const property = await call<Property>(
-    page,
-    "POST",
-    `/orgs/${orgId}/properties`,
-    201,
-    { name: uniqueName(testInfo, names.property), kind: "kos", address: "" },
-  );
+  const property = await findOrCreateProperty(page, orgId, testInfo, {
+    base: names.property,
+    kind: "kos",
+  });
   const unit = await call<Unit>(
     page,
     "POST",
     `/orgs/${orgId}/properties/${property.id}/units`,
     201,
-    { label: UNIT, terms: [{ months: 1, price: 1_250_000 }] },
+    {
+      label: uniqueName(testInfo, "Kamar 1"),
+      terms: [{ months: 1, price: 1_250_000 }],
+    },
   );
   const tenant = await call<Tenant>(
     page,
@@ -179,7 +180,7 @@ async function createLease(
     termMonths: 1,
     depositAmount: 2_500_000,
   });
-  return { property, tenant, lease };
+  return { property, unit, tenant, lease };
 }
 
 // Opens Pak Hendra's Griya Sejahtera and a lease of the test's own on its tenant's page.
@@ -194,7 +195,7 @@ async function openOwnLease(
   const created = await createLease(page, orgId, testInfo, names, start);
   await openTenantPage(page, orgId, created.tenant);
   const card = page.getByRole("region", {
-    name: `${UNIT} · ${created.property.name}`,
+    name: `${created.unit.label} · ${created.property.name}`,
   });
   await expect(card).toBeVisible();
   return { orgId, card, ...created };
@@ -207,10 +208,10 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { orgId, card, property, tenant } = await openOwnLease(
+    const { orgId, card, property, tenant, unit } = await openOwnLease(
       page,
       testInfo,
-      { property: "Kos Uji Ubah", tenant: "Wening Pratiwi", testDigit: 1 },
+      { property: "Ubah", tenant: "Wening Pratiwi", testDigit: 1 },
       jakartaToday(new Date()),
     );
     const { candidates } = await call<CollectorCandidateList>(
@@ -237,9 +238,9 @@ test.describe("Admin of the whole organization", () => {
 
     const form = page.getByRole("dialog", { name: "Ubah sewa" });
     await expect(form).toContainText(
-      `${tenant.name} · ${UNIT} · ${property.name}`,
+      `${tenant.name} · ${unit.label} · ${property.name}`,
     );
-    await expect(form).toContainText(`Unit: ${UNIT} · ${property.name}`);
+    await expect(form).toContainText(`Unit: ${unit.label} · ${property.name}`);
     await expect(form).toContainText(
       "Unit dan penyewa tidak bisa diganti. Untuk pindah unit, catat pindah keluar, lalu buat sewa baru.",
     );
@@ -264,7 +265,9 @@ test.describe("Admin of the whole organization", () => {
 
     await form.getByRole("button", { name: "Simpan sewa" }).click();
     await expect(form).toHaveCount(0);
-    await expect(visibleText(page, `Sewa ${UNIT} diperbarui.`)).toBeVisible();
+    await expect(
+      visibleText(page, `Sewa ${unit.label} diperbarui.`),
+    ).toBeVisible();
     await expect(card).toContainText("Rp3.000.000");
     await expect(card).toContainText(collector);
 
@@ -273,10 +276,10 @@ test.describe("Admin of the whole organization", () => {
 
   test("sets a planned end, then clears it", async ({ page }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { card, property, tenant } = await openOwnLease(
+    const { card, property, tenant, unit } = await openOwnLease(
       page,
       testInfo,
-      { property: "Kos Uji Rencana", tenant: "Wahyuni Lestari", testDigit: 2 },
+      { property: "Rencana", tenant: "Wahyuni Lestari", testDigit: 2 },
       tenthOfMonth(-1),
     );
     await expect(card).toContainText("Belum diatur");
@@ -284,7 +287,7 @@ test.describe("Admin of the whole organization", () => {
     await card.getByRole("button", { name: "Rencana keluar" }).click();
     const form = page.getByRole("dialog", { name: "Rencana keluar" });
     await expect(form).toContainText(
-      `${tenant.name} · ${UNIT} · ${property.name}`,
+      `${tenant.name} · ${unit.label} · ${property.name}`,
     );
     const date = form.getByLabel("Hari terakhir penyewa tinggal");
     // The suggestion: the day before the next period starts (the 9th, the lease starts on a 10th).
@@ -308,7 +311,10 @@ test.describe("Admin of the whole organization", () => {
     await form.getByRole("button", { name: "Simpan rencana keluar" }).click();
     await expect(form).toHaveCount(0);
     await expect(
-      visibleText(page, `Rencana keluar ${UNIT}: ${formatDate(planned)}.`),
+      visibleText(
+        page,
+        `Rencana keluar ${unit.label}: ${formatDate(planned)}.`,
+      ),
     ).toBeVisible();
     await expect(card).toContainText(formatDate(planned));
 
@@ -325,7 +331,7 @@ test.describe("Admin of the whole organization", () => {
     await clear.click();
     await expect(form).toHaveCount(0);
     await expect(
-      visibleText(page, `Rencana keluar ${UNIT} dihapus.`),
+      visibleText(page, `Rencana keluar ${unit.label} dihapus.`),
     ).toBeVisible();
     await expect(card).toContainText("Belum diatur");
 
@@ -336,10 +342,10 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { card, lease } = await openOwnLease(
+    const { card, lease, unit } = await openOwnLease(
       page,
       testInfo,
-      { property: "Kos Uji Pindah", tenant: "Yohana Sitompul", testDigit: 3 },
+      { property: "Pindah", tenant: "Yohana Sitompul", testDigit: 3 },
       tenthOfMonth(-1),
     );
     await expect(
@@ -364,7 +370,10 @@ test.describe("Admin of the whole organization", () => {
     await save.click();
     await expect(form).toHaveCount(0);
     await expect(
-      visibleText(page, `Pindah keluar dicatat. ${UNIT} sekarang kosong.`),
+      visibleText(
+        page,
+        `Pindah keluar dicatat. ${unit.label} sekarang kosong.`,
+      ),
     ).toBeVisible();
     await expect(card).toContainText("Sudah keluar");
     await expect(card.getByRole("button")).toHaveCount(0);
@@ -381,10 +390,10 @@ test.describe("Admin of the whole organization", () => {
   test("cancels a booking", async ({ page }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
     const start = tenthOfMonth(2);
-    const { card } = await openOwnLease(
+    const { card, unit } = await openOwnLease(
       page,
       testInfo,
-      { property: "Kos Uji Batal", tenant: "Yudha Prakoso", testDigit: 4 },
+      { property: "Batal", tenant: "Yudha Prakoso", testDigit: 4 },
       start,
     );
     await expect(card).toContainText("Belum mulai");
@@ -424,7 +433,7 @@ test.describe("Admin of the whole organization", () => {
     await confirm.click();
     await expect(form).toHaveCount(0);
     await expect(
-      visibleText(page, `Sewa ${UNIT} dibatalkan. Unitnya kosong lagi.`),
+      visibleText(page, `Sewa ${unit.label} dibatalkan. Unitnya kosong lagi.`),
     ).toBeVisible();
     await expect(card).toContainText("Sudah keluar");
     await expect(
@@ -442,7 +451,7 @@ test.describe("Admin of the whole organization", () => {
     const { orgId, lease } = await openOwnLease(
       page,
       testInfo,
-      { property: "Kos Uji Selesai", tenant: "Winarti Susanti", testDigit: 5 },
+      { property: "Selesai", tenant: "Winarti Susanti", testDigit: 5 },
       today,
     );
 
