@@ -1,14 +1,41 @@
 import { describe, expect, it } from "vitest";
 
-import type { Capability, Property, Unit } from "@/lib/api/generated/model";
+import type {
+  Capability,
+  Property,
+  Unit,
+  UnitPrice,
+} from "@/lib/api/generated/model";
 import { ApiError, NETWORK_ERROR_CODE } from "@/lib/api/errors";
 import { readSort } from "@/components/client/list/utils";
 import { createAppAbility } from "@/lib/capabilities";
 
-import type { PropertyPermissions } from "./type";
+import type { PropertyPermissions, UnitTermRow } from "./type";
 import {
+  changePriceLabel,
   checkPropertyForm,
   checkUnitForm,
+  checkUnitPriceForm,
+  currentPriceText,
+  CURRENT_PRICE_CHIP,
+  defaultUnitTerm,
+  dropsOfferedTerm,
+  EMPTY_PRICE_MESSAGE,
+  FUTURE_PRICE_CHIP,
+  initialTermRows,
+  nextPriceText,
+  NO_TERM_MESSAGE,
+  PRICE_BEFORE_TODAY_MESSAGE,
+  priceHistoryRows,
+  priceSavedNotice,
+  priceTermOptions,
+  termLabel,
+  termPriceLabel,
+  unitTermRowView,
+  ZERO_PRICE_MESSAGE,
+  TERM_PRICE_HINT,
+  lastTermPrices,
+  termPriceHint,
   EMPTY_PROPERTY_NAME_MESSAGE,
   EMPTY_UNIT_LABEL_MESSAGE,
   isPropertyMissing,
@@ -359,25 +386,397 @@ describe("checkPropertyForm", () => {
   });
 });
 
+// The four rows of "Masa sewa dan harga" with the given ones checked and typed.
+function rows(given: Partial<Record<1 | 3 | 6 | 12, string>>): UnitTermRow[] {
+  return ([1, 3, 6, 12] as const).map((months) => ({
+    months,
+    checked: given[months] !== undefined,
+    priceText: given[months] ?? "",
+  }));
+}
+
 describe("checkUnitForm", () => {
-  it.each([
-    {
-      name: "a trimmed label, sent alone",
-      values: { label: " Kamar 11 " },
-      input: { label: "Kamar 11" },
-    },
-  ])("accepts $name", ({ values, input }) => {
-    expect(checkUnitForm(values)).toEqual({ ok: true, input });
+  it("sends a new unit's checked terms, with a price only where one is typed", () => {
+    expect(
+      checkUnitForm(
+        { label: " Kamar 11 ", terms: rows({ 1: "1.250.000", 12: "" }) },
+        undefined,
+      ),
+    ).toEqual({
+      ok: true,
+      input: {
+        label: "Kamar 11",
+        terms: [{ months: 1, price: 1_250_000 }, { months: 12 }],
+      },
+    });
+  });
+
+  it("never sends a price typed for a term that is then unchecked", () => {
+    const values = { label: "Kamar 11", terms: rows({ 1: "" }) };
+    values.terms[3] = { months: 12, checked: false, priceText: "15.000.000" };
+    expect(checkUnitForm(values, undefined)).toEqual({
+      ok: true,
+      input: { label: "Kamar 11", terms: [{ months: 1 }] },
+    });
+  });
+
+  it("keeps a changed unit's priced terms untouched and sends prices typed for the others", () => {
+    const saved: Pick<Unit, "terms"> = {
+      terms: [{ months: 1, price: 1_200_000 }, { months: 3 }],
+    };
+    // The monthly term has a price in force: it shows no field, so nothing typed for it goes.
+    const values = {
+      label: "Kamar 01",
+      terms: rows({ 1: "9.999", 3: "3.300.000", 12: "15.000.000" }),
+    };
+    expect(checkUnitForm(values, saved)).toEqual({
+      ok: true,
+      input: {
+        label: "Kamar 01",
+        terms: [
+          { months: 1 },
+          { months: 3, price: 3_300_000 },
+          { months: 12, price: 15_000_000 },
+        ],
+      },
+    });
+  });
+
+  it("sends an offered term without a price when its field stays empty", () => {
+    expect(
+      checkUnitForm(
+        { label: "Kamar 01", terms: rows({ 3: "" }) },
+        { terms: [{ months: 3 }] },
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Kamar 01", terms: [{ months: 3 }] },
+    });
   });
 
   it.each([
     {
       name: "no label",
-      values: { label: " " },
+      values: { label: " ", terms: rows({ 1: "" }) },
       errors: { label: EMPTY_UNIT_LABEL_MESSAGE },
     },
+    {
+      name: "no term",
+      values: { label: "Kamar 01", terms: rows({}) },
+      errors: { terms: NO_TERM_MESSAGE },
+    },
+    {
+      name: "neither",
+      values: { label: "", terms: rows({}) },
+      errors: { label: EMPTY_UNIT_LABEL_MESSAGE, terms: NO_TERM_MESSAGE },
+    },
   ])("refuses $name", ({ values, errors }) => {
-    expect(checkUnitForm(values)).toEqual({ ok: false, errors });
+    expect(checkUnitForm(values, undefined)).toEqual({ ok: false, errors });
+  });
+
+  it("refuses a typed price of Rp0 under that term's field", () => {
+    expect(
+      checkUnitForm(
+        { label: "Kamar 01", terms: rows({ 1: "1.250.000", 12: "0" }) },
+        undefined,
+      ),
+    ).toEqual({ ok: false, errors: { prices: { 12: ZERO_PRICE_MESSAGE } } });
+  });
+
+  it("ignores what is typed for a term with a price in force, even Rp0", () => {
+    expect(
+      checkUnitForm(
+        { label: "Kamar 01", terms: rows({ 1: "0" }) },
+        { terms: [{ months: 1, price: 1_200_000 }] },
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Kamar 01", terms: [{ months: 1 }] },
+    });
+  });
+});
+
+describe("a term the unit no longer offers", () => {
+  const history: UnitPrice[] = [
+    // A later price for the monthly term, still to come.
+    {
+      id: "p4",
+      months: 1,
+      amount: 1_400_000,
+      effectiveFrom: "2026-12-01",
+      recordedAt: "2026-10-30T02:00:00Z",
+    },
+    {
+      id: "p3",
+      months: 12,
+      amount: 15_000_000,
+      effectiveFrom: "2026-09-01",
+      recordedAt: "2026-09-01T02:00:00Z",
+    },
+    {
+      id: "p2",
+      months: 1,
+      amount: 1_300_000,
+      effectiveFrom: "2026-09-01",
+      recordedAt: "2026-09-01T02:00:00Z",
+    },
+    {
+      id: "p1",
+      months: 12,
+      amount: 14_000_000,
+      effectiveFrom: "2026-01-01",
+      recordedAt: "2026-01-01T02:00:00Z",
+    },
+  ];
+
+  it("takes each term's latest price on or before today, as the API orders the history", () => {
+    expect(lastTermPrices(history, "2026-10-30")).toEqual({
+      1: 1_300_000,
+      12: 15_000_000,
+    });
+    expect(lastTermPrices([], "2026-10-30")).toEqual({});
+  });
+
+  it("re-ticked, it says its last price applies again when the field stays empty", () => {
+    // The unit offers only the monthly term now; the yearly one was dropped.
+    const saved: Pick<Unit, "terms"> = {
+      terms: [{ months: 1, price: 1_300_000 }],
+    };
+    const view = unitTermRowView(
+      saved,
+      12,
+      lastTermPrices(history, "2026-10-30"),
+    );
+    expect(view).toEqual({
+      kind: "input",
+      nextPrice: undefined,
+      lastPrice: 15_000_000,
+    });
+    if (view.kind !== "input") throw new Error("want a price field");
+    expect(termPriceHint(view)).toBe(
+      "Kalau dikosongkan, harga terakhir Rp15.000.000 berlaku lagi.",
+    );
+  });
+
+  it("a term never priced keeps the usual hint", () => {
+    const view = unitTermRowView(undefined, 3, {});
+    if (view.kind !== "input") throw new Error("want a price field");
+    expect(termPriceHint(view)).toBe(TERM_PRICE_HINT);
+  });
+});
+
+describe("unit terms", () => {
+  it.each([
+    { kind: "kos" as const, want: 1 },
+    { kind: "kontrakan" as const, want: 1 },
+    { kind: "other" as const, want: 1 },
+    { kind: "ruko" as const, want: 12 },
+  ])("a new $kind unit starts with $want months", ({ kind, want }) => {
+    expect(defaultUnitTerm(kind)).toBe(want);
+    expect(
+      initialTermRows(undefined, kind)
+        .filter((row) => row.checked)
+        .map((row) => row.months),
+    ).toEqual([want]);
+  });
+
+  it("a changed unit starts with its offered terms, in the four rows' order", () => {
+    expect(
+      initialTermRows(
+        { terms: [{ months: 12, price: 15_000_000 }, { months: 3 }] },
+        "ruko",
+      ),
+    ).toEqual([
+      { months: 1, checked: false, priceText: "" },
+      { months: 3, checked: true, priceText: "" },
+      { months: 6, checked: false, priceText: "" },
+      { months: 12, checked: true, priceText: "" },
+    ]);
+  });
+
+  it("shows a priced term read-only and any other with a field", () => {
+    const next = { amount: 1_600_000, effectiveFrom: "2027-01-01" };
+    const saved: Pick<Unit, "terms"> = {
+      terms: [
+        { months: 1, price: 1_500_000, nextPrice: next },
+        { months: 3, nextPrice: next },
+      ],
+    };
+    expect(unitTermRowView(saved, 1)).toEqual({
+      kind: "priced",
+      price: 1_500_000,
+      nextPrice: next,
+    });
+    expect(unitTermRowView(saved, 3)).toEqual({
+      kind: "input",
+      nextPrice: next,
+    });
+    expect(unitTermRowView(saved, 12)).toEqual({
+      kind: "input",
+      nextPrice: undefined,
+    });
+    expect(unitTermRowView(undefined, 1)).toEqual({
+      kind: "input",
+      nextPrice: undefined,
+    });
+  });
+
+  it("notices an offered term that is unchecked, only when changing a unit", () => {
+    const saved: Pick<Unit, "terms"> = { terms: [{ months: 1 }] };
+    expect(dropsOfferedTerm(saved, rows({ 12: "" }))).toBe(true);
+    expect(dropsOfferedTerm(saved, rows({ 1: "", 12: "" }))).toBe(false);
+    expect(dropsOfferedTerm(undefined, rows({}))).toBe(false);
+  });
+
+  it("names the terms and their prices", () => {
+    expect([1, 3, 6, 12].map((m) => termLabel(m as 1 | 3 | 6 | 12))).toEqual([
+      "Per bulan",
+      "Per 3 bulan",
+      "Per 6 bulan",
+      "Per tahun",
+    ]);
+    expect(termPriceLabel(3)).toBe("Harga per 3 bulan");
+    expect(termPriceLabel(12)).toBe("Harga per tahun");
+    expect(changePriceLabel(12)).toBe("Ubah harga per tahun");
+    expect(
+      nextPriceText({ amount: 1_600_000, effectiveFrom: "2027-01-01" }),
+    ).toBe("Mulai 1 Jan 2027: Rp1.600.000");
+  });
+});
+
+describe("priceHistoryRows", () => {
+  const price = (over: Partial<UnitPrice>): UnitPrice => ({
+    id: "p",
+    months: 12,
+    amount: 15_000_000,
+    effectiveFrom: "2026-10-30",
+    recordedAt: "2026-10-30T03:00:00Z",
+    recordedByName: "Pak Hendra Gunawan",
+    ...over,
+  });
+
+  it("marks what is to come, what is in force per term, and nothing on older rows, in the API's order", () => {
+    const history = [
+      price({ id: "a", effectiveFrom: "2027-01-01", amount: 16_000_000 }),
+      price({ id: "b", effectiveFrom: "2026-10-30" }),
+      price({
+        id: "c",
+        months: 1,
+        amount: 1_200_000,
+        effectiveFrom: "2026-10-01",
+        recordedAt: "2026-09-30T18:00:00Z",
+        recordedByName: undefined,
+      }),
+      price({ id: "d", effectiveFrom: "2026-01-01", amount: 14_000_000 }),
+    ];
+    expect(priceHistoryRows(history, "2026-10-30")).toEqual([
+      {
+        id: "a",
+        title: "Per tahun · Rp16.000.000",
+        detail: "Mulai 1 Jan 2027 · dicatat Pak Hendra Gunawan, 30 Okt 2026",
+        chip: FUTURE_PRICE_CHIP,
+      },
+      {
+        id: "b",
+        title: "Per tahun · Rp15.000.000",
+        detail: "Mulai 30 Okt 2026 · dicatat Pak Hendra Gunawan, 30 Okt 2026",
+        chip: CURRENT_PRICE_CHIP,
+      },
+      {
+        id: "c",
+        title: "Per bulan · Rp1.200.000",
+        detail: "Mulai 1 Okt 2026 · dari data sebelumnya",
+        chip: CURRENT_PRICE_CHIP,
+      },
+      {
+        id: "d",
+        title: "Per tahun · Rp14.000.000",
+        detail: "Mulai 1 Jan 2026 · dicatat Pak Hendra Gunawan, 30 Okt 2026",
+        chip: null,
+      },
+    ]);
+  });
+
+  it("shows the recorded day in Jakarta", () => {
+    const [row] = priceHistoryRows(
+      [price({ recordedAt: "2026-10-29T18:30:00Z" })],
+      "2026-10-30",
+    );
+    expect(row?.detail).toBe(
+      "Mulai 30 Okt 2026 · dicatat Pak Hendra Gunawan, 30 Okt 2026",
+    );
+  });
+});
+
+describe("Ubah harga", () => {
+  const today = "2026-10-30";
+
+  it("sends the term, the amount as an integer and the date", () => {
+    expect(
+      checkUnitPriceForm(
+        { months: 12, amountText: "16.000.000", effectiveFrom: "2027-01-01" },
+        today,
+      ),
+    ).toEqual({
+      ok: true,
+      input: { months: 12, amount: 16_000_000, effectiveFrom: "2027-01-01" },
+    });
+    expect(
+      checkUnitPriceForm(
+        { months: 1, amountText: "1.300.000", effectiveFrom: today },
+        today,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "no amount",
+      values: { months: 12 as const, amountText: "", effectiveFrom: today },
+      errors: { amount: EMPTY_PRICE_MESSAGE },
+    },
+    {
+      name: "a zero amount",
+      values: { months: 12 as const, amountText: "0", effectiveFrom: today },
+      errors: { amount: ZERO_PRICE_MESSAGE },
+    },
+    {
+      name: "a date before today",
+      values: {
+        months: 12 as const,
+        amountText: "16.000.000",
+        effectiveFrom: "2026-10-29",
+      },
+      errors: { effectiveFrom: PRICE_BEFORE_TODAY_MESSAGE },
+    },
+    {
+      name: "no date and no amount",
+      values: { months: 12 as const, amountText: "", effectiveFrom: "" },
+      errors: { amount: EMPTY_PRICE_MESSAGE, effectiveFrom: "Isi tanggalnya." },
+    },
+  ])("refuses $name", ({ values, errors }) => {
+    expect(checkUnitPriceForm(values, today)).toEqual({ ok: false, errors });
+  });
+
+  it("offers the unit's terms, shortest first, with today's price under them", () => {
+    const saved: Pick<Unit, "terms"> = {
+      terms: [{ months: 12, price: 15_000_000 }, { months: 1 }],
+    };
+    expect(priceTermOptions(saved)).toEqual([
+      { value: "1", label: "Per bulan" },
+      { value: "12", label: "Per tahun" },
+    ]);
+    expect(currentPriceText(saved, 12)).toBe("Harga sekarang: Rp15.000.000");
+    expect(currentPriceText(saved, 1)).toBe("Harga sekarang: belum ada");
+  });
+
+  it("says what was saved", () => {
+    expect(priceSavedNotice({ months: 12, effectiveFrom: "2027-01-01" })).toBe(
+      "Harga per tahun dicatat, berlaku mulai 1 Jan 2027.",
+    );
+    expect(priceSavedNotice({ months: 1, effectiveFrom: "2026-10-30" })).toBe(
+      "Harga per bulan dicatat, berlaku mulai 30 Okt 2026.",
+    );
   });
 });
 

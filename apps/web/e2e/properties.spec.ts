@@ -351,7 +351,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByText("Isi nama unit.")).toBeVisible();
     await expect(panel.getByLabel("Nama unit")).toBeFocused();
 
-    // Only the label goes: a new kos unit gets the monthly term, with no price yet.
+    // A new kos unit starts with the monthly term checked; no price is typed, so none goes.
     await panel.getByLabel("Nama unit").fill("Kamar 01");
     await attachFullPageScreenshot(page, testInfo, "unit-form");
     await expectTouchTarget(panel.getByLabel("Nama unit"));
@@ -361,7 +361,10 @@ test.describe("Admin of the whole organization", () => {
         request.method() === "POST" && request.url().includes("/units"),
     );
     await panel.getByRole("button", { name: "Simpan unit" }).click();
-    expect((await saved).postDataJSON()).toEqual({ label: "Kamar 01" });
+    expect((await saved).postDataJSON()).toEqual({
+      label: "Kamar 01",
+      terms: [{ months: 1 }],
+    });
     await expect(panel).toHaveCount(0);
     await expect(
       visibleText(page, "Kamar 01 sudah ditambahkan."),
@@ -391,7 +394,7 @@ test.describe("Admin of the whole organization", () => {
     await panel.getByRole("button", { name: "Batal" }).click();
     await expect(panel).toHaveCount(0);
 
-    // Change the first unit's label; only the label is sent, so its terms stay.
+    // Change the first unit's label; its terms go as they were, still with no price.
     await first.getByRole("button", { name: "Ubah Kamar 01" }).click();
     const edit = page.getByRole("dialog", { name: "Ubah unit" });
     await expect(edit.getByLabel("Nama unit")).toHaveValue("Kamar 01");
@@ -401,7 +404,10 @@ test.describe("Admin of the whole organization", () => {
         request.method() === "PUT" && request.url().includes("/units/"),
     );
     await edit.getByRole("button", { name: "Simpan unit" }).click();
-    expect((await changed).postDataJSON()).toEqual({ label: "Kamar 01A" });
+    expect((await changed).postDataJSON()).toEqual({
+      label: "Kamar 01A",
+      terms: [{ months: 1 }],
+    });
     await expect(edit).toHaveCount(0);
     await expect(visibleText(page, "Kamar 01A sudah disimpan.")).toBeVisible();
     await expect(unitRow(units, "Kamar 01A")).toContainText("Belum diisi");

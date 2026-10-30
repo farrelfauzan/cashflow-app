@@ -1,4 +1,5 @@
 import {
+  NO_DATE_MESSAGE,
   shortestTerm,
   TERM_PERIOD_WORDS,
 } from "@/components/client/lease/utils";
@@ -9,9 +10,14 @@ import type {
   ListUnitsSort,
   Property,
   PropertyKind,
+  ScheduledPrice,
+  TermMonths,
   Unit,
+  UnitPrice,
+  UnitTermInput,
 } from "@/lib/api/generated/model";
-import { formatRupiah } from "@/lib/format/rupiah";
+import { formatDate, formatTimestampDate } from "@/lib/format/date";
+import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
 
 import type {
@@ -22,7 +28,14 @@ import type {
   UnitFormErrors,
   UnitFormResult,
   UnitFormValues,
+  LastTermPrices,
   UnitOccupancyView,
+  UnitPriceFormErrors,
+  UnitPriceFormResult,
+  UnitPriceFormValues,
+  UnitPriceHistoryRowView,
+  UnitTermRow,
+  UnitTermRowView,
 } from "./type";
 
 // The property and unit forms look like every other panel form.
@@ -193,13 +206,260 @@ export function checkPropertyForm(
   };
 }
 
-export function checkUnitForm(values: UnitFormValues): UnitFormResult {
+export const NO_TERM_MESSAGE = "Pilih minimal satu masa sewa.";
+
+export function checkUnitForm(
+  values: UnitFormValues,
+  unit: Pick<Unit, "terms"> | undefined,
+): UnitFormResult {
   const label = values.label.trim();
   const errors: UnitFormErrors = {};
   if (label === "") errors.label = EMPTY_UNIT_LABEL_MESSAGE;
+  const checked = values.terms.filter((row) => row.checked);
+  if (checked.length === 0) errors.terms = NO_TERM_MESSAGE;
+  // A price of Rp0 is refused under its own field, as "Ubah harga" does.
+  for (const row of checked) {
+    if (unitTermRowView(unit, row.months).kind === "priced") continue;
+    if (row.priceText !== "" && parseRupiahInput(row.priceText) === 0) {
+      errors.prices = { ...errors.prices, [row.months]: ZERO_PRICE_MESSAGE };
+    }
+  }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  // Only the label: a new unit gets its property kind's default term, and a changed one keeps
-  // its terms.
-  return { ok: true, input: { label } };
+  return {
+    ok: true,
+    input: { label, terms: checked.map((row) => termInput(row, unit)) },
+  };
+}
+
+// A checked term as the API takes it: its price only when the admin typed one in a field the row
+// shows. A term with a price in force shows no field, so it sends none and keeps its price (the
+// API records a row only for a price given).
+function termInput(
+  row: UnitTermRow,
+  unit: Pick<Unit, "terms"> | undefined,
+): UnitTermInput {
+  if (unitTermRowView(unit, row.months).kind === "priced") {
+    return { months: row.months };
+  }
+  const price = row.priceText === "" ? null : parseRupiahInput(row.priceText);
+  return price === null
+    ? { months: row.months }
+    : { months: row.months, price };
+}
+
+// The terms a unit may offer, shortest first: the rows of "Masa sewa dan harga".
+export const UNIT_TERM_CHOICES: readonly TermMonths[] = [1, 3, 6, 12];
+
+// The term a new unit offers to begin with, as the API's default: a year for a ruko, a month for
+// a kos, kontrakan or other unit.
+export function defaultUnitTerm(kind: PropertyKind): TermMonths {
+  return kind === "ruko" ? 12 : 1;
+}
+
+// The rows "Masa sewa dan harga" starts with: the unit's offered terms when changing one, the
+// property kind's default when adding.
+export function initialTermRows(
+  unit: Pick<Unit, "terms"> | undefined,
+  kind: PropertyKind,
+): UnitTermRow[] {
+  return UNIT_TERM_CHOICES.map((months) => ({
+    months,
+    checked:
+      unit === undefined
+        ? months === defaultUnitTerm(kind)
+        : unit.terms.some((term) => term.months === months),
+    priceText: "",
+  }));
+}
+
+// What a checked term shows: its price in force, read-only, when the saved unit offers it with
+// one; else a field for a price (adding, a newly checked term, or an offered term with no price).
+// A term the unit no longer offers has no price on the unit, but its last price in the history
+// applies again when the term is offered with no price (lastPrices, from lastTermPrices).
+export function unitTermRowView(
+  unit: Pick<Unit, "terms"> | undefined,
+  months: TermMonths,
+  lastPrices: LastTermPrices = {},
+): UnitTermRowView {
+  const term = unit?.terms.find((t) => t.months === months);
+  if (term?.price !== undefined) {
+    return { kind: "priced", price: term.price, nextPrice: term.nextPrice };
+  }
+  return {
+    kind: "input",
+    nextPrice: term?.nextPrice,
+    lastPrice: lastPrices[months],
+  };
+}
+
+// Each term's latest price on or before today, from the history as the API orders it (latest
+// effective date first, and on one date the latest recorded first), so its first such row wins.
+export function lastTermPrices(
+  history: readonly UnitPrice[],
+  today: string,
+): LastTermPrices {
+  const prices: LastTermPrices = {};
+  for (const price of history) {
+    if (price.effectiveFrom > today || prices[price.months] !== undefined) {
+      continue;
+    }
+    prices[price.months] = price.amount;
+  }
+  return prices;
+}
+
+// The hint under a term's price field: what an empty field means.
+export function termPriceHint(
+  view: Extract<UnitTermRowView, { kind: "input" }>,
+): string {
+  if (view.lastPrice === undefined) return TERM_PRICE_HINT;
+  return `Kalau dikosongkan, harga terakhir ${formatRupiah(view.lastPrice)} berlaku lagi.`;
+}
+
+// The admin unchecked a term the unit offers: leases on it go on as before.
+export function dropsOfferedTerm(
+  unit: Pick<Unit, "terms"> | undefined,
+  rows: readonly UnitTermRow[],
+): boolean {
+  if (unit === undefined) return false;
+  return rows.some(
+    (row) =>
+      !row.checked && unit.terms.some((term) => term.months === row.months),
+  );
+}
+
+export const DROPPED_TERM_NOTE =
+  "Sewa yang sudah memakai masa sewa ini tetap berjalan seperti biasa.";
+export const TERMS_LEGEND = "Masa sewa dan harga";
+export const TERMS_HINT =
+  "Centang masa sewa yang ditawarkan. Harga untuk satu periode penuh, bukan harga bulanan dikali.";
+export const TERM_PRICE_HINT =
+  "Boleh dikosongkan. Tanpa harga, masa sewa ini belum bisa dipakai untuk sewa baru.";
+
+// "Per bulan", "Per 3 bulan", "Per tahun".
+export function termLabel(months: TermMonths): string {
+  return `Per ${TERM_PERIOD_WORDS[months]}`;
+}
+
+// "Harga per tahun".
+export function termPriceLabel(months: TermMonths): string {
+  return `Harga per ${TERM_PERIOD_WORDS[months]}`;
+}
+
+// "Ubah harga per tahun", the name of a term's "Ubah harga" button.
+export function changePriceLabel(months: TermMonths): string {
+  return `Ubah harga per ${TERM_PERIOD_WORDS[months]}`;
+}
+
+// "Mulai 1 Jan 2027: Rp1.600.000".
+export function nextPriceText(next: ScheduledPrice): string {
+  return `Mulai ${formatDate(next.effectiveFrom)}: ${formatRupiah(next.amount)}`;
+}
+
+// "Riwayat harga": the API's rows in its order (latest effective date first). The first row of a
+// term on or before today is its price in force; a row after today is still to come.
+export function priceHistoryRows(
+  history: readonly UnitPrice[],
+  today: string,
+): UnitPriceHistoryRowView[] {
+  const inForce = new Set<TermMonths>();
+  return history.map((price) => {
+    let chip: UnitPriceHistoryRowView["chip"] = null;
+    if (price.effectiveFrom > today) {
+      chip = FUTURE_PRICE_CHIP;
+    } else if (!inForce.has(price.months)) {
+      inForce.add(price.months);
+      chip = CURRENT_PRICE_CHIP;
+    }
+    const recorded =
+      price.recordedByName === undefined
+        ? MIGRATED_PRICE_TEXT
+        : `dicatat ${price.recordedByName}, ${formatTimestampDate(price.recordedAt)}`;
+    return {
+      id: price.id,
+      title: `${termLabel(price.months)} · ${formatRupiah(price.amount)}`,
+      detail: `Mulai ${formatDate(price.effectiveFrom)} · ${recorded}`,
+      chip,
+    };
+  });
+}
+
+export const FUTURE_PRICE_CHIP = "Akan berlaku";
+export const CURRENT_PRICE_CHIP = "Berlaku sekarang";
+export const MIGRATED_PRICE_TEXT = "dari data sebelumnya";
+export const PRICE_HISTORY_TITLE = "Riwayat harga";
+export const NO_PRICE_HISTORY_TEXT = "Belum ada harga yang dicatat.";
+export const PRICE_HISTORY_ERROR_TEXT = "Riwayat harga tidak bisa dimuat.";
+
+// "Ubah harga": what the form checks before it sends a new price.
+
+export const EMPTY_PRICE_MESSAGE = "Isi harga baru.";
+export const ZERO_PRICE_MESSAGE = "Harga harus lebih dari Rp0.";
+export const PRICE_BEFORE_TODAY_MESSAGE =
+  "Tanggal tidak boleh sebelum hari ini.";
+export const PRICE_DATE_HINT =
+  "Tagihan memakai harga yang berlaku pada hari tagihan dibuat. Harga lama tetap tercatat di riwayat.";
+export const PRICE_AMOUNT_HINT = "Untuk satu periode penuh.";
+
+// The API fields "Ubah harga" shows under its own fields.
+export const UNIT_PRICE_API_FIELDS: readonly string[] = [
+  "months",
+  "amount",
+  "effectiveFrom",
+];
+
+export function checkUnitPriceForm(
+  values: UnitPriceFormValues,
+  today: string,
+): UnitPriceFormResult {
+  const errors: UnitPriceFormErrors = {};
+  const amount =
+    values.amountText === "" ? null : parseRupiahInput(values.amountText);
+  if (amount === null) errors.amount = EMPTY_PRICE_MESSAGE;
+  else if (amount <= 0) errors.amount = ZERO_PRICE_MESSAGE;
+  if (values.effectiveFrom === "") errors.effectiveFrom = NO_DATE_MESSAGE;
+  else if (values.effectiveFrom < today) {
+    errors.effectiveFrom = PRICE_BEFORE_TODAY_MESSAGE;
+  }
+  if (amount === null || Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
+  return {
+    ok: true,
+    input: {
+      months: values.months,
+      amount,
+      effectiveFrom: values.effectiveFrom,
+    },
+  };
+}
+
+// "Harga sekarang: Rp1.500.000", or "Harga sekarang: belum ada".
+export function currentPriceText(
+  unit: Pick<Unit, "terms">,
+  months: TermMonths,
+): string {
+  const price = unit.terms.find((term) => term.months === months)?.price;
+  return `Harga sekarang: ${price === undefined ? "belum ada" : formatRupiah(price)}`;
+}
+
+// The unit's offered terms as "Masa sewa" choices, shortest first.
+export function priceTermOptions(
+  unit: Pick<Unit, "terms">,
+): { value: string; label: string }[] {
+  return [...unit.terms]
+    .sort((a, b) => a.months - b.months)
+    .map((term) => ({
+      value: String(term.months),
+      label: termLabel(term.months),
+    }));
+}
+
+// The line at the top of the unit's form once a price is saved:
+// "Harga per tahun dicatat, berlaku mulai 1 Jan 2027."
+export function priceSavedNotice(
+  price: Pick<UnitPrice, "months" | "effectiveFrom">,
+): string {
+  return `Harga per ${TERM_PERIOD_WORDS[price.months]} dicatat, berlaku mulai ${formatDate(price.effectiveFrom)}.`;
 }
