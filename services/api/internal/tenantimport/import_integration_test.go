@@ -513,6 +513,7 @@ func TestImportTerms(t *testing.T) {
 	unit("Kamar 5", property.TermInput{Months: 1})
 	kamar6 := unit("Kamar 6", property.TermInput{Months: 1})
 	unit("Kamar 7", property.TermInput{Months: 1, Price: rupiah(850_000)})
+	unit("Kamar 11", property.TermInput{Months: 1, Price: rupiah(850_000)}, property.TermInput{Months: 24, Price: rupiah(18_000_000)})
 
 	const header = "properti;jenis_properti;kamar;nama_penyewa;no_wa;sewa;jangka_bulan;tanggal_mulai\n"
 	row := func(prop, kind, unit, phone, rent, term string) string {
@@ -539,8 +540,12 @@ func TestImportTerms(t *testing.T) {
 		{"no price yet: the rent becomes the price", row("Kos Melati", "kos", "Kamar 6", "0812-8510-5006", "800.000", "1"), "", "", 1, rupiah(800_000)},
 		{"a term the unit does not offer", row("Kos Melati", "kos", "Kamar 7", "0812-8510-5007", "", "6"), "term",
 			"Unit ini tidak menawarkan jangka sewa 6 bulan.", 0, nil},
-		{"an unknown term", row("Kos Melati", "kos", "Kamar 8", "0812-8510-5008", "850.000", "2"), "term",
-			"Jangka sewa harus 1, 3, 6 atau 12 bulan.", 0, nil},
+		{"a term out of range", row("Kos Melati", "kos", "Kamar 8", "0812-8510-5008", "850.000", "61"), "term",
+			"Jangka sewa harus 1 sampai 60 bulan.", 0, nil},
+		{"a custom term the unit offers", row("Kos Melati", "kos", "Kamar 11", "0812-8510-5012", "", "24"), "", "", 24, nil},
+		{"a custom term the unit does not offer", row("Kos Melati", "kos", "Kamar 2", "0812-8510-5013", "", "24"), "term",
+			"Unit ini tidak menawarkan jangka sewa 24 bulan.", 0, nil},
+		{"a new unit offers the row's custom term", row("Kos Melati", "kos", "Kamar 12", "0812-8510-5014", "1.500.000", "2"), "", "", 2, rupiah(1_500_000)},
 		{"a new unit offers the row's term", row("Kos Melati", "kos", "Kamar 9", "0812-8510-5009", "2.400.000", "3"), "", "", 3, rupiah(2_400_000)},
 		{"a new ruko offers 12 months", row("Ruko Godean", "ruko", "Ruko 1", "0812-8510-5010", "54.000.000", ""), "", "", 12, rupiah(54_000_000)},
 		{"a new unit needs a rent", row("Kos Melati", "kos", "Kamar 10", "0812-8510-5011", "", ""), "rent",
@@ -583,13 +588,16 @@ func TestImportTerms(t *testing.T) {
 			require.Len(t, tn.Leases, 1)
 			terms[tn.Leases[0].UnitLabel] = tn.Leases[0].TermMonths
 		}
-		require.Equal(t, map[string]int{"Kamar 1": 12, "Kamar 4": 12, "Kamar 6": 1, "Kamar 9": 3, "Ruko 1": 12}, terms)
+		require.Equal(t, map[string]int{"Kamar 1": 12, "Kamar 4": 12, "Kamar 6": 1, "Kamar 9": 3, "Kamar 11": 24, "Kamar 12": 2, "Ruko 1": 12}, terms)
 
 		units, err := env.AllUnits(ctx, admin, melati.ID)
 		require.NoError(t, err)
 		for _, u := range units {
-			if u.Label == "Kamar 9" {
+			switch u.Label {
+			case "Kamar 9":
 				require.Equal(t, []property.UnitTerm{{Months: 3, Price: rupiah(2_400_000)}}, u.Terms)
+			case "Kamar 12":
+				require.Equal(t, []property.UnitTerm{{Months: 2, Price: rupiah(1_500_000)}}, u.Terms)
 			}
 		}
 	})

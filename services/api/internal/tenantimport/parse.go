@@ -253,8 +253,8 @@ func parseKind(s string) string {
 	return s
 }
 
-// parseTerm reads a billing term in months: 1, 3, 6 or 12. An empty cell is 0, for the unit to
-// decide.
+// parseTerm reads a billing term in months, 1 to 60 (a standard term or a unit's custom one,
+// decision 33). An empty cell is 0, for the unit to decide.
 func parseTerm(s string) (int, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {

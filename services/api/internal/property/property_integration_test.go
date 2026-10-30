@@ -176,10 +176,11 @@ func TestPropertiesAndUnits(t *testing.T) {
 		require.Equal(t, []property.UnitTerm{{Months: 12, Price: rent(10_000_000)}}, u.Terms, "a term can be switched off")
 
 		for name, terms := range map[string][]property.TermInput{
-			"no terms":     {},
-			"a repeat":     {{Months: 1}, {Months: 1}},
-			"an odd term":  {{Months: 2}},
-			"a zero price": {{Months: 1, Price: rent(0)}},
+			"no terms":              {},
+			"a repeat":              {{Months: 1}, {Months: 1}},
+			"a term over 60 months": {{Months: 61}},
+			"two custom terms":      {{Months: 2}, {Months: 24}},
+			"a zero price":          {{Months: 1, Price: rent(0)}},
 		} {
 			_, err := env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{Label: "Kamar 2A", Terms: terms})
 			var inputErr *property.InputError

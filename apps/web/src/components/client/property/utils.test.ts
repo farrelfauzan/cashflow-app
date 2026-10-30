@@ -474,6 +474,34 @@ describe("checkUnitForm", () => {
     expect(checkUnitForm(values, undefined)).toEqual({ ok: false, errors });
   });
 
+  it("keeps a custom term the form has no row for", () => {
+    // Ruko 2 in the demo seed: renaming it must not drop its 24-month term.
+    const saved: Pick<Unit, "terms"> = {
+      terms: [
+        { months: 12, price: 50_000_000 },
+        { months: 24, price: 95_000_000 },
+      ],
+    };
+    expect(
+      checkUnitForm({ label: "Ruko 2A", terms: rows({ 12: "" }) }, saved),
+    ).toEqual({
+      ok: true,
+      input: { label: "Ruko 2A", terms: [{ months: 12 }, { months: 24 }] },
+    });
+  });
+
+  it("accepts no checked row while a custom term stays", () => {
+    expect(
+      checkUnitForm(
+        { label: "Ruko 2", terms: rows({}) },
+        { terms: [{ months: 24, price: 95_000_000 }] },
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Ruko 2", terms: [{ months: 24 }] },
+    });
+  });
+
   it("refuses a typed price of Rp0 under that term's field", () => {
     expect(
       checkUnitForm(

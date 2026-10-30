@@ -13,7 +13,7 @@ export interface ImportRowValues {
   startDate: string;
   /** Mulai tagih dari; the start date when the cell is empty. */
   billedFrom: string;
-  /** The jangka_bulan cell, or when it is empty: 1 when the unit offers it, else the unit's only term; a unit the import creates offers its property kind's default (12 for a ruko, otherwise 1). A term the unit does not offer is a row error on column term. */
+  /** The jangka_bulan cell (1 to 60: a standard term or a custom one, decision 33), or when it is empty: 1 when the unit offers it, else the unit's only term; a unit the import creates offers the row's term, or its property kind's default when the cell is empty (12 for a ruko, otherwise 1). A term an existing unit does not offer is a row error on column term. */
   termMonths: TermMonths;
   /** The sewa cell: the unit's price for one whole term. Required when the unit has no price for the term in force on the import day, and then recorded as its price from that day; when the unit has one, it may be empty, and a different amount is a row error on column rent. Missing when the cell is empty. */
   rentAmount?: number;

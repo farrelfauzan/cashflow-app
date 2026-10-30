@@ -394,7 +394,7 @@ func (s *Service) checkUnitPrice(ctx context.Context, tx pgx.Tx, p authz.Princip
 	return nil
 }
 
-const termMessage = "Jangka sewa harus 1, 3, 6 atau 12 bulan."
+const termMessage = "Jangka sewa harus 1 sampai 60 bulan."
 
 func noPriceMessage(term int) string {
 	return fmt.Sprintf("Harga sewa wajib diisi: unit ini belum punya harga untuk %d bulan.", term)

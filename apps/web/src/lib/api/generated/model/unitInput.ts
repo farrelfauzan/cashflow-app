@@ -13,9 +13,9 @@ export interface UnitInput {
      */
   label: string;
   /**
-     * The billing terms the unit offers (decision 32), each month count once. On createUnit, leaving it out offers the property kind's default: 12 months for a ruko, 1 month for a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps the offered terms and their prices. When given, the unit offers exactly these terms; a lease keeps its term when the unit stops offering it. A term's price, when given and different from the price in force today, is recorded as a new price effective today (use createUnitPrice for a later date). An empty list, a repeated or unknown month count is a 400 invalid_input on field terms.
+     * The billing terms the unit offers (decisions 32 and 33), each month count once: any of the standard terms 1, 3, 6 and 12 months, plus at most one custom term of 2 to 60 months the admin types. On createUnit, leaving it out offers the property kind's default: 12 months for a ruko, 1 month for a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps the offered terms and their prices. When given, the unit offers exactly these terms; a lease keeps its term when the unit stops offering it. A term's price, when given and different from the price in force today, is recorded as a new price effective today (use createUnitPrice for a later date). An empty list, a repeated month count, one outside 1 to 60, or a second custom term is a 400 invalid_input on field terms. Replacing the custom term with another month count works like switching a term off: leases on the old one keep it, and its price history stays.
      * @minItems 1
-     * @maxItems 4
+     * @maxItems 5
      */
   terms?: UnitTermInput[];
 }

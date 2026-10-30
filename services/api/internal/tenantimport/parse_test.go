@@ -284,7 +284,11 @@ func TestParseTerm(t *testing.T) {
 		{"a quarter, with spaces", " 3 ", 3, true},
 		{"half a year", "6", 6, true},
 		{"a year", "12", 12, true},
-		{"two months is not a term", "2", 0, false},
+		{"a custom 2 months", "2", 2, true},
+		{"a custom 24 months", "24", 24, true},
+		{"60 months, the longest", "60", 60, true},
+		{"61 months is too long", "61", 0, false},
+		{"zero is not a term", "0", 0, false},
 		{"words are not read", "setahun", 0, false},
 	}
 	for _, tc := range tests {

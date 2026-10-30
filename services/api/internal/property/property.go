@@ -628,16 +628,20 @@ func validTerms(in []TermInput) ([]TermInput, error) {
 		return in, &InputError{Field: "terms", Message: "Pilih paling sedikit satu jangka sewa."}
 	}
 	seen := map[int]bool{}
+	hasCustom := false // a unit offers at most one custom term (decision 33)
 	for _, t := range in {
 		switch {
 		case !tenant.ValidTerm(t.Months):
 			return in, &InputError{Field: "terms", Message: termMessage}
 		case seen[t.Months]:
 			return in, &InputError{Field: "terms", Message: fmt.Sprintf("Jangka sewa %d bulan tercantum dua kali.", t.Months)}
+		case !tenant.IsStandardTerm(t.Months) && hasCustom:
+			return in, &InputError{Field: "terms", Message: customTermMessage}
 		case t.Price != nil && *t.Price <= 0:
 			return in, &InputError{Field: "terms", Message: priceMessage}
 		}
 		seen[t.Months] = true
+		hasCustom = hasCustom || !tenant.IsStandardTerm(t.Months)
 	}
 	out := slices.Clone(in)
 	slices.SortFunc(out, func(a, b TermInput) int { return a.Months - b.Months })

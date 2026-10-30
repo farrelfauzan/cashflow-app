@@ -1,6 +1,6 @@
 import {
   leaseUnitText,
-  TERM_PERIOD_WORDS,
+  termPeriodWords,
 } from "@/components/client/lease/utils";
 import {
   readChoice,
@@ -353,7 +353,7 @@ export function billedNote(lease: Lease): string | null {
 // The rent's label on a lease card, by the lease's term: "Sewa per bulan", "Sewa per 3 bulan",
 // "Sewa per 6 bulan" or "Sewa per tahun".
 export function leaseRentLabel(termMonths: TermMonths): string {
-  return `Sewa per ${TERM_PERIOD_WORDS[termMonths]}`;
+  return `Sewa per ${termPeriodWords(termMonths)}`;
 }
 
 export const NO_PERIOD_RENT_TEXT = "Belum ada harga";

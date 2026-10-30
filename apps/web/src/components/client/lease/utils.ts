@@ -192,12 +192,24 @@ export function defaultBilledFrom(
 
 // How the lease forms name one period of each term. A monthly lease keeps the words the boards
 // use ("bulan"); a longer term says "periode 3 bulan" or "tahun".
-export const TERM_PERIOD_NAMES: Record<TermMonths, TermPeriodNames> = {
+export const TERM_PERIOD_NAMES: Partial<Record<TermMonths, TermPeriodNames>> = {
   1: { noun: "bulan", short: "bulan", plural: "bulan-bulan" },
   3: { noun: "periode 3 bulan", short: "periode", plural: "periode-periode" },
   6: { noun: "periode 6 bulan", short: "periode", plural: "periode-periode" },
   12: { noun: "tahun", short: "tahun", plural: "tahun-tahun" },
 };
+
+// The names of one period of a term: a standard term's from TERM_PERIOD_NAMES, a unit's custom
+// term (decision 33) as "periode N bulan".
+export function termPeriodNames(term: TermMonths): TermPeriodNames {
+  return (
+    TERM_PERIOD_NAMES[term] ?? {
+      noun: `periode ${term} bulan`,
+      short: "periode",
+      plural: "periode-periode",
+    }
+  );
+}
 
 function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -215,7 +227,7 @@ export function billingExplanation(
   today: string,
   term: TermMonths,
 ): string {
-  const { noun, short, plural } = TERM_PERIOD_NAMES[term];
+  const { noun, short, plural } = termPeriodNames(term);
   const current = periodStartOn(start, enteredOn, term);
   const currentDue = formatDayMonth(addDays(enteredOn, 7));
   const pastDue =
@@ -233,34 +245,34 @@ export function billingExplanation(
 
 // The first radio: "Tagih semua bulan sejak tanggal mulai", "Tagih semua tahun sejak tanggal mulai".
 export function billAllLabel(term: TermMonths): string {
-  return `Tagih semua ${TERM_PERIOD_NAMES[term].noun} sejak tanggal mulai`;
+  return `Tagih semua ${termPeriodNames(term).noun} sejak tanggal mulai`;
 }
 
 // The first radio's line: "Semua bulan sejak 15 Sep 2026 dibuatkan tagihan."
 export function billAllHint(start: string, term: TermMonths): string {
-  return `Semua ${TERM_PERIOD_NAMES[term].noun} sejak ${formatDate(start)} dibuatkan tagihan.`;
+  return `Semua ${termPeriodNames(term).noun} sejak ${formatDate(start)} dibuatkan tagihan.`;
 }
 
 // The second radio: "Mulai dari bulan yang saya pilih", "Mulai dari periode yang saya pilih".
 export function billPickLabel(term: TermMonths): string {
-  return `Mulai dari ${TERM_PERIOD_NAMES[term].short} yang saya pilih`;
+  return `Mulai dari ${termPeriodNames(term).short} yang saya pilih`;
 }
 
 export function billPickHint(term: TermMonths): string {
-  return `${capitalized(TERM_PERIOD_NAMES[term].short)} sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.`;
+  return `${capitalized(termPeriodNames(term).short)} sebelumnya dianggap sudah dibayar langsung kepada pemilik, jadi tidak dibuatkan tagihan.`;
 }
 
 // The period select's accessible name: "Bulan mulai tagih", "Tahun mulai tagih".
 export function billedFromSelectLabel(term: TermMonths): string {
-  return `${capitalized(TERM_PERIOD_NAMES[term].short)} mulai tagih`;
+  return `${capitalized(termPeriodNames(term).short)} mulai tagih`;
 }
 
 export function billPickSelectHint(term: TermMonths): string {
-  return `Pilihan ${TERM_PERIOD_NAMES[term].short} hanya berlaku kalau opsi kedua dipilih.`;
+  return `Pilihan ${termPeriodNames(term).short} hanya berlaku kalau opsi kedua dipilih.`;
 }
 
 export function noBilledFromMessage(term: TermMonths): string {
-  return `Pilih ${TERM_PERIOD_NAMES[term].short} mulai tagih.`;
+  return `Pilih ${termPeriodNames(term).short} mulai tagih.`;
 }
 
 export const BOOKING_NOTE =
@@ -272,7 +284,7 @@ const MONTH_END_NOTE =
 // The hint under "Mulai sewa", with the day of the chosen date: the day of the month for a term in
 // months, the day and month for a yearly lease.
 export function startDateHint(start: string, term: TermMonths): string {
-  const every = `Juga jadi tanggal tagihan tiap ${TERM_PERIOD_WORDS[term]}.`;
+  const every = `Juga jadi tanggal tagihan tiap ${termPeriodWords(term)}.`;
   if (!isCalendarDate(start)) return `${every} ${MONTH_END_NOTE}`;
   if (term === 12) {
     const dayMonth = formatDayMonth(start);
@@ -282,7 +294,7 @@ export function startDateHint(start: string, term: TermMonths): string {
   const due =
     term === 1
       ? `jatuh tempo tiap tanggal ${day}`
-      : `jatuh tempo tanggal ${day} tiap ${TERM_PERIOD_WORDS[term]}`;
+      : `jatuh tempo tanggal ${day} tiap ${termPeriodWords(term)}`;
   return `${every} Mulai tanggal ${day}, ${due}. ${MONTH_END_NOTE}`;
 }
 
@@ -297,12 +309,18 @@ export function freeUnits(units: readonly Unit[]): Unit[] {
 }
 
 // The words for one period of a term, after "per": "Sewa per 3 bulan", "Rp15.000.000 per tahun".
-export const TERM_PERIOD_WORDS: Record<TermMonths, string> = {
+export const TERM_PERIOD_WORDS: Partial<Record<TermMonths, string>> = {
   1: "bulan",
   3: "3 bulan",
   6: "6 bulan",
   12: "tahun",
 };
+
+// How a sentence names a term after "per" or "tiap": a standard term's from TERM_PERIOD_WORDS, a
+// unit's custom term (decision 33) as "N bulan".
+export function termPeriodWords(term: TermMonths): string {
+  return TERM_PERIOD_WORDS[term] ?? `${term} bulan`;
+}
 
 // The shortest of the given terms, or null when there is none.
 export function shortestTerm(
@@ -357,7 +375,7 @@ export function termOptionLabel(
 ): string {
   const price =
     term.price === undefined ? NO_TERM_PRICE_TEXT : formatRupiah(term.price);
-  return `Per ${TERM_PERIOD_WORDS[term.months]} · ${price}`;
+  return `Per ${termPeriodWords(term.months)} · ${price}`;
 }
 
 // The unit's terms as "Masa sewa" choices, shortest first; none before a unit is chosen.
@@ -382,7 +400,7 @@ export function termHint(
 ): TermHint {
   if (term !== null) {
     return {
-      text: `Tagihan dibuat sekali tiap ${TERM_PERIOD_WORDS[term]}, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.`,
+      text: `Tagihan dibuat sekali tiap ${termPeriodWords(term)}, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.`,
       tone: "muted",
     };
   }
@@ -665,7 +683,7 @@ export const MOVE_OUT_API_FIELDS: readonly string[] = ["endDate"];
 
 // What a planned end does, per period of the lease's term.
 export function plannedEndEffects(term: TermMonths): string[] {
-  const { noun, short } = TERM_PERIOD_NAMES[term];
+  const { noun, short } = termPeriodNames(term);
   return [
     `Tidak ada tagihan baru untuk ${noun} yang mulai sesudah tanggal itu.`,
     `${capitalized(noun)} yang sudah mulai tetap ditagih penuh, tanpa potongan.`,
@@ -677,7 +695,7 @@ export function plannedEndEffects(term: TermMonths): string[] {
 export function moveOutEffects(term: TermMonths): string[] {
   return [
     "Unit langsung kosong dan bisa disewakan lagi.",
-    `Tagihan untuk ${TERM_PERIOD_NAMES[term].noun} yang mulai sesudah tanggal itu dibatalkan.`,
+    `Tagihan untuk ${termPeriodNames(term).noun} yang mulai sesudah tanggal itu dibatalkan.`,
     "Rencana keluar yang sudah diisi ikut dihapus.",
     "Kalau masih ada tunggakan, aplikasi mengikuti aturan usaha di Pengaturan: potong uang jaminan dulu, atau tetap ditagih.",
   ];
@@ -701,7 +719,7 @@ export function plannedEndHint(
   suggestion: PlannedEndSuggestion,
   term: TermMonths,
 ): string {
-  return `Usulan: ${formatDate(suggestion.date)}, sehari sebelum ${TERM_PERIOD_NAMES[term].noun} berikutnya (${formatDayMonth(suggestion.nextStart)}) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.`;
+  return `Usulan: ${formatDate(suggestion.date)}, sehari sebelum ${termPeriodNames(term).noun} berikutnya (${formatDayMonth(suggestion.nextStart)}) dimulai. Tanggal harus hari ini atau sesudahnya, dan tidak sebelum tanggal mulai sewa.`;
 }
 
 export function currentPlannedEndText(date: string): string {

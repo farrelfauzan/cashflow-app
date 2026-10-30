@@ -183,30 +183,6 @@ func (e RoleGrantRole) Valid() bool {
 	}
 }
 
-// Defines values for TermMonths.
-const (
-	N1  TermMonths = 1
-	N12 TermMonths = 12
-	N3  TermMonths = 3
-	N6  TermMonths = 6
-)
-
-// Valid indicates whether the value is a known member of the TermMonths enum.
-func (e TermMonths) Valid() bool {
-	switch e {
-	case N1:
-		return true
-	case N12:
-		return true
-	case N3:
-		return true
-	case N6:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ListMembersParamsStatus.
 const (
 	ListMembersParamsStatusActive   ListMembersParamsStatus = "active"
@@ -475,7 +451,8 @@ type ImportRowValues struct {
 	RentAmount *int64             `json:"rentAmount,omitempty"`
 	StartDate  openapi_types.Date `json:"startDate"`
 
-	// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// TermMonths A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	TermMonths TermMonths `json:"termMonths"`
@@ -559,7 +536,8 @@ type Lease struct {
 	Status    LeaseStatus        `json:"status"`
 	TenantId  openapi_types.UUID `json:"tenantId"`
 
-	// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// TermMonths A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	TermMonths TermMonths         `json:"termMonths"`
@@ -615,7 +593,8 @@ type LeaseInput struct {
 	StartDate openapi_types.Date `json:"startDate"`
 	TenantId  openapi_types.UUID `json:"tenantId"`
 
-	// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// TermMonths A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	TermMonths TermMonths         `json:"termMonths"`
@@ -876,10 +855,10 @@ type TenantList struct {
 	Total int `json:"total"`
 }
 
-// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+// TermMonths A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
 //
 // Example: 12
-type TermMonths int
+type TermMonths = int
 
 // Unit defines model for Unit.
 type Unit struct {
@@ -904,7 +883,7 @@ type UnitInput struct {
 	// Example: Kamar 11
 	Label string `json:"label"`
 
-	// Terms The billing terms the unit offers (decision 32), each month count once. On createUnit, leaving it out offers the property kind's default: 12 months for a ruko, 1 month for a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps the offered terms and their prices. When given, the unit offers exactly these terms; a lease keeps its term when the unit stops offering it. A term's price, when given and different from the price in force today, is recorded as a new price effective today (use createUnitPrice for a later date). An empty list, a repeated or unknown month count is a 400 invalid_input on field terms.
+	// Terms The billing terms the unit offers (decisions 32 and 33), each month count once: any of the standard terms 1, 3, 6 and 12 months, plus at most one custom term of 2 to 60 months the admin types. On createUnit, leaving it out offers the property kind's default: 12 months for a ruko, 1 month for a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps the offered terms and their prices. When given, the unit offers exactly these terms; a lease keeps its term when the unit stops offering it. A term's price, when given and different from the price in force today, is recorded as a new price effective today (use createUnitPrice for a later date). An empty list, a repeated month count, one outside 1 to 60, or a second custom term is a 400 invalid_input on field terms. Replacing the custom term with another month count works like switching a term off: leases on the old one keep it, and its price history stays.
 	Terms *[]UnitTermInput `json:"terms,omitempty"`
 }
 
@@ -927,7 +906,8 @@ type UnitPrice struct {
 	EffectiveFrom openapi_types.Date `json:"effectiveFrom"`
 	Id            openapi_types.UUID `json:"id"`
 
-	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// Months A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	Months     TermMonths `json:"months"`
@@ -951,7 +931,8 @@ type UnitPriceInput struct {
 	// Example: 2027-01-01
 	EffectiveFrom openapi_types.Date `json:"effectiveFrom"`
 
-	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// Months A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	Months TermMonths `json:"months"`
@@ -965,7 +946,8 @@ type UnitTenant struct {
 
 // UnitTerm defines model for UnitTerm.
 type UnitTerm struct {
-	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// Months A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	Months TermMonths `json:"months"`
@@ -982,7 +964,8 @@ type UnitTerm struct {
 
 // UnitTermInput defines model for UnitTermInput.
 type UnitTermInput struct {
-	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	// Months A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+	//
 	//
 	// Example: 12
 	Months TermMonths `json:"months"`

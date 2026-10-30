@@ -37,7 +37,7 @@ func (e *TermError) Unwrap() error { return e.Err }
 // invoice is made. It does no permission check; the caller has authorized what it is part of.
 func PriceInForce(ctx context.Context, q *dbgen.Queries, org, unitID uuid.UUID, term int, day time.Time) (int64, error) {
 	amount, err := q.GetPriceInForce(ctx, dbgen.GetPriceInForceParams{
-		OrganizationID: org, UnitID: unitID, TermMonths: int16(term), Day: calendarDay(day), //nolint:gosec // a term is 1 to 12
+		OrganizationID: org, UnitID: unitID, TermMonths: int16(term), Day: calendarDay(day), //nolint:gosec // a term is 1 to 60
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNoPrice

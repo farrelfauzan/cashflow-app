@@ -5,12 +5,20 @@ import (
 	"time"
 )
 
-// TermMonths are the billing terms, in months, a unit may offer and a lease may be billed by
-// (decision 32), ascending.
-var TermMonths = []int{1, 3, 6, 12}
+// StandardTerms are the billing terms, in months, every unit may offer (decision 32), ascending.
+var StandardTerms = []int{1, 3, 6, 12}
 
-// ValidTerm reports whether months is one of TermMonths.
-func ValidTerm(months int) bool { return slices.Contains(TermMonths, months) }
+// MaxTermMonths is the longest term a lease may be billed by. Besides the standard terms a unit
+// may offer one custom term of 2 to MaxTermMonths months (decision 33).
+const MaxTermMonths = 60
+
+// ValidTerm reports whether months is a term a lease may be billed by: a standard term, or a
+// custom one of 2 to MaxTermMonths months.
+func ValidTerm(months int) bool { return months >= 1 && months <= MaxTermMonths }
+
+// IsStandardTerm reports whether months is one of StandardTerms. Any other valid term is the
+// unit's custom term, and a unit offers at most one.
+func IsStandardTerm(months int) bool { return slices.Contains(StandardTerms, months) }
 
 // lateEntryGrace is how long after the entry day the period running on that day is due, for a
 // lease entered after it started.

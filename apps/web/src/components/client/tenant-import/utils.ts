@@ -1,4 +1,4 @@
-import { TERM_PERIOD_WORDS } from "@/components/client/lease/utils";
+import { termPeriodWords } from "@/components/client/lease/utils";
 import { ApiError, GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
 import { API_BASE_PATH } from "@/lib/api/client";
 import type { ImportRow, ImportSummary } from "@/lib/api/generated/model";
@@ -61,7 +61,7 @@ export const OPTIONAL_COLUMNS = [
 export const RENT_NOTE =
   "sewa: harga satu periode. Boleh dikosongkan kalau unit sudah punya harga untuk jangka itu.";
 export const TERM_NOTE =
-  "jangka_bulan: 1, 3, 6 atau 12. Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).";
+  "jangka_bulan: 1 sampai 60 (1, 3, 6, 12, atau satu jangka lain yang ditawarkan unit). Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).";
 export const BILL_FROM_NOTE =
   "mulai_tagih: awal periode pertama yang ditagih. Kosongkan untuk menagih sejak tanggal mulai sewa.";
 // The notes under the columns, in the template's order.
@@ -211,7 +211,7 @@ function cell(value: string): string {
 function rowPlaceText(row: ImportRow): string {
   const parts = [cell(row.unitLabel), cell(row.propertyName)];
   if (row.values !== undefined) {
-    parts.push(`Per ${TERM_PERIOD_WORDS[row.values.termMonths]}`);
+    parts.push(`Per ${termPeriodWords(row.values.termMonths)}`);
     const rent = row.values.rentAmount;
     if (rent !== undefined) parts.push(formatRupiah(rent));
   }

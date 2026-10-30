@@ -166,7 +166,7 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, 3, gb["lease"].Rows)
 		require.Zero(t, gb["charge_type"].Rows)
 		require.Zero(t, gb["lease_charge"].Rows)
-		require.Equal(t, 12, ga["unit_price"].Rows, "one price per unit, plus Kamar 1's yearly and scheduled prices")
+		require.Equal(t, 13, ga["unit_price"].Rows, "one price per unit, plus Kamar 1's yearly and scheduled prices and Ruko 2's two-year price")
 		require.Equal(t, 4, gb["unit_price"].Rows)
 		require.Positive(t, ga["audit_log"].Rows, "the snapshot covers the audit log too")
 		require.Equal(t, 7, ga["staff_user"].Rows, "an organization scope sees its own members' users")
@@ -351,7 +351,11 @@ func TestSeedDemo(t *testing.T) {
 		ruko, err := env.AllUnits(ctx, adminA, propertyID(t, env, adminA, "Ruko Godean"))
 		require.NoError(t, err)
 		for _, u := range ruko {
-			require.Equal(t, []property.UnitTerm{{Months: 12, Price: price(50_000_000)}}, u.Terms, "a ruko is let by the year only")
+			want := []property.UnitTerm{{Months: 12, Price: price(50_000_000)}}
+			if u.Label == "Ruko 2" {
+				want = append(want, property.UnitTerm{Months: 24, Price: price(95_000_000)})
+			}
+			require.Equal(t, want, u.Terms, "a ruko is let by the year, Ruko 2 also for two years")
 		}
 		toko := find(t, tenantsA, "Toko Sumber Rejeki (Pak Agus)")
 		require.Equal(t, 12, toko.Leases[0].TermMonths)

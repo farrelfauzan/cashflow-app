@@ -226,7 +226,7 @@ describe("format card", () => {
   it("explains sewa, jangka_bulan and mulai_tagih in that order", () => {
     expect(COLUMN_NOTES).toEqual([
       "sewa: harga satu periode. Boleh dikosongkan kalau unit sudah punya harga untuk jangka itu.",
-      "jangka_bulan: 1, 3, 6 atau 12. Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).",
+      "jangka_bulan: 1 sampai 60 (1, 3, 6, 12, atau satu jangka lain yang ditawarkan unit). Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).",
       "mulai_tagih: awal periode pertama yang ditagih. Kosongkan untuk menagih sejak tanggal mulai sewa.",
     ]);
   });
