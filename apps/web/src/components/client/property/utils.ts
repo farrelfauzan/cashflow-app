@@ -199,6 +199,9 @@ export const propertyFormSchema = z.object({
   address: z.string().trim(),
 });
 
+// The property form's fields an API error can name; an error on any other field goes to the alert.
+export const PROPERTY_FORM_API_FIELDS = ["name", "kind", "address"] as const;
+
 export const NO_TERM_MESSAGE = "Pilih minimal satu masa sewa.";
 export const EMPTY_CUSTOM_MONTHS_MESSAGE = "Isi jumlah bulan.";
 export const STANDARD_CUSTOM_MONTHS_MESSAGE =

@@ -24,6 +24,7 @@ import {
   FIELD_LABEL_CLASS,
   INPUT_CLASS,
   PROPERTY_ADDRESS_MAX_LENGTH,
+  PROPERTY_FORM_API_FIELDS,
   PROPERTY_NAME_MAX_LENGTH,
   TEXTAREA_CLASS,
   propertyFormSchema,
@@ -38,9 +39,6 @@ type PropertyFormProps = {
   onSaved: (property: Property) => void;
 };
 
-// The fields the API's errors can name; any other field goes to the alert.
-const FORM_FIELDS = ["name", "kind", "address"] as const;
-
 // "Tambah properti" and "Ubah properti": name, kind and address. The save button sits outside
 // the form, in the panel's footer, and submits it through its `form` attribute.
 export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
@@ -54,7 +52,7 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
       kind: property?.kind,
       address: property?.address ?? "",
     },
-    apiFields: FORM_FIELDS,
+    apiFields: PROPERTY_FORM_API_FIELDS,
   });
   const { errors } = form.formState;
   const nameError = errors.name?.message;
