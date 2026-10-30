@@ -1,10 +1,11 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useId } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import {
   FIELD_HINT_CLASS,
   FIELD_LABEL_CLASS,
@@ -16,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SheetClose } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { toFormError } from "@/lib/api/form-error";
 import type { Tenant } from "@/lib/api/generated/model";
 import {
   getGetTenantQueryKey,
@@ -24,12 +24,11 @@ import {
   useCreateTenant,
   useUpdateTenant,
 } from "@/lib/api/generated/tenants/tenants";
-import type { TenantFormErrors } from "./type";
 import {
-  TENANT_FORM_FIELDS,
+  TENANT_FORM_API_FIELDS,
   TENANT_NAME_MAX_LENGTH,
   TENANT_NOTE_MAX_LENGTH,
-  checkTenantForm,
+  tenantFormSchema,
   tenantFormValues,
 } from "./utils";
 
@@ -46,13 +45,16 @@ type TenantFormProps = {
 export function TenantForm({ orgId, tenant, onSaved }: TenantFormProps) {
   const id = useId();
   const formId = `${id}-form`;
-  const nameRef = useRef<HTMLInputElement>(null);
-  const phoneRef = useRef<HTMLInputElement>(null);
-  const noteRef = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
-  const [values, setValues] = useState(() => tenantFormValues(tenant));
-  const [errors, setErrors] = useState<TenantFormErrors>({});
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, field, showApiError, alert } = useApiForm({
+    schema: tenantFormSchema,
+    defaultValues: tenantFormValues(tenant),
+    apiFields: TENANT_FORM_API_FIELDS,
+  });
+  const { errors } = form.formState;
+  const nameError = errors.name?.message;
+  const phoneError = errors.phone?.message;
+  const noteError = errors.note?.message;
 
   const invalidateList = () =>
     queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey(orgId) });
@@ -71,101 +73,46 @@ export function TenantForm({ orgId, tenant, onSaved }: TenantFormProps) {
   // After adding, the panel moves on to the next step; the form stays locked until then.
   const saving = create.isPending || create.isSuccess || update.isPending;
 
-  function change(field: keyof TenantFormErrors, value: string) {
-    setValues((current) => ({ ...current, [field]: value }));
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[field];
-      return next;
-    });
-  }
-
-  // The field to focus after a refused save. The fields are disabled while saving, so the focus
-  // waits until they are enabled again; a new object each time, so the same field can repeat.
-  const [focusTarget, setFocusTarget] = useState<{
-    field: keyof TenantFormErrors;
-  } | null>(null);
-  useEffect(() => {
-    if (focusTarget === null || saving) return;
-    const ref = { name: nameRef, phone: phoneRef, note: noteRef }[
-      focusTarget.field
-    ];
-    ref.current?.focus();
-  }, [focusTarget, saving]);
-
-  function handleError(error: unknown) {
-    const failed = toFormError(error, TENANT_FORM_FIELDS);
-    if (
-      failed.field === "name" ||
-      failed.field === "phone" ||
-      failed.field === "note"
-    ) {
-      setErrors({ [failed.field]: failed.message });
-      setFocusTarget({ field: failed.field });
-    } else {
-      setAlert(failed.message);
-    }
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit((input) => {
     if (saving) return;
-
-    setAlert(null);
-    const checked = checkTenantForm(values);
-    if (!checked.ok) {
-      setErrors(checked.errors);
-      setFocusTarget({
-        field: checked.errors.name !== undefined ? "name" : "phone",
-      });
-      return;
-    }
-    setErrors({});
-
-    const options = { onSuccess: onSaved, onError: handleError };
+    const options = { onSuccess: onSaved, onError: showApiError };
     if (tenant === undefined) {
-      create.mutate({ orgId, data: checked.input }, options);
+      create.mutate({ orgId, data: input }, options);
     } else {
-      update.mutate(
-        { orgId, tenantId: tenant.id, data: checked.input },
-        options,
-      );
+      update.mutate({ orgId, tenantId: tenant.id, data: input }, options);
     }
-  }
+  });
 
   return (
     <>
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
+        {alert !== undefined && <FormAlert message={alert} />}
 
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-name`} className={FIELD_LABEL_CLASS}>
             Nama penyewa
           </Label>
           <Input
-            ref={nameRef}
             id={`${id}-name`}
-            name="name"
             type="text"
             autoComplete="off"
             maxLength={TENANT_NAME_MAX_LENGTH}
             placeholder="Contoh: Bu Dewi Lestari"
-            value={values.name}
-            onChange={(event) => change("name", event.target.value)}
+            {...field("name")}
             disabled={saving}
-            aria-invalid={errors.name !== undefined}
+            aria-invalid={nameError !== undefined}
             aria-describedby={
-              errors.name !== undefined ? `${id}-name-error` : undefined
+              nameError !== undefined ? `${id}-name-error` : undefined
             }
             className={INPUT_CLASS}
           />
-          {errors.name !== undefined && (
-            <FieldError id={`${id}-name-error`} message={errors.name} />
+          {nameError !== undefined && (
+            <FieldError id={`${id}-name-error`} message={nameError} />
           )}
         </div>
 
@@ -174,26 +121,23 @@ export function TenantForm({ orgId, tenant, onSaved }: TenantFormProps) {
             Nomor WhatsApp
           </Label>
           <Input
-            ref={phoneRef}
             id={`${id}-phone`}
-            name="phone"
             type="tel"
             inputMode="tel"
             autoComplete="off"
             placeholder="0812-3456-7890"
-            value={values.phone}
-            onChange={(event) => change("phone", event.target.value)}
+            {...field("phone")}
             disabled={saving}
-            aria-invalid={errors.phone !== undefined}
+            aria-invalid={phoneError !== undefined}
             aria-describedby={
-              errors.phone !== undefined
+              phoneError !== undefined
                 ? `${id}-phone-error ${id}-phone-hint`
                 : `${id}-phone-hint`
             }
             className={INPUT_CLASS}
           />
-          {errors.phone !== undefined && (
-            <FieldError id={`${id}-phone-error`} message={errors.phone} />
+          {phoneError !== undefined && (
+            <FieldError id={`${id}-phone-error`} message={phoneError} />
           )}
           <p id={`${id}-phone-hint`} className={FIELD_HINT_CLASS}>
             Tulis seperti biasa, misalnya 0812-3456-7890 atau +62 812 3456 7890.
@@ -206,23 +150,20 @@ export function TenantForm({ orgId, tenant, onSaved }: TenantFormProps) {
             Catatan (boleh dikosongkan)
           </Label>
           <Textarea
-            ref={noteRef}
             id={`${id}-note`}
-            name="note"
             autoComplete="off"
             maxLength={TENANT_NOTE_MAX_LENGTH}
             placeholder="Contoh: kerja di toko, bayar lewat anaknya"
-            value={values.note}
-            onChange={(event) => change("note", event.target.value)}
+            {...field("note")}
             disabled={saving}
-            aria-invalid={errors.note !== undefined}
+            aria-invalid={noteError !== undefined}
             aria-describedby={
-              errors.note !== undefined ? `${id}-note-error` : undefined
+              noteError !== undefined ? `${id}-note-error` : undefined
             }
             className={TEXTAREA_CLASS}
           />
-          {errors.note !== undefined && (
-            <FieldError id={`${id}-note-error`} message={errors.note} />
+          {noteError !== undefined && (
+            <FieldError id={`${id}-note-error`} message={noteError} />
           )}
         </div>
       </form>
