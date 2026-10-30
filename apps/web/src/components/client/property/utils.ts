@@ -28,6 +28,7 @@ import type {
   UnitFormErrors,
   UnitFormResult,
   UnitFormValues,
+  LastTermPrices,
   UnitOccupancyView,
   UnitPriceFormErrors,
   UnitPriceFormResult,
@@ -216,6 +217,13 @@ export function checkUnitForm(
   if (label === "") errors.label = EMPTY_UNIT_LABEL_MESSAGE;
   const checked = values.terms.filter((row) => row.checked);
   if (checked.length === 0) errors.terms = NO_TERM_MESSAGE;
+  // A price of Rp0 is refused under its own field, as "Ubah harga" does.
+  for (const row of checked) {
+    if (unitTermRowView(unit, row.months).kind === "priced") continue;
+    if (row.priceText !== "" && parseRupiahInput(row.priceText) === 0) {
+      errors.prices = { ...errors.prices, [row.months]: ZERO_PRICE_MESSAGE };
+    }
+  }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
@@ -267,15 +275,46 @@ export function initialTermRows(
 
 // What a checked term shows: its price in force, read-only, when the saved unit offers it with
 // one; else a field for a price (adding, a newly checked term, or an offered term with no price).
+// A term the unit no longer offers has no price on the unit, but its last price in the history
+// applies again when the term is offered with no price (lastPrices, from lastTermPrices).
 export function unitTermRowView(
   unit: Pick<Unit, "terms"> | undefined,
   months: TermMonths,
+  lastPrices: LastTermPrices = {},
 ): UnitTermRowView {
   const term = unit?.terms.find((t) => t.months === months);
   if (term?.price !== undefined) {
     return { kind: "priced", price: term.price, nextPrice: term.nextPrice };
   }
-  return { kind: "input", nextPrice: term?.nextPrice };
+  return {
+    kind: "input",
+    nextPrice: term?.nextPrice,
+    lastPrice: lastPrices[months],
+  };
+}
+
+// Each term's latest price on or before today, from the history as the API orders it (latest
+// effective date first, and on one date the latest recorded first), so its first such row wins.
+export function lastTermPrices(
+  history: readonly UnitPrice[],
+  today: string,
+): LastTermPrices {
+  const prices: LastTermPrices = {};
+  for (const price of history) {
+    if (price.effectiveFrom > today || prices[price.months] !== undefined) {
+      continue;
+    }
+    prices[price.months] = price.amount;
+  }
+  return prices;
+}
+
+// The hint under a term's price field: what an empty field means.
+export function termPriceHint(
+  view: Extract<UnitTermRowView, { kind: "input" }>,
+): string {
+  if (view.lastPrice === undefined) return TERM_PRICE_HINT;
+  return `Kalau dikosongkan, harga terakhir ${formatRupiah(view.lastPrice)} berlaku lagi.`;
 }
 
 // The admin unchecked a term the unit offers: leases on it go on as before.

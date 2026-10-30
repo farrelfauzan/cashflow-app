@@ -67,13 +67,24 @@ export type UnitFormValues = {
   terms: readonly UnitTermRow[];
 };
 
-export type UnitFormErrors = Partial<Record<"label" | "terms", string>>;
+export type UnitFormErrors = Partial<Record<"label" | "terms", string>> & {
+  // Under a term's price field.
+  prices?: Partial<Record<TermMonths, string>>;
+};
 
 // What a checked term shows under its checkbox: the price in force, read-only, with the next
-// scheduled change and "Ubah harga"; or a field for a price.
+// scheduled change and "Ubah harga"; or a field for a price. A term the unit no longer offers
+// keeps its last price in the history, which applies again when the field stays empty.
 export type UnitTermRowView =
   | { kind: "priced"; price: number; nextPrice: ScheduledPrice | undefined }
-  | { kind: "input"; nextPrice: ScheduledPrice | undefined };
+  | {
+      kind: "input";
+      nextPrice: ScheduledPrice | undefined;
+      lastPrice: number | undefined;
+    };
+
+// The latest price on or before today of each term in a unit's history.
+export type LastTermPrices = Partial<Record<TermMonths, number>>;
 
 // Which view the unit panel shows: the unit's form, or "Ubah harga" for one term.
 export type UnitPanelView =

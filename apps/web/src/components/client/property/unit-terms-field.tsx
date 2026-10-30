@@ -4,7 +4,7 @@ import { useId, type RefObject } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import type { TermMonths, Unit } from "@/lib/api/generated/model";
-import type { UnitTermRow } from "./type";
+import type { LastTermPrices, UnitFormErrors, UnitTermRow } from "./type";
 import {
   DROPPED_TERM_NOTE,
   dropsOfferedTerm,
@@ -23,6 +23,10 @@ type UnitTermsFieldProps = {
   unit: Unit | undefined;
   rows: readonly UnitTermRow[];
   error: string | undefined;
+  // Under each term's price field.
+  priceErrors: UnitFormErrors["prices"];
+  // From the unit's price history: the last price of a term it no longer offers.
+  lastPrices: LastTermPrices;
   disabled: boolean;
   onRowChange: (row: UnitTermRow) => void;
   onChangePrice: (months: TermMonths) => void;
@@ -34,6 +38,8 @@ export function UnitTermsField({
   unit,
   rows,
   error,
+  priceErrors,
+  lastPrices,
   disabled,
   onRowChange,
   onChangePrice,
@@ -61,7 +67,8 @@ export function UnitTermsField({
           <UnitTermChoice
             key={row.months}
             row={row}
-            view={unitTermRowView(unit, row.months)}
+            view={unitTermRowView(unit, row.months, lastPrices)}
+            priceError={priceErrors?.[row.months]}
             disabled={disabled}
             onCheckedChange={(checked) => onRowChange({ ...row, checked })}
             onPriceTextChange={(priceText) =>

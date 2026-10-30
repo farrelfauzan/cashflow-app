@@ -33,6 +33,9 @@ import {
   termPriceLabel,
   unitTermRowView,
   ZERO_PRICE_MESSAGE,
+  TERM_PRICE_HINT,
+  lastTermPrices,
+  termPriceHint,
   EMPTY_PROPERTY_NAME_MESSAGE,
   EMPTY_UNIT_LABEL_MESSAGE,
   isPropertyMissing,
@@ -469,6 +472,96 @@ describe("checkUnitForm", () => {
     },
   ])("refuses $name", ({ values, errors }) => {
     expect(checkUnitForm(values, undefined)).toEqual({ ok: false, errors });
+  });
+
+  it("refuses a typed price of Rp0 under that term's field", () => {
+    expect(
+      checkUnitForm(
+        { label: "Kamar 01", terms: rows({ 1: "1.250.000", 12: "0" }) },
+        undefined,
+      ),
+    ).toEqual({ ok: false, errors: { prices: { 12: ZERO_PRICE_MESSAGE } } });
+  });
+
+  it("ignores what is typed for a term with a price in force, even Rp0", () => {
+    expect(
+      checkUnitForm(
+        { label: "Kamar 01", terms: rows({ 1: "0" }) },
+        { terms: [{ months: 1, price: 1_200_000 }] },
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Kamar 01", terms: [{ months: 1 }] },
+    });
+  });
+});
+
+describe("a term the unit no longer offers", () => {
+  const history: UnitPrice[] = [
+    // A later price for the monthly term, still to come.
+    {
+      id: "p4",
+      months: 1,
+      amount: 1_400_000,
+      effectiveFrom: "2026-12-01",
+      recordedAt: "2026-10-30T02:00:00Z",
+    },
+    {
+      id: "p3",
+      months: 12,
+      amount: 15_000_000,
+      effectiveFrom: "2026-09-01",
+      recordedAt: "2026-09-01T02:00:00Z",
+    },
+    {
+      id: "p2",
+      months: 1,
+      amount: 1_300_000,
+      effectiveFrom: "2026-09-01",
+      recordedAt: "2026-09-01T02:00:00Z",
+    },
+    {
+      id: "p1",
+      months: 12,
+      amount: 14_000_000,
+      effectiveFrom: "2026-01-01",
+      recordedAt: "2026-01-01T02:00:00Z",
+    },
+  ];
+
+  it("takes each term's latest price on or before today, as the API orders the history", () => {
+    expect(lastTermPrices(history, "2026-10-30")).toEqual({
+      1: 1_300_000,
+      12: 15_000_000,
+    });
+    expect(lastTermPrices([], "2026-10-30")).toEqual({});
+  });
+
+  it("re-ticked, it says its last price applies again when the field stays empty", () => {
+    // The unit offers only the monthly term now; the yearly one was dropped.
+    const saved: Pick<Unit, "terms"> = {
+      terms: [{ months: 1, price: 1_300_000 }],
+    };
+    const view = unitTermRowView(
+      saved,
+      12,
+      lastTermPrices(history, "2026-10-30"),
+    );
+    expect(view).toEqual({
+      kind: "input",
+      nextPrice: undefined,
+      lastPrice: 15_000_000,
+    });
+    if (view.kind !== "input") throw new Error("want a price field");
+    expect(termPriceHint(view)).toBe(
+      "Kalau dikosongkan, harga terakhir Rp15.000.000 berlaku lagi.",
+    );
+  });
+
+  it("a term never priced keeps the usual hint", () => {
+    const view = unitTermRowView(undefined, 3, {});
+    if (view.kind !== "input") throw new Error("want a price field");
+    expect(termPriceHint(view)).toBe(TERM_PRICE_HINT);
   });
 });
 

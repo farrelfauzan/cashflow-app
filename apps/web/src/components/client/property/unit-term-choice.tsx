@@ -11,7 +11,7 @@ import type { UnitTermRow, UnitTermRowView } from "./type";
 import {
   changePriceLabel,
   nextPriceText,
-  TERM_PRICE_HINT,
+  termPriceHint,
   termLabel,
   termPriceLabel,
 } from "./utils";
@@ -19,6 +19,8 @@ import {
 type UnitTermChoiceProps = {
   row: UnitTermRow;
   view: UnitTermRowView;
+  // Under the price field.
+  priceError: string | undefined;
   disabled: boolean;
   onCheckedChange: (checked: boolean) => void;
   onPriceTextChange: (text: string) => void;
@@ -31,6 +33,7 @@ type UnitTermChoiceProps = {
 export function UnitTermChoice({
   row,
   view,
+  priceError,
   disabled,
   onCheckedChange,
   onPriceTextChange,
@@ -87,10 +90,10 @@ export function UnitTermChoice({
             label={termPriceLabel(row.months)}
             name={`price-${row.months}`}
             placeholder="0"
-            hint={TERM_PRICE_HINT}
+            hint={termPriceHint(view)}
             value={row.priceText}
             onChange={onPriceTextChange}
-            error={undefined}
+            error={priceError}
             disabled={disabled}
           />
           {view.nextPrice !== undefined && (

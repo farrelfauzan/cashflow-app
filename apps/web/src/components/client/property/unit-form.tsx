@@ -17,6 +17,7 @@ import {
   getListUnitPricesQueryKey,
   getListUnitsQueryKey,
   useCreateUnit,
+  useListUnitPrices,
   useUpdateUnit,
 } from "@/lib/api/generated/properties/properties";
 import {
@@ -26,6 +27,7 @@ import {
   UNIT_LABEL_MAX_LENGTH,
   checkUnitForm,
   initialTermRows,
+  lastTermPrices,
 } from "./utils";
 import type { UnitFormErrors, UnitTermRow } from "./type";
 
@@ -76,6 +78,11 @@ export function UnitForm({
   );
   const [errors, setErrors] = useState<UnitFormErrors>({});
   const [alert, setAlert] = useState<string | null>(null);
+  // The same query as "Riwayat harga": a term the unit no longer offers shows its last price.
+  const history = useListUnitPrices(orgId, unit?.id ?? "", {
+    query: { enabled: unit !== undefined },
+  });
+  const lastPrices = lastTermPrices(history.data ?? [], today);
 
   // A new unit changes the property's unit count and occupancy as well. A price typed for a term
   // adds a row to the unit's price history.
@@ -116,15 +123,29 @@ export function UnitForm({
     });
   }
 
+  // A price field with an error first, else the first checkbox.
   function focusTerms() {
-    termsRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const fieldset = termsRef.current;
+    const target =
+      fieldset?.querySelector<HTMLElement>('input[aria-invalid="true"]') ??
+      fieldset?.querySelector<HTMLElement>("button");
+    target?.focus();
   }
 
   function changeRow(changed: UnitTermRow) {
     setTerms((current) =>
       current.map((row) => (row.months === changed.months ? changed : row)),
     );
-    clearError("terms");
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.terms;
+      if (next.prices !== undefined) {
+        const prices = { ...next.prices };
+        delete prices[changed.months];
+        next.prices = prices;
+      }
+      return next;
+    });
   }
 
   function handleError(error: unknown) {
@@ -222,6 +243,8 @@ export function UnitForm({
           unit={unit}
           rows={terms}
           error={errors.terms}
+          priceErrors={errors.prices}
+          lastPrices={lastPrices}
           disabled={saving}
           onRowChange={changeRow}
           onChangePrice={onChangePrice}
