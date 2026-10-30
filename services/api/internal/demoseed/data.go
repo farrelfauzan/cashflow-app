@@ -198,8 +198,12 @@ func demoOrgs(c clock.Clock) []orgSpec {
 				},
 				{
 					Name: propRuko, Kind: property.KindRuko, Address: "Jl. Godean Km 6 No. 88, Sleman",
-					// Ruko are let by the year only.
+					// Ruko are let by the year; Ruko 2 also for two years at once, its custom term
+					// (decision 33).
 					Units: units("Ruko", 1, 2), Terms: []termSpec{{Months: 12, Price: 50_000_000}},
+					UnitTerms: map[string][]termSpec{
+						"Ruko 2": {{Months: 12, Price: 50_000_000}, {Months: 24, Price: 95_000_000}},
+					},
 				},
 			},
 			ChargeTypes: []chargeTypeSpec{
