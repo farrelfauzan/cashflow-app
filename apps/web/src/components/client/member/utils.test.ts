@@ -11,10 +11,14 @@ import { createAppAbility } from "@/lib/capabilities";
 import type { MemberPermissions, RoleFormState } from "./type";
 import {
   accessFormError,
+  accessFormSchema,
   canManageMember,
   canResendInvitation,
   describeRoles,
+  EMPTY_NAME_MESSAGE,
+  EMPTY_PHONE_MESSAGE,
   inviteFormError,
+  inviteFormSchema,
   inviteRoleForm,
   memberPermissions,
   memberStatusView,
@@ -22,6 +26,7 @@ import {
   NO_ROLE_MESSAGE,
   resendError,
   roleChips,
+  roleFieldErrors,
   roleFormErrors,
   roleFormFromRoles,
   roleGrantsFromForm,
@@ -610,6 +615,142 @@ describe("role form", () => {
       },
     ])("finds $name", ({ form, want }) => {
       expect(roleFormErrors(form)).toEqual(want);
+    });
+  });
+
+  // What a form shows for these values: the input it sends, or each message under its path (as
+  // zodResolver puts them).
+  function check(
+    schema: typeof inviteFormSchema | typeof accessFormSchema,
+    values: unknown,
+  ) {
+    const result = schema.safeParse(values);
+    if (result.success) return { ok: true, input: result.data };
+    return {
+      ok: false,
+      errors: Object.fromEntries(
+        result.error.issues.map((issue) => [
+          issue.path.join("."),
+          issue.message,
+        ]),
+      ),
+    };
+  }
+
+  describe("inviteFormSchema", () => {
+    it("trims name and number and sends the roles as grants", () => {
+      expect(
+        check(inviteFormSchema, {
+          name: "  Mas Rizal Fauzi ",
+          phone: " 0812-0001-0007 ",
+          roles: inviteRoleForm(),
+        }),
+      ).toEqual({
+        ok: true,
+        input: {
+          name: "Mas Rizal Fauzi",
+          phone: "0812-0001-0007",
+          roles: [{ role: "karyawan" }],
+        },
+      });
+    });
+
+    it("puts every message under its own field", () => {
+      expect(
+        check(inviteFormSchema, {
+          name: " ",
+          phone: "",
+          roles: {
+            supervisor: [],
+            admin: { selected: true, scope: "properties", propertyIds: [] },
+            karyawan: {
+              selected: false,
+              scope: "organization",
+              propertyIds: [],
+            },
+          },
+        }),
+      ).toEqual({
+        ok: false,
+        errors: {
+          name: EMPTY_NAME_MESSAGE,
+          phone: EMPTY_PHONE_MESSAGE,
+          "roles.admin": NO_PROPERTY_MESSAGE,
+        },
+      });
+    });
+
+    it("puts no role at all under the roles", () => {
+      expect(
+        check(inviteFormSchema, {
+          name: "A",
+          phone: "0812",
+          roles: {
+            ...inviteRoleForm(),
+            karyawan: {
+              selected: false,
+              scope: "organization",
+              propertyIds: [],
+            },
+          },
+        }),
+      ).toEqual({ ok: false, errors: { roles: NO_ROLE_MESSAGE } });
+    });
+  });
+
+  describe("accessFormSchema", () => {
+    it("sends a member's Supervisor grants back unchanged", () => {
+      expect(
+        check(accessFormSchema, {
+          roles: {
+            supervisor: [{ role: "supervisor" }],
+            admin: { selected: false, scope: "organization", propertyIds: [] },
+            karyawan: {
+              selected: true,
+              scope: "properties",
+              propertyIds: [MAWAR],
+            },
+          },
+        }),
+      ).toEqual({
+        ok: true,
+        input: {
+          roles: [
+            { role: "supervisor" },
+            { role: "karyawan", propertyId: MAWAR },
+          ],
+        },
+      });
+    });
+
+    it("puts a property limit without a property under that role", () => {
+      expect(
+        check(accessFormSchema, {
+          roles: {
+            supervisor: [],
+            admin: { selected: false, scope: "organization", propertyIds: [] },
+            karyawan: { selected: true, scope: "properties", propertyIds: [] },
+          },
+        }),
+      ).toEqual({
+        ok: false,
+        errors: { "roles.karyawan": NO_PROPERTY_MESSAGE },
+      });
+    });
+  });
+
+  describe("roleFieldErrors", () => {
+    it("reads each role's message and the roles' own", () => {
+      expect(
+        roleFieldErrors({
+          message: NO_ROLE_MESSAGE,
+          admin: { message: NO_PROPERTY_MESSAGE },
+        }),
+      ).toEqual({ admin: NO_PROPERTY_MESSAGE, roles: NO_ROLE_MESSAGE });
+    });
+
+    it("is empty without errors", () => {
+      expect(roleFieldErrors(undefined)).toEqual({});
     });
   });
 
