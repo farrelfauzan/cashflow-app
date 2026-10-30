@@ -18,13 +18,15 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Tambah penyewa", "Ubah penyewa" and "Sewakan unit", against the real API (seed-demo data). Pak
 // Hendra is Admin of the whole of Griya Sejahtera and Supervisor in Kost Putri Anggrek; Mbak Sari
 // is Admin limited to Kos Melati. Tests change only rows they create themselves: their own
-// property, unit and tenants, with names and numbers no other run, project or retry uses. Tenant
+// unit and tenants (in a property reused across runs, except where a test needs one with no other
+// unit), with names and numbers no other run, project or retry uses. Tenant
 // names start with W or Y, so they sort after every seeded tenant and never push one off the
 // first page of the list.
 
@@ -136,22 +138,33 @@ async function post<T>(
   return (await response.json()) as T;
 }
 
-// A property of the test's own with one free unit whose usual rent is Rp1.250.000.
+// A new free unit whose usual rent is Rp1.250.000, named uniquely per run. It goes in a property
+// reused across runs ("Wisma Tetap ...", support/property-fixtures.ts), or, when the test needs
+// the property to hold no other unit (`own`), in a property made for this run ("Wisma Uji ...").
 async function createUnit(
   page: Page,
   orgId: string,
   testInfo: TestInfo,
   propertyBase: string,
+  own = false,
 ) {
-  const property = await post<Property>(
-    page.request,
-    `/orgs/${orgId}/properties`,
-    { name: uniqueName(testInfo, propertyBase), kind: "kos", address: "" },
-  );
+  const property = own
+    ? await post<Property>(page.request, `/orgs/${orgId}/properties`, {
+        name: uniqueName(testInfo, `Wisma Uji ${propertyBase}`),
+        kind: "kos",
+        address: "",
+      })
+    : await findOrCreateProperty(page, orgId, testInfo, {
+        base: propertyBase,
+        kind: "kos",
+      });
   const unit = await post<Unit>(
     page.request,
     `/orgs/${orgId}/properties/${property.id}/units`,
-    { label: "Kamar 1", terms: [{ months: 1, price: 1_250_000 }] },
+    {
+      label: uniqueName(testInfo, "Kamar 1"),
+      terms: [{ months: 1, price: 1_250_000 }],
+    },
   );
   return { property, unit };
 }
@@ -178,12 +191,7 @@ test.describe("Admin of the whole organization", () => {
     const outsideRequests = trackOutsideRequests(page);
     const list = await openTenants(page, HENDRA, GRIYA);
     const orgId = orgIdOf(page);
-    const { property, unit } = await createUnit(
-      page,
-      orgId,
-      testInfo,
-      "Kos Uji Sewa",
-    );
+    const { property, unit } = await createUnit(page, orgId, testInfo, "Sewa");
     const name = uniqueName(testInfo, "Wulan Sekarsari");
     const phone = tenantNumber(testInfo, 1);
 
@@ -333,7 +341,8 @@ test.describe("Admin of the whole organization", () => {
       page,
       orgId,
       testInfo,
-      "Kos Uji Bentrok",
+      "Bentrok",
+      true,
     );
     const tenant = await createTenant(
       page,

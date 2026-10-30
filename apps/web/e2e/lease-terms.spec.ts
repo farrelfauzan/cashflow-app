@@ -23,6 +23,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
@@ -30,8 +31,10 @@ import { HENDRA } from "./support/staff";
 // unit's price for that term), against the real API (seed-demo data). Pak Hendra is Admin of the
 // whole of Griya Sejahtera. Each test makes its own property, unit and tenant through the API, with
 // names and numbers no other run, project or retry uses (numbers 0813-4..., which no other spec
-// uses). Property names start with "Wisma" and tenant names with W or Y, so they sort after every
-// seeded property and tenant, and the seeded lists keep their first page.
+// uses). The property is reused across runs (support/property-fixtures.ts); its units, the tenants
+// and their numbers are new each run. Property names start with "Wisma" and tenant names with W or
+// Y, so they sort after every seeded property and tenant, and the seeded lists keep their first
+// page.
 
 const GRIYA = "Griya Sejahtera";
 const NO_PRICE_MESSAGE =
@@ -125,8 +128,9 @@ async function post<T>(page: Page, path: string, data: object): Promise<T> {
   return (await response.json()) as T;
 }
 
-// A property of the test's own with one free unit offering the given terms, and a tenant with no
-// lease yet.
+// A reused property ("Wisma Tetap ...", found or made once) with a new free unit of the test's own
+// offering the given terms, and a tenant with no lease yet. The unit's name is unique per run
+// because the property keeps the units of every earlier run.
 async function createFixtures(
   page: Page,
   orgId: string,
@@ -140,15 +144,14 @@ async function createFixtures(
     testDigit: number;
   },
 ) {
-  const property = await post<Property>(page, `/orgs/${orgId}/properties`, {
-    name: uniqueName(testInfo, fixture.property),
+  const property = await findOrCreateProperty(page, orgId, testInfo, {
+    base: fixture.property,
     kind: fixture.kind,
-    address: "",
   });
   const unit = await post<Unit>(
     page,
     `/orgs/${orgId}/properties/${property.id}/units`,
-    { label: fixture.unit, terms: fixture.terms },
+    { label: uniqueName(testInfo, fixture.unit), terms: fixture.terms },
   );
   const tenant = await post<Tenant>(page, `/orgs/${orgId}/tenants`, {
     name: uniqueName(testInfo, fixture.tenant),
@@ -191,7 +194,7 @@ test.describe("Admin of the whole organization", () => {
     const outsideRequests = trackOutsideRequests(page);
     const orgId = await openGriya(page);
     const fixtures = await createFixtures(page, orgId, testInfo, {
-      property: "Wisma Uji Tahunan",
+      property: "Masa Tahunan",
       kind: "kos",
       unit: "Kamar 1",
       terms: [
@@ -287,7 +290,7 @@ test.describe("Admin of the whole organization", () => {
     const outsideRequests = trackOutsideRequests(page);
     const orgId = await openGriya(page);
     const fixtures = await createFixtures(page, orgId, testInfo, {
-      property: "Wisma Uji Ruko Tahunan",
+      property: "Masa Ruko Tahunan",
       kind: "ruko",
       unit: "Ruko 1",
       terms: [{ months: 12, price: 50_000_000 }],
@@ -314,7 +317,7 @@ test.describe("Admin of the whole organization", () => {
     const outsideRequests = trackOutsideRequests(page);
     const orgId = await openGriya(page);
     const fixtures = await createFixtures(page, orgId, testInfo, {
-      property: "Wisma Uji Tanpa Harga",
+      property: "Masa Tanpa Harga",
       kind: "kos",
       unit: "Kamar 1",
       terms: [{ months: 1 }],
