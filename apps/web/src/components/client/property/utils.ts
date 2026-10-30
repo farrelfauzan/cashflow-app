@@ -216,7 +216,8 @@ export function checkUnitForm(
   const errors: UnitFormErrors = {};
   if (label === "") errors.label = EMPTY_UNIT_LABEL_MESSAGE;
   const checked = values.terms.filter((row) => row.checked);
-  if (checked.length === 0) errors.terms = NO_TERM_MESSAGE;
+  const custom = customTerms(unit);
+  if (checked.length + custom.length === 0) errors.terms = NO_TERM_MESSAGE;
   // A price of Rp0 is refused under its own field, as "Ubah harga" does.
   for (const row of checked) {
     if (unitTermRowView(unit, row.months).kind === "priced") continue;
@@ -228,8 +229,19 @@ export function checkUnitForm(
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
     ok: true,
-    input: { label, terms: checked.map((row) => termInput(row, unit)) },
+    input: {
+      label,
+      terms: [...checked.map((row) => termInput(row, unit)), ...custom],
+    },
   };
+}
+
+// The unit's terms the form has no row for (a custom term, decision 33), sent as they are so a
+// save keeps them and their prices.
+function customTerms(unit: Pick<Unit, "terms"> | undefined): UnitTermInput[] {
+  return (unit?.terms ?? [])
+    .filter((term) => !UNIT_TERM_CHOICES.includes(term.months))
+    .map((term) => ({ months: term.months }));
 }
 
 // A checked term as the API takes it: its price only when the admin typed one in a field the row
