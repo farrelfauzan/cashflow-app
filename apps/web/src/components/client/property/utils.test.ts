@@ -10,13 +10,26 @@ import { ApiError, NETWORK_ERROR_CODE } from "@/lib/api/errors";
 import { readSort } from "@/components/client/list/utils";
 import { createAppAbility } from "@/lib/capabilities";
 
-import type { PropertyPermissions, UnitTermRow } from "./type";
+import type {
+  PropertyPermissions,
+  UnitCustomTermRow,
+  UnitTermRow,
+} from "./type";
 import {
   changePriceLabel,
   checkPropertyForm,
   checkUnitForm,
   checkUnitPriceForm,
   currentPriceText,
+  customMonths,
+  customTermPriceLabel,
+  customTermView,
+  EMPTY_CUSTOM_MONTHS_MESSAGE,
+  initialCustomTermRow,
+  monthsDigits,
+  savedCustomTerm,
+  STANDARD_CUSTOM_MONTHS_MESSAGE,
+  toggleCustomTerm,
   CURRENT_PRICE_CHIP,
   defaultUnitTerm,
   dropsOfferedTerm,
@@ -386,6 +399,14 @@ describe("checkPropertyForm", () => {
   });
 });
 
+// The custom row unticked, as a new unit starts.
+const NO_CUSTOM: UnitCustomTermRow = {
+  checked: false,
+  showsSaved: false,
+  monthsText: "",
+  priceText: "",
+};
+
 // The four rows of "Masa sewa dan harga" with the given ones checked and typed.
 function rows(given: Partial<Record<1 | 3 | 6 | 12, string>>): UnitTermRow[] {
   return ([1, 3, 6, 12] as const).map((months) => ({
@@ -399,7 +420,11 @@ describe("checkUnitForm", () => {
   it("sends a new unit's checked terms, with a price only where one is typed", () => {
     expect(
       checkUnitForm(
-        { label: " Kamar 11 ", terms: rows({ 1: "1.250.000", 12: "" }) },
+        {
+          label: " Kamar 11 ",
+          terms: rows({ 1: "1.250.000", 12: "" }),
+          custom: NO_CUSTOM,
+        },
         undefined,
       ),
     ).toEqual({
@@ -412,7 +437,11 @@ describe("checkUnitForm", () => {
   });
 
   it("never sends a price typed for a term that is then unchecked", () => {
-    const values = { label: "Kamar 11", terms: rows({ 1: "" }) };
+    const values = {
+      label: "Kamar 11",
+      terms: rows({ 1: "" }),
+      custom: NO_CUSTOM,
+    };
     values.terms[3] = { months: 12, checked: false, priceText: "15.000.000" };
     expect(checkUnitForm(values, undefined)).toEqual({
       ok: true,
@@ -428,6 +457,7 @@ describe("checkUnitForm", () => {
     const values = {
       label: "Kamar 01",
       terms: rows({ 1: "9.999", 3: "3.300.000", 12: "15.000.000" }),
+      custom: NO_CUSTOM,
     };
     expect(checkUnitForm(values, saved)).toEqual({
       ok: true,
@@ -445,7 +475,7 @@ describe("checkUnitForm", () => {
   it("sends an offered term without a price when its field stays empty", () => {
     expect(
       checkUnitForm(
-        { label: "Kamar 01", terms: rows({ 3: "" }) },
+        { label: "Kamar 01", terms: rows({ 3: "" }), custom: NO_CUSTOM },
         { terms: [{ months: 3 }] },
       ),
     ).toEqual({
@@ -457,55 +487,31 @@ describe("checkUnitForm", () => {
   it.each([
     {
       name: "no label",
-      values: { label: " ", terms: rows({ 1: "" }) },
+      values: { label: " ", terms: rows({ 1: "" }), custom: NO_CUSTOM },
       errors: { label: EMPTY_UNIT_LABEL_MESSAGE },
     },
     {
       name: "no term",
-      values: { label: "Kamar 01", terms: rows({}) },
+      values: { label: "Kamar 01", terms: rows({}), custom: NO_CUSTOM },
       errors: { terms: NO_TERM_MESSAGE },
     },
     {
       name: "neither",
-      values: { label: "", terms: rows({}) },
+      values: { label: "", terms: rows({}), custom: NO_CUSTOM },
       errors: { label: EMPTY_UNIT_LABEL_MESSAGE, terms: NO_TERM_MESSAGE },
     },
   ])("refuses $name", ({ values, errors }) => {
     expect(checkUnitForm(values, undefined)).toEqual({ ok: false, errors });
   });
 
-  it("keeps a custom term the form has no row for", () => {
-    // Ruko 2 in the demo seed: renaming it must not drop its 24-month term.
-    const saved: Pick<Unit, "terms"> = {
-      terms: [
-        { months: 12, price: 50_000_000 },
-        { months: 24, price: 95_000_000 },
-      ],
-    };
-    expect(
-      checkUnitForm({ label: "Ruko 2A", terms: rows({ 12: "" }) }, saved),
-    ).toEqual({
-      ok: true,
-      input: { label: "Ruko 2A", terms: [{ months: 12 }, { months: 24 }] },
-    });
-  });
-
-  it("accepts no checked row while a custom term stays", () => {
-    expect(
-      checkUnitForm(
-        { label: "Ruko 2", terms: rows({}) },
-        { terms: [{ months: 24, price: 95_000_000 }] },
-      ),
-    ).toEqual({
-      ok: true,
-      input: { label: "Ruko 2", terms: [{ months: 24 }] },
-    });
-  });
-
   it("refuses a typed price of Rp0 under that term's field", () => {
     expect(
       checkUnitForm(
-        { label: "Kamar 01", terms: rows({ 1: "1.250.000", 12: "0" }) },
+        {
+          label: "Kamar 01",
+          terms: rows({ 1: "1.250.000", 12: "0" }),
+          custom: NO_CUSTOM,
+        },
         undefined,
       ),
     ).toEqual({ ok: false, errors: { prices: { 12: ZERO_PRICE_MESSAGE } } });
@@ -514,13 +520,351 @@ describe("checkUnitForm", () => {
   it("ignores what is typed for a term with a price in force, even Rp0", () => {
     expect(
       checkUnitForm(
-        { label: "Kamar 01", terms: rows({ 1: "0" }) },
+        { label: "Kamar 01", terms: rows({ 1: "0" }), custom: NO_CUSTOM },
         { terms: [{ months: 1, price: 1_200_000 }] },
       ),
     ).toEqual({
       ok: true,
       input: { label: "Kamar 01", terms: [{ months: 1 }] },
     });
+  });
+});
+
+describe("the custom term row", () => {
+  // Ruko 2 in the demo seed offers 12 months and a custom 24.
+  const pricedCustom: Pick<Unit, "terms"> = {
+    terms: [
+      { months: 12, price: 50_000_000 },
+      { months: 24, price: 95_000_000 },
+    ],
+  };
+  const unpricedCustom: Pick<Unit, "terms"> = {
+    terms: [{ months: 1, price: 1_250_000 }, { months: 4 }],
+  };
+
+  it("starts as Lainnya, unticked, when adding or for a unit with no custom term", () => {
+    expect(initialCustomTermRow(undefined)).toEqual(NO_CUSTOM);
+    expect(
+      initialCustomTermRow({ terms: [{ months: 1, price: 1_250_000 }] }),
+    ).toEqual(NO_CUSTOM);
+    expect(savedCustomTerm({ terms: [{ months: 1 }, { months: 12 }] })).toBe(
+      null,
+    );
+  });
+
+  it("starts as the saved custom term, ticked, priced or not", () => {
+    expect(initialCustomTermRow(pricedCustom)).toEqual({
+      checked: true,
+      showsSaved: true,
+      monthsText: "24",
+      priceText: "",
+    });
+    expect(savedCustomTerm(unpricedCustom)).toBe(4);
+    const priced = customTermView(
+      initialCustomTermRow(pricedCustom),
+      pricedCustom,
+    );
+    expect(priced).toEqual({
+      kind: "saved",
+      months: 24,
+      term: { kind: "priced", price: 95_000_000, nextPrice: undefined },
+    });
+    const unpriced = customTermView(
+      initialCustomTermRow(unpricedCustom),
+      unpricedCustom,
+    );
+    expect(unpriced).toEqual({
+      kind: "saved",
+      months: 4,
+      term: { kind: "input", nextPrice: undefined, lastPrice: undefined },
+    });
+  });
+
+  it("re-ticked after unticking, it becomes Lainnya with its months typed in", () => {
+    const start = initialCustomTermRow(pricedCustom);
+    const unticked = toggleCustomTerm(start, false);
+    expect(unticked).toEqual({ ...start, checked: false });
+    // Still the saved term while unticked: the row keeps its name.
+    expect(customTermView(unticked, pricedCustom).kind).toBe("saved");
+    const again = toggleCustomTerm(unticked, true);
+    expect(again).toEqual({
+      checked: true,
+      showsSaved: false,
+      monthsText: "24",
+      priceText: "",
+    });
+    // Its last price comes back when the field stays empty.
+    const view = customTermView(again, pricedCustom, { 24: 95_000_000 });
+    if (view.kind !== "lainnya") throw new Error("want Lainnya");
+    expect(termPriceHint(view.price)).toBe(
+      "Kalau dikosongkan, harga terakhir Rp95.000.000 berlaku lagi.",
+    );
+    // Lainnya stays Lainnya when unticked and ticked again.
+    expect(toggleCustomTerm(toggleCustomTerm(again, false), true)).toEqual(
+      again,
+    );
+  });
+
+  it("sends a new custom term with its typed price after the checked rows", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({ 1: "1.250.000" }),
+          custom: {
+            checked: true,
+            showsSaved: false,
+            monthsText: "4",
+            priceText: "4.800.000",
+          },
+        },
+        undefined,
+      ),
+    ).toEqual({
+      ok: true,
+      input: {
+        label: "Kamar 5",
+        terms: [
+          { months: 1, price: 1_250_000 },
+          { months: 4, price: 4_800_000 },
+        ],
+      },
+    });
+  });
+
+  it("sends a custom term without a price when its field stays empty", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({}),
+          custom: {
+            checked: true,
+            showsSaved: false,
+            monthsText: "4",
+            priceText: "",
+          },
+        },
+        undefined,
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Kamar 5", terms: [{ months: 4 }] },
+    });
+  });
+
+  it("sends no custom term when Lainnya is unticked, whatever was typed", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({ 1: "" }),
+          custom: {
+            checked: false,
+            showsSaved: false,
+            monthsText: "6",
+            priceText: "0",
+          },
+        },
+        undefined,
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Kamar 5", terms: [{ months: 1 }] },
+    });
+  });
+
+  it("keeps a saved priced custom term with no price, even when something was typed", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Ruko 2A",
+          terms: rows({ 12: "" }),
+          custom: { ...initialCustomTermRow(pricedCustom), priceText: "1" },
+        },
+        pricedCustom,
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Ruko 2A", terms: [{ months: 12 }, { months: 24 }] },
+    });
+  });
+
+  it("sends a price typed for a saved custom term with none in force", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({ 1: "" }),
+          custom: {
+            ...initialCustomTermRow(unpricedCustom),
+            priceText: "4.800.000",
+          },
+        },
+        unpricedCustom,
+      ),
+    ).toEqual({
+      ok: true,
+      input: {
+        label: "Kamar 5",
+        terms: [{ months: 1 }, { months: 4, price: 4_800_000 }],
+      },
+    });
+  });
+
+  it("accepts the custom term as the only one", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Ruko 2",
+          terms: rows({}),
+          custom: initialCustomTermRow(pricedCustom),
+        },
+        pricedCustom,
+      ),
+    ).toEqual({
+      ok: true,
+      input: { label: "Ruko 2", terms: [{ months: 24 }] },
+    });
+  });
+
+  it("sends a re-ticked custom term as typed: the same months keep it, others replace it", () => {
+    const again = toggleCustomTerm(
+      toggleCustomTerm(initialCustomTermRow(pricedCustom), false),
+      true,
+    );
+    const values = { label: "Ruko 2", terms: rows({ 12: "" }), custom: again };
+    expect(checkUnitForm(values, pricedCustom)).toEqual({
+      ok: true,
+      input: { label: "Ruko 2", terms: [{ months: 12 }, { months: 24 }] },
+    });
+    expect(dropsOfferedTerm(pricedCustom, values.terms, again)).toBe(false);
+    const other = { ...again, monthsText: "18", priceText: "70.000.000" };
+    expect(checkUnitForm({ ...values, custom: other }, pricedCustom)).toEqual({
+      ok: true,
+      input: {
+        label: "Ruko 2",
+        terms: [{ months: 12 }, { months: 18, price: 70_000_000 }],
+      },
+    });
+    expect(dropsOfferedTerm(pricedCustom, values.terms, other)).toBe(true);
+  });
+
+  it("notices a saved custom term that is unticked", () => {
+    const unticked = toggleCustomTerm(
+      initialCustomTermRow(pricedCustom),
+      false,
+    );
+    expect(dropsOfferedTerm(pricedCustom, rows({ 12: "" }), unticked)).toBe(
+      true,
+    );
+    expect(
+      dropsOfferedTerm(
+        pricedCustom,
+        rows({ 12: "" }),
+        initialCustomTermRow(pricedCustom),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "empty Jumlah bulan",
+      custom: { monthsText: "", priceText: "" },
+      errors: { customMonths: EMPTY_CUSTOM_MONTHS_MESSAGE },
+    },
+    ...["1", "3", "6", "12"].map((monthsText) => ({
+      name: `a standard term (${monthsText})`,
+      custom: { monthsText, priceText: "" },
+      errors: { customMonths: STANDARD_CUSTOM_MONTHS_MESSAGE },
+    })),
+    {
+      name: "a typed price of Rp0",
+      custom: { monthsText: "4", priceText: "0" },
+      errors: { customPrice: ZERO_PRICE_MESSAGE },
+    },
+    {
+      name: "both",
+      custom: { monthsText: "", priceText: "0" },
+      errors: {
+        customMonths: EMPTY_CUSTOM_MONTHS_MESSAGE,
+        customPrice: ZERO_PRICE_MESSAGE,
+      },
+    },
+  ])("refuses Lainnya with $name", ({ custom, errors }) => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({ 1: "" }),
+          custom: { checked: true, showsSaved: false, ...custom },
+        },
+        undefined,
+      ),
+    ).toEqual({ ok: false, errors });
+  });
+
+  it("leaves the 2 to 60 range to the API", () => {
+    for (const monthsText of ["0", "61", "999"]) {
+      const result = checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({}),
+          custom: {
+            checked: true,
+            showsSaved: false,
+            monthsText,
+            priceText: "",
+          },
+        },
+        undefined,
+      );
+      expect(result).toEqual({
+        ok: true,
+        input: { label: "Kamar 5", terms: [{ months: Number(monthsText) }] },
+      });
+    }
+  });
+
+  it("refuses Rp0 typed for a saved custom term with no price in force", () => {
+    expect(
+      checkUnitForm(
+        {
+          label: "Kamar 5",
+          terms: rows({ 1: "" }),
+          custom: { ...initialCustomTermRow(unpricedCustom), priceText: "0" },
+        },
+        unpricedCustom,
+      ),
+    ).toEqual({ ok: false, errors: { customPrice: ZERO_PRICE_MESSAGE } });
+  });
+
+  it("counts a ticked custom row as a term", () => {
+    const unticked = { ...NO_CUSTOM, monthsText: "4" };
+    expect(
+      checkUnitForm(
+        { label: "Kamar 5", terms: rows({}), custom: unticked },
+        undefined,
+      ),
+    ).toEqual({ ok: false, errors: { terms: NO_TERM_MESSAGE } });
+  });
+
+  it("names Lainnya's price from the typed months, and keeps only digits", () => {
+    expect(customTermPriceLabel({ ...NO_CUSTOM, monthsText: "" })).toBe(
+      "Harga per periode",
+    );
+    expect(customTermPriceLabel({ ...NO_CUSTOM, monthsText: "0" })).toBe(
+      "Harga per periode",
+    );
+    expect(customTermPriceLabel({ ...NO_CUSTOM, monthsText: "4" })).toBe(
+      "Harga per 4 bulan",
+    );
+    expect(customMonths({ ...NO_CUSTOM, monthsText: "04" })).toBe(4);
+    expect(customMonths(NO_CUSTOM)).toBe(null);
+    expect(monthsDigits("4 bulan")).toBe("4");
+    expect(monthsDigits("a1b8")).toBe("18");
+    expect(termLabel(4)).toBe("Per 4 bulan");
+    expect(changePriceLabel(24)).toBe("Ubah harga per 24 bulan");
   });
 });
 
@@ -651,9 +995,11 @@ describe("unit terms", () => {
 
   it("notices an offered term that is unchecked, only when changing a unit", () => {
     const saved: Pick<Unit, "terms"> = { terms: [{ months: 1 }] };
-    expect(dropsOfferedTerm(saved, rows({ 12: "" }))).toBe(true);
-    expect(dropsOfferedTerm(saved, rows({ 1: "", 12: "" }))).toBe(false);
-    expect(dropsOfferedTerm(undefined, rows({}))).toBe(false);
+    expect(dropsOfferedTerm(saved, rows({ 12: "" }), NO_CUSTOM)).toBe(true);
+    expect(dropsOfferedTerm(saved, rows({ 1: "", 12: "" }), NO_CUSTOM)).toBe(
+      false,
+    );
+    expect(dropsOfferedTerm(undefined, rows({}), NO_CUSTOM)).toBe(false);
   });
 
   it("names the terms and their prices", () => {
@@ -796,6 +1142,34 @@ describe("Ubah harga", () => {
     ]);
     expect(currentPriceText(saved, 12)).toBe("Harga sekarang: Rp15.000.000");
     expect(currentPriceText(saved, 1)).toBe("Harga sekarang: belum ada");
+  });
+
+  it("offers a custom term among them, by its months", () => {
+    const saved: Pick<Unit, "terms"> = {
+      terms: [{ months: 4, price: 4_800_000 }, { months: 1 }],
+    };
+    expect(priceTermOptions(saved)).toEqual([
+      { value: "1", label: "Per bulan" },
+      { value: "4", label: "Per 4 bulan" },
+    ]);
+    expect(currentPriceText(saved, 4)).toBe("Harga sekarang: Rp4.800.000");
+    expect(priceSavedNotice({ months: 4, effectiveFrom: "2027-01-01" })).toBe(
+      "Harga per 4 bulan dicatat, berlaku mulai 1 Jan 2027.",
+    );
+    const [row] = priceHistoryRows(
+      [
+        {
+          id: "c",
+          months: 4,
+          amount: 4_800_000,
+          effectiveFrom: "2026-10-30",
+          recordedAt: "2026-10-30T02:00:00Z",
+        },
+      ],
+      "2026-10-30",
+    );
+    expect(row?.title).toBe("Per 4 bulan · Rp4.800.000");
+    expect(row?.chip).toBe(CURRENT_PRICE_CHIP);
   });
 
   it("says what was saved", () => {

@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
@@ -26,10 +27,11 @@ import {
   INPUT_CLASS,
   UNIT_LABEL_MAX_LENGTH,
   checkUnitForm,
+  initialCustomTermRow,
   initialTermRows,
   lastTermPrices,
 } from "./utils";
-import type { UnitFormErrors, UnitTermRow } from "./type";
+import type { UnitCustomTermRow, UnitFormErrors, UnitTermRow } from "./type";
 
 import { UnitPriceHistory } from "./unit-price-history";
 import { UnitTermsField } from "./unit-terms-field";
@@ -75,6 +77,9 @@ export function UnitForm({
   const [label, setLabel] = useState(unit?.label ?? "");
   const [terms, setTerms] = useState<UnitTermRow[]>(() =>
     initialTermRows(unit, propertyKind),
+  );
+  const [custom, setCustom] = useState<UnitCustomTermRow>(() =>
+    initialCustomTermRow(unit),
   );
   const [errors, setErrors] = useState<UnitFormErrors>({});
   const [alert, setAlert] = useState<string | null>(null);
@@ -123,7 +128,8 @@ export function UnitForm({
     });
   }
 
-  // A price field with an error first, else the first checkbox.
+  // A field with an error first ("Jumlah bulan" or a price), else the first checkbox. Call it
+  // once the errors are rendered (flushSync), so aria-invalid is already on the field.
   function focusTerms() {
     const fieldset = termsRef.current;
     const target =
@@ -148,6 +154,17 @@ export function UnitForm({
     });
   }
 
+  function changeCustom(changed: UnitCustomTermRow) {
+    setCustom(changed);
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.terms;
+      delete next.customMonths;
+      delete next.customPrice;
+      return next;
+    });
+  }
+
   function handleError(error: unknown) {
     const failed = toFormError(error, FORM_FIELDS);
     if (failed.field === "label") {
@@ -166,9 +183,9 @@ export function UnitForm({
     if (saving) return;
 
     setAlert(null);
-    const checked = checkUnitForm({ label, terms }, unit);
+    const checked = checkUnitForm({ label, terms, custom }, unit);
     if (!checked.ok) {
-      setErrors(checked.errors);
+      flushSync(() => setErrors(checked.errors));
       if (checked.errors.label !== undefined) labelRef.current?.focus();
       else focusTerms();
       return;
@@ -242,11 +259,15 @@ export function UnitForm({
           fieldsetRef={termsRef}
           unit={unit}
           rows={terms}
+          custom={custom}
           error={errors.terms}
           priceErrors={errors.prices}
+          customMonthsError={errors.customMonths}
+          customPriceError={errors.customPrice}
           lastPrices={lastPrices}
           disabled={saving}
           onRowChange={changeRow}
+          onCustomChange={changeCustom}
           onChangePrice={onChangePrice}
         />
 
