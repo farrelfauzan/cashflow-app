@@ -1,13 +1,8 @@
 import type { z } from "zod";
 
-import type {
-  ScheduledPrice,
-  TermMonths,
-  UnitInput,
-  UnitPriceInput,
-} from "@/lib/api/generated/model";
+import type { ScheduledPrice, TermMonths } from "@/lib/api/generated/model";
 
-import type { propertyFormSchema } from "./utils";
+import type { propertyFormSchema, unitFormSchema } from "./utils";
 
 export type PropertyPermissions = {
   // "Tambah properti": the API accepts it only with property:manage for the whole organization,
@@ -49,8 +44,15 @@ export type OpenUnitPanel = Exclude<UnitPanelState, { kind: "closed" }>;
 // The property form's fields as typed; kind is unset until one is chosen when adding.
 export type PropertyFormValues = z.input<typeof propertyFormSchema>;
 
-// One row of "Masa sewa dan harga": whether the unit offers the term, and the price typed for it
-// (digits grouped with dots, "" for none).
+// The four standard terms a unit may offer (decision 32); its custom term is any other count.
+export type StandardTermMonths = 1 | 3 | 6 | 12;
+
+// A standard term's key in the unit form's records ("terms", "prices"): its months as text, since
+// react-hook-form names fields by text ("prices.12").
+export type StandardTermKey = `${StandardTermMonths}`;
+
+// One row of "Masa sewa dan harga" as UnitTermChoice shows it: whether the unit offers the term,
+// and the price typed for it (digits grouped with dots, "" for none).
 export type UnitTermRow = {
   months: TermMonths;
   checked: boolean;
@@ -71,19 +73,10 @@ export type UnitCustomTermRow = {
   priceText: string;
 };
 
-export type UnitFormValues = {
-  label: string;
-  // Always the four standard terms, shortest first.
-  terms: readonly UnitTermRow[];
-  custom: UnitCustomTermRow;
-};
-
-export type UnitFormErrors = Partial<
-  Record<"label" | "terms" | "customMonths" | "customPrice", string>
-> & {
-  // Under a standard term's price field.
-  prices?: Partial<Record<TermMonths, string>>;
-};
+// The unit form's fields as typed: the label; "terms", whether each standard term is ticked (the
+// checkbox group, which the API's errors on "terms" name); "prices", the price typed for each
+// standard term; and the custom row.
+export type UnitFormValues = z.input<ReturnType<typeof unitFormSchema>>;
 
 // What a checked term shows under its checkbox: the price in force, read-only, with the next
 // scheduled change and "Ubah harga"; or a field for a price. A term the unit no longer offers
@@ -130,24 +123,6 @@ export type UnitPriceTermView = {
   price: string;
   next: string | null;
 };
-
-export type UnitPriceFormValues = {
-  months: TermMonths;
-  amountText: string;
-  // YYYY-MM-DD, "" for none.
-  effectiveFrom: string;
-};
-
-export type UnitPriceFormErrors = Partial<
-  Record<"months" | "amount" | "effectiveFrom", string>
->;
-
-export type UnitPriceFormResult =
-  | { ok: true; input: UnitPriceInput }
-  | { ok: false; errors: UnitPriceFormErrors };
-
-export type UnitFormResult =
-  { ok: true; input: UnitInput } | { ok: false; errors: UnitFormErrors };
 
 export type UnitOccupancyView =
   // The unit's tenant, shown as plain text.

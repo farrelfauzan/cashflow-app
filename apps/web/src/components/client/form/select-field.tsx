@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type RefObject } from "react";
+import { useId, type Ref } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { Label } from "@/components/ui/label";
@@ -21,7 +21,8 @@ import {
 } from "./utils";
 
 type SelectFieldProps = {
-  triggerRef: RefObject<HTMLButtonElement | null>;
+  // For moving focus from outside: a ref object, or a callback such as react-hook-form's.
+  triggerRef: Ref<HTMLButtonElement>;
   label: string;
   // "" shows the placeholder.
   value: string;

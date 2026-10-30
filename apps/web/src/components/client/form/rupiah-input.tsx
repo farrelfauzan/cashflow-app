@@ -1,11 +1,12 @@
 "use client";
 
 import {
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
-  type RefObject,
+  type Ref,
 } from "react";
 
 import { cn } from "@/lib/utils";
@@ -16,8 +17,8 @@ import {
 } from "@/lib/format/rupiah-input";
 
 type RupiahInputProps = {
-  // For moving focus from outside; the input keeps its own when none is given.
-  inputRef?: RefObject<HTMLInputElement | null>;
+  // For moving focus from outside: a ref object, or a callback such as react-hook-form's.
+  inputRef?: Ref<HTMLInputElement>;
   id: string;
   name: string;
   placeholder: string;
@@ -50,8 +51,9 @@ export function RupiahInput({
   disabled,
   className,
 }: RupiahInputProps) {
-  const ownRef = useRef<HTMLInputElement>(null);
-  const ref = inputRef ?? ownRef;
+  // The input's own ref places the caret; the caller's gets the same input.
+  const ref = useRef<HTMLInputElement>(null);
+  useImperativeHandle(inputRef, () => ref.current as HTMLInputElement, []);
 
   // Where the caret goes once the grouped text is in the field. A new object on every change, so
   // the field renders and the effect runs even when the text stays the same (a letter typed).

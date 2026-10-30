@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type RefObject } from "react";
+import { useId, type Ref } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 import { FIELD_HINT_CLASS, FIELD_LABEL_CLASS, INPUT_CLASS } from "./utils";
 
 type DateFieldProps = {
-  inputRef: RefObject<HTMLInputElement | null>;
+  // For moving focus from outside: a ref object, or a callback such as react-hook-form's.
+  inputRef: Ref<HTMLInputElement>;
   label: string;
   // The input's name, the API field it fills ("startDate").
   name: string;

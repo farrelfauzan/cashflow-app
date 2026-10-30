@@ -14,6 +14,7 @@ import type {
   ScheduledPrice,
   TermMonths,
   Unit,
+  UnitInput,
   UnitPrice,
   UnitTermInput,
 } from "@/lib/api/generated/model";
@@ -24,20 +25,16 @@ import { everywhere, type AppAbility } from "@/lib/capabilities";
 
 import type {
   PropertyPermissions,
-  UnitFormErrors,
-  UnitFormResult,
+  StandardTermKey,
+  StandardTermMonths,
   UnitFormValues,
   UnitCustomTermRow,
   UnitCustomTermView,
   LastTermPrices,
   UnitOccupancyView,
-  UnitPriceFormErrors,
-  UnitPriceFormResult,
-  UnitPriceFormValues,
   UnitPriceHistoryRowView,
   UnitPriceTermView,
   UnitRowAction,
-  UnitTermRow,
   UnitTermRowView,
 } from "./type";
 
@@ -219,80 +216,118 @@ export const EMPTY_CUSTOM_MONTHS_MESSAGE = "Isi jumlah bulan.";
 export const STANDARD_CUSTOM_MONTHS_MESSAGE =
   "Untuk 1, 3, 6 atau 12 bulan, centang pilihannya di atas.";
 
-export function checkUnitForm(
-  values: UnitFormValues,
-  unit: Pick<Unit, "terms"> | undefined,
-): UnitFormResult {
-  const label = values.label.trim();
-  const errors: UnitFormErrors = {};
-  if (label === "") errors.label = EMPTY_UNIT_LABEL_MESSAGE;
-  const checked = values.terms.filter((row) => row.checked);
-  if (checked.length === 0 && !values.custom.checked) {
-    errors.terms = NO_TERM_MESSAGE;
-  }
-  // A price of Rp0 is refused under its own field, as "Ubah harga" does.
-  for (const row of checked) {
-    if (unitTermRowView(unit, row.months).kind === "priced") continue;
-    if (isZeroPrice(row.priceText)) {
-      errors.prices = { ...errors.prices, [row.months]: ZERO_PRICE_MESSAGE };
-    }
-  }
-  Object.assign(errors, checkCustomTerm(values.custom, unit));
+// The API fields "Tambah unit" and "Ubah unit" show under their own fields: the name, and "Masa
+// sewa dan harga" for anything about the terms.
+export const UNIT_FORM_API_FIELDS = ["label", "terms"] as const;
 
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const custom = customTermInput(values.custom, unit);
-  return {
-    ok: true,
-    input: {
-      label,
-      terms: [
-        ...checked.map((row) => termInput(row, unit)),
-        ...(custom === null ? [] : [custom]),
-      ],
-    },
-  };
+// "Tambah unit" and "Ubah unit": the label is sent trimmed, then the ticked standard terms
+// (shortest first) and the custom term, each with a price only when one was typed in a field its
+// row shows. Its messages go under the label ("label"), the checkboxes ("terms"), a standard
+// term's price ("prices.12") and the custom row's fields ("custom.monthsText",
+// "custom.priceText"). The saved unit decides which rows show a price field.
+export function unitFormSchema(unit: Pick<Unit, "terms"> | undefined) {
+  return z
+    .object({
+      label: z.string().trim().min(1, EMPTY_UNIT_LABEL_MESSAGE),
+      terms: z.object(byStandardTerm(() => z.boolean())),
+      prices: z.object(byStandardTerm(() => z.string())),
+      custom: z.object({
+        checked: z.boolean(),
+        showsSaved: z.boolean(),
+        monthsText: z.string(),
+        priceText: z.string(),
+      }),
+    })
+    .superRefine((values, ctx) => {
+      const checked = checkedTerms(values.terms);
+      if (checked.length === 0 && !values.custom.checked) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["terms"],
+          message: NO_TERM_MESSAGE,
+        });
+      }
+      // A price of Rp0 is refused under its own field, as "Ubah harga" does.
+      for (const months of checked) {
+        if (unitTermRowView(unit, months).kind === "priced") continue;
+        if (isZeroPrice(values.prices[months])) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["prices", months],
+            message: ZERO_PRICE_MESSAGE,
+          });
+        }
+      }
+      const custom = customTermErrors(values.custom, unit);
+      for (const [field, message] of Object.entries(custom)) {
+        ctx.addIssue({ code: "custom", path: ["custom", field], message });
+      }
+    })
+    .transform((values): UnitInput => {
+      const custom = customTermInput(values.custom, unit);
+      return {
+        label: values.label,
+        terms: [
+          ...checkedTerms(values.terms).map((months) =>
+            termInput(months, values.prices[months], unit),
+          ),
+          ...(custom === null ? [] : [custom]),
+        ],
+      };
+    });
+}
+
+// The standard terms ticked, shortest first.
+function checkedTerms(
+  terms: Record<StandardTermKey, boolean>,
+): StandardTermMonths[] {
+  return UNIT_TERM_CHOICES.filter((months) => terms[months]);
+}
+
+// One value for each standard term, keyed by its months.
+function byStandardTerm<T>(
+  value: (months: StandardTermMonths) => T,
+): Record<StandardTermKey, T> {
+  return { 1: value(1), 3: value(3), 6: value(6), 12: value(12) };
 }
 
 // A checked term as the API takes it: its price only when the admin typed one in a field the row
 // shows. A term with a price in force shows no field, so it sends none and keeps its price (the
 // API records a row only for a price given).
 function termInput(
-  row: UnitTermRow,
+  months: StandardTermMonths,
+  priceText: string,
   unit: Pick<Unit, "terms"> | undefined,
 ): UnitTermInput {
-  if (unitTermRowView(unit, row.months).kind === "priced") {
-    return { months: row.months };
-  }
-  const price = row.priceText === "" ? null : parseRupiahInput(row.priceText);
-  return price === null
-    ? { months: row.months }
-    : { months: row.months, price };
+  if (unitTermRowView(unit, months).kind === "priced") return { months };
+  const price = priceText === "" ? null : parseRupiahInput(priceText);
+  return price === null ? { months } : { months, price };
 }
 
 function isZeroPrice(priceText: string): boolean {
   return priceText !== "" && parseRupiahInput(priceText) === 0;
 }
 
-// The friendly checks of the custom row. The API judges the month count (2 to 60, not a standard
-// term) and its message shows under "Masa sewa dan harga"; the browser only catches an empty
-// "Jumlah bulan" and a standard term typed there.
-function checkCustomTerm(
+// The friendly checks of the custom row, by its field. The API judges the month count (2 to 60,
+// not a standard term) and its message shows under "Masa sewa dan harga"; the browser only
+// catches an empty "Jumlah bulan" and a standard term typed there.
+function customTermErrors(
   custom: UnitCustomTermRow,
   unit: Pick<Unit, "terms"> | undefined,
-): Pick<UnitFormErrors, "customMonths" | "customPrice"> {
-  const errors: Pick<UnitFormErrors, "customMonths" | "customPrice"> = {};
+): Partial<Record<"monthsText" | "priceText", string>> {
+  const errors: Partial<Record<"monthsText" | "priceText", string>> = {};
   if (!custom.checked) return errors;
   const view = customTermView(custom, unit);
   if (view.kind === "lainnya") {
     if (custom.monthsText === "") {
-      errors.customMonths = EMPTY_CUSTOM_MONTHS_MESSAGE;
-    } else if (UNIT_TERM_CHOICES.includes(Number(custom.monthsText))) {
-      errors.customMonths = STANDARD_CUSTOM_MONTHS_MESSAGE;
+      errors.monthsText = EMPTY_CUSTOM_MONTHS_MESSAGE;
+    } else if (isStandardTerm(Number(custom.monthsText))) {
+      errors.monthsText = STANDARD_CUSTOM_MONTHS_MESSAGE;
     }
   }
   const showsPriceField = view.kind === "lainnya" || view.term.kind === "input";
   if (showsPriceField && isZeroPrice(custom.priceText)) {
-    errors.customPrice = ZERO_PRICE_MESSAGE;
+    errors.priceText = ZERO_PRICE_MESSAGE;
   }
   return errors;
 }
@@ -328,7 +363,7 @@ export function monthsDigits(text: string): string {
 export function savedCustomTerm(
   unit: Pick<Unit, "terms"> | undefined,
 ): TermMonths | null {
-  const term = unit?.terms.find((t) => !UNIT_TERM_CHOICES.includes(t.months));
+  const term = unit?.terms.find((t) => !isStandardTerm(t.months));
   return term?.months ?? null;
 }
 
@@ -400,28 +435,34 @@ export function customTermPriceLabel(custom: UnitCustomTermRow): string {
 }
 
 // The terms a unit may offer, shortest first: the rows of "Masa sewa dan harga".
-export const UNIT_TERM_CHOICES: readonly TermMonths[] = [1, 3, 6, 12];
+export const UNIT_TERM_CHOICES: readonly StandardTermMonths[] = [1, 3, 6, 12];
+
+export function isStandardTerm(months: number): months is StandardTermMonths {
+  return UNIT_TERM_CHOICES.some((choice) => choice === months);
+}
 
 // The term a new unit offers to begin with, as the API's default: a year for a ruko, a month for
 // a kos, kontrakan or other unit.
-export function defaultUnitTerm(kind: PropertyKind): TermMonths {
+export function defaultUnitTerm(kind: PropertyKind): StandardTermMonths {
   return kind === "ruko" ? 12 : 1;
 }
 
-// The rows "Masa sewa dan harga" starts with: the unit's offered terms when changing one, the
-// property kind's default when adding.
-export function initialTermRows(
-  unit: Pick<Unit, "terms"> | undefined,
+// What "Tambah unit" and "Ubah unit" start with: the unit's label and offered terms when changing
+// one, the property kind's default term when adding; no price typed.
+export function initialUnitFormValues(
+  unit: Pick<Unit, "label" | "terms"> | undefined,
   kind: PropertyKind,
-): UnitTermRow[] {
-  return UNIT_TERM_CHOICES.map((months) => ({
-    months,
-    checked:
+): UnitFormValues {
+  return {
+    label: unit?.label ?? "",
+    terms: byStandardTerm((months) =>
       unit === undefined
         ? months === defaultUnitTerm(kind)
         : unit.terms.some((term) => term.months === months),
-    priceText: "",
-  }));
+    ),
+    prices: byStandardTerm(() => ""),
+    custom: initialCustomTermRow(unit),
+  };
 }
 
 // What a checked term shows: its price in force, read-only, when the saved unit offers it with
@@ -473,7 +514,7 @@ export function termPriceHint(
 // month count.
 export function dropsOfferedTerm(
   unit: Pick<Unit, "terms"> | undefined,
-  rows: readonly UnitTermRow[],
+  terms: Record<StandardTermKey, boolean>,
   custom: UnitCustomTermRow,
 ): boolean {
   if (unit === undefined) return false;
@@ -484,9 +525,9 @@ export function dropsOfferedTerm(
   ) {
     return true;
   }
-  return rows.some(
-    (row) =>
-      !row.checked && unit.terms.some((term) => term.months === row.months),
+  return UNIT_TERM_CHOICES.some(
+    (months) =>
+      !terms[months] && unit.terms.some((term) => term.months === months),
   );
 }
 
@@ -589,36 +630,34 @@ export const PRICE_DATE_HINT =
 export const PRICE_AMOUNT_HINT = "Untuk satu periode penuh.";
 
 // The API fields "Ubah harga" shows under its own fields.
-export const UNIT_PRICE_API_FIELDS: readonly string[] = [
+export const UNIT_PRICE_FORM_API_FIELDS = [
   "months",
   "amount",
   "effectiveFrom",
-];
+] as const;
 
-export function checkUnitPriceForm(
-  values: UnitPriceFormValues,
-  today: string,
-): UnitPriceFormResult {
-  const errors: UnitPriceFormErrors = {};
-  const amount =
-    values.amountText === "" ? null : parseRupiahInput(values.amountText);
-  if (amount === null) errors.amount = EMPTY_PRICE_MESSAGE;
-  else if (amount <= 0) errors.amount = ZERO_PRICE_MESSAGE;
-  if (values.effectiveFrom === "") errors.effectiveFrom = NO_DATE_MESSAGE;
-  else if (values.effectiveFrom < today) {
-    errors.effectiveFrom = PRICE_BEFORE_TODAY_MESSAGE;
-  }
-  if (amount === null || Object.keys(errors).length > 0) {
-    return { ok: false, errors };
-  }
-  return {
-    ok: true,
-    input: {
-      months: values.months,
-      amount,
-      effectiveFrom: values.effectiveFrom,
-    },
-  };
+// "Ubah harga": the term, the amount typed (digits grouped with dots) sent as integer rupiah, and
+// the first day, today (`today`, in Jakarta) or later.
+export function unitPriceFormSchema(today: string) {
+  return z.object({
+    months: z.number(),
+    amount: z.string().transform((text, ctx) => {
+      const amount = text === "" ? null : parseRupiahInput(text);
+      if (amount === null) {
+        ctx.addIssue({ code: "custom", message: EMPTY_PRICE_MESSAGE });
+        return z.NEVER;
+      }
+      if (amount <= 0) {
+        ctx.addIssue({ code: "custom", message: ZERO_PRICE_MESSAGE });
+        return z.NEVER;
+      }
+      return amount;
+    }),
+    effectiveFrom: z
+      .string()
+      .min(1, { error: NO_DATE_MESSAGE, abort: true })
+      .refine((date) => date >= today, PRICE_BEFORE_TODAY_MESSAGE),
+  });
 }
 
 // "Harga sekarang: Rp1.500.000", or "Harga sekarang: belum ada".
