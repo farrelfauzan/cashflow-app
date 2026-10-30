@@ -158,7 +158,7 @@ func (s *Service) SetLeaseCharges(ctx context.Context, p authz.Principal, leaseI
 				return fmt.Errorf("setting lease charge: %w", err)
 			}
 		}
-		out, err = loadLease(ctx, q, p.OrganizationID, leaseID)
+		out, err = loadLease(ctx, q, p.OrganizationID, leaseID, Today(s.clock))
 		return err
 	})
 	return out, err

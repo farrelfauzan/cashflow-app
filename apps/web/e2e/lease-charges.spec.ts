@@ -158,7 +158,7 @@ async function openOwnLease(
     page,
     `/orgs/${orgId}/properties/${property.id}/units`,
     201,
-    { label: UNIT, defaultRent: 1_250_000 },
+    { label: UNIT, terms: [{ months: 1, price: 1_250_000 }] },
   );
   const tenant = await call<Tenant>(page, `/orgs/${orgId}/tenants`, 201, {
     name: uniqueName(testInfo, names.tenant),
@@ -169,7 +169,7 @@ async function openOwnLease(
     tenantId: tenant.id,
     unitId: unit.id,
     startDate: jakartaToday(new Date()),
-    rentAmount: 1_250_000,
+    termMonths: 1,
     depositAmount: 2_500_000,
   });
   return { orgId, property, tenant };

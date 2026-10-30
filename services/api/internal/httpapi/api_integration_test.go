@@ -81,6 +81,11 @@ func (c *client) signIn(env *testenv.Env, phone string) result {
 	return resp
 }
 
+// monthly is a unit's terms when it is let by the month only, at price.
+func monthly(price int64) *[]apigen.UnitTermInput {
+	return &[]apigen.UnitTermInput{{Months: 1, Price: &price}}
+}
+
 func decode[T any](t *testing.T, data []byte) T {
 	t.Helper()
 	var v T
@@ -239,17 +244,25 @@ func TestPropertiesOverHTTP(t *testing.T) {
 
 	var unit apigen.Unit
 	t.Run("the admin adds and changes a unit", func(t *testing.T) {
-		rentAmount := int64(1_250_000)
 		resp, body := admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units",
-			apigen.UnitInput{Label: "Kamar 11", DefaultRent: &rentAmount})
+			apigen.UnitInput{Label: "Kamar 11", Terms: monthly(1_250_000)})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		unit = decode[apigen.Unit](t, body)
 		require.Equal(t, melati.Id, unit.PropertyId)
-		require.Equal(t, rentAmount, *unit.DefaultRent)
+		require.Contains(t, string(body), `"terms":[{"months":1,"price":1250000}]`)
 
 		resp, body = admin.do(http.MethodPut, orgPath+"/units/"+unit.Id.String(), apigen.UnitInput{Label: "Kamar 12"})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
-		require.Nil(t, decode[apigen.Unit](t, body).DefaultRent)
+		require.Contains(t, string(body), `"terms":[{"months":1,"price":1250000}]`, "no terms keeps terms and prices")
+
+		resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units",
+			map[string]any{"label": "Kamar 13", "defaultRent": 850000})
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "the old field is unknown")
+		require.Equal(t, "invalid_json", decode[apigen.Error](t, body).Error.Code)
+		resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units",
+			apigen.UnitInput{Label: "Kamar 13", Terms: &[]apigen.UnitTermInput{}})
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Equal(t, "terms", *decode[apigen.Error](t, body).Error.Field)
 
 		resp, body = admin.do(http.MethodGet, orgPath+"/properties/"+melati.Id.String()+"/units", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -385,7 +398,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 	resp, body := admin.do(http.MethodPost, orgPath+"/properties", apigen.PropertyInput{Name: "Kos Melati", Kind: apigen.Kos})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	melati := decode[apigen.Property](t, body)
-	resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: "Kamar 1"})
+	resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: "Kamar 1", Terms: monthly(850_000)})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	kamar1 := decode[apigen.Unit](t, body)
 
@@ -417,7 +430,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 	t.Run("the admin rents a unit with dates as plain days", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
 			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-10-01",
-			"rentAmount": 850000, "depositAmount": 850000, "collectorMemberId": karyawanMember,
+			"termMonths": 1, "depositAmount": 850000, "collectorMemberId": karyawanMember,
 		})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"startDate":"2026-10-01"`)
@@ -426,13 +439,13 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 		require.Equal(t, o.Karyawan.Name, lease.Collector.Name)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "rentAmount": 1,
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "termMonths": 1,
 		})
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
 		require.Equal(t, "unit_occupied", decode[apigen.Error](t, body).Error.Code)
 
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "1 Oktober 2026", "rentAmount": 1,
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "1 Oktober 2026", "termMonths": 1,
 		})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		require.Equal(t, "invalid_json", decode[apigen.Error](t, body).Error.Code)
@@ -462,7 +475,7 @@ func TestTenantsAndLeasesOverHTTP(t *testing.T) {
 		require.Contains(t, string(body), `"status":"ended"`)
 
 		resp, body = admin.do(http.MethodPut, orgPath+"/leases/"+lease.Id.String(), map[string]any{
-			"startDate": "2026-10-01", "rentAmount": 1,
+			"startDate": "2026-10-01",
 		})
 		require.Equal(t, http.StatusConflict, resp.StatusCode)
 		require.Equal(t, "lease_ended", decode[apigen.Error](t, body).Error.Code)

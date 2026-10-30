@@ -82,12 +82,12 @@ LEFT JOIN tenant t ON t.organization_id = l.organization_id AND t.id = l.tenant_
 WHERE u.organization_id = $1 AND u.id = $2;
 
 -- name: CreateUnit :one
-INSERT INTO unit (id, organization_id, property_id, label, default_rent)
+INSERT INTO unit (id, organization_id, property_id, label, terms)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: UpdateUnit :one
-UPDATE unit SET label = $3, default_rent = $4, updated_at = now()
+UPDATE unit SET label = $3, terms = $4, updated_at = now()
 WHERE organization_id = $1 AND id = $2
 RETURNING *;
 

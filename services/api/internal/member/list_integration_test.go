@@ -192,12 +192,12 @@ func TestMemberList(t *testing.T) {
 		melati, err := env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
 		require.NoError(t, err)
 		lease := func(label, tenantName, phone string, collector uuid.UUID) tenant.Lease {
-			u, err := env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label})
+			u, err := env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label, Terms: testenv.Monthly(850_000)})
 			require.NoError(t, err)
 			tn, err := env.Tenants.Create(ctx, admin, tenant.Input{Name: tenantName, Phone: phone})
 			require.NoError(t, err)
-			l, err := env.Tenants.CreateLease(ctx, admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, Terms: tenant.Terms{
-				StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), RentAmount: 850_000, CollectorMemberID: collector,
+			l, err := env.Tenants.CreateLease(ctx, admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, TermMonths: 1, Terms: tenant.Terms{
+				StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), CollectorMemberID: collector,
 			}})
 			require.NoError(t, err)
 			return l

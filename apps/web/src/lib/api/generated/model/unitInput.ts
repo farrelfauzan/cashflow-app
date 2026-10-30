@@ -4,6 +4,7 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { UnitTermInput } from './unitTermInput';
 
 export interface UnitInput {
   /**
@@ -12,8 +13,9 @@ export interface UnitInput {
      */
   label: string;
   /**
-     * Usual monthly rent in rupiah, a suggestion for new leases. Leave it out for none.
-     * @minimum 1
+     * The billing terms the unit offers (decision 32), each month count once. On createUnit, leaving it out offers the property kind's default: 12 months for a ruko, 1 month for a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps the offered terms and their prices. When given, the unit offers exactly these terms; a lease keeps its term when the unit stops offering it. A term's price, when given and different from the price in force today, is recorded as a new price effective today (use createUnitPrice for a later date). An empty list, a repeated or unknown month count is a 400 invalid_input on field terms.
+     * @minItems 1
+     * @maxItems 4
      */
-  defaultRent?: number;
+  terms?: UnitTermInput[];
 }

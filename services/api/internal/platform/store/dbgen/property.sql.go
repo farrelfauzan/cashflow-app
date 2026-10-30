@@ -99,9 +99,9 @@ func (q *Queries) CreateProperty(ctx context.Context, arg CreatePropertyParams) 
 }
 
 const createUnit = `-- name: CreateUnit :one
-INSERT INTO unit (id, organization_id, property_id, label, default_rent)
+INSERT INTO unit (id, organization_id, property_id, label, terms)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, organization_id, property_id, label, default_rent, created_at, updated_at
+RETURNING id, organization_id, property_id, label, created_at, updated_at, terms
 `
 
 type CreateUnitParams struct {
@@ -109,7 +109,7 @@ type CreateUnitParams struct {
 	OrganizationID uuid.UUID
 	PropertyID     uuid.UUID
 	Label          string
-	DefaultRent    *int64
+	Terms          []int16
 }
 
 func (q *Queries) CreateUnit(ctx context.Context, arg CreateUnitParams) (Unit, error) {
@@ -118,7 +118,7 @@ func (q *Queries) CreateUnit(ctx context.Context, arg CreateUnitParams) (Unit, e
 		arg.OrganizationID,
 		arg.PropertyID,
 		arg.Label,
-		arg.DefaultRent,
+		arg.Terms,
 	)
 	var i Unit
 	err := row.Scan(
@@ -126,9 +126,9 @@ func (q *Queries) CreateUnit(ctx context.Context, arg CreateUnitParams) (Unit, e
 		&i.OrganizationID,
 		&i.PropertyID,
 		&i.Label,
-		&i.DefaultRent,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Terms,
 	)
 	return i, err
 }
@@ -160,7 +160,7 @@ func (q *Queries) FindPropertyByName(ctx context.Context, arg FindPropertyByName
 }
 
 const findUnitByLabel = `-- name: FindUnitByLabel :one
-SELECT id, organization_id, property_id, label, default_rent, created_at, updated_at FROM unit
+SELECT id, organization_id, property_id, label, created_at, updated_at, terms FROM unit
 WHERE organization_id = $1 AND property_id = $2 AND lower(label) = lower($3)
 `
 
@@ -179,9 +179,9 @@ func (q *Queries) FindUnitByLabel(ctx context.Context, arg FindUnitByLabelParams
 		&i.OrganizationID,
 		&i.PropertyID,
 		&i.Label,
-		&i.DefaultRent,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Terms,
 	)
 	return i, err
 }
@@ -229,7 +229,7 @@ func (q *Queries) GetProperty(ctx context.Context, arg GetPropertyParams) (GetPr
 }
 
 const getUnit = `-- name: GetUnit :one
-SELECT id, organization_id, property_id, label, default_rent, created_at, updated_at FROM unit
+SELECT id, organization_id, property_id, label, created_at, updated_at, terms FROM unit
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -246,15 +246,15 @@ func (q *Queries) GetUnit(ctx context.Context, arg GetUnitParams) (Unit, error) 
 		&i.OrganizationID,
 		&i.PropertyID,
 		&i.Label,
-		&i.DefaultRent,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Terms,
 	)
 	return i, err
 }
 
 const getUnitOccupancy = `-- name: GetUnitOccupancy :one
-SELECT u.id, u.organization_id, u.property_id, u.label, u.default_rent, u.created_at, u.updated_at, l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
+SELECT u.id, u.organization_id, u.property_id, u.label, u.created_at, u.updated_at, u.terms, l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
        (l.id IS NOT NULL)::boolean AS occupied
 FROM unit u
 LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
@@ -284,9 +284,9 @@ func (q *Queries) GetUnitOccupancy(ctx context.Context, arg GetUnitOccupancyPara
 		&i.Unit.OrganizationID,
 		&i.Unit.PropertyID,
 		&i.Unit.Label,
-		&i.Unit.DefaultRent,
 		&i.Unit.CreatedAt,
 		&i.Unit.UpdatedAt,
+		&i.Unit.Terms,
 		&i.LeaseTenantID,
 		&i.CollectorStaffUserID,
 		&i.LeaseTenantName,
@@ -398,7 +398,7 @@ func (q *Queries) ListPropertyPage(ctx context.Context, arg ListPropertyPagePara
 }
 
 const listUnits = `-- name: ListUnits :many
-SELECT u.id, u.organization_id, u.property_id, u.label, u.default_rent, u.created_at, u.updated_at, l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
+SELECT u.id, u.organization_id, u.property_id, u.label, u.created_at, u.updated_at, u.terms, l.tenant_id AS lease_tenant_id, l.collector_staff_user_id, t.name AS lease_tenant_name,
        (l.id IS NOT NULL)::boolean AS occupied
 FROM unit u
 LEFT JOIN lease l ON l.organization_id = u.organization_id AND l.unit_id = u.id AND l.status = 'active'
@@ -452,9 +452,9 @@ func (q *Queries) ListUnits(ctx context.Context, arg ListUnitsParams) ([]ListUni
 			&i.Unit.OrganizationID,
 			&i.Unit.PropertyID,
 			&i.Unit.Label,
-			&i.Unit.DefaultRent,
 			&i.Unit.CreatedAt,
 			&i.Unit.UpdatedAt,
+			&i.Unit.Terms,
 			&i.LeaseTenantID,
 			&i.CollectorStaffUserID,
 			&i.LeaseTenantName,
@@ -506,16 +506,16 @@ func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) 
 }
 
 const updateUnit = `-- name: UpdateUnit :one
-UPDATE unit SET label = $3, default_rent = $4, updated_at = now()
+UPDATE unit SET label = $3, terms = $4, updated_at = now()
 WHERE organization_id = $1 AND id = $2
-RETURNING id, organization_id, property_id, label, default_rent, created_at, updated_at
+RETURNING id, organization_id, property_id, label, created_at, updated_at, terms
 `
 
 type UpdateUnitParams struct {
 	OrganizationID uuid.UUID
 	ID             uuid.UUID
 	Label          string
-	DefaultRent    *int64
+	Terms          []int16
 }
 
 func (q *Queries) UpdateUnit(ctx context.Context, arg UpdateUnitParams) (Unit, error) {
@@ -523,7 +523,7 @@ func (q *Queries) UpdateUnit(ctx context.Context, arg UpdateUnitParams) (Unit, e
 		arg.OrganizationID,
 		arg.ID,
 		arg.Label,
-		arg.DefaultRent,
+		arg.Terms,
 	)
 	var i Unit
 	err := row.Scan(
@@ -531,9 +531,9 @@ func (q *Queries) UpdateUnit(ctx context.Context, arg UpdateUnitParams) (Unit, e
 		&i.OrganizationID,
 		&i.PropertyID,
 		&i.Label,
-		&i.DefaultRent,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Terms,
 	)
 	return i, err
 }

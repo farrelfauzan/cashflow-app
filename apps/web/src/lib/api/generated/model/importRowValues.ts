@@ -4,16 +4,19 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { TermMonths } from './termMonths';
 
 /**
- * The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
+ * The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's term, rent, deposit or start date could not be read or resolved.
  */
 export interface ImportRowValues {
   startDate: string;
   /** Mulai tagih dari; the start date when the cell is empty. */
   billedFrom: string;
-  /** Monthly rent in rupiah. */
-  rentAmount: number;
+  /** The jangka_bulan cell, or when it is empty: 1 when the unit offers it, else the unit's only term; a unit the import creates offers its property kind's default (12 for a ruko, otherwise 1). A term the unit does not offer is a row error on column term. */
+  termMonths: TermMonths;
+  /** The sewa cell: the unit's price for one whole term. Required when the unit has no price for the term in force on the import day, and then recorded as its price from that day; when the unit has one, it may be empty, and a different amount is a row error on column rent. Missing when the cell is empty. */
+  rentAmount?: number;
   /** Deposit in rupiah; 0 when the cell is empty. */
   depositAmount: number;
 }

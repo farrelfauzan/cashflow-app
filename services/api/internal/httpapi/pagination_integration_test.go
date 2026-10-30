@@ -37,15 +37,15 @@ func TestListPaginationOverHTTP(t *testing.T) {
 	}
 	var units []property.Unit
 	for _, l := range []string{"Kamar 1", "Kamar 2", "Kamar 3"} {
-		u, err := env.Properties.CreateUnit(ctx, adminP, melati.ID, property.UnitInput{Label: l})
+		u, err := env.Properties.CreateUnit(ctx, adminP, melati.ID, property.UnitInput{Label: l, Terms: testenv.Monthly(850_000)})
 		require.NoError(t, err)
 		units = append(units, u)
 	}
 	for i, n := range []string{"Budi Santoso", "Citra Lestari", "Rina Wulandari"} {
 		tn, err := env.Tenants.Create(ctx, adminP, tenant.Input{Name: n, Phone: fmt.Sprintf("0857-7910-%04d", i+1)})
 		require.NoError(t, err)
-		_, err = env.Tenants.CreateLease(ctx, adminP, tenant.NewLease{TenantID: tn.ID, UnitID: units[i].ID, Terms: tenant.Terms{
-			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), RentAmount: 850_000,
+		_, err = env.Tenants.CreateLease(ctx, adminP, tenant.NewLease{TenantID: tn.ID, UnitID: units[i].ID, TermMonths: 1, Terms: tenant.Terms{
+			StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		}})
 		require.NoError(t, err)
 	}

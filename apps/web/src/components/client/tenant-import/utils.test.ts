@@ -39,6 +39,7 @@ const row = (over: Partial<ImportRow> = {}): ImportRow => ({
   values: {
     startDate: "2026-10-01",
     billedFrom: "2026-10-01",
+    termMonths: 1,
     rentAmount: 1_300_000,
     depositAmount: 0,
   },
@@ -227,12 +228,27 @@ describe("importRowView", () => {
     });
   });
 
+  it("leaves the rent out when the sewa cell is empty", () => {
+    const view = importRowView(
+      row({
+        values: {
+          startDate: "2026-10-01",
+          billedFrom: "2026-10-01",
+          termMonths: 12,
+          depositAmount: 0,
+        },
+      }),
+    );
+    expect(view.placeText).toBe("Kamar 11 · Kos Melati");
+  });
+
   it("adds the billing start when it differs from the start date", () => {
     const view = importRowView(
       row({
         values: {
           startDate: "2026-09-15",
           billedFrom: "2026-10-15",
+          termMonths: 1,
           rentAmount: 1_300_000,
           depositAmount: 0,
         },

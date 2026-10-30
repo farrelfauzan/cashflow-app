@@ -52,11 +52,9 @@ export type PropertyFormResult =
 
 export type UnitFormValues = {
   label: string;
-  // The rent field's text: digits and dots, empty for none.
-  rent: string;
 };
 
-export type UnitFormErrors = Partial<Record<"label" | "defaultRent", string>>;
+export type UnitFormErrors = Partial<Record<"label", string>>;
 
 export type UnitFormResult =
   { ok: true; input: UnitInput } | { ok: false; errors: UnitFormErrors };

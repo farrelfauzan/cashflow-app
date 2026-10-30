@@ -3,6 +3,7 @@ package property
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -49,13 +50,20 @@ func TestValidUnit(t *testing.T) {
 		name      string
 		in        UnitInput
 		wantField string
+		wantMsg   string
+		wantTerms []int // the months after validation, when it passes
 	}{
-		{"label and rent", UnitInput{Label: " Kamar 11 ", DefaultRent: rent(1_250_000)}, ""},
-		{"rent is optional", UnitInput{Label: "Kamar 1"}, ""},
-		{"label is required", UnitInput{Label: " "}, "label"},
-		{"label has a limit", UnitInput{Label: strings.Repeat("a", 51)}, "label"},
-		{"rent cannot be zero", UnitInput{Label: "Kamar 1", DefaultRent: rent(0)}, "defaultRent"},
-		{"rent cannot be negative", UnitInput{Label: "Kamar 1", DefaultRent: rent(-5)}, "defaultRent"},
+		{"label and a priced term", UnitInput{Label: " Kamar 11 ", Terms: []TermInput{{Months: 1, Price: rent(1_250_000)}}}, "", "", []int{1}},
+		{"terms are optional", UnitInput{Label: "Kamar 1"}, "", "", nil},
+		{"a term without a price", UnitInput{Label: "Kamar 1", Terms: []TermInput{{Months: 12}}}, "", "", []int{12}},
+		{"terms come back sorted", UnitInput{Label: "Kamar 1", Terms: []TermInput{{Months: 12}, {Months: 1}, {Months: 6}}}, "", "", []int{1, 6, 12}},
+		{"label is required", UnitInput{Label: " "}, "label", "", nil},
+		{"label has a limit", UnitInput{Label: strings.Repeat("a", 51)}, "label", "", nil},
+		{"an empty list of terms", UnitInput{Label: "Kamar 1", Terms: []TermInput{}}, "terms", "Pilih paling sedikit satu jangka sewa.", nil},
+		{"an unknown term", UnitInput{Label: "Kamar 1", Terms: []TermInput{{Months: 2}}}, "terms", "Jangka sewa harus 1, 3, 6 atau 12 bulan.", nil},
+		{"a repeated term", UnitInput{Label: "Kamar 1", Terms: []TermInput{{Months: 3}, {Months: 3}}}, "terms", "Jangka sewa 3 bulan tercantum dua kali.", nil},
+		{"a zero price", UnitInput{Label: "Kamar 1", Terms: []TermInput{{Months: 1, Price: rent(0)}}}, "terms", "Harga sewa harus lebih dari Rp0.", nil},
+		{"a negative price", UnitInput{Label: "Kamar 1", Terms: []TermInput{{Months: 1, Price: rent(-5)}}}, "terms", "Harga sewa harus lebih dari Rp0.", nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,11 +72,56 @@ func TestValidUnit(t *testing.T) {
 			if tc.wantField == "" {
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(tc.in.Label), got.Label)
+				var months []int
+				for _, term := range got.Terms {
+					months = append(months, term.Months)
+				}
+				require.Equal(t, tc.wantTerms, months)
+				return
+			}
+			var inputErr *InputError
+			require.ErrorAs(t, err, &inputErr)
+			require.Equal(t, tc.wantField, inputErr.Field)
+			if tc.wantMsg != "" {
+				require.Equal(t, tc.wantMsg, inputErr.Message)
+			}
+		})
+	}
+}
+
+func TestValidPrice(t *testing.T) {
+	t.Parallel()
+	from := time.Date(2027, 1, 1, 15, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		in        PriceInput
+		wantField string
+	}{
+		{"a valid price", PriceInput{Months: 12, Amount: 16_000_000, EffectiveFrom: from}, ""},
+		{"an unknown term", PriceInput{Months: 2, Amount: 1, EffectiveFrom: from}, "months"},
+		{"no term", PriceInput{Amount: 1, EffectiveFrom: from}, "months"},
+		{"a zero amount", PriceInput{Months: 1, EffectiveFrom: from}, "amount"},
+		{"no date", PriceInput{Months: 1, Amount: 1}, "effectiveFrom"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ValidPrice(tc.in)
+			if tc.wantField == "" {
+				require.NoError(t, err)
+				require.Equal(t, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), got.EffectiveFrom)
 				return
 			}
 			var inputErr *InputError
 			require.ErrorAs(t, err, &inputErr)
 			require.Equal(t, tc.wantField, inputErr.Field)
 		})
+	}
+}
+
+func TestDefaultTerms(t *testing.T) {
+	t.Parallel()
+	for kind, want := range map[string][]int{KindRuko: {12}, KindKos: {1}, KindKontrakan: {1}, KindOther: {1}} {
+		require.Equal(t, want, DefaultTerms(kind), kind)
 	}
 }

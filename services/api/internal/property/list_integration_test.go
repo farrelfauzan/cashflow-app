@@ -42,7 +42,7 @@ func TestPropertyAndUnitLists(t *testing.T) {
 	melati1 := props[1]
 	var wantLabels []string
 	for _, n := range []int{12, 2, 1, 11, 3, 10, 4, 5, 6, 7, 8, 9} {
-		_, err := env.Properties.CreateUnit(ctx, admin, melati1.ID, property.UnitInput{Label: fmt.Sprintf("Kamar %d", n), DefaultRent: rent(750_000)})
+		_, err := env.Properties.CreateUnit(ctx, admin, melati1.ID, property.UnitInput{Label: fmt.Sprintf("Kamar %d", n), Terms: testenv.Monthly(750_000)})
 		require.NoError(t, err)
 	}
 	for n := 1; n <= 12; n++ {

@@ -48,14 +48,20 @@ func bulananOrg() orgSpec {
 	karyawan := func(phone, name string, disabled bool) staffSpec {
 		return staffSpec{Phone: phone, Name: name, Grants: orgWide(authz.RoleKaryawan), Disabled: disabled}
 	}
+	// Each leased unit is let by the month at its own price, which the lease helpers record.
+	unitTerms := map[string]map[string][]termSpec{propBulananKos: {}, propBulananKontrak: {}, propBulananRuko: {}}
+	lease := func(prop, unit string, start time.Time, rent int64, collector string) leaseSpec {
+		unitTerms[prop][unit] = monthly(rent)
+		return leaseSpec{Property: prop, Unit: unit, Start: start, Collector: collector}
+	}
 	kos := func(unit string, start time.Time, rent int64, collector string) leaseSpec {
-		return leaseSpec{Property: propBulananKos, Unit: unit, Start: start, Rent: rent, Collector: collector}
+		return lease(propBulananKos, unit, start, rent, collector)
 	}
 	kontrakan := func(unit string, start time.Time, rent int64, collector string) leaseSpec {
-		return leaseSpec{Property: propBulananKontrak, Unit: unit, Start: start, Rent: rent, Collector: collector}
+		return lease(propBulananKontrak, unit, start, rent, collector)
 	}
 	ruko := func(unit string, start time.Time, rent int64, collector string) leaseSpec {
-		return leaseSpec{Property: propBulananRuko, Unit: unit, Start: start, Rent: rent, Collector: collector}
+		return lease(propBulananRuko, unit, start, rent, collector)
 	}
 	ended := func(l leaseSpec, lastDay time.Time) leaseSpec {
 		l.MovedOut = lastDay
@@ -63,6 +69,63 @@ func bulananOrg() orgSpec {
 	}
 	solo := func(name, phone string, l leaseSpec) tenantSpec {
 		return tenantSpec{Name: name, Phone: phone, Leases: []leaseSpec{l}}
+	}
+
+	tenants := []tenantSpec{
+		// Kos Sejahtera Utama: 22 running leases (Kamar 7 and 14 are collected by Eko, who has left).
+		solo("Andi Pratama", "0813-0009-0001", kos("Kamar 1", day(2025, 11, 1), 850_000, anton)),
+		solo("Bagas Aditya", "0813-0009-0002", kos("Kamar 2", day(2025, 12, 1), 850_000, anton)),
+		solo("Cahyo Wibowo", "0813-0009-0003", kos("Kamar 3", day(2026, 1, 10), 900_000, dewi)),
+		solo("Dian Permata Sari", "0813-0009-0004", kos("Kamar 4", day(2026, 1, 15), 900_000, dewi)),
+		solo("Eka Putri Ramadhani", "0813-0009-0005", kos("Kamar 5", day(2026, 2, 1), 900_000, "")),
+		solo("Farhan Maulana", "0813-0009-0006", kos("Kamar 6", day(2026, 2, 20), 950_000, fitri)),
+		solo("Gita Savitri", "0813-0009-0007", kos("Kamar 7", day(2026, 3, 1), 900_000, disEko)),
+		solo("Hadi Susanto", "0813-0009-0008", kos("Kamar 8", day(2026, 3, 5), 900_000, fitri)),
+		solo("Indah Kusuma Wardani", "0813-0009-0009", kos("Kamar 9", day(2026, 3, 25), 1_000_000, galih)),
+		solo("Joni Hermawan", "0813-0009-0010", kos("Kamar 10", day(2026, 4, 1), 900_000, galih)),
+		solo("Kartika Dewi", "0813-0009-0011", kos("Kamar 11", day(2026, 4, 12), 900_000, heni)),
+		solo("Lukman Hakim", "0813-0009-0012", kos("Kamar 12", day(2026, 5, 1), 850_000, "")),
+		solo("Maya Anggraeni", "0813-0009-0013", kos("Kamar 13", day(2026, 5, 17), 1_000_000, heni)),
+		solo("Nanda Ardiansyah", "0813-0009-0014", kos("Kamar 14", day(2026, 6, 1), 900_000, disEko)),
+		solo("Oky Firmansyah", "0813-0009-0015", kos("Kamar 15", day(2026, 6, 8), 900_000, juwita)),
+		solo("Putri Rahayu", "0813-0009-0016", kos("Kamar 16", day(2026, 7, 1), 950_000, juwita)),
+		solo("Qori Amalia", "0813-0009-0017", kos("Kamar 17", day(2026, 7, 14), 900_000, kurnia)),
+		solo("Rizki Ananda", "0813-0009-0018", kos("Kamar 18", day(2026, 8, 1), 850_000, kurnia)),
+		solo("Sinta Maharani", "0813-0009-0019", kos("Kamar 19", day(2026, 8, 20), 900_000, lina)),
+		solo("Tegar Wijaya", "0813-0009-0020", kos("Kamar 20", day(2026, 9, 1), 900_000, lina)),
+		solo("Umi Kulsum", "0813-0009-0021", kos("Kamar 21", day(2026, 9, 15), 1_100_000, anton)),
+		solo("Vina Oktaviani", "0813-0009-0022", kos("Kamar 22", day(2026, 10, 1), 900_000, "")),
+		// Three bookings, far enough ahead to stay in the future.
+		solo("Wahyu Hidayat", "0813-0009-0023", kos("Kamar 23", bookedJune2027, 900_000, "")),
+		solo("Yoga Permana", "0813-0009-0024", kos("Kamar 24", bookedJune2027, 900_000, dewi)),
+		solo("Zahra Nabila", "0813-0009-0025", kos("Kamar 25", bookedJuly2027, 950_000, "")),
+		// Two tenants who moved out.
+		solo("Agung Laksono", "0813-0009-0026", ended(kos("Kamar 26", day(2026, 2, 1), 900_000, ""), day(2026, 8, 31))),
+		solo("Bella Safitri", "0813-0009-0027", ended(kos("Kamar 27", day(2025, 10, 1), 850_000, ""), day(2026, 9, 30))),
+		// Two with no lease yet.
+		{Name: "Dhea Ananda Putri", Phone: "0813-0009-0028"},
+		{Name: "Eri Kurniawan", Phone: "0813-0009-0029"},
+
+		// Kontrakan Seturan, the property Mbak Lestari is limited to: nine tenants, Heri's
+		// collector is Imam, who has left.
+		solo("Fitriani Nur Hasanah", "0813-0009-0030", kontrakan("Rumah 1", day(2026, 1, 1), 1_750_000, anton)),
+		solo("Gunawan Santoso", "0813-0009-0031", kontrakan("Rumah 2", day(2026, 2, 1), 1_750_000, dewi)),
+		solo("Heri Setiawan", "0813-0009-0032", kontrakan("Rumah 3", day(2026, 3, 15), 1_800_000, disImam)),
+		solo("Irfan Hakim", "0813-0009-0033", kontrakan("Rumah 4", day(2026, 5, 1), 1_750_000, fitri)),
+		solo("Jumiati", "0813-0009-0034", kontrakan("Rumah 5", day(2026, 6, 10), 1_500_000, "")),
+		solo("Kurniawan Adi", "0813-0009-0035", kontrakan("Rumah 6", day(2026, 8, 1), 1_750_000, galih)),
+		solo("Laila Fitria", "0813-0009-0036", kontrakan("Rumah 7", day(2026, 9, 1), 2_000_000, heni)),
+		solo("Mulyadi", "0813-0009-0037", kontrakan("Rumah 8", bookedJune2027, 1_750_000, "")),
+		solo("Novita Rahmawati", "0813-0009-0038", ended(kontrakan("Rumah 9", day(2026, 1, 1), 1_750_000, ""), day(2026, 9, 30))),
+
+		// Ruko Condongcatur.
+		solo("Toko Berkah Jaya (Koh Aming)", "0813-0009-0039", ruko("Ruko 1", day(2025, 10, 1), 5_000_000, kurnia)),
+		solo("Warung Makan Bu Tini", "0813-0009-0040", ruko("Ruko 2", day(2026, 3, 1), 3_750_000, lina)),
+		solo("Klinik Sehat Sentosa", "0813-0009-0041", ruko("Ruko 3", day(2026, 4, 15), 6_500_000, "")),
+		solo("Laundry Kilat (Pak Darmawan)", "0813-0009-0042", ruko("Ruko 4", day(2026, 7, 1), 4_500_000, juwita)),
+		solo("Barbershop Gaya Muda", "0813-0009-0043", ruko("Ruko 5", bookedJuly2027, 5_000_000, "")),
+		solo("Fotokopi Maju Terus", "0813-0009-0044", ended(ruko("Ruko 6", day(2025, 11, 1), 4_000_000, ""), day(2026, 9, 30))),
+		{Name: "Apotek Waras Medika", Phone: "0813-0009-0045"},
 	}
 
 	return orgSpec{
@@ -110,73 +173,18 @@ func bulananOrg() orgSpec {
 		Properties: append([]propertySpec{
 			{
 				Name: propBulananKos, Kind: property.KindKos, Address: "Jl. Kaliurang Km 8,5 No. 30, Sleman, Yogyakarta",
-				Units: units("Kamar", 1, 30), Rent: 900_000,
+				Units: units("Kamar", 1, 30), Terms: monthly(900_000), UnitTerms: unitTerms[propBulananKos],
 			},
 			{
 				Name: propBulananKontrak, Kind: property.KindKontrakan, Address: "Jl. Seturan Raya No. 14, Sleman, Yogyakarta",
-				Units: units("Rumah", 1, 12), Rent: 1_750_000,
+				Units: units("Rumah", 1, 12), Terms: monthly(1_750_000), UnitTerms: unitTerms[propBulananKontrak],
 			},
 			{
 				Name: propBulananRuko, Kind: property.KindRuko, Address: "Jl. Raya Condongcatur No. 52, Sleman, Yogyakarta",
-				Units: units("Ruko", 1, 6), Rent: 5_000_000,
+				Units: units("Ruko", 1, 6), Terms: monthly(5_000_000), UnitTerms: unitTerms[propBulananRuko],
 			},
 		}, bulananSmallProperties()...),
-		Tenants: []tenantSpec{
-			// Kos Sejahtera Utama: 22 running leases (Kamar 7 and 14 are collected by Eko, who has left).
-			solo("Andi Pratama", "0813-0009-0001", kos("Kamar 1", day(2025, 11, 1), 850_000, anton)),
-			solo("Bagas Aditya", "0813-0009-0002", kos("Kamar 2", day(2025, 12, 1), 850_000, anton)),
-			solo("Cahyo Wibowo", "0813-0009-0003", kos("Kamar 3", day(2026, 1, 10), 900_000, dewi)),
-			solo("Dian Permata Sari", "0813-0009-0004", kos("Kamar 4", day(2026, 1, 15), 900_000, dewi)),
-			solo("Eka Putri Ramadhani", "0813-0009-0005", kos("Kamar 5", day(2026, 2, 1), 900_000, "")),
-			solo("Farhan Maulana", "0813-0009-0006", kos("Kamar 6", day(2026, 2, 20), 950_000, fitri)),
-			solo("Gita Savitri", "0813-0009-0007", kos("Kamar 7", day(2026, 3, 1), 900_000, disEko)),
-			solo("Hadi Susanto", "0813-0009-0008", kos("Kamar 8", day(2026, 3, 5), 900_000, fitri)),
-			solo("Indah Kusuma Wardani", "0813-0009-0009", kos("Kamar 9", day(2026, 3, 25), 1_000_000, galih)),
-			solo("Joni Hermawan", "0813-0009-0010", kos("Kamar 10", day(2026, 4, 1), 900_000, galih)),
-			solo("Kartika Dewi", "0813-0009-0011", kos("Kamar 11", day(2026, 4, 12), 900_000, heni)),
-			solo("Lukman Hakim", "0813-0009-0012", kos("Kamar 12", day(2026, 5, 1), 850_000, "")),
-			solo("Maya Anggraeni", "0813-0009-0013", kos("Kamar 13", day(2026, 5, 17), 1_000_000, heni)),
-			solo("Nanda Ardiansyah", "0813-0009-0014", kos("Kamar 14", day(2026, 6, 1), 900_000, disEko)),
-			solo("Oky Firmansyah", "0813-0009-0015", kos("Kamar 15", day(2026, 6, 8), 900_000, juwita)),
-			solo("Putri Rahayu", "0813-0009-0016", kos("Kamar 16", day(2026, 7, 1), 950_000, juwita)),
-			solo("Qori Amalia", "0813-0009-0017", kos("Kamar 17", day(2026, 7, 14), 900_000, kurnia)),
-			solo("Rizki Ananda", "0813-0009-0018", kos("Kamar 18", day(2026, 8, 1), 850_000, kurnia)),
-			solo("Sinta Maharani", "0813-0009-0019", kos("Kamar 19", day(2026, 8, 20), 900_000, lina)),
-			solo("Tegar Wijaya", "0813-0009-0020", kos("Kamar 20", day(2026, 9, 1), 900_000, lina)),
-			solo("Umi Kulsum", "0813-0009-0021", kos("Kamar 21", day(2026, 9, 15), 1_100_000, anton)),
-			solo("Vina Oktaviani", "0813-0009-0022", kos("Kamar 22", day(2026, 10, 1), 900_000, "")),
-			// Three bookings, far enough ahead to stay in the future.
-			solo("Wahyu Hidayat", "0813-0009-0023", kos("Kamar 23", bookedJune2027, 900_000, "")),
-			solo("Yoga Permana", "0813-0009-0024", kos("Kamar 24", bookedJune2027, 900_000, dewi)),
-			solo("Zahra Nabila", "0813-0009-0025", kos("Kamar 25", bookedJuly2027, 950_000, "")),
-			// Two tenants who moved out.
-			solo("Agung Laksono", "0813-0009-0026", ended(kos("Kamar 26", day(2026, 2, 1), 900_000, ""), day(2026, 8, 31))),
-			solo("Bella Safitri", "0813-0009-0027", ended(kos("Kamar 27", day(2025, 10, 1), 850_000, ""), day(2026, 9, 30))),
-			// Two with no lease yet.
-			{Name: "Dhea Ananda Putri", Phone: "0813-0009-0028"},
-			{Name: "Eri Kurniawan", Phone: "0813-0009-0029"},
-
-			// Kontrakan Seturan, the property Mbak Lestari is limited to: nine tenants, Heri's
-			// collector is Imam, who has left.
-			solo("Fitriani Nur Hasanah", "0813-0009-0030", kontrakan("Rumah 1", day(2026, 1, 1), 1_750_000, anton)),
-			solo("Gunawan Santoso", "0813-0009-0031", kontrakan("Rumah 2", day(2026, 2, 1), 1_750_000, dewi)),
-			solo("Heri Setiawan", "0813-0009-0032", kontrakan("Rumah 3", day(2026, 3, 15), 1_800_000, disImam)),
-			solo("Irfan Hakim", "0813-0009-0033", kontrakan("Rumah 4", day(2026, 5, 1), 1_750_000, fitri)),
-			solo("Jumiati", "0813-0009-0034", kontrakan("Rumah 5", day(2026, 6, 10), 1_500_000, "")),
-			solo("Kurniawan Adi", "0813-0009-0035", kontrakan("Rumah 6", day(2026, 8, 1), 1_750_000, galih)),
-			solo("Laila Fitria", "0813-0009-0036", kontrakan("Rumah 7", day(2026, 9, 1), 2_000_000, heni)),
-			solo("Mulyadi", "0813-0009-0037", kontrakan("Rumah 8", bookedJune2027, 1_750_000, "")),
-			solo("Novita Rahmawati", "0813-0009-0038", ended(kontrakan("Rumah 9", day(2026, 1, 1), 1_750_000, ""), day(2026, 9, 30))),
-
-			// Ruko Condongcatur.
-			solo("Toko Berkah Jaya (Koh Aming)", "0813-0009-0039", ruko("Ruko 1", day(2025, 10, 1), 5_000_000, kurnia)),
-			solo("Warung Makan Bu Tini", "0813-0009-0040", ruko("Ruko 2", day(2026, 3, 1), 3_750_000, lina)),
-			solo("Klinik Sehat Sentosa", "0813-0009-0041", ruko("Ruko 3", day(2026, 4, 15), 6_500_000, "")),
-			solo("Laundry Kilat (Pak Darmawan)", "0813-0009-0042", ruko("Ruko 4", day(2026, 7, 1), 4_500_000, juwita)),
-			solo("Barbershop Gaya Muda", "0813-0009-0043", ruko("Ruko 5", bookedJuly2027, 5_000_000, "")),
-			solo("Fotokopi Maju Terus", "0813-0009-0044", ended(ruko("Ruko 6", day(2025, 11, 1), 4_000_000, ""), day(2026, 9, 30))),
-			{Name: "Apotek Waras Medika", Phone: "0813-0009-0045"},
-		},
+		Tenants: tenants,
 	}
 }
 
@@ -184,13 +192,13 @@ func bulananOrg() orgSpec {
 // words on purpose ("Melati", "Cempaka"), so a name search finds several.
 func bulananSmallProperties() []propertySpec {
 	kos := func(name, address string, rooms int, rent int64) propertySpec {
-		return propertySpec{Name: name, Kind: property.KindKos, Address: address, Units: units("Kamar", 1, rooms), Rent: rent}
+		return propertySpec{Name: name, Kind: property.KindKos, Address: address, Units: units("Kamar", 1, rooms), Terms: monthly(rent)}
 	}
 	kontrakan := func(name, address string, houses int, rent int64) propertySpec {
-		return propertySpec{Name: name, Kind: property.KindKontrakan, Address: address, Units: units("Rumah", 1, houses), Rent: rent}
+		return propertySpec{Name: name, Kind: property.KindKontrakan, Address: address, Units: units("Rumah", 1, houses), Terms: monthly(rent)}
 	}
 	ruko := func(name, address string, shops int, rent int64) propertySpec {
-		return propertySpec{Name: name, Kind: property.KindRuko, Address: address, Units: units("Ruko", 1, shops), Rent: rent}
+		return propertySpec{Name: name, Kind: property.KindRuko, Address: address, Units: units("Ruko", 1, shops), Terms: monthly(rent)}
 	}
 	return []propertySpec{
 		kos("Kos Melati 2", "Jl. Kaliurang Km 6 No. 3, Sleman", 3, 800_000),
@@ -216,7 +224,7 @@ func bulananSmallProperties() []propertySpec {
 		ruko("Ruko Jakal Km 7", "Jl. Kaliurang Km 7 No. 50, Sleman", 2, 6_000_000),
 		{
 			Name: "Paviliun Sinduadi", Kind: property.KindOther, Address: "Jl. Sinduadi No. 3, Sleman",
-			Units: []string{"Paviliun 1"}, Rent: 2_000_000,
+			Units: []string{"Paviliun 1"}, Terms: monthly(2_000_000),
 		},
 	}
 }

@@ -38,7 +38,7 @@ LEFT JOIN staff_user su ON su.id = l.collector_staff_user_id
 WHERE l.organization_id = $1 AND l.id = $2;
 
 -- name: CreateLease :exec
-INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, rent_amount, deposit_amount,
+INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, term_months, deposit_amount,
                    collector_staff_user_id, entered_on, billed_from)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
@@ -50,9 +50,10 @@ WHERE organization_id = $1 AND id = $2
 FOR UPDATE;
 
 -- name: UpdateLeaseTerms :execrows
--- Only an active lease changes. Unit and tenant never change: end the lease and start another.
-UPDATE lease SET start_date = $3, rent_amount = $4, deposit_amount = $5,
-       collector_staff_user_id = $6, billed_from = $7, updated_at = now()
+-- Only an active lease changes. Unit, tenant and term never change: end the lease and start
+-- another.
+UPDATE lease SET start_date = $3, deposit_amount = $4,
+       collector_staff_user_id = $5, billed_from = $6, updated_at = now()
 WHERE organization_id = $1 AND id = $2 AND status = 'active';
 
 -- name: SetLeasePlannedEnd :execrows

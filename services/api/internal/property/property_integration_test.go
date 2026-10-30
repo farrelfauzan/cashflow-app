@@ -93,7 +93,7 @@ func TestPropertiesAndUnits(t *testing.T) {
 	var kamar2 property.Unit
 	t.Run("an admin adds units, listed in natural order", func(t *testing.T) {
 		for _, label := range []string{"Kamar 11", "Kamar 2", "Kamar 1"} {
-			u, err := env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label, DefaultRent: rent(850_000)})
+			u, err := env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label, Terms: testenv.Monthly(850_000)})
 			require.NoError(t, err)
 			if label == "Kamar 2" {
 				kamar2 = u
@@ -102,7 +102,9 @@ func TestPropertiesAndUnits(t *testing.T) {
 		units, err := env.AllUnits(ctx, admin, melati.ID)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Kamar 1", "Kamar 2", "Kamar 11"}, labels(units))
-		require.Equal(t, int64(850_000), *units[0].DefaultRent)
+		require.Len(t, units[0].Terms, 1)
+		require.Equal(t, 1, units[0].Terms[0].Months)
+		require.Equal(t, int64(850_000), *units[0].Terms[0].Price)
 
 		props, err := env.AllProperties(ctx, admin)
 		require.NoError(t, err)
@@ -124,16 +126,66 @@ func TestPropertiesAndUnits(t *testing.T) {
 		require.NoError(t, err, "another property may use the same label")
 	})
 
-	t.Run("an admin changes a unit's label and rent", func(t *testing.T) {
-		u, err := env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{Label: "Kamar 2A", DefaultRent: rent(900_000)})
+	t.Run("a new unit without terms offers its property kind's default, unpriced", func(t *testing.T) {
+		props, err := env.AllProperties(ctx, admin)
+		require.NoError(t, err)
+		kinds := map[string]uuid.UUID{}
+		for _, p := range props {
+			kinds[p.Kind] = p.ID
+		}
+		for kind, want := range map[string]int{property.KindRuko: 12, property.KindKos: 1} {
+			u, err := env.Properties.CreateUnit(ctx, admin, kinds[kind], property.UnitInput{Label: "Baru " + kind})
+			require.NoError(t, err)
+			require.Equal(t, []property.UnitTerm{{Months: want}}, u.Terms, kind)
+		}
+	})
+
+	t.Run("an admin changes a unit's label, terms and prices", func(t *testing.T) {
+		history := func() []property.UnitPrice {
+			t.Helper()
+			h, err := env.Properties.ListUnitPrices(ctx, admin, kamar2.ID)
+			require.NoError(t, err)
+			return h
+		}
+		require.Len(t, history(), 1, "the price given at creation")
+
+		u, err := env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{
+			Label: "Kamar 2A", Terms: []property.TermInput{{Months: 1, Price: rent(900_000)}},
+		})
 		require.NoError(t, err)
 		require.Equal(t, "Kamar 2A", u.Label)
-		require.Equal(t, int64(900_000), *u.DefaultRent)
+		require.Equal(t, int64(900_000), *u.Terms[0].Price)
 		require.Equal(t, melati.ID, u.PropertyID)
+		require.Len(t, history(), 2, "a different price adds a row")
 
 		u, err = env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{Label: "Kamar 2A"})
 		require.NoError(t, err)
-		require.Nil(t, u.DefaultRent, "the default rent can be cleared")
+		require.Equal(t, []property.UnitTerm{{Months: 1, Price: rent(900_000)}}, u.Terms, "no terms keeps terms and prices")
+
+		u, err = env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{
+			Label: "Kamar 2A", Terms: []property.TermInput{{Months: 12, Price: rent(10_000_000)}, {Months: 1, Price: rent(900_000)}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []property.UnitTerm{
+			{Months: 1, Price: rent(900_000)}, {Months: 12, Price: rent(10_000_000)},
+		}, u.Terms, "terms come back sorted")
+		require.Len(t, history(), 3, "the same price adds nothing, a new term's price one row")
+
+		u, err = env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{Label: "Kamar 2A", Terms: []property.TermInput{{Months: 12}}})
+		require.NoError(t, err)
+		require.Equal(t, []property.UnitTerm{{Months: 12, Price: rent(10_000_000)}}, u.Terms, "a term can be switched off")
+
+		for name, terms := range map[string][]property.TermInput{
+			"no terms":     {},
+			"a repeat":     {{Months: 1}, {Months: 1}},
+			"an odd term":  {{Months: 2}},
+			"a zero price": {{Months: 1, Price: rent(0)}},
+		} {
+			_, err := env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{Label: "Kamar 2A", Terms: terms})
+			var inputErr *property.InputError
+			require.ErrorAs(t, err, &inputErr, name)
+			require.Equal(t, "terms", inputErr.Field, name)
+		}
 
 		_, err = env.Properties.UpdateUnit(ctx, admin, kamar2.ID, property.UnitInput{Label: "Kamar 1"})
 		require.ErrorIs(t, err, property.ErrLabelTaken)
@@ -163,8 +215,8 @@ func TestPropertiesAndUnits(t *testing.T) {
 			require.Equal(t, field, inputErr.Field)
 		}
 		units := map[string]property.UnitInput{
-			"label":       {Label: ""},
-			"defaultRent": {Label: "Kamar 9", DefaultRent: rent(0)},
+			"label": {Label: ""},
+			"terms": {Label: "Kamar 9", Terms: []property.TermInput{}},
 		}
 		for field, in := range units {
 			_, err := env.Properties.CreateUnit(ctx, admin, melati.ID, in)
@@ -188,6 +240,17 @@ func TestPropertiesAndUnits(t *testing.T) {
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		_, err = env.Properties.UpdateUnit(ctx, supervisor, kamar2.ID, property.UnitInput{Label: "Kamar 2B"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
+
+		prices, err := env.Properties.ListUnitPrices(ctx, supervisor, kamar2.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, prices)
+		_, err = env.Properties.CreateUnitPrice(ctx, supervisor, kamar2.ID, property.PriceInput{
+			Months: 12, Amount: 11_000_000, EffectiveFrom: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		})
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		audit := env.AuditLog(t, o.ID)
+		require.Equal(t, "deny", audit[0].Decision)
+		require.Equal(t, "unit:manage", audit[0].Action)
 	})
 
 	t.Run("a karyawan cannot list properties, and the attempt is audited", func(t *testing.T) {
@@ -246,8 +309,15 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 	})
 
 	t.Run("she manages units in Kos Melati", func(t *testing.T) {
-		u, err := env.Properties.CreateUnit(ctx, limited, melati.ID, property.UnitInput{Label: "Kamar 1", DefaultRent: rent(750_000)})
+		u, err := env.Properties.CreateUnit(ctx, limited, melati.ID, property.UnitInput{Label: "Kamar 1", Terms: testenv.Monthly(750_000)})
 		require.NoError(t, err)
+		_, err = env.Properties.CreateUnitPrice(ctx, limited, u.ID, property.PriceInput{
+			Months: 1, Amount: 800_000, EffectiveFrom: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		})
+		require.NoError(t, err)
+		prices, err := env.Properties.ListUnitPrices(ctx, limited, u.ID)
+		require.NoError(t, err)
+		require.Len(t, prices, 2)
 		_, err = env.Properties.UpdateUnit(ctx, limited, u.ID, property.UnitInput{Label: "Kamar 01"})
 		require.NoError(t, err)
 		_, err = env.Properties.Update(ctx, limited, melati.ID, property.PropertyInput{Name: "Kos Melati Baru", Kind: property.KindKos})
@@ -263,6 +333,16 @@ func TestAdminLimitedToOneProperty(t *testing.T) {
 		require.ErrorIs(t, err, authz.ErrForbidden)
 		_, err = env.Properties.UpdateUnit(ctx, limited, mawarUnit.ID, property.UnitInput{Label: "Rumah Z"})
 		require.ErrorIs(t, err, authz.ErrForbidden)
+		_, err = env.Properties.ListUnitPrices(ctx, limited, mawarUnit.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		_, err = env.Properties.CreateUnitPrice(ctx, limited, mawarUnit.ID, property.PriceInput{
+			Months: 1, Amount: 1_600_000, EffectiveFrom: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		})
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		audit := env.AuditLog(t, o.ID)
+		require.Equal(t, "deny", audit[0].Decision)
+		require.Equal(t, "unit:manage", audit[0].Action)
+		require.Equal(t, sari.UserID, audit[0].ActorStaffUserID.UUID)
 		_, err = env.Properties.Update(ctx, limited, mawar.ID, property.PropertyInput{Name: "X", Kind: property.KindKos})
 		require.ErrorIs(t, err, authz.ErrForbidden)
 	})
@@ -329,7 +409,11 @@ func TestPropertiesStayInsideTheirOrganization(t *testing.T) {
 
 	propB, err := env.Properties.Create(ctx, adminB, property.PropertyInput{Name: "Mawar", Kind: property.KindKontrakan})
 	require.NoError(t, err)
-	unitB, err := env.Properties.CreateUnit(ctx, adminB, propB.ID, property.UnitInput{Label: "Rumah 1"})
+	unitB, err := env.Properties.CreateUnit(ctx, adminB, propB.ID, property.UnitInput{Label: "Rumah 1", Terms: testenv.Monthly(1_500_000)})
+	require.NoError(t, err)
+	_, err = env.Properties.CreateUnitPrice(ctx, adminB, unitB.ID, property.PriceInput{
+		Months: 1, Amount: 1_600_000, EffectiveFrom: day(2027, 1, 1),
+	})
 	require.NoError(t, err)
 	_, err = env.Properties.Create(ctx, adminA, property.PropertyInput{Name: "Melati", Kind: property.KindKos})
 	require.NoError(t, err)
@@ -351,12 +435,16 @@ func TestPropertiesStayInsideTheirOrganization(t *testing.T) {
 		require.ErrorIs(t, err, property.ErrNotFound)
 		_, err = env.Properties.UpdateUnit(ctx, adminA, unitB.ID, property.UnitInput{Label: "Diambil"})
 		require.ErrorIs(t, err, property.ErrNotFound)
+		_, err = env.Properties.ListUnitPrices(ctx, adminA, unitB.ID)
+		require.ErrorIs(t, err, property.ErrNotFound)
+		_, err = env.Properties.CreateUnitPrice(ctx, adminA, unitB.ID, property.PriceInput{Months: 1, Amount: 1, EffectiveFrom: day(2027, 1, 1)})
+		require.ErrorIs(t, err, property.ErrNotFound)
 	})
 
 	t.Run("the database refuses a unit in another organization's property", func(t *testing.T) {
 		err := env.Store.WithOrgTx(ctx, a.ID, func(tx pgx.Tx) error {
 			_, err := dbgen.New(tx).CreateUnit(ctx, dbgen.CreateUnitParams{
-				ID: uuid.New(), OrganizationID: a.ID, PropertyID: propB.ID, Label: "Selundupan",
+				ID: uuid.New(), OrganizationID: a.ID, PropertyID: propB.ID, Label: "Selundupan", Terms: []int16{1},
 			})
 			return err
 		})
@@ -395,6 +483,7 @@ func TestPropertiesStayInsideTheirOrganization(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, tables, "property")
 		require.Contains(t, tables, "unit")
+		require.Contains(t, tables, "unit_price")
 
 		for _, table := range tables {
 			err := env.Store.WithOrgTx(ctx, a.ID, func(tx pgx.Tx) error {
@@ -450,18 +539,18 @@ func TestUnitOccupancy(t *testing.T) {
 	require.NoError(t, err)
 	units := map[string]property.Unit{}
 	for _, label := range []string{"Kamar 1", "Kamar 2", "Kamar 3", "Kamar 4"} {
-		units[label], err = env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label})
+		units[label], err = env.Properties.CreateUnit(ctx, admin, melati.ID, property.UnitInput{Label: label, Terms: testenv.Monthly(850_000)})
 		require.NoError(t, err)
 	}
-	rumahA, err := env.Properties.CreateUnit(ctx, admin, mawar.ID, property.UnitInput{Label: "Rumah A"})
+	rumahA, err := env.Properties.CreateUnit(ctx, admin, mawar.ID, property.UnitInput{Label: "Rumah A", Terms: testenv.Monthly(1_500_000)})
 	require.NoError(t, err)
 
 	rent := func(name, phone string, unit property.Unit, start time.Time, collector uuid.UUID) tenant.Lease {
 		t.Helper()
 		tn, err := env.Tenants.Create(ctx, admin, tenant.Input{Name: name, Phone: phone})
 		require.NoError(t, err)
-		l, err := env.Tenants.CreateLease(ctx, admin, tenant.NewLease{TenantID: tn.ID, UnitID: unit.ID, Terms: tenant.Terms{
-			StartDate: start, RentAmount: 850_000, CollectorMemberID: collector,
+		l, err := env.Tenants.CreateLease(ctx, admin, tenant.NewLease{TenantID: tn.ID, UnitID: unit.ID, TermMonths: 1, Terms: tenant.Terms{
+			StartDate: start, CollectorMemberID: collector,
 		}})
 		require.NoError(t, err)
 		return l
@@ -516,7 +605,7 @@ func TestUnitOccupancy(t *testing.T) {
 	})
 
 	t.Run("a unit that is updated keeps its occupancy", func(t *testing.T) {
-		u, err := env.Properties.UpdateUnit(ctx, admin, units["Kamar 1"].ID, property.UnitInput{Label: "Kamar 1", DefaultRent: new(int64(850_000))})
+		u, err := env.Properties.UpdateUnit(ctx, admin, units["Kamar 1"].ID, property.UnitInput{Label: "Kamar 1", Terms: testenv.Monthly(900_000)})
 		require.NoError(t, err)
 		require.True(t, u.Occupied)
 		require.NotNil(t, u.CurrentTenant)
@@ -608,12 +697,12 @@ func TestUnitOccupancy(t *testing.T) {
 		prop, err := env.Properties.Create(ctx, otherAdmin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
 		require.NoError(t, err)
 		for i, label := range []string{"Kamar 1", "Kamar 2", "Kamar 3"} {
-			u, err := env.Properties.CreateUnit(ctx, otherAdmin, prop.ID, property.UnitInput{Label: label})
+			u, err := env.Properties.CreateUnit(ctx, otherAdmin, prop.ID, property.UnitInput{Label: label, Terms: testenv.Monthly(700_000)})
 			require.NoError(t, err)
 			tn, err := env.Tenants.Create(ctx, otherAdmin, tenant.Input{Name: "Penyewa Lain", Phone: fmt.Sprintf("0812-6420-000%d", i+1)})
 			require.NoError(t, err)
-			_, err = env.Tenants.CreateLease(ctx, otherAdmin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, Terms: tenant.Terms{
-				StartDate: day(2026, 10, 1), RentAmount: 700_000,
+			_, err = env.Tenants.CreateLease(ctx, otherAdmin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, TermMonths: 1, Terms: tenant.Terms{
+				StartDate: day(2026, 10, 1),
 			}})
 			require.NoError(t, err)
 		}

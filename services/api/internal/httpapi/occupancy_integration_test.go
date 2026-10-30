@@ -25,14 +25,14 @@ func TestOccupancyOverHTTP(t *testing.T) {
 
 	melati, err := env.Properties.Create(ctx, adminP, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
 	require.NoError(t, err)
-	kamar1, err := env.Properties.CreateUnit(ctx, adminP, melati.ID, property.UnitInput{Label: "Kamar 1"})
+	kamar1, err := env.Properties.CreateUnit(ctx, adminP, melati.ID, property.UnitInput{Label: "Kamar 1", Terms: testenv.Monthly(850_000)})
 	require.NoError(t, err)
-	_, err = env.Properties.CreateUnit(ctx, adminP, melati.ID, property.UnitInput{Label: "Kamar 2"})
+	_, err = env.Properties.CreateUnit(ctx, adminP, melati.ID, property.UnitInput{Label: "Kamar 2", Terms: testenv.Monthly(850_000)})
 	require.NoError(t, err)
 	rina, err := env.Tenants.Create(ctx, adminP, tenant.Input{Name: "Rina Wulandari", Phone: "0812-1818-5001"})
 	require.NoError(t, err)
-	_, err = env.Tenants.CreateLease(ctx, adminP, tenant.NewLease{TenantID: rina.ID, UnitID: kamar1.ID, Terms: tenant.Terms{
-		StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), RentAmount: 850_000,
+	_, err = env.Tenants.CreateLease(ctx, adminP, tenant.NewLease{TenantID: rina.ID, UnitID: kamar1.ID, TermMonths: 1, Terms: tenant.Terms{
+		StartDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 	}})
 	require.NoError(t, err)
 

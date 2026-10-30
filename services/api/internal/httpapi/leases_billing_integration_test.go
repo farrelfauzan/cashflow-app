@@ -34,7 +34,7 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 	melati := decode[apigen.Property](t, body)
 	units := map[string]apigen.Unit{}
 	for _, label := range []string{"Kamar 1", "Kamar 2", "Kamar 3", "Kamar 4"} {
-		resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: label})
+		resp, body = admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", apigen.UnitInput{Label: label, Terms: monthly(850_000)})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		units[label] = decode[apigen.Unit](t, body)
 	}
@@ -43,7 +43,7 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 	rina := decode[apigen.Tenant](t, body)
 
 	createLease := func(unit string, extra map[string]any) (result, []byte) {
-		in := map[string]any{"tenantId": rina.Id, "unitId": units[unit].Id, "rentAmount": 850000}
+		in := map[string]any{"tenantId": rina.Id, "unitId": units[unit].Id, "termMonths": 1}
 		for k, v := range extra {
 			in[k] = v
 		}
@@ -97,26 +97,26 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 
 	t.Run("updateLease takes billedFrom, and omitting it keeps the stored one", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{
-			"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": "2026-11-15",
+			"startDate": "2026-09-15", "billedFrom": "2026-11-15",
 		})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`)
 
-		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 950000})
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15"})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
-		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`, "a rent edit keeps the skipped months skipped")
+		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`, "an edit without billedFrom keeps the skipped months skipped")
 		require.Contains(t, string(body), `"enteredOn":"2026-11-02"`)
 
-		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": nil})
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "billedFrom": nil})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"billedFrom":"2026-11-15"`, "null keeps it too")
 
-		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": "2026-09-15"})
+		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{"startDate": "2026-09-15", "billedFrom": "2026-09-15"})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"billedFrom":"2026-09-15"`, "sending the start date bills from it again")
 
 		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{
-			"startDate": "2026-09-15", "rentAmount": 900000, "billedFrom": "2026-12-15",
+			"startDate": "2026-09-15", "billedFrom": "2026-12-15",
 		})
 		requireError(t, resp, body, http.StatusBadRequest, "invalid_input", "billedFrom")
 	})
@@ -156,7 +156,7 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 		resp, body := admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": "2026-11-14"})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		resp, body = admin.do(http.MethodPut, leasePath(lease, ""), map[string]any{
-			"startDate": "2026-11-20", "rentAmount": 900000, "billedFrom": "2026-11-20",
+			"startDate": "2026-11-20", "billedFrom": "2026-11-20",
 		})
 		requireError(t, resp, body, http.StatusBadRequest, "invalid_input", "startDate")
 		resp, body = admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": nil})

@@ -6,11 +6,13 @@ import type {
   LeaseCharge,
   LeaseInput,
   LeaseTerms,
+  TermMonths,
   Unit,
+  UnitTerm,
 } from "@/lib/api/generated/model";
 import { formatDate, formatDayMonth } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
-import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
+import { parseRupiahInput } from "@/lib/format/rupiah";
 import { groupRupiahDigits } from "@/lib/format/rupiah-input";
 
 import type {
@@ -24,7 +26,6 @@ import type {
   DateCheck,
   DateOption,
   EditStartBox,
-  LeaseAmounts,
   LeaseChargesResult,
   LeaseFormErrors,
   LeaseFormField,
@@ -69,9 +70,9 @@ export function addDays(date: string, days: number): string {
   return isoDate(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
-// The anniversary rule mirrors the API's (services/api/internal/tenant/anniversary.go:
-// Anniversary, IsAnniversary, FirstAnniversaryAfter), which stays the judge: its 400 on
-// billedFrom is shown under the field.
+// The period rule mirrors the API's (services/api/internal/tenant/period.go: PeriodStart,
+// PeriodIndex, IsPeriodStart, NextPeriodStart), which stays the judge: its 400 on billedFrom is
+// shown under the field. A period lasts the lease's term, 1, 3, 6 or 12 months.
 
 // The start date plus n months (n >= 0). When that month is shorter than the start day it is the
 // month's last day, always counted from the start date: 31 Jan gives 28 Feb, then 31 Mar.
@@ -91,25 +92,50 @@ function monthsBetween(start: string, date: string): number {
   return (year - startYear) * 12 + (month - startMonth);
 }
 
-// Whether date is the start date or one of its anniversaries.
-export function isAnniversary(start: string, date: string): boolean {
-  if (date < start) return false;
-  return anniversary(start, monthsBetween(start, date)) === date;
+// The day the lease's n-th period (n >= 0) begins: n terms after the start date.
+export function periodStart(
+  start: string,
+  term: TermMonths,
+  n: number,
+): string {
+  return anniversary(start, n * term);
 }
 
-// The first anniversary strictly after date; the start date for a date before it.
-export function firstAnniversaryAfter(start: string, date: string): string {
-  if (date < start) return start;
-  let n = monthsBetween(start, date);
-  while (anniversary(start, n) <= date) n++;
-  return anniversary(start, n);
+// The n of the period date falls in, or -1 for a date before the start.
+function periodIndex(start: string, term: TermMonths, date: string): number {
+  if (date < start) return -1;
+  let n = Math.floor(monthsBetween(start, date) / term);
+  while (n > 0 && periodStart(start, term, n) > date) n--;
+  while (periodStart(start, term, n + 1) <= date) n++;
+  return n;
 }
 
-// The anniversary that begins the period date falls in (date on or after the start).
-export function periodStartOn(start: string, date: string): string {
-  let n = monthsBetween(start, date);
-  while (n > 0 && anniversary(start, n) > date) n--;
-  return anniversary(start, n);
+// Whether date is the first day of one of the lease's periods.
+export function isPeriodStart(
+  start: string,
+  term: TermMonths,
+  date: string,
+): boolean {
+  const n = periodIndex(start, term, date);
+  return n >= 0 && periodStart(start, term, n) === date;
+}
+
+// The first period start strictly after date; the start date for a date before it.
+export function nextPeriodStart(
+  start: string,
+  term: TermMonths,
+  date: string,
+): string {
+  return periodStart(start, term, periodIndex(start, term, date) + 1);
+}
+
+// The start of the period date falls in (date on or after the start).
+export function periodStartOn(
+  start: string,
+  term: TermMonths,
+  date: string,
+): string {
+  return periodStart(start, term, Math.max(periodIndex(start, term, date), 0));
 }
 
 export function startTiming(start: string, today: string): StartTiming {
@@ -118,22 +144,24 @@ export function startTiming(start: string, today: string): StartTiming {
   return "today";
 }
 
-// The later anniversaries "Mulai tagih dari" may pick for a lease that started before the day it
-// is entered: from the second period up to the first anniversary after that day, as the API
-// allows (no later than the first anniversary after the later of the start date and the day it
+// The later period starts "Mulai tagih dari" may pick for a lease that started before the day it
+// is entered: from the second period up to the first period start after that day, as the API
+// allows (no later than the first period start after the later of the start date and the day it
 // is entered). That day is today for a new lease and the lease's enteredOn for one being changed.
 // The start date itself is the first radio choice.
 export function billedFromOptions(
   start: string,
   enteredOn: string,
+  term: TermMonths,
 ): DateOption[] {
-  const latest = firstAnniversaryAfter(
+  const latest = nextPeriodStart(
     start,
+    term,
     enteredOn > start ? enteredOn : start,
   );
   const options: DateOption[] = [];
   for (let n = 1; ; n++) {
-    const date = anniversary(start, n);
+    const date = periodStart(start, term, n);
     if (date > latest) break;
     options.push({ value: date, label: formatDate(date) });
   }
@@ -164,8 +192,9 @@ export function billingExplanation(
   billedFrom: string,
   enteredOn: string,
   today: string,
+  term: TermMonths,
 ): string {
-  const current = periodStartOn(start, enteredOn);
+  const current = periodStartOn(start, term, enteredOn);
   const currentDue = formatDayMonth(addDays(enteredOn, 7));
   const pastDue =
     enteredOn === today
@@ -216,22 +245,35 @@ export function freeUnits(units: readonly Unit[]): Unit[] {
   return units.filter((unit) => !unit.occupied);
 }
 
-// The rent field's starting text for a unit: its usual rent, or nothing.
-export function rentTextFor(
-  unit: Pick<Unit, "defaultRent"> | undefined,
-): string {
-  return unit?.defaultRent === undefined
-    ? ""
-    : groupRupiahDigits(String(unit.defaultRent));
+// The words for one period of a term, after "per": "Sewa per 3 bulan", "Rp15.000.000 per tahun".
+export const TERM_PERIOD_WORDS: Record<TermMonths, string> = {
+  1: "bulan",
+  3: "3 bulan",
+  6: "6 bulan",
+  12: "tahun",
+};
+
+// The shortest of the given terms, or null when there is none.
+export function shortestTerm(
+  terms: readonly Pick<UnitTerm, "months">[] | undefined,
+): TermMonths | null {
+  let shortest: TermMonths | null = null;
+  for (const term of terms ?? []) {
+    if (shortest === null || term.months < shortest) shortest = term.months;
+  }
+  return shortest;
 }
 
-// "Usulan dari sewa biasa unit: Rp1.250.000.", none when the unit has no usual rent.
-export function rentSuggestion(
-  unit: Pick<Unit, "defaultRent"> | undefined,
-): string | null {
-  return unit?.defaultRent === undefined
-    ? null
-    : `Usulan dari sewa biasa unit: ${formatRupiah(unit.defaultRent)}.`;
+// The term a new lease takes until the form has a term picker: the shortest term with a price in
+// force, else the shortest term the unit offers (the API then answers no_price), else null.
+export function leaseTermFor(
+  unit: Pick<Unit, "terms"> | undefined,
+): TermMonths | null {
+  const terms = unit?.terms ?? [];
+  return (
+    shortestTerm(terms.filter((term) => term.price !== undefined)) ??
+    shortestTerm(terms)
+  );
 }
 
 // The collector select's choices: "Tidak ada", then the candidates. The lease's own collector is
@@ -269,7 +311,8 @@ export const NO_PROPERTY_MESSAGE = "Pilih properti.";
 export const NO_UNIT_MESSAGE = "Pilih unit.";
 export const NO_START_MESSAGE = "Isi tanggal mulai sewa.";
 export const NO_BILLED_FROM_MESSAGE = "Pilih bulan mulai tagih.";
-export const BAD_RENT_MESSAGE = "Isi sewa per bulan dengan angka.";
+export const NO_TERM_MESSAGE =
+  "Unit ini belum punya jangka sewa. Pilih unit lain atau atur unitnya dulu.";
 export const BAD_DEPOSIT_MESSAGE =
   "Isi uang jaminan dengan angka, atau kosongkan.";
 
@@ -278,7 +321,6 @@ export const LEASE_API_FIELDS: readonly LeaseFormField[] = [
   "unitId",
   "startDate",
   "billedFrom",
-  "rentAmount",
   "depositAmount",
   "collectorMemberId",
 ];
@@ -289,7 +331,6 @@ export const LEASE_FIELD_ORDER: readonly LeaseFormField[] = [
   "unitId",
   "startDate",
   "billedFrom",
-  "rentAmount",
   "depositAmount",
   "collectorMemberId",
 ];
@@ -306,28 +347,23 @@ export function isLeaseFormField(
   return LEASE_FIELD_ORDER.some((known) => known === field);
 }
 
-// The rent and deposit of a lease form as integers. A message goes into errors for a rent that is
-// not a whole amount of at least 1 and for a deposit that is typed but not a whole amount.
-export function checkAmounts(
-  values: Pick<LeaseTermsValues, "rent" | "deposit">,
+// The deposit of a lease form as an integer, undefined when the field is empty. A message goes
+// into errors for a deposit that is typed but not a whole amount.
+export function checkDeposit(
+  values: Pick<LeaseTermsValues, "deposit">,
   errors: LeaseFormErrors,
-): LeaseAmounts {
-  const parsedRent = parseRupiahInput(values.rent);
-  const rent = parsedRent !== null && parsedRent >= 1 ? parsedRent : null;
-  if (rent === null) errors.rentAmount = BAD_RENT_MESSAGE;
-
-  let deposit: number | undefined;
-  if (values.deposit.trim() !== "") {
-    const parsed = parseRupiahInput(values.deposit);
-    if (parsed === null) errors.depositAmount = BAD_DEPOSIT_MESSAGE;
-    else deposit = parsed;
-  }
-  return { rent, deposit };
+): number | undefined {
+  if (values.deposit.trim() === "") return undefined;
+  const parsed = parseRupiahInput(values.deposit);
+  if (parsed === null) errors.depositAmount = BAD_DEPOSIT_MESSAGE;
+  return parsed ?? undefined;
 }
 
 // What the lease form checks before it sends anything, and the request it sends: amounts as
-// integers, billedFrom only for a start before today with the second choice, the deposit and the
-// collector only when given. The Go API validates everything again and its message wins.
+// integers, the unit's term (leaseTermFor), billedFrom only for a start before today with the second
+// choice, the deposit and the collector only when given. A chosen unit with no term (the API
+// always gives one) is refused under the unit. The Go API validates everything again and its
+// message wins.
 export function checkLeaseForm(
   values: LeaseFormValues,
   propertyId: string,
@@ -336,6 +372,7 @@ export function checkLeaseForm(
   const errors: LeaseFormErrors = {};
   if (propertyId === "") errors.propertyId = NO_PROPERTY_MESSAGE;
   if (values.unitId === "") errors.unitId = NO_UNIT_MESSAGE;
+  else if (values.termMonths === null) errors.unitId = NO_TERM_MESSAGE;
   const startOk = isCalendarDate(values.startDate);
   if (!startOk) errors.startDate = NO_START_MESSAGE;
 
@@ -347,23 +384,23 @@ export function checkLeaseForm(
       : undefined;
   if (
     billedFrom !== undefined &&
-    !billedFromOptions(values.startDate, today).some(
+    !billedFromOptions(values.startDate, today, values.termMonths ?? 1).some(
       (option) => option.value === billedFrom,
     )
   ) {
     errors.billedFrom = NO_BILLED_FROM_MESSAGE;
   }
 
-  const { rent, deposit } = checkAmounts(values, errors);
+  const deposit = checkDeposit(values, errors);
 
-  if (Object.keys(errors).length > 0 || rent === null) {
+  if (Object.keys(errors).length > 0 || values.termMonths === null) {
     return { ok: false, errors };
   }
   const input: LeaseInput = {
     tenantId: values.tenantId,
     unitId: values.unitId,
     startDate: values.startDate,
-    rentAmount: rent,
+    termMonths: values.termMonths,
   };
   if (deposit !== undefined) input.depositAmount = deposit;
   if (values.collector !== NO_COLLECTOR) {
@@ -377,7 +414,6 @@ export function checkLeaseForm(
 
 export const EDIT_LEASE_NOTE =
   "Unit dan penyewa tidak bisa diganti. Untuk pindah unit, catat pindah keluar, lalu buat sewa baru.";
-export const RENT_CHANGE_HINT = "Berlaku mulai tagihan berikutnya.";
 export const DISABLED_COLLECTOR_HINT =
   "Penagih ini sudah dinonaktifkan. Pilih penagih baru.";
 
@@ -385,7 +421,6 @@ export const DISABLED_COLLECTOR_HINT =
 export const LEASE_TERMS_API_FIELDS: readonly LeaseFormField[] = [
   "startDate",
   "billedFrom",
-  "rentAmount",
   "depositAmount",
   "collectorMemberId",
 ];
@@ -409,7 +444,7 @@ export function editStartBox(
 export function leaseTermsValues(
   lease: Pick<
     Lease,
-    "startDate" | "billedFrom" | "rentAmount" | "depositAmount" | "collector"
+    "startDate" | "billedFrom" | "depositAmount" | "collector"
   >,
 ): LeaseTermsValues {
   const skipped = lease.billedFrom !== lease.startDate;
@@ -418,7 +453,6 @@ export function leaseTermsValues(
     startDate: lease.startDate,
     billing,
     billedFrom: skipped ? lease.billedFrom : "",
-    rent: groupRupiahDigits(String(lease.rentAmount)),
     deposit: groupRupiahDigits(String(lease.depositAmount)),
     collector: lease.collector?.memberId ?? NO_COLLECTOR,
   };
@@ -442,7 +476,7 @@ export function keepsDisabledCollector(
 // date is unchanged (the API keeps the stored value) and the new start date when it changed.
 export function checkLeaseTerms(
   values: LeaseTermsValues,
-  lease: Pick<Lease, "startDate" | "enteredOn">,
+  lease: Pick<Lease, "startDate" | "enteredOn" | "termMonths">,
 ): LeaseTermsResult {
   const errors: LeaseFormErrors = {};
   const startOk = isCalendarDate(values.startDate);
@@ -454,7 +488,11 @@ export function checkLeaseTerms(
       billedFrom = values.startDate;
     } else {
       billedFrom = values.billedFrom;
-      const offered = billedFromOptions(values.startDate, lease.enteredOn);
+      const offered = billedFromOptions(
+        values.startDate,
+        lease.enteredOn,
+        lease.termMonths,
+      );
       if (!offered.some((option) => option.value === billedFrom)) {
         errors.billedFrom = NO_BILLED_FROM_MESSAGE;
       }
@@ -463,14 +501,11 @@ export function checkLeaseTerms(
     billedFrom = values.startDate;
   }
 
-  const { rent, deposit } = checkAmounts(values, errors);
+  const deposit = checkDeposit(values, errors);
 
-  if (Object.keys(errors).length > 0 || rent === null) {
-    return { ok: false, errors };
-  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
   const input: LeaseTerms = {
     startDate: values.startDate,
-    rentAmount: rent,
     depositAmount: deposit ?? 0,
   };
   if (values.collector !== NO_COLLECTOR) {
@@ -525,9 +560,12 @@ export const MOVE_OUT_EFFECTS: readonly string[] = [
 export function plannedEndSuggestion(
   start: string,
   today: string,
+  term: TermMonths,
 ): PlannedEndSuggestion {
   const nextStart =
-    start > today ? anniversary(start, 1) : firstAnniversaryAfter(start, today);
+    start > today
+      ? periodStart(start, term, 1)
+      : nextPeriodStart(start, term, today);
   return { date: addDays(nextStart, -1), nextStart };
 }
 

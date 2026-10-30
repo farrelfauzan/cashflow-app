@@ -38,7 +38,10 @@ import {
   isFlagged,
   isNotFound,
   leaseStatusView,
+  leaseRentLabel,
+  leaseRentText,
   leaseView,
+  NO_PERIOD_RENT_TEXT,
   orderedLeases,
   previousDay,
   propertyFilterOptions,
@@ -63,7 +66,8 @@ const lease = (over: Partial<Lease> = {}): Lease => ({
   startDate: "2026-07-01",
   enteredOn: "2026-10-28",
   billedFrom: "2026-07-01",
-  rentAmount: 850_000,
+  termMonths: 1,
+  periodRent: 850_000,
   depositAmount: 850_000,
   status: "active",
   charges: [],
@@ -760,11 +764,32 @@ describe("billedNote", () => {
   });
 });
 
+describe("leaseRentLabel", () => {
+  it.each([
+    { months: 1, want: "Sewa per bulan" },
+    { months: 3, want: "Sewa per 3 bulan" },
+    { months: 6, want: "Sewa per 6 bulan" },
+    { months: 12, want: "Sewa per tahun" },
+  ] as const)("names a $months-month term $want", ({ months, want }) => {
+    expect(leaseRentLabel(months)).toBe(want);
+  });
+});
+
+describe("leaseRentText", () => {
+  it("formats the period's rent", () => {
+    expect(leaseRentText({ periodRent: 15_000_000 })).toBe("Rp15.000.000");
+  });
+
+  it("says so when the unit has no price for the term", () => {
+    expect(leaseRentText({})).toBe(NO_PERIOD_RENT_TEXT);
+  });
+});
+
 describe("leaseView", () => {
   it("formats a running lease", () => {
     const view = leaseView(
       lease({
-        rentAmount: 1_500_000,
+        periodRent: 1_500_000,
         depositAmount: 3_000_000,
         startDate: "2026-09-15",
         billedFrom: "2026-10-15",
@@ -779,6 +804,7 @@ describe("leaseView", () => {
     );
     expect(view).toMatchObject({
       title: "Kamar 1 · Kos Melati",
+      rentLabel: "Sewa per bulan",
       rent: "Rp1.500.000",
       deposit: "Rp3.000.000",
       collector: { name: "Mas Agus Setiawan", inactive: true },

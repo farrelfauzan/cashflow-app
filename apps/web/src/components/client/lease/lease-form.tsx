@@ -46,8 +46,7 @@ import {
   freeUnits,
   isCalendarDate,
   isLeaseFormField,
-  rentSuggestion,
-  rentTextFor,
+  leaseTermFor,
   startDateHint,
   startTiming,
 } from "./utils";
@@ -65,10 +64,11 @@ type LeaseFormProps = {
 };
 
 // "Sewakan unit" (boards Sewa-Baru.dc.html and Sewa-Baru-Phone.dc.html): the property and one of
-// its free units, the start date, "Mulai tagih dari" for a start before today, the rent and
-// deposit, and the collector. On the phone the fields stack in that order; on iPad the billing
-// choice has the right half of the wide panel to itself, so it stays in view. The save button
-// sits in the panel's footer and submits the form through its `form` attribute.
+// its free units, the start date, "Mulai tagih dari" for a start before today, the deposit, and
+// the collector. The lease takes the unit's term from leaseTermFor. On the phone the fields stack
+// in that order; on iPad the billing choice has the right half of the wide panel to itself, so it
+// stays in view. The save button sits in the panel's footer and submits the form through its
+// `form` attribute.
 export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   const id = useId();
   const formId = `${id}-form`;
@@ -77,7 +77,6 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   const unitRef = useRef<HTMLButtonElement>(null);
   const startRef = useRef<HTMLInputElement>(null);
   const billedFromRef = useRef<HTMLButtonElement>(null);
-  const rentRef = useRef<HTMLInputElement>(null);
   const depositRef = useRef<HTMLInputElement>(null);
   const collectorRef = useRef<HTMLButtonElement>(null);
 
@@ -86,7 +85,6 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   const [startDate, setStartDate] = useState("");
   const [billing, setBilling] = useState<BillingChoice>("start");
   const [chosenBilledFrom, setChosenBilledFrom] = useState("");
-  const [rent, setRent] = useState("");
   const [deposit, setDeposit] = useState("");
   const [collector, setCollector] = useState(NO_COLLECTOR);
   const [errors, setErrors] = useState<LeaseFormErrors>({});
@@ -114,13 +112,17 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   );
   const free = freeUnits(units.data?.items ?? []);
   const unit = free.find((candidate) => candidate.id === unitId);
+  // The term the lease will take; the billing-start choices step by it (monthly until a unit is
+  // chosen).
+  const term = leaseTermFor(unit);
 
   const candidates = useListCollectorCandidates(orgId, fresh);
 
   const timing = isCalendarDate(startDate)
     ? startTiming(startDate, today)
     : null;
-  const options = timing === "past" ? billedFromOptions(startDate, today) : [];
+  const options =
+    timing === "past" ? billedFromOptions(startDate, today, term ?? 1) : [];
   const billedFrom = options.some((o) => o.value === chosenBilledFrom)
     ? chosenBilledFrom
     : defaultBilledFrom(options, today);
@@ -164,7 +166,6 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
       unitId: unitRef,
       startDate: startRef,
       billedFrom: billedFromRef,
-      rentAmount: rentRef,
       depositAmount: depositRef,
       collectorMemberId: collectorRef,
     };
@@ -201,10 +202,10 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
       {
         tenantId: tenant.id,
         unitId: unit === undefined ? "" : unitId,
+        termMonths: term,
         startDate,
         billing,
         billedFrom,
-        rent,
         deposit,
         collector,
       },
@@ -240,7 +241,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
           <FormAlert message={toFormError(properties.error, []).message} />
         )}
 
-        <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'prop_unit_billed'_'rent_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
+        <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'prop_unit_billed'_'deposit_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
           <SelectField
             triggerRef={propertyRef}
             label="Properti"
@@ -271,11 +272,6 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             options={free.map((u) => ({ value: u.id, label: u.label }))}
             onValueChange={(next) => {
               setUnitId(next);
-              const picked = free.find((candidate) => candidate.id === next);
-              if (picked?.defaultRent !== undefined) {
-                setRent(rentTextFor(picked));
-                clearError("rentAmount");
-              }
               clearError("unitId");
             }}
             hint={unitHint}
@@ -307,6 +303,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
                 startDate={startDate}
                 enteredOn={today}
                 today={today}
+                term={term ?? 1}
                 billing={billing}
                 onBillingChange={(next) => {
                   setBilling(next);
@@ -336,23 +333,6 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
               />
             </div>
           )}
-
-          <div className="min-w-0 md:[grid-area:rent]">
-            <RupiahField
-              inputRef={rentRef}
-              label="Sewa per bulan"
-              name="rentAmount"
-              placeholder="1.250.000"
-              hint={rentSuggestion(unit)}
-              value={rent}
-              onChange={(text) => {
-                setRent(text);
-                clearError("rentAmount");
-              }}
-              error={errors.rentAmount}
-              disabled={saving}
-            />
-          </div>
 
           <div className="min-w-0 md:[grid-area:deposit]">
             <RupiahField

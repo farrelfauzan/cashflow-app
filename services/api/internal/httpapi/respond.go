@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
@@ -22,6 +23,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var propertyInput *property.InputError
 	var tenantInput *tenant.InputError
 	var fileErr *tenantimport.FileError
+	var termErr *tenant.TermError
 	switch {
 	case errors.As(err, &input):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", input.Message, input.Field)
@@ -53,6 +55,14 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeErrorField(w, http.StatusConflict, "phone_taken", "Nomor ini sudah dipakai penyewa lain.", "phone")
 	case errors.Is(err, tenant.ErrChargeTypeTaken):
 		s.writeErrorField(w, http.StatusConflict, "charge_type_taken", "Nama biaya ini sudah dipakai.", "name")
+	case errors.As(err, &termErr) && errors.Is(err, tenant.ErrTermNotOffered):
+		s.writeErrorField(w, http.StatusConflict, "term_not_offered",
+			fmt.Sprintf("Unit ini tidak menawarkan jangka sewa %d bulan.", termErr.Months), termErr.Field)
+	case errors.As(err, &termErr) && errors.Is(err, tenant.ErrNoPrice):
+		s.writeErrorField(w, http.StatusConflict, "no_price",
+			fmt.Sprintf("Harga sewa %d bulan untuk unit ini belum diisi.", termErr.Months), termErr.Field)
+	case errors.Is(err, property.ErrPriceTooEarly):
+		s.writeErrorField(w, http.StatusConflict, "price_too_early", "Harga baru paling cepat berlaku hari ini.", "effectiveFrom")
 	case errors.Is(err, tenant.ErrUnitOccupied):
 		s.writeErrorField(w, http.StatusConflict, "unit_occupied", "Unit ini masih disewa. Akhiri sewa yang lama dulu.", "unitId")
 	case errors.Is(err, tenant.ErrLeaseEnded):

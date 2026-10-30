@@ -38,13 +38,42 @@ type grantSpec struct {
 type propertySpec struct {
 	Name, Kind, Address string
 	Units               []string
-	Rent                int64 // usual rent of every unit, rupiah
+	// Terms are what every unit offers, with today's prices, unless UnitTerms names the unit.
+	Terms     []termSpec
+	UnitTerms map[string][]termSpec // unit label -> terms
+	// Scheduled are price changes after today, recorded with CreateUnitPrice.
+	Scheduled []scheduledSpec
+}
+
+// termSpec is one billing term a unit offers and its price for a whole term in force today.
+type termSpec struct {
+	Months int
+	Price  int64 // rupiah
+}
+
+// scheduledSpec is a unit's price for a term that takes effect after today.
+type scheduledSpec struct {
+	Unit   string
+	Months int
+	Amount int64
+	From   time.Time // calendar day
+}
+
+// monthly is a unit rented by the month only.
+func monthly(price int64) []termSpec { return []termSpec{{Months: 1, Price: price}} }
+
+// termsOf is what the property's unit offers.
+func (ps propertySpec) termsOf(label string) []termSpec {
+	if t, ok := ps.UnitTerms[label]; ok {
+		return t
+	}
+	return ps.Terms
 }
 
 type leaseSpec struct {
 	Property, Unit string
 	Start          time.Time // calendar day (midnight UTC)
-	Rent           int64
+	Term           int       // months, one the unit offers; 0 means 1
 	Deposit        int64
 	Collector      string    // phone of the collecting member; "" means none
 	MovedOut       time.Time // last day of an ended lease; zero for a lease that is still running
@@ -91,6 +120,11 @@ func day(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0,
 func firstOfNextMonth(c clock.Clock) time.Time {
 	now := c.Now().In(clock.Jakarta)
 	return day(now.Year(), now.Month()+1, 1) // time.Date normalizes December + 1
+}
+
+// nextNewYear is the next 1 January in Asia/Jakarta, as a calendar day.
+func nextNewYear(c clock.Clock) time.Time {
+	return day(c.Now().In(clock.Jakarta).Year()+1, time.January, 1)
 }
 
 func orgWide(role string) []grantSpec { return []grantSpec{{Role: role}} }
@@ -150,15 +184,22 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			Properties: []propertySpec{
 				{
 					Name: propKosMelati, Kind: property.KindKos, Address: "Jl. Kaliurang Km 5 No. 12, Sleman, Yogyakarta",
-					Units: units("Kamar", 1, 6), Rent: 850_000,
+					Units: units("Kamar", 1, 6), Terms: monthly(850_000),
+					UnitTerms: map[string][]termSpec{
+						// Kamar 1 is also let by the year, and its monthly price rises in January.
+						"Kamar 1": {{Months: 1, Price: 850_000}, {Months: 12, Price: 9_000_000}},
+						"Kamar 2": monthly(900_000),
+					},
+					Scheduled: []scheduledSpec{{Unit: "Kamar 1", Months: 1, Amount: 900_000, From: nextNewYear(c)}},
 				},
 				{
 					Name: propMawar, Kind: property.KindKontrakan, Address: "Jl. Godean Km 3 No. 7, Yogyakarta",
-					Units: []string{"Rumah A", "Rumah B"}, Rent: 1_500_000,
+					Units: []string{"Rumah A", "Rumah B"}, Terms: monthly(1_500_000),
 				},
 				{
 					Name: propRuko, Kind: property.KindRuko, Address: "Jl. Godean Km 6 No. 88, Sleman",
-					Units: units("Ruko", 1, 2), Rent: 4_500_000,
+					// Ruko are let by the year only.
+					Units: units("Ruko", 1, 2), Terms: []termSpec{{Months: 12, Price: 50_000_000}},
 				},
 			},
 			ChargeTypes: []chargeTypeSpec{
@@ -168,39 +209,39 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			Tenants: []tenantSpec{
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
 					{
-						Property: propKosMelati, Unit: "Kamar 1", Start: day(2026, 7, 1), Rent: 850_000, Deposit: 850_000, Collector: dimas,
+						Property: propKosMelati, Unit: "Kamar 1", Start: day(2026, 7, 1), Deposit: 850_000, Collector: dimas,
 						Charges: []chargeSpec{{Type: chargeWiFi, Amount: 50_000}},
 					},
-					{Property: propMawar, Unit: "Rumah B", Start: day(2026, 8, 1), Rent: 1_500_000},
+					{Property: propMawar, Unit: "Rumah B", Start: day(2026, 8, 1)},
 				}},
 				{Name: "Budi Santoso", Phone: "0813-0001-0002", Leases: []leaseSpec{
 					{
-						Property: propKosMelati, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 900_000, Collector: dimas,
+						Property: propKosMelati, Unit: "Kamar 2", Start: day(2026, 9, 1), Collector: dimas,
 						Charges: []chargeSpec{{Type: chargeWiFi, Amount: 50_000}},
 					},
 				}},
 				{Name: "Citra Lestari", Phone: "0813-0001-0003", Leases: []leaseSpec{
-					{Property: propKosMelati, Unit: "Kamar 3", Start: day(2026, 8, 15), Rent: 850_000, Collector: joko},
+					{Property: propKosMelati, Unit: "Kamar 3", Start: day(2026, 8, 15), Collector: joko},
 				}},
 				{Name: "Dewi Anggraini", Phone: "0813-0001-0004", Leases: []leaseSpec{
 					// The spec fixes only the move-out; the start and terms are the unit's usual ones.
 					{
-						Property: propKosMelati, Unit: "Kamar 4", Start: day(2026, 4, 1), Rent: 850_000,
+						Property: propKosMelati, Unit: "Kamar 4", Start: day(2026, 4, 1),
 						MovedOut: day(2026, 9, 30),
 					},
 				}},
 				{Name: "Eko Prasetyo", Phone: "0813-0001-0005", Leases: []leaseSpec{
-					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Rent: 1_500_000, Collector: agus},
+					{Property: propMawar, Unit: "Rumah A", Start: day(2026, 6, 1), Collector: agus},
 				}},
 				{Name: "Toko Sumber Rejeki (Pak Agus)", Phone: "0813-0001-0006", Leases: []leaseSpec{
 					{
-						Property: propRuko, Unit: "Ruko 1", Start: day(2026, 1, 1), Rent: 4_500_000, Collector: joko,
+						Property: propRuko, Unit: "Ruko 1", Start: day(2026, 1, 1), Term: 12, Collector: joko,
 						Charges: []chargeSpec{{Type: chargeParkir, Amount: 100_000}, {Type: chargeKebersihan, Amount: 50_000}},
 					},
 				}},
 				{Name: "Fajar Nugroho", Phone: "0813-0001-0007", Leases: []leaseSpec{
 					// A booking: it starts on the first day of next month.
-					{Property: propKosMelati, Unit: "Kamar 5", Start: firstOfNextMonth(c), Rent: 850_000},
+					{Property: propKosMelati, Unit: "Kamar 5", Start: firstOfNextMonth(c)},
 				}},
 			},
 		},
@@ -218,19 +259,20 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			Properties: []propertySpec{
 				{
 					Name: propAnggrek, Kind: property.KindKos, Address: "Jl. Gejayan No. 21, Sleman",
-					Units: units("Kamar", 1, 4), Rent: 750_000,
+					Units: units("Kamar", 1, 4), Terms: monthly(750_000),
+					UnitTerms: map[string][]termSpec{"Kamar 3": monthly(800_000)},
 				},
 			},
 			Tenants: []tenantSpec{
 				{Name: "Ayu Lestari", Phone: "0813-0002-0001", Leases: []leaseSpec{
-					{Property: propAnggrek, Unit: "Kamar 1", Start: day(2026, 8, 1), Rent: 750_000, Collector: rudi},
+					{Property: propAnggrek, Unit: "Kamar 1", Start: day(2026, 8, 1), Collector: rudi},
 				}},
 				{Name: "Nadia Putri", Phone: "0813-0002-0002", Leases: []leaseSpec{
-					{Property: propAnggrek, Unit: "Kamar 2", Start: day(2026, 9, 1), Rent: 750_000},
+					{Property: propAnggrek, Unit: "Kamar 2", Start: day(2026, 9, 1)},
 				}},
 				// The same phone as Rina in Griya Sejahtera: a separate tenant record here.
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
-					{Property: propAnggrek, Unit: "Kamar 3", Start: day(2026, 10, 1), Rent: 800_000},
+					{Property: propAnggrek, Unit: "Kamar 3", Start: day(2026, 10, 1)},
 				}},
 			},
 		},

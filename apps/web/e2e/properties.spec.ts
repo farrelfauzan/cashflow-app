@@ -331,7 +331,7 @@ test.describe("Admin of the whole organization", () => {
     expect(outsideRequests).toEqual([]);
   });
 
-  test("adds and changes units, takes digits only for the rent and refuses a taken name", async ({
+  test("adds and changes units and refuses a taken name", async ({
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
@@ -343,7 +343,7 @@ test.describe("Admin of the whole organization", () => {
       visibleText(page, "Belum ada unit di properti ini."),
     ).toBeVisible();
 
-    // Empty label is caught before anything is sent; the rent is optional.
+    // Empty label is caught before anything is sent.
     await page.getByRole("button", { name: "Tambah unit" }).click();
     const panel = page.getByRole("dialog", { name: "Tambah unit" });
     await expect(panel).toContainText(name);
@@ -351,49 +351,28 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByText("Isi nama unit.")).toBeVisible();
     await expect(panel.getByLabel("Nama unit")).toBeFocused();
 
-    // The rent takes digits only and shows them grouped; the API gets an integer.
+    // Only the label goes: a new kos unit gets the monthly term, with no price yet.
     await panel.getByLabel("Nama unit").fill("Kamar 01");
-    const rent = panel.getByLabel("Sewa biasa per bulan (boleh dikosongkan)");
-    await rent.fill("Rp 1x250.000,5");
-    await expect(rent).toHaveValue("12.500.005");
-    await rent.fill("1250000");
-    await expect(rent).toHaveValue("1.250.000");
-    // Backspace right after a dot removes the digit before it, and the caret stays where the
-    // admin is typing.
-    await rent.focus();
-    await rent.evaluate((input: HTMLInputElement) =>
-      input.setSelectionRange(2, 2),
-    );
-    await page.keyboard.press("Backspace");
-    await expect(rent).toHaveValue("250.000");
-    await page.keyboard.press("1");
-    await expect(rent).toHaveValue("1.250.000");
-    expect(
-      await rent.evaluate((input: HTMLInputElement) => input.selectionStart),
-    ).toBe(1);
     await attachFullPageScreenshot(page, testInfo, "unit-form");
-    await expectTouchTarget(rent);
+    await expectTouchTarget(panel.getByLabel("Nama unit"));
     await expectTouchTarget(panel.getByRole("button", { name: "Simpan unit" }));
     const saved = page.waitForRequest(
       (request) =>
         request.method() === "POST" && request.url().includes("/units"),
     );
     await panel.getByRole("button", { name: "Simpan unit" }).click();
-    expect((await saved).postDataJSON()).toEqual({
-      label: "Kamar 01",
-      defaultRent: 1_250_000,
-    });
+    expect((await saved).postDataJSON()).toEqual({ label: "Kamar 01" });
     await expect(panel).toHaveCount(0);
     await expect(
       visibleText(page, "Kamar 01 sudah ditambahkan."),
     ).toBeVisible();
     const first = unitRow(units, "Kamar 01");
-    await expect(first).toContainText("Rp1.250.000");
+    await expect(first).toContainText("Belum diisi");
     await expect(first).toContainText("Kosong");
     // The unit count under the property's name follows.
     await expect(visibleText(page, "Kos · 1 unit")).toBeVisible();
 
-    // A second unit without a rent.
+    // A second unit.
     await page.getByRole("button", { name: "Tambah unit" }).click();
     await panel.getByLabel("Nama unit").fill("Kamar 02");
     await panel.getByRole("button", { name: "Simpan unit" }).click();
@@ -412,34 +391,19 @@ test.describe("Admin of the whole organization", () => {
     await panel.getByRole("button", { name: "Batal" }).click();
     await expect(panel).toHaveCount(0);
 
-    // Change the first unit: new label and rent, and the note about running leases.
+    // Change the first unit's label; only the label is sent, so its terms stay.
     await first.getByRole("button", { name: "Ubah Kamar 01" }).click();
     const edit = page.getByRole("dialog", { name: "Ubah unit" });
     await expect(edit.getByLabel("Nama unit")).toHaveValue("Kamar 01");
-    await expect(
-      edit.getByLabel("Sewa biasa per bulan (boleh dikosongkan)"),
-    ).toHaveValue("1.250.000");
-    await expect(
-      edit.getByText(
-        "Mengubah sewa biasa tidak mengubah sewa yang sedang berjalan.",
-      ),
-    ).toBeVisible();
     await edit.getByLabel("Nama unit").fill("Kamar 01A");
-    await edit
-      .getByLabel("Sewa biasa per bulan (boleh dikosongkan)")
-      .fill("1300000");
+    const changed = page.waitForRequest(
+      (request) =>
+        request.method() === "PUT" && request.url().includes("/units/"),
+    );
     await edit.getByRole("button", { name: "Simpan unit" }).click();
+    expect((await changed).postDataJSON()).toEqual({ label: "Kamar 01A" });
     await expect(edit).toHaveCount(0);
     await expect(visibleText(page, "Kamar 01A sudah disimpan.")).toBeVisible();
-    await expect(unitRow(units, "Kamar 01A")).toContainText("Rp1.300.000");
-
-    // Clearing the rent leaves it out, and the unit goes back to "Belum diisi".
-    await unitRow(units, "Kamar 01A")
-      .getByRole("button", { name: "Ubah Kamar 01A" })
-      .click();
-    await edit.getByLabel("Sewa biasa per bulan (boleh dikosongkan)").fill("");
-    await edit.getByRole("button", { name: "Simpan unit" }).click();
-    await expect(edit).toHaveCount(0);
     await expect(unitRow(units, "Kamar 01A")).toContainText("Belum diisi");
 
     // Back on the list, the property counts both units, none occupied.

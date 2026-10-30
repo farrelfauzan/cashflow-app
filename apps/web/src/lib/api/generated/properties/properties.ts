@@ -33,7 +33,10 @@ import type {
   PropertyList,
   Unit,
   UnitInput,
-  UnitList
+  UnitList,
+  UnitPrice,
+  UnitPriceHistory,
+  UnitPriceInput
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -497,6 +500,7 @@ export function useListUnits<TData = Awaited<ReturnType<typeof listUnits>>, TErr
 
 
 /**
+ * The unit offers the terms given, or its property kind's default (see UnitInput.terms). Prices given are recorded effective today; changes are audited.
  * @summary Add a unit to a property (needs unit:manage on that property)
  */
 export const createUnit = (
@@ -566,7 +570,8 @@ export const useCreateUnit = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCreateUnitMutationOptions(options), queryClient);
     }
     /**
- * @summary Change a unit's label or default rent (needs unit:manage on its property)
+ * See UnitInput.terms. A price that differs from the one in force today adds a row to the unit's price history, effective today; nothing is ever overwritten. Audited.
+ * @summary Change a unit's label, offered terms or today's prices (needs unit:manage on its property)
  */
 export const updateUnit = (
     orgId: string,
@@ -622,7 +627,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateUnitMutationVariables = {orgId: string;unitId: string;data: BodyType<UnitInput>}
 
     /**
- * @summary Change a unit's label or default rent (needs unit:manage on its property)
+ * @summary Change a unit's label, offered terms or today's prices (needs unit:manage on its property)
  */
 export const useUpdateUnit = <TError = ErrorType<ErrorResponse | Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUnit>>, TError,UpdateUnitMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
@@ -633,4 +638,170 @@ export const useUpdateUnit = <TError = ErrorType<ErrorResponse | Error>,
         TContext
       > => {
       return useMutation(getUpdateUnitMutationOptions(options), queryClient);
+    }
+    /**
+ * @summary A unit's price history (needs unit:read on its property)
+ */
+export const listUnitPrices = (
+    orgId: string,
+    unitId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<UnitPriceHistory>(
+      {url: `/orgs/${orgId}/units/${unitId}/prices`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListUnitPricesQueryKey = (orgId: string,
+    unitId: string,) =>
+    apiQueryKey({ orgId,unitId }, { url: `/orgs/${orgId}/units/${unitId}/prices` });
+
+
+export const useListUnitPricesQueryOptions = <TData = Awaited<ReturnType<typeof listUnitPrices>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    unitId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnitPrices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,unitId }, { url: `/orgs/${orgId}/units/${unitId}/prices`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnitPrices>>> = ({ signal }) => listUnitPrices(orgId,unitId, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && unitId !== null && unitId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUnitPrices>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListUnitPricesQueryResult = NonNullable<Awaited<ReturnType<typeof listUnitPrices>>>
+export type ListUnitPricesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListUnitPrices<TData = Awaited<ReturnType<typeof listUnitPrices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    unitId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnitPrices>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUnitPrices>>,
+          TError,
+          Awaited<ReturnType<typeof listUnitPrices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUnitPrices<TData = Awaited<ReturnType<typeof listUnitPrices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    unitId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnitPrices>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUnitPrices>>,
+          TError,
+          Awaited<ReturnType<typeof listUnitPrices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUnitPrices<TData = Awaited<ReturnType<typeof listUnitPrices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    unitId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnitPrices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary A unit's price history (needs unit:read on its property)
+ */
+
+export function useListUnitPrices<TData = Awaited<ReturnType<typeof listUnitPrices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    unitId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUnitPrices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListUnitPricesQueryOptions(orgId,unitId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Adds a row to the append-only price history; the price in force on a day is the latest row effective on or before it. Audited. Use it for a price that starts later; updateUnit records a price effective today.
+ * @summary Record a unit's new price for a term from a date (needs unit:manage on its property)
+ */
+export const createUnitPrice = (
+    orgId: string,
+    unitId: string,
+    unitPriceInput: BodyType<UnitPriceInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<UnitPrice>(
+      {url: `/orgs/${orgId}/units/${unitId}/prices`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: unitPriceInput, signal
+    },
+      options);
+    }
+
+
+
+
+export const getCreateUnitPriceMutationKey = () => ['createUnitPrice'] as const;
+
+export const getCreateUnitPriceMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUnitPrice>>, TError,CreateUnitPriceMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof createUnitPrice>>, TError,CreateUnitPriceMutationVariables, TContext> => {
+
+const mutationKey = getCreateUnitPriceMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createUnitPrice>>, CreateUnitPriceMutationVariables> = (props) => {
+          const {orgId,unitId,data} = props ?? {};
+
+          return  createUnitPrice(orgId,unitId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateUnitPriceMutationResult = NonNullable<Awaited<ReturnType<typeof createUnitPrice>>>
+    export type CreateUnitPriceMutationBody = BodyType<UnitPriceInput>
+    export type CreateUnitPriceMutationError = ErrorType<ErrorResponse | Error>
+    export type CreateUnitPriceMutationVariables = {orgId: string;unitId: string;data: BodyType<UnitPriceInput>}
+
+    /**
+ * @summary Record a unit's new price for a term from a date (needs unit:manage on its property)
+ */
+export const useCreateUnitPrice = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUnitPrice>>, TError,CreateUnitPriceMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createUnitPrice>>,
+        TError,
+        CreateUnitPriceMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateUnitPriceMutationOptions(options), queryClient);
     }

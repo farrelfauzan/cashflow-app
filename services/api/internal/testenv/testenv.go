@@ -81,9 +81,9 @@ func New(t *testing.T) *Env {
 		Messenger: e.Messenger, Limiter: e.Limiter, Clock: e.Clock, Log: log, LoginURL: LoginURL,
 	})
 	e.Orgs = org.NewService(st, e.Authz)
-	e.Properties = property.NewService(st, e.Authz)
+	e.Properties = property.NewService(st, e.Authz, e.Clock)
 	e.Tenants = tenant.NewService(st, e.Authz, e.Clock)
-	e.Imports = tenantimport.NewService(st, e.Authz, e.Properties, e.Tenants)
+	e.Imports = tenantimport.NewService(st, e.Authz, e.Properties, e.Tenants, e.Clock)
 	return e
 }
 
@@ -210,4 +210,9 @@ func WaitUntilBlockedOn(ctx context.Context, t *testing.T, tx pgx.Tx) {
 		require.True(t, time.Now().Before(deadline), "the second change never waited on the locked row")
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// Monthly is a unit's terms when it is let by the month only, at price.
+func Monthly(price int64) []property.TermInput {
+	return []property.TermInput{{Months: 1, Price: &price}}
 }

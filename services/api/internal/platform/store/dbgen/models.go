@@ -39,7 +39,6 @@ type Lease struct {
 	TenantID             uuid.UUID
 	StartDate            time.Time
 	EndDate              *time.Time
-	RentAmount           int64
 	DepositAmount        int64
 	Status               string
 	CollectorStaffUserID uuid.NullUUID
@@ -48,6 +47,7 @@ type Lease struct {
 	EnteredOn            time.Time
 	BilledFrom           time.Time
 	PlannedEndDate       *time.Time
+	TermMonths           int16
 }
 
 type LeaseCharge struct {
@@ -148,7 +148,19 @@ type Unit struct {
 	OrganizationID uuid.UUID
 	PropertyID     uuid.UUID
 	Label          string
-	DefaultRent    *int64
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Terms          []int16
+}
+
+type UnitPrice struct {
+	ID                   uuid.UUID
+	Seq                  *int64
+	OrganizationID       uuid.UUID
+	UnitID               uuid.UUID
+	TermMonths           int16
+	Amount               int64
+	EffectiveFrom        time.Time
+	CreatedByStaffUserID uuid.NullUUID
+	CreatedAt            time.Time
 }

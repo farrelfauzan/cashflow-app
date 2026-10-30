@@ -183,6 +183,30 @@ func (e RoleGrantRole) Valid() bool {
 	}
 }
 
+// Defines values for TermMonths.
+const (
+	N1  TermMonths = 1
+	N12 TermMonths = 12
+	N3  TermMonths = 3
+	N6  TermMonths = 6
+)
+
+// Valid indicates whether the value is a known member of the TermMonths enum.
+func (e TermMonths) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	case N12:
+		return true
+	case N3:
+		return true
+	case N6:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListMembersParamsStatus.
 const (
 	ListMembersParamsStatusActive   ListMembersParamsStatus = "active"
@@ -421,7 +445,7 @@ type ImportRow struct {
 	// UnitLabel The kamar cell as read from the file, trimmed; empty when the cell is empty.
 	UnitLabel string `json:"unitLabel"`
 
-	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
+	// Values The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's term, rent, deposit or start date could not be read or resolved.
 	Values *ImportRowValues `json:"values,omitempty"`
 }
 
@@ -439,7 +463,7 @@ type ImportRowError struct {
 	Message string `json:"message"`
 }
 
-// ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's rent, deposit or start date could not be read.
+// ImportRowValues The lease terms as the API read them from the row, so a dry run shows exactly what will be saved (for example a date read day first). Missing when the row's term, rent, deposit or start date could not be read or resolved.
 type ImportRowValues struct {
 	// BilledFrom Mulai tagih dari; the start date when the cell is empty.
 	BilledFrom openapi_types.Date `json:"billedFrom"`
@@ -447,9 +471,14 @@ type ImportRowValues struct {
 	// DepositAmount Deposit in rupiah; 0 when the cell is empty.
 	DepositAmount int64 `json:"depositAmount"`
 
-	// RentAmount Monthly rent in rupiah.
-	RentAmount int64              `json:"rentAmount"`
+	// RentAmount The sewa cell: the unit's price for one whole term. Required when the unit has no price for the term in force on the import day, and then recorded as its price from that day; when the unit has one, it may be empty, and a different amount is a row error on column rent. Missing when the cell is empty.
+	RentAmount *int64             `json:"rentAmount,omitempty"`
 	StartDate  openapi_types.Date `json:"startDate"`
+
+	// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	TermMonths TermMonths `json:"termMonths"`
 }
 
 // ImportSummary defines model for ImportSummary.
@@ -496,10 +525,10 @@ type InviteMember struct {
 
 // Lease defines model for Lease.
 type Lease struct {
-	// BilledFrom "Mulai tagih dari": the first period the app invoices, an anniversary of the start date. It equals the start date unless the admin skipped periods the owner collected by hand.
+	// BilledFrom "Mulai tagih dari": the first period the app invoices, a period start of the lease's term. It equals the start date unless the admin skipped periods the owner collected by hand.
 	BilledFrom openapi_types.Date `json:"billedFrom"`
 
-	// Charges Fixed monthly extras on top of rent, by name. Always present, empty when none.
+	// Charges Fixed monthly extras on top of rent, by name. Always present, empty when none. From slice 2 an invoice bills each one as its monthly amount times the term's months.
 	Charges   []LeaseCharge `json:"charges"`
 	Collector *Collector    `json:"collector,omitempty"`
 	CreatedAt time.Time     `json:"createdAt"`
@@ -514,21 +543,29 @@ type Lease struct {
 	EnteredOn openapi_types.Date `json:"enteredOn"`
 	Id        openapi_types.UUID `json:"id"`
 
+	// PeriodRent Rent for one period of the lease's term, for display: the unit's price for that term in force today (Asia/Jakarta). Missing when none is in force. Each invoice takes the price in force on the day it is made; the lease holds no rent of its own.
+	//
+	//
+	// Example: 15000000
+	PeriodRent *int64 `json:"periodRent,omitempty"`
+
 	// PlannedEndDate "Rencana keluar": the tenant's planned last day, set with setLeasePlannedEnd. Missing when none is set; cleared by move-out.
 	PlannedEndDate *openapi_types.Date `json:"plannedEndDate,omitempty"`
 	PropertyId     openapi_types.UUID  `json:"propertyId"`
 	PropertyName   string              `json:"propertyName"`
 
-	// RentAmount Monthly rent in rupiah.
-	RentAmount int64 `json:"rentAmount"`
-
-	// StartDate First day of the lease. Rent is billed in advance on this day of every month (the last day of a shorter month when it is the 29th to 31st).
+	// StartDate First day of the lease. Rent is billed in advance once per term, on this day of the month every termMonths months (the last day of a shorter month when it is the 29th to 31st).
 	StartDate openapi_types.Date `json:"startDate"`
 	Status    LeaseStatus        `json:"status"`
 	TenantId  openapi_types.UUID `json:"tenantId"`
-	UnitId    openapi_types.UUID `json:"unitId"`
-	UnitLabel string             `json:"unitLabel"`
-	UpdatedAt time.Time          `json:"updatedAt"`
+
+	// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	TermMonths TermMonths         `json:"termMonths"`
+	UnitId     openapi_types.UUID `json:"unitId"`
+	UnitLabel  string             `json:"unitLabel"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
 }
 
 // LeaseCharge defines model for LeaseCharge.
@@ -560,7 +597,7 @@ type LeaseChargesInput struct {
 
 // LeaseInput defines model for LeaseInput.
 type LeaseInput struct {
-	// BilledFrom "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be an anniversary of the start date (the start date itself, or the same day a whole number of months later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first anniversary after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom.
+	// BilledFrom "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be a period start of the lease's term (the start date itself, or the same day a whole number of terms later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first period start after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom.
 	//
 	//
 	// Example: 2026-10-15
@@ -572,15 +609,17 @@ type LeaseInput struct {
 	// DepositAmount Defaults to 0.
 	DepositAmount *int64 `json:"depositAmount,omitempty"`
 
-	// RentAmount Example: 1250000
-	RentAmount int64 `json:"rentAmount"`
-
-	// StartDate Also the day of the month rent is due.
+	// StartDate Also the day of the month rent is due, once per term.
 	//
 	// Example: 2026-11-15
 	StartDate openapi_types.Date `json:"startDate"`
 	TenantId  openapi_types.UUID `json:"tenantId"`
-	UnitId    openapi_types.UUID `json:"unitId"`
+
+	// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	TermMonths TermMonths         `json:"termMonths"`
+	UnitId     openapi_types.UUID `json:"unitId"`
 }
 
 // LeasePlannedEnd defines model for LeasePlannedEnd.
@@ -597,7 +636,7 @@ type LeaseStatus string
 
 // LeaseTerms defines model for LeaseTerms.
 type LeaseTerms struct {
-	// BilledFrom "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be an anniversary of the start date (the start date itself, or the same day a whole number of months later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first anniversary after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom.
+	// BilledFrom "Mulai tagih dari": the first period to invoice, to skip periods the owner collected by hand. It must be a period start of the lease's term (the start date itself, or the same day a whole number of terms later, the last day of a shorter month for a start on the 29th to 31st), and no later than the first period start after the later of the start date and the day the lease was entered. On createLease, leaving it out bills from the start date. On updateLease, leaving it out (or null) keeps the stored value, so editing another term never undoes a skipped billing start; to bill from the start date again, send the start date. When a changed start date no longer fits the kept value, the update is refused on billedFrom. Errors use field billedFrom.
 	//
 	//
 	// Example: 2026-10-15
@@ -609,10 +648,7 @@ type LeaseTerms struct {
 	// DepositAmount Defaults to 0.
 	DepositAmount *int64 `json:"depositAmount,omitempty"`
 
-	// RentAmount Example: 1250000
-	RentAmount int64 `json:"rentAmount"`
-
-	// StartDate Also the day of the month rent is due.
+	// StartDate Also the day of the month rent is due, once per term.
 	//
 	// Example: 2026-11-15
 	StartDate openapi_types.Date `json:"startDate"`
@@ -775,6 +811,15 @@ type RoleRef struct {
 	PropertyName *string `json:"propertyName,omitempty"`
 }
 
+// ScheduledPrice The next price change after today, when one is scheduled.
+type ScheduledPrice struct {
+	// Amount Example: 16000000
+	Amount int64 `json:"amount"`
+
+	// EffectiveFrom Example: 2027-01-01
+	EffectiveFrom openapi_types.Date `json:"effectiveFrom"`
+}
+
 // SetMemberStatus defines model for SetMemberStatus.
 type SetMemberStatus struct {
 	// Status A disabled member keeps their roles but can do nothing in the organization.
@@ -831,31 +876,36 @@ type TenantList struct {
 	Total int `json:"total"`
 }
 
+// TermMonths A billing term in months (decision 32). The lease is billed once per term, in advance.
+//
+// Example: 12
+type TermMonths int
+
 // Unit defines model for Unit.
 type Unit struct {
 	CreatedAt     time.Time          `json:"createdAt"`
 	CurrentTenant *UnitTenant        `json:"currentTenant,omitempty"`
-	DefaultRent   *int64             `json:"defaultRent,omitempty"`
 	Id            openapi_types.UUID `json:"id"`
 	Label         string             `json:"label"`
 
 	// Occupied True while the unit has an active lease, a booking that has not started yet included. False for a free unit and for one whose lease has ended.
 	Occupied   bool               `json:"occupied"`
 	PropertyId openapi_types.UUID `json:"propertyId"`
-	UpdatedAt  time.Time          `json:"updatedAt"`
+
+	// Terms The terms the unit offers, fewest months first, each with its price in force today. At least one.
+	Terms     []UnitTerm `json:"terms"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // UnitInput defines model for UnitInput.
 type UnitInput struct {
-	// DefaultRent Usual monthly rent in rupiah, a suggestion for new leases. Leave it out for none.
-	//
-	// Example: 1250000
-	DefaultRent *int64 `json:"defaultRent,omitempty"`
-
 	// Label Unique inside its property, ignoring case.
 	//
 	// Example: Kamar 11
 	Label string `json:"label"`
+
+	// Terms The billing terms the unit offers (decision 32), each month count once. On createUnit, leaving it out offers the property kind's default: 12 months for a ruko, 1 month for a kos, kontrakan or other unit, with no price yet. On updateUnit, leaving it out keeps the offered terms and their prices. When given, the unit offers exactly these terms; a lease keeps its term when the unit stops offering it. A term's price, when given and different from the price in force today, is recorded as a new price effective today (use createUnitPrice for a later date). An empty list, a repeated or unknown month count is a 400 invalid_input on field terms.
+	Terms *[]UnitTermInput `json:"terms,omitempty"`
 }
 
 // UnitList defines model for UnitList.
@@ -870,10 +920,77 @@ type UnitList struct {
 	Total int `json:"total"`
 }
 
+// UnitPrice defines model for UnitPrice.
+type UnitPrice struct {
+	// Amount Example: 15000000
+	Amount        int64              `json:"amount"`
+	EffectiveFrom openapi_types.Date `json:"effectiveFrom"`
+	Id            openapi_types.UUID `json:"id"`
+
+	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	Months     TermMonths `json:"months"`
+	RecordedAt time.Time  `json:"recordedAt"`
+
+	// RecordedByName The name of the member who recorded the price. Missing for the prices moved over from each unit's usual rent and its lease's rent when terms were introduced.
+	RecordedByName *string `json:"recordedByName,omitempty"`
+}
+
+// UnitPriceHistory A unit's whole price history, the latest effective date first and, on the same date, the latest recorded first; the first row for a term on or before today is its price in force. Rows are never changed or removed. A plain array: a unit gathers a few rows a year.
+type UnitPriceHistory = []UnitPrice
+
+// UnitPriceInput defines model for UnitPriceInput.
+type UnitPriceInput struct {
+	// Amount Example: 16000000
+	Amount int64 `json:"amount"`
+
+	// EffectiveFrom The first day the price applies: today (Asia/Jakarta) or later, and from slice 2 after the day the unit's newest invoice was made. An invoice takes the price in force on the day it is made.
+	//
+	//
+	// Example: 2027-01-01
+	EffectiveFrom openapi_types.Date `json:"effectiveFrom"`
+
+	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	Months TermMonths `json:"months"`
+}
+
 // UnitTenant defines model for UnitTenant.
 type UnitTenant struct {
 	Id   openapi_types.UUID `json:"id"`
 	Name string             `json:"name"`
+}
+
+// UnitTerm defines model for UnitTerm.
+type UnitTerm struct {
+	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	Months TermMonths `json:"months"`
+
+	// NextPrice The next price change after today, when one is scheduled.
+	NextPrice *ScheduledPrice `json:"nextPrice,omitempty"`
+
+	// Price Rent for one whole term in rupiah, in force today (Asia/Jakarta). Missing when no price is in force yet; a lease on this term needs one.
+	//
+	//
+	// Example: 15000000
+	Price *int64 `json:"price,omitempty"`
+}
+
+// UnitTermInput defines model for UnitTermInput.
+type UnitTermInput struct {
+	// Months A billing term in months (decision 32). The lease is billed once per term, in advance.
+	//
+	// Example: 12
+	Months TermMonths `json:"months"`
+
+	// Price Rent for one whole term in rupiah, typed by the owner (not months times a monthly rent).
+	//
+	// Example: 15000000
+	Price *int64 `json:"price,omitempty"`
 }
 
 // User defines model for User.
@@ -1037,3 +1154,6 @@ type UpdateTenantJSONRequestBody = TenantInput
 
 // UpdateUnitJSONRequestBody defines body for UpdateUnit for application/json ContentType.
 type UpdateUnitJSONRequestBody = UnitInput
+
+// CreateUnitPriceJSONRequestBody defines body for CreateUnitPrice for application/json ContentType.
+type CreateUnitPriceJSONRequestBody = UnitPriceInput

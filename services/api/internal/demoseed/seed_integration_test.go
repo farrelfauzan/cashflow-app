@@ -17,6 +17,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 )
@@ -165,6 +166,8 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, 3, gb["lease"].Rows)
 		require.Zero(t, gb["charge_type"].Rows)
 		require.Zero(t, gb["lease_charge"].Rows)
+		require.Equal(t, 12, ga["unit_price"].Rows, "one price per unit, plus Kamar 1's yearly and scheduled prices")
+		require.Equal(t, 4, gb["unit_price"].Rows)
 		require.Positive(t, ga["audit_log"].Rows, "the snapshot covers the audit log too")
 		require.Equal(t, 7, ga["staff_user"].Rows, "an organization scope sees its own members' users")
 
@@ -175,6 +178,7 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, 45, gc["tenant"].Rows)
 		require.Equal(t, 42, gc["lease"].Rows, "33 running, 5 booked and 4 ended leases")
 		require.Zero(t, gc["charge_type"].Rows)
+		require.Equal(t, 95, gc["unit_price"].Rows, "every unit is let by the month at one price")
 		require.Equal(t, 27, gc["staff_user"].Rows)
 	})
 
@@ -342,6 +346,43 @@ func TestSeedDemo(t *testing.T) {
 		}, got)
 	})
 
+	t.Run("units offer their terms with prices, and leases pick one", func(t *testing.T) {
+		price := func(v int64) *int64 { return &v }
+		ruko, err := env.AllUnits(ctx, adminA, propertyID(t, env, adminA, "Ruko Godean"))
+		require.NoError(t, err)
+		for _, u := range ruko {
+			require.Equal(t, []property.UnitTerm{{Months: 12, Price: price(50_000_000)}}, u.Terms, "a ruko is let by the year only")
+		}
+		toko := find(t, tenantsA, "Toko Sumber Rejeki (Pak Agus)")
+		require.Equal(t, 12, toko.Leases[0].TermMonths)
+		require.Equal(t, int64(50_000_000), *toko.Leases[0].PeriodRent)
+
+		melati, err := env.AllUnits(ctx, adminA, propertyID(t, env, adminA, "Kos Melati"))
+		require.NoError(t, err)
+		kamar1 := melati[0]
+		require.Equal(t, "Kamar 1", kamar1.Label)
+		require.Equal(t, []property.UnitTerm{
+			{Months: 1, Price: price(850_000), Next: &property.ScheduledPrice{Amount: 900_000, EffectiveFrom: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+			{Months: 12, Price: price(9_000_000)},
+		}, kamar1.Terms, "Kamar 1 is let by the month or the year, and its monthly price rises in January")
+		history, err := env.Properties.ListUnitPrices(ctx, adminA, kamar1.ID)
+		require.NoError(t, err)
+		var monthly []int64
+		for _, p := range history {
+			if p.Months == 1 {
+				monthly = append(monthly, p.Amount)
+			}
+		}
+		require.Equal(t, []int64{900_000, 850_000}, monthly, "two monthly prices, newest first")
+		require.Equal(t, int64(900_000), *find(t, tenantsA, "Budi Santoso").Leases[0].PeriodRent, "Kamar 2 has its own price")
+
+		for _, tn := range tenantsA {
+			for _, l := range tn.Leases {
+				require.NotNil(t, l.PeriodRent, "%s %s has a price for its term", l.PropertyName, l.UnitLabel)
+			}
+		}
+	})
+
 	t.Run("a lease whose extras were changed keeps them on a rerun", func(t *testing.T) {
 		budi := find(t, tenantsA, "Budi Santoso")
 		_, err := env.Tenants.SetLeaseCharges(ctx, adminA, budi.Leases[0].ID, []tenant.ChargeInput{
@@ -460,6 +501,18 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, int64(1), imam.CollectorLeaseCount)
 		require.Equal(t, []string{"Kos Sejahtera Utama/Kamar 7"}, leaseUnits(find(t, tenantsC, "Gita Savitri")))
 		require.False(t, find(t, tenantsC, "Gita Savitri").Leases[0].CollectorActive)
+
+		// Each leased unit is let by the month at the rent its lease had before terms existed.
+		rents := map[string]int64{}
+		for _, tn := range tenantsC {
+			for _, l := range tn.Leases {
+				require.Equal(t, 1, l.TermMonths, "%s %s", l.PropertyName, l.UnitLabel)
+				require.NotNil(t, l.PeriodRent, "%s %s", l.PropertyName, l.UnitLabel)
+				rents[tn.Name] = *l.PeriodRent
+			}
+		}
+		require.Equal(t, int64(1_100_000), rents["Umi Kulsum"])
+		require.Equal(t, int64(6_500_000), rents["Klinik Sehat Sentosa"], "a ruko here is let by the month")
 	})
 
 	t.Run("Lestari is limited to Kontrakan Seturan in Kos Bulanan Sejahtera", func(t *testing.T) {

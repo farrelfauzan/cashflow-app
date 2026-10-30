@@ -114,6 +114,8 @@ export type LeaseView = {
   id: string;
   title: string;
   status: StatusView;
+  // "Sewa per bulan" or the lease's longer term, and its rent or "Belum ada harga".
+  rentLabel: string;
   rent: string;
   deposit: string;
   collector: { name: string; inactive: boolean } | null;

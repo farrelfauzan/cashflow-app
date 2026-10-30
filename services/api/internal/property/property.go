@@ -16,6 +16,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -44,6 +45,8 @@ var (
 	ErrNameTaken = errors.New("property: name already used")
 	// ErrLabelTaken means another unit in the same property already has the label.
 	ErrLabelTaken = errors.New("property: unit label already used")
+	// ErrPriceTooEarly means a new price would take effect before today in Asia/Jakarta.
+	ErrPriceTooEarly = errors.New("property: price takes effect too early")
 )
 
 // InputError names the field that is wrong. Message is safe to show to the user.
@@ -79,8 +82,9 @@ type Unit struct {
 	ID         uuid.UUID
 	PropertyID uuid.UUID
 	Label      string
-	// DefaultRent is the usual monthly rent in rupiah, or nil when none is set.
-	DefaultRent *int64
+	// Terms are the billing terms the unit offers, fewest months first, each with its price
+	// in force today. Never empty.
+	Terms []UnitTerm
 	// Occupied is true while the unit has an active lease, a booking that has not started yet
 	// included.
 	Occupied bool
@@ -97,21 +101,73 @@ type UnitTenant struct {
 	Name string
 }
 
+// UnitTerm is one billing term a unit offers (decision 32).
+type UnitTerm struct {
+	Months int
+	// Price is the rent for one whole term in force today, or nil when there is none yet.
+	Price *int64
+	// Next is the next price change after today, or nil when none is scheduled.
+	Next *ScheduledPrice
+}
+
+// ScheduledPrice is a price that takes effect after today.
+type ScheduledPrice struct {
+	Amount        int64
+	EffectiveFrom time.Time // calendar day
+}
+
 // UnitInput is the input for creating or changing a unit.
 type UnitInput struct {
-	Label       string
-	DefaultRent *int64
+	Label string
+	// Terms are the terms the unit offers. Nil means the property kind's default on create
+	// (DefaultTerms, with no price) and the stored terms and prices on update.
+	Terms []TermInput
+}
+
+// TermInput is one offered term. A Price given that differs from the price in force today is
+// recorded as a new price effective today.
+type TermInput struct {
+	Months int
+	Price  *int64
+}
+
+// UnitPrice is one row of a unit's price history.
+type UnitPrice struct {
+	ID            uuid.UUID
+	Months        int
+	Amount        int64
+	EffectiveFrom time.Time // calendar day
+	RecordedAt    time.Time
+	// RecordedByName is the member who recorded it; nil for prices moved over by the migration.
+	RecordedByName *string
+}
+
+// PriceInput is a new price of a unit for one term from a day on.
+type PriceInput struct {
+	Months        int
+	Amount        int64
+	EffectiveFrom time.Time
+}
+
+// DefaultTerms are the terms a new unit offers when none are given: 12 months for a ruko,
+// 1 month for any other kind.
+func DefaultTerms(kind string) []int {
+	if kind == KindRuko {
+		return []int{12}
+	}
+	return []int{1}
 }
 
 // Service manages properties and units.
 type Service struct {
 	store *store.Store
 	authz *authz.Service
+	clock clock.Clock
 }
 
-// NewService returns a Service.
-func NewService(st *store.Store, az *authz.Service) *Service {
-	return &Service{store: st, authz: az}
+// NewService returns a Service. c decides "today" for unit prices, in Asia/Jakarta.
+func NewService(st *store.Store, az *authz.Service, c clock.Clock) *Service {
+	return &Service{store: st, authz: az, clock: c}
 }
 
 // ListQuery filters, orders and pages List. Zero values filter nothing.
@@ -321,7 +377,7 @@ func (s *Service) ListUnits(ctx context.Context, p authz.Principal, propertyID u
 		for _, r := range rows {
 			out.Items = append(out.Items, toOccupiedUnit(p, r.Unit, r.Occupied, r.LeaseTenantID, r.LeaseTenantName, r.CollectorStaffUserID))
 		}
-		return nil
+		return attachPrices(ctx, q, p.OrganizationID, tenant.Today(s.clock), out.Items)
 	})
 	if err != nil {
 		return listing.Result[Unit]{}, err
@@ -340,27 +396,42 @@ func (s *Service) CreateUnit(ctx context.Context, p authz.Principal, propertyID 
 	return out, err
 }
 
-// CreateUnitTx is CreateUnit inside the caller's organization transaction.
+// CreateUnitTx is CreateUnit inside the caller's organization transaction. The unit offers
+// the terms given, or its property kind's default; prices given are recorded effective today.
 func (s *Service) CreateUnitTx(ctx context.Context, tx pgx.Tx, p authz.Principal, propertyID uuid.UUID, in UnitInput) (Unit, error) {
 	in, err := ValidUnit(in)
 	if err != nil {
 		return Unit{}, err
 	}
 	q := dbgen.New(tx)
-	if _, err := getProperty(ctx, q, p.OrganizationID, propertyID); err != nil {
+	prop, err := getProperty(ctx, q, p.OrganizationID, propertyID)
+	if err != nil {
 		return Unit{}, err
+	}
+	if in.Terms == nil {
+		for _, m := range DefaultTerms(prop.Kind) {
+			in.Terms = append(in.Terms, TermInput{Months: m})
+		}
 	}
 	id := uuid.New()
 	if err := s.authz.Authorize(ctx, tx, p, unitRequest(authz.ActionUnitManage, propertyID, id)); err != nil {
 		return Unit{}, err
 	}
 	r, err := q.CreateUnit(ctx, dbgen.CreateUnitParams{
-		ID: id, OrganizationID: p.OrganizationID, PropertyID: propertyID, Label: in.Label, DefaultRent: in.DefaultRent,
+		ID: id, OrganizationID: p.OrganizationID, PropertyID: propertyID, Label: in.Label, Terms: termMonths(in.Terms),
 	})
 	if err != nil {
 		return Unit{}, unitWriteError(err)
 	}
-	return toUnit(r), nil
+	today := tenant.Today(s.clock)
+	if err := recordPrices(ctx, q, p, id, in.Terms, today); err != nil {
+		return Unit{}, err
+	}
+	out := []Unit{toUnit(r)}
+	if err := attachPrices(ctx, q, p.OrganizationID, today, out); err != nil {
+		return Unit{}, err
+	}
+	return out[0], nil
 }
 
 // FindByName returns the property with this name, ignoring case, or ErrNotFound. It does no
@@ -378,7 +449,7 @@ func FindByName(ctx context.Context, tx pgx.Tx, org uuid.UUID, name string) (Pro
 }
 
 // FindUnit returns the unit with this label in a property, ignoring case, or ErrNotFound. It
-// does no permission check and does not fill the occupancy fields.
+// does no permission check and does not fill the occupancy fields or the terms' prices.
 func FindUnit(ctx context.Context, tx pgx.Tx, org, propertyID uuid.UUID, label string) (Unit, error) {
 	r, err := dbgen.New(tx).FindUnitByLabel(ctx, dbgen.FindUnitByLabelParams{
 		OrganizationID: org, PropertyID: propertyID, Label: strings.TrimSpace(label),
@@ -392,7 +463,9 @@ func FindUnit(ctx context.Context, tx pgx.Tx, org, propertyID uuid.UUID, label s
 	return toUnit(r), nil
 }
 
-// UpdateUnit changes a unit's label and default rent. The unit stays in its property.
+// UpdateUnit changes a unit's label, offered terms and today's prices. Terms left out (nil) keep
+// the stored ones. A price that differs from the one in force today adds a row to the price
+// history, effective today. The unit stays in its property.
 func (s *Service) UpdateUnit(ctx context.Context, p authz.Principal, id uuid.UUID, in UnitInput) (Unit, error) {
 	in, err := ValidUnit(in)
 	if err != nil {
@@ -411,17 +484,29 @@ func (s *Service) UpdateUnit(ctx context.Context, p authz.Principal, id uuid.UUI
 		if err := s.authz.Authorize(ctx, tx, p, unitRequest(authz.ActionUnitManage, current.PropertyID, id)); err != nil {
 			return err
 		}
+		terms := current.Terms
+		if in.Terms != nil {
+			terms = termMonths(in.Terms)
+		}
 		r, err := q.UpdateUnit(ctx, dbgen.UpdateUnitParams{
-			OrganizationID: p.OrganizationID, ID: id, Label: in.Label, DefaultRent: in.DefaultRent,
+			OrganizationID: p.OrganizationID, ID: id, Label: in.Label, Terms: terms,
 		})
 		if err != nil {
 			return unitWriteError(err)
+		}
+		today := tenant.Today(s.clock)
+		if err := recordPrices(ctx, q, p, id, in.Terms, today); err != nil {
+			return err
 		}
 		occ, err := q.GetUnitOccupancy(ctx, dbgen.GetUnitOccupancyParams{OrganizationID: p.OrganizationID, ID: id})
 		if err != nil {
 			return fmt.Errorf("loading unit occupancy: %w", err)
 		}
-		out = toOccupiedUnit(p, r, occ.Occupied, occ.LeaseTenantID, occ.LeaseTenantName, occ.CollectorStaffUserID)
+		units := []Unit{toOccupiedUnit(p, r, occ.Occupied, occ.LeaseTenantID, occ.LeaseTenantName, occ.CollectorStaffUserID)}
+		if err := attachPrices(ctx, q, p.OrganizationID, today, units); err != nil {
+			return err
+		}
+		out = units[0]
 		return nil
 	})
 	return out, err
@@ -471,11 +556,16 @@ func toOccupiedUnit(p authz.Principal, r dbgen.Unit, occupied bool, tenantID uui
 	return u
 }
 
+// toUnit turns a row into a Unit with its offered terms, without prices (see attachPrices).
 func toUnit(r dbgen.Unit) Unit {
-	return Unit{
-		ID: r.ID, PropertyID: r.PropertyID, Label: r.Label, DefaultRent: r.DefaultRent,
+	u := Unit{
+		ID: r.ID, PropertyID: r.PropertyID, Label: r.Label, Terms: make([]UnitTerm, len(r.Terms)),
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
+	for i, m := range r.Terms {
+		u.Terms[i] = UnitTerm{Months: int(m)}
+	}
+	return u
 }
 
 func propertyWriteError(err error) error {
@@ -514,7 +604,8 @@ func ValidProperty(in PropertyInput) (PropertyInput, error) {
 	return in, nil
 }
 
-// ValidUnit checks a unit input and returns it trimmed. Errors are *InputError.
+// ValidUnit checks a unit input and returns it trimmed, with the terms (when given) sorted by
+// months. Errors are *InputError.
 func ValidUnit(in UnitInput) (UnitInput, error) {
 	in.Label = strings.TrimSpace(in.Label)
 	switch {
@@ -522,8 +613,33 @@ func ValidUnit(in UnitInput) (UnitInput, error) {
 		return in, &InputError{Field: "label", Message: "Nama unit wajib diisi."}
 	case len([]rune(in.Label)) > maxLabelLength:
 		return in, &InputError{Field: "label", Message: fmt.Sprintf("Nama unit paling panjang %d huruf.", maxLabelLength)}
-	case in.DefaultRent != nil && *in.DefaultRent <= 0:
-		return in, &InputError{Field: "defaultRent", Message: "Harga sewa harus lebih dari Rp0."}
 	}
-	return in, nil
+	if in.Terms == nil {
+		return in, nil
+	}
+	terms, err := validTerms(in.Terms)
+	in.Terms = terms
+	return in, err
+}
+
+// validTerms checks a unit's offered terms and returns a sorted copy.
+func validTerms(in []TermInput) ([]TermInput, error) {
+	if len(in) == 0 {
+		return in, &InputError{Field: "terms", Message: "Pilih paling sedikit satu jangka sewa."}
+	}
+	seen := map[int]bool{}
+	for _, t := range in {
+		switch {
+		case !tenant.ValidTerm(t.Months):
+			return in, &InputError{Field: "terms", Message: termMessage}
+		case seen[t.Months]:
+			return in, &InputError{Field: "terms", Message: fmt.Sprintf("Jangka sewa %d bulan tercantum dua kali.", t.Months)}
+		case t.Price != nil && *t.Price <= 0:
+			return in, &InputError{Field: "terms", Message: priceMessage}
+		}
+		seen[t.Months] = true
+	}
+	out := slices.Clone(in)
+	slices.SortFunc(out, func(a, b TermInput) int { return a.Months - b.Months })
+	return out, nil
 }

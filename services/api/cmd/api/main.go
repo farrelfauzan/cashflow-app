@@ -89,9 +89,9 @@ func run() error {
 		return err
 	}
 	az := authz.NewService(st, clk, log)
-	props := property.NewService(st, az)
+	props := property.NewService(st, az, clk)
 	tenants := tenant.NewService(st, az, clk)
-	imports := tenantimport.NewService(st, az, props, tenants)
+	imports := tenantimport.NewService(st, az, props, tenants, clk)
 	cookieSecure := cfg.CookieSecure()
 	allowedOrigins := cfg.Origins()
 	docsSpecPath := cfg.DocsSpecPath()

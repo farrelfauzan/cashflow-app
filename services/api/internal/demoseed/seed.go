@@ -8,8 +8,9 @@
 //
 // It is safe to run again. Each record is matched before it is created: an organization by name
 // among its Admin's own memberships, members by phone, properties by name, units by label in
-// their property, charge types by name ignoring case, tenants by phone and leases by an active
-// lease of that tenant on the unit. A record that already exists is left exactly as it is, even
+// their property (a new unit gets its terms and today's prices), a scheduled price by a row of
+// the unit's history with the same term and amount, charge types by name ignoring case, tenants
+// by phone and leases by an active lease of that tenant on the unit. A record that already exists is left exactly as it is, even
 // when its values differ; fixed extras are set only on a lease that has none, and a member the
 // demo marks disabled is disabled only by the run that invites them.
 package demoseed
@@ -20,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -65,12 +67,13 @@ type Result struct {
 	Notes []string
 }
 
-// Run seeds the demo organizations. c decides "today" for move-out rules and the booking that
-// starts on the first day of next month, both in Asia/Jakarta.
+// Run seeds the demo organizations. c decides "today" for move-out rules, the booking that
+// starts on the first day of next month and the price that changes next 1 January, all in
+// Asia/Jakarta.
 func Run(ctx context.Context, d Deps, c clock.Clock) (Result, error) {
 	var res Result
 	for _, o := range demoOrgs(c) {
-		s := &seeder{d: d, spec: o}
+		s := &seeder{d: d, spec: o, today: tenant.Today(c)}
 		if err := s.run(ctx); err != nil {
 			return Result{}, fmt.Errorf("seeding %s: %w", o.Name, err)
 		}
@@ -88,6 +91,7 @@ func Run(ctx context.Context, d Deps, c clock.Clock) (Result, error) {
 type seeder struct {
 	d     Deps
 	spec  orgSpec
+	today time.Time                       // in Asia/Jakarta
 	p     authz.Principal                 // the org-wide Admin who makes the changes
 	props map[string]uuid.UUID            // property name -> id
 	types map[string]uuid.UUID            // lower-case charge type name -> id
@@ -109,6 +113,9 @@ func (s *seeder) run(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureProperties(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureScheduledPrices(ctx); err != nil {
 		return err
 	}
 	if err := s.ensureMembers(ctx); err != nil {
@@ -181,8 +188,9 @@ func (s *seeder) ensureProperties(ctx context.Context) error {
 			for _, label := range ps.Units {
 				u, err := property.FindUnit(ctx, tx, s.p.OrganizationID, prop.ID, label)
 				if errors.Is(err, property.ErrNotFound) {
-					rent := ps.Rent
-					u, err = s.d.Properties.CreateUnitTx(ctx, tx, s.p, prop.ID, property.UnitInput{Label: label, DefaultRent: &rent})
+					u, err = s.d.Properties.CreateUnitTx(ctx, tx, s.p, prop.ID, property.UnitInput{
+						Label: label, Terms: termInputs(ps.termsOf(label)),
+					})
 				}
 				if err != nil {
 					return fmt.Errorf("unit %s in %s: %w", label, ps.Name, err)
@@ -192,6 +200,44 @@ func (s *seeder) ensureProperties(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// ensureScheduledPrices records each price change after today that the unit's history does not
+// hold yet: no row for the same term and amount.
+func (s *seeder) ensureScheduledPrices(ctx context.Context) error {
+	for _, ps := range s.spec.Properties {
+		for _, sp := range ps.Scheduled {
+			unitID, ok := s.units[ps.Name][sp.Unit]
+			if !ok {
+				return fmt.Errorf("unknown unit %s in %s", sp.Unit, ps.Name)
+			}
+			history, err := s.d.Properties.ListUnitPrices(ctx, s.p, unitID)
+			if err != nil {
+				return err
+			}
+			if slices.ContainsFunc(history, func(p property.UnitPrice) bool {
+				return p.Months == sp.Months && p.Amount == sp.Amount
+			}) {
+				continue
+			}
+			_, err = s.d.Properties.CreateUnitPrice(ctx, s.p, unitID, property.PriceInput{
+				Months: sp.Months, Amount: sp.Amount, EffectiveFrom: sp.From,
+			})
+			if err != nil {
+				return fmt.Errorf("price of %s %s: %w", ps.Name, sp.Unit, err)
+			}
+		}
+	}
+	return nil
+}
+
+func termInputs(terms []termSpec) []property.TermInput {
+	out := make([]property.TermInput, len(terms))
+	for i, t := range terms {
+		price := t.Price
+		out[i] = property.TermInput{Months: t.Months, Price: &price}
+	}
+	return out
 }
 
 // ensureChargeTypes finds every charge type by name, ignoring case, and adds the missing ones.
@@ -349,7 +395,7 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 	if !ok {
 		return uuid.Nil, fmt.Errorf("unknown unit %s in %s", ls.Unit, ls.Property)
 	}
-	current, err := tenant.ActiveLeaseForUnit(ctx, tx, s.p.OrganizationID, unitID)
+	current, err := tenant.ActiveLeaseForUnit(ctx, tx, s.p.OrganizationID, unitID, s.today)
 	switch {
 	case err == nil && current.TenantID == tenantID:
 		return current.ID, nil
@@ -359,7 +405,11 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 	case !errors.Is(err, tenant.ErrNotFound):
 		return uuid.Nil, err
 	}
-	terms := tenant.Terms{StartDate: ls.Start, RentAmount: ls.Rent, DepositAmount: ls.Deposit}
+	terms := tenant.Terms{StartDate: ls.Start, DepositAmount: ls.Deposit}
+	term := ls.Term
+	if term == 0 {
+		term = 1
+	}
 	if ls.Collector != "" {
 		number, err := phone.Normalize(ls.Collector)
 		if err != nil {
@@ -376,7 +426,7 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 			terms.CollectorMemberID = id
 		}
 	}
-	l, err := s.d.Tenants.CreateLeaseTx(ctx, tx, s.p, tenant.NewLease{TenantID: tenantID, UnitID: unitID, Terms: terms})
+	l, err := s.d.Tenants.CreateLeaseTx(ctx, tx, s.p, tenant.NewLease{TenantID: tenantID, UnitID: unitID, TermMonths: term, Terms: terms})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("lease on %s %s: %w", ls.Property, ls.Unit, err)
 	}

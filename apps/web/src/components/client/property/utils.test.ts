@@ -7,10 +7,8 @@ import { createAppAbility } from "@/lib/capabilities";
 
 import type { PropertyPermissions } from "./type";
 import {
-  BAD_RENT_MESSAGE,
   checkPropertyForm,
   checkUnitForm,
-  defaultRentText,
   EMPTY_PROPERTY_NAME_MESSAGE,
   EMPTY_UNIT_LABEL_MESSAGE,
   isPropertyMissing,
@@ -26,6 +24,7 @@ import {
   unitCountText,
   UNIT_SORT_OPTIONS,
   unitOccupancyView,
+  unitRentText,
   unitsReadOnly,
 } from "./utils";
 
@@ -165,7 +164,7 @@ const unit: Unit = {
   id: "22222222-2222-4222-8222-222222222222",
   propertyId: kosMelati.id,
   label: "Kamar 01",
-  defaultRent: 1_200_000,
+  terms: [{ months: 1, price: 1_200_000 }],
   occupied: true,
   currentTenant: {
     id: "33333333-3333-4333-8333-333333333333",
@@ -237,13 +236,56 @@ describe("propertySummary", () => {
   });
 });
 
-describe("defaultRentText", () => {
-  it("formats the rent as rupiah", () => {
-    expect(defaultRentText(unit)).toBe("Rp1.200.000");
-  });
-
-  it("says so when no rent is set", () => {
-    expect(defaultRentText({})).toBe(NO_RENT_TEXT);
+describe("unitRentText", () => {
+  it.each<{ name: string; terms: Unit["terms"]; want: string }>([
+    {
+      name: "a monthly price",
+      terms: [{ months: 1, price: 1_200_000 }],
+      want: "Rp1.200.000",
+    },
+    {
+      name: "a 3-month price",
+      terms: [{ months: 3, price: 3_500_000 }],
+      want: "Rp3.500.000 per 3 bulan",
+    },
+    {
+      name: "a 6-month price",
+      terms: [{ months: 6, price: 6_900_000 }],
+      want: "Rp6.900.000 per 6 bulan",
+    },
+    {
+      name: "a yearly price",
+      terms: [{ months: 12, price: 15_000_000 }],
+      want: "Rp15.000.000 per tahun",
+    },
+    {
+      name: "the shortest of several priced terms",
+      terms: [
+        { months: 12, price: 13_000_000 },
+        { months: 3, price: 3_500_000 },
+        { months: 6, price: 6_900_000 },
+      ],
+      want: "Rp3.500.000 per 3 bulan",
+    },
+    {
+      name: "the shortest term that has a price",
+      terms: [{ months: 1 }, { months: 12, price: 15_000_000 }],
+      want: "Rp15.000.000 per tahun",
+    },
+    {
+      name: "a term with only a next price",
+      terms: [
+        {
+          months: 1,
+          nextPrice: { amount: 1_300_000, effectiveFrom: "2026-12-01" },
+        },
+      ],
+      want: NO_RENT_TEXT,
+    },
+    { name: "no priced term", terms: [{ months: 1 }], want: NO_RENT_TEXT },
+    { name: "no term", terms: [], want: NO_RENT_TEXT },
+  ])("shows $name as $want", ({ terms, want }) => {
+    expect(unitRentText({ terms })).toBe(want);
   });
 });
 
@@ -320,19 +362,9 @@ describe("checkPropertyForm", () => {
 describe("checkUnitForm", () => {
   it.each([
     {
-      name: "a label and a rent",
-      values: { label: " Kamar 11 ", rent: "1.250.000" },
-      input: { label: "Kamar 11", defaultRent: 1_250_000 },
-    },
-    {
-      name: "a rent typed as plain digits",
-      values: { label: "Kamar 12", rent: "900000" },
-      input: { label: "Kamar 12", defaultRent: 900_000 },
-    },
-    {
-      name: "no rent, which leaves it out",
-      values: { label: "Kamar 13", rent: "  " },
-      input: { label: "Kamar 13" },
+      name: "a trimmed label, sent alone",
+      values: { label: " Kamar 11 " },
+      input: { label: "Kamar 11" },
     },
   ])("accepts $name", ({ values, input }) => {
     expect(checkUnitForm(values)).toEqual({ ok: true, input });
@@ -341,26 +373,8 @@ describe("checkUnitForm", () => {
   it.each([
     {
       name: "no label",
-      values: { label: " ", rent: "" },
+      values: { label: " " },
       errors: { label: EMPTY_UNIT_LABEL_MESSAGE },
-    },
-    {
-      name: "a rent of zero",
-      values: { label: "Kamar 1", rent: "0" },
-      errors: { defaultRent: BAD_RENT_MESSAGE },
-    },
-    {
-      name: "a rent that is not an amount",
-      values: { label: "Kamar 1", rent: "1.5jt" },
-      errors: { defaultRent: BAD_RENT_MESSAGE },
-    },
-    {
-      name: "both wrong",
-      values: { label: "", rent: "abc" },
-      errors: {
-        label: EMPTY_UNIT_LABEL_MESSAGE,
-        defaultRent: BAD_RENT_MESSAGE,
-      },
     },
   ])("refuses $name", ({ values, errors }) => {
     expect(checkUnitForm(values)).toEqual({ ok: false, errors });

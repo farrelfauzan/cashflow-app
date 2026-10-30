@@ -20,7 +20,6 @@ import {
   EDIT_LEASE_NOTE,
   LEASE_TERMS_API_FIELDS,
   NO_COLLECTOR_LABEL,
-  RENT_CHANGE_HINT,
   billedFromOptions,
   checkLeaseTerms,
   collectorOptions,
@@ -49,8 +48,8 @@ type LeaseEditFormProps = {
 };
 
 // "Ubah sewa" (boards Sewa-Ubah.dc.html and Sewa-Ubah-Phone.dc.html): the start date, "Mulai
-// tagih dari" for a lease entered late, the rent, the deposit and the collector of an active
-// lease. The unit and the tenant never change. On iPad the billing choice has the right half of
+// tagih dari" for a lease entered late, the deposit and the collector of an active lease. The
+// unit, the tenant and the term never change. On iPad the billing choice has the right half of
 // the wide panel to itself, as in "Sewakan unit"; on the phone the fields stack in the board's
 // order.
 export function LeaseEditForm({
@@ -65,7 +64,6 @@ export function LeaseEditForm({
   const refresh = useRefreshLease(orgId);
   const startRef = useRef<HTMLInputElement>(null);
   const billedFromRef = useRef<HTMLButtonElement>(null);
-  const rentRef = useRef<HTMLInputElement>(null);
   const depositRef = useRef<HTMLInputElement>(null);
   const collectorRef = useRef<HTMLButtonElement>(null);
 
@@ -73,7 +71,6 @@ export function LeaseEditForm({
   const [startDate, setStartDate] = useState(initial.startDate);
   const [billing, setBilling] = useState<BillingChoice>(initial.billing);
   const [chosenBilledFrom, setChosenBilledFrom] = useState(initial.billedFrom);
-  const [rent, setRent] = useState(initial.rent);
   const [deposit, setDeposit] = useState(initial.deposit);
   const [collector, setCollector] = useState(initial.collector);
   const [errors, setErrors] = useState<LeaseFormErrors>({});
@@ -87,7 +84,9 @@ export function LeaseEditForm({
 
   const box = editStartBox(startDate, lease.enteredOn, today);
   const options =
-    box === "billing" ? billedFromOptions(startDate, lease.enteredOn) : [];
+    box === "billing"
+      ? billedFromOptions(startDate, lease.enteredOn, lease.termMonths)
+      : [];
   const billedFrom = options.some((o) => o.value === chosenBilledFrom)
     ? chosenBilledFrom
     : defaultBilledFrom(options, lease.enteredOn);
@@ -118,7 +117,6 @@ export function LeaseEditForm({
       unitId: null,
       startDate: startRef,
       billedFrom: billedFromRef,
-      rentAmount: rentRef,
       depositAmount: depositRef,
       collectorMemberId: collectorRef,
     };
@@ -145,7 +143,7 @@ export function LeaseEditForm({
 
     setAlert(null);
     const checked = checkLeaseTerms(
-      { startDate, billing, billedFrom, rent, deposit, collector },
+      { startDate, billing, billedFrom, deposit, collector },
       lease,
     );
     if (!checked.ok) {
@@ -169,7 +167,7 @@ export function LeaseEditForm({
       >
         {alert !== null && <FormAlert message={alert} />}
 
-        <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'box_box_note'_'rent_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
+        <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'box_box_note'_'deposit_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
           <div className="flex min-w-0 flex-col gap-1 rounded-xl bg-muted p-3.5 text-base md:text-[17px] md:[grid-area:box]">
             <p>
               <span className="text-muted-foreground">Unit: </span>
@@ -208,6 +206,7 @@ export function LeaseEditForm({
                 startDate={startDate}
                 enteredOn={lease.enteredOn}
                 today={today}
+                term={lease.termMonths}
                 billing={billing}
                 onBillingChange={(next) => {
                   setBilling(next);
@@ -237,23 +236,6 @@ export function LeaseEditForm({
               />
             </div>
           )}
-
-          <div className="min-w-0 md:[grid-area:rent]">
-            <RupiahField
-              inputRef={rentRef}
-              label="Sewa per bulan"
-              name="rentAmount"
-              placeholder="1.250.000"
-              hint={RENT_CHANGE_HINT}
-              value={rent}
-              onChange={(text) => {
-                setRent(text);
-                clearError("rentAmount");
-              }}
-              error={errors.rentAmount}
-              disabled={saving}
-            />
-          </div>
 
           <div className="min-w-0 md:[grid-area:deposit]">
             <RupiahField
