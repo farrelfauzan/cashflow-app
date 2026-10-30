@@ -11,7 +11,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { openListPageOf } from "./support/property-fixtures";
+import { openPropertyListPageOf } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
@@ -136,7 +136,7 @@ async function addProperty(
   await expect(panel).toHaveCount(0);
   await expect(visibleText(page, `${name} sudah ditambahkan.`)).toBeVisible();
   // It sorts after the seeded and reused properties, so it is on a later page of the list.
-  await openListPageOf(page, name);
+  await openPropertyListPageOf(page, name);
   const row = propertyRow(list, name);
   await expect(row).toBeVisible();
   return row;
@@ -308,7 +308,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(edit).toHaveCount(0);
     await expect(visibleText(page, `${renamed} sudah disimpan.`)).toBeVisible();
     // The new name sorts elsewhere in the list, perhaps on another page.
-    await openListPageOf(page, renamed);
+    await openPropertyListPageOf(page, renamed);
     const changed = propertyRow(list, renamed);
     await expect(changed).toContainText("Ruko");
     await expect(changed).not.toContainText("Jl. Cempaka");
@@ -423,7 +423,7 @@ test.describe("Admin of the whole organization", () => {
       .getByRole("link", { name: "Properti" })
       .click();
     await expect(page).toHaveURL(/\/properties$/);
-    await openListPageOf(page, name);
+    await openPropertyListPageOf(page, name);
     const row = propertyRow(
       page.getByRole("list", { name: "Daftar properti" }),
       name,

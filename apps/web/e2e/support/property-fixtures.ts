@@ -1,14 +1,11 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 
-import {
-  DEFAULT_PAGE_SIZE,
-  PAGE_PARAM,
-} from "../../src/components/client/list/utils";
 import type {
   Property,
   PropertyKind,
   PropertyList,
 } from "../../src/lib/api/generated/model";
+import { openListPageOf } from "./list-pages";
 
 // Properties the specs need only to exist (a place for their own unit, tenant and lease) are
 // found by a stable name and created once, so a database reused across many runs does not grow
@@ -69,56 +66,12 @@ export async function findOrCreateProperty(
   throw new Error("unreachable");
 }
 
-// Where a property stands in the list as the API sorts it (by name, the screen's default), found
-// by paging through the whole list, 100 at a time, until the exact name turns up.
-async function positionOf(
+// Opens the page of the property list that holds the named property: one a test has just made or
+// renamed is rarely on page 1, since per-run properties sort after the seeded and reused ones.
+// Reloads the page, so assert any toast first.
+export async function openPropertyListPageOf(
   page: Page,
-  orgId: string,
   name: string,
-): Promise<number> {
-  const pageSize = 100;
-  for (let pageNumber = 1; ; pageNumber += 1) {
-    const response = await page.request.get(`/api/orgs/${orgId}/properties`, {
-      params: { sort: "name", page: pageNumber, pageSize },
-    });
-    expect(response.status(), await response.text()).toBe(200);
-    const list = (await response.json()) as PropertyList;
-    const index = list.items.findIndex((property) => property.name === name);
-    if (index !== -1) return (pageNumber - 1) * pageSize + index;
-    if (pageNumber * pageSize >= list.total) {
-      throw new Error(`${name} is not in the property list`);
-    }
-  }
-}
-
-// Opens the page of the property list (from the signed-in member's organization, the screen
-// the browser is on) that holds the named property. The list pages at DEFAULT_PAGE_SIZE and keeps
-// its page in the URL, and per-run properties sort after the seeded and reused ones, so a property
-// a test has just made or renamed is rarely on page 1. Reloads the page, so a toast on screen is
-// gone: assert it first. Both projects add properties at the same time, so a property near a page
-// boundary can move to the next page between the lookup and the page loading; when its row is not
-// there, the lookup is made again (a few times).
-export async function openListPageOf(page: Page, name: string): Promise<void> {
-  const url = new URL(page.url());
-  const orgId = /^\/o\/([0-9a-f-]{36})\/properties\/?$/.exec(url.pathname)?.[1];
-  if (orgId === undefined) throw new Error("not on the property list");
-  const row = page
-    .getByRole("list", { name: "Daftar properti" })
-    .getByRole("listitem")
-    .filter({ hasText: name });
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const position = await positionOf(page, orgId, name);
-    const listPage = Math.floor(position / DEFAULT_PAGE_SIZE) + 1;
-    if (listPage === 1) {
-      url.searchParams.delete(PAGE_PARAM);
-    } else {
-      url.searchParams.set(PAGE_PARAM, String(listPage));
-    }
-    await page.goto(`${url.pathname}${url.search}`);
-    const found = await row
-      .waitFor({ state: "visible", timeout: 5000 })
-      .then(() => true)
-      .catch(() => false);
-    if (found) return;
-  }
+): Promise<void> {
+  await openListPageOf(page, "properties", name);
 }
