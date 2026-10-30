@@ -9,7 +9,6 @@ import {
 import type {
   ChargeType,
   Lease,
-  Property,
   Tenant,
   Unit,
 } from "../src/lib/api/generated/model";
@@ -18,6 +17,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
@@ -26,13 +26,13 @@ import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 // Supervisor in Kost Putri Anggrek; Mbak Sari is Admin limited to Kos Melati. Charge types belong
 // to the whole organization, so each test creates the types it needs with names no other run,
 // project, test or retry uses, finds its rows by those names, and never asserts the whole list.
-// Each test changes only its own property, unit, tenant and lease. Property names start with
-// "Wisma" so they sort after every seeded property and never push one off the first page of the
-// property list that properties.spec.ts reads.
+// Each test changes only its own unit, tenant and lease, in a property reused across runs
+// (support/property-fixtures.ts). Property names start with "Wisma" so they sort after every
+// seeded property and never push one off the first page of the property list that
+// properties.spec.ts reads.
 
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
-const UNIT = "Kamar 1";
 const PANEL = "Biaya tambahan";
 const SAVE = "Simpan biaya tambahan";
 const ADD_TYPE = "Tambah jenis biaya baru";
@@ -136,7 +136,8 @@ async function createChargeType(
 }
 
 // Opens Pak Hendra's Griya Sejahtera and, on its tenant's page, a lease of the test's own that
-// started today: a property and unit, a tenant and the lease, all new.
+// started today: a reused property ("Wisma Tetap ...", found or made once), and a unit, tenant and
+// lease new this run (the unit's name is unique per run, as the property keeps every run's units).
 async function openOwnLease(
   page: Page,
   testInfo: TestInfo,
@@ -144,21 +145,18 @@ async function openOwnLease(
 ) {
   await openTenants(page, HENDRA, GRIYA);
   const orgId = orgIdOf(page);
-  const property = await call<Property>(
-    page,
-    `/orgs/${orgId}/properties`,
-    201,
-    {
-      name: uniqueName(testInfo, names.property),
-      kind: "kos",
-      address: "",
-    },
-  );
+  const property = await findOrCreateProperty(page, orgId, testInfo, {
+    base: names.property,
+    kind: "kos",
+  });
   const unit = await call<Unit>(
     page,
     `/orgs/${orgId}/properties/${property.id}/units`,
     201,
-    { label: UNIT, terms: [{ months: 1, price: 1_250_000 }] },
+    {
+      label: uniqueName(testInfo, "Kamar 1"),
+      terms: [{ months: 1, price: 1_250_000 }],
+    },
   );
   const tenant = await call<Tenant>(page, `/orgs/${orgId}/tenants`, 201, {
     name: uniqueName(testInfo, names.tenant),
@@ -172,7 +170,7 @@ async function openOwnLease(
     termMonths: 1,
     depositAmount: 2_500_000,
   });
-  return { orgId, property, tenant };
+  return { orgId, property, tenant, unit };
 }
 
 async function openTenantPage(page: Page, orgId: string, tenant: Tenant) {
@@ -195,18 +193,22 @@ test.describe("Admin of the whole organization", () => {
 
   test("sets two charges, then removes one", async ({ page }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { orgId, property, tenant } = await openOwnLease(page, testInfo, {
-      property: "Wisma Uji Biaya",
-      tenant: "Wulan Anggraini",
-      testDigit: 1,
-    });
+    const { orgId, property, tenant, unit } = await openOwnLease(
+      page,
+      testInfo,
+      {
+        property: "Biaya",
+        tenant: "Wulan Anggraini",
+        testDigit: 1,
+      },
+    );
     const parkir = uniqueName(testInfo, "Parkir Uji");
     const sampah = uniqueName(testInfo, "Sampah Uji");
     await createChargeType(page, orgId, parkir);
     await createChargeType(page, orgId, sampah);
     await openTenantPage(page, orgId, tenant);
     const card = page.getByRole("region", {
-      name: `${UNIT} · ${property.name}`,
+      name: `${unit.label} · ${property.name}`,
     });
     await expect(card.getByText("Biaya tambahan tetap")).toHaveCount(0);
 
@@ -215,7 +217,7 @@ test.describe("Admin of the whole organization", () => {
     await open.click();
     const panel = page.getByRole("dialog", { name: PANEL });
     await expect(panel).toContainText(
-      `${tenant.name} · ${UNIT} · ${property.name}`,
+      `${tenant.name} · ${unit.label} · ${property.name}`,
     );
     await expect(panel).toContainText(INTRO);
     await expect(panel).toContainText(METERED_NOTE);
@@ -245,7 +247,7 @@ test.describe("Admin of the whole organization", () => {
     await panel.getByRole("button", { name: SAVE }).click();
     await expect(panel).toHaveCount(0);
     await expect(
-      visibleText(page, `Biaya tambahan ${UNIT} disimpan.`),
+      visibleText(page, `Biaya tambahan ${unit.label} disimpan.`),
     ).toBeVisible();
     await expect(card.getByText("Biaya tambahan tetap")).toBeVisible();
     await expect(card).toContainText(`${parkir} Rp15.000`);
@@ -271,16 +273,20 @@ test.describe("Admin of the whole organization", () => {
 
   test("adds a new charge type from the panel", async ({ page }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { orgId, property, tenant } = await openOwnLease(page, testInfo, {
-      property: "Wisma Uji Jenis",
-      tenant: "Wiwik Handayani",
-      testDigit: 2,
-    });
+    const { orgId, property, tenant, unit } = await openOwnLease(
+      page,
+      testInfo,
+      {
+        property: "Jenis",
+        tenant: "Wiwik Handayani",
+        testDigit: 2,
+      },
+    );
     const taken = uniqueName(testInfo, "Keamanan Uji");
     await createChargeType(page, orgId, taken);
     await openTenantPage(page, orgId, tenant);
     const card = page.getByRole("region", {
-      name: `${UNIT} · ${property.name}`,
+      name: `${unit.label} · ${property.name}`,
     });
     await card.getByRole("button", { name: PANEL, exact: true }).click();
     const panel = page.getByRole("dialog", { name: PANEL });
@@ -352,16 +358,20 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { orgId, property, tenant } = await openOwnLease(page, testInfo, {
-      property: "Wisma Uji Jumlah",
-      tenant: "Wiryo Kusumo",
-      testDigit: 3,
-    });
+    const { orgId, property, tenant, unit } = await openOwnLease(
+      page,
+      testInfo,
+      {
+        property: "Jumlah",
+        tenant: "Wiryo Kusumo",
+        testDigit: 3,
+      },
+    );
     const kebersihan = uniqueName(testInfo, "Kebersihan Uji");
     await createChargeType(page, orgId, kebersihan);
     await openTenantPage(page, orgId, tenant);
     const card = page.getByRole("region", {
-      name: `${UNIT} · ${property.name}`,
+      name: `${unit.label} · ${property.name}`,
     });
     await card.getByRole("button", { name: PANEL, exact: true }).click();
     const panel = page.getByRole("dialog", { name: PANEL });

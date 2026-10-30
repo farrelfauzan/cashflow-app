@@ -11,6 +11,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { openListPageOf } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
@@ -133,6 +134,9 @@ async function addProperty(
   await panel.getByLabel("Alamat (boleh dikosongkan)").fill(address);
   await panel.getByRole("button", { name: "Simpan properti" }).click();
   await expect(panel).toHaveCount(0);
+  await expect(visibleText(page, `${name} sudah ditambahkan.`)).toBeVisible();
+  // It sorts after the seeded and reused properties, so it is on a later page of the list.
+  await openListPageOf(page, name);
   const row = propertyRow(list, name);
   await expect(row).toBeVisible();
   return row;
@@ -243,8 +247,8 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const name = uniqueName(testInfo, "Kos Cempaka");
-    const renamed = uniqueName(testInfo, "Kos Cempaka Indah");
+    const name = uniqueName(testInfo, "Wisma Uji Cempaka");
+    const renamed = uniqueName(testInfo, "Wisma Uji Cempaka Indah");
     const list = await openProperties(page, HENDRA, GRIYA);
 
     // Empty fields are caught before anything is sent.
@@ -284,7 +288,6 @@ test.describe("Admin of the whole organization", () => {
       "Kontrakan",
       "Jl. Cempaka No. 9, Bantul",
     );
-    await expect(visibleText(page, `${name} sudah ditambahkan.`)).toBeVisible();
     await expect(row).toContainText("Jl. Cempaka No. 9, Bantul");
     await expect(row).toContainText("Kontrakan");
     await expect(row).toContainText("0 unit");
@@ -304,6 +307,8 @@ test.describe("Admin of the whole organization", () => {
     await edit.getByRole("button", { name: "Simpan properti" }).click();
     await expect(edit).toHaveCount(0);
     await expect(visibleText(page, `${renamed} sudah disimpan.`)).toBeVisible();
+    // The new name sorts elsewhere in the list, perhaps on another page.
+    await openListPageOf(page, renamed);
     const changed = propertyRow(list, renamed);
     await expect(changed).toContainText("Ruko");
     await expect(changed).not.toContainText("Jl. Cempaka");
@@ -335,7 +340,7 @@ test.describe("Admin of the whole organization", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const name = uniqueName(testInfo, "Kos Dahlia");
+    const name = uniqueName(testInfo, "Wisma Uji Dahlia");
     const list = await openProperties(page, HENDRA, GRIYA);
     await addProperty(page, list, name, "Kos", "Jl. Dahlia No. 3, Sleman");
     const units = await openUnits(page, list, name);
@@ -417,6 +422,8 @@ test.describe("Admin of the whole organization", () => {
       .getByRole("main")
       .getByRole("link", { name: "Properti" })
       .click();
+    await expect(page).toHaveURL(/\/properties$/);
+    await openListPageOf(page, name);
     const row = propertyRow(
       page.getByRole("list", { name: "Daftar properti" }),
       name,
