@@ -10,10 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SheetClose } from "@/components/ui/sheet";
 import { toFormError } from "@/lib/api/form-error";
-import type { Unit } from "@/lib/api/generated/model";
+import type { PropertyKind, TermMonths, Unit } from "@/lib/api/generated/model";
 import {
   getGetPropertyQueryKey,
   getListPropertiesQueryKey,
+  getListUnitPricesQueryKey,
   getListUnitsQueryKey,
   useCreateUnit,
   useUpdateUnit,
@@ -24,43 +25,69 @@ import {
   INPUT_CLASS,
   UNIT_LABEL_MAX_LENGTH,
   checkUnitForm,
+  initialTermRows,
 } from "./utils";
-import type { UnitFormErrors } from "./type";
+import type { UnitFormErrors, UnitTermRow } from "./type";
+
+import { UnitPriceHistory } from "./unit-price-history";
+import { UnitTermsField } from "./unit-terms-field";
 
 type UnitFormProps = {
   orgId: string;
   propertyId: string;
   propertyName: string;
+  propertyKind: PropertyKind;
   // The unit being changed; none when adding.
   unit: Unit | undefined;
+  // "Today" in Jakarta, read once when the panel opened.
+  today: string;
+  // The line at the top after "Ubah harga" saved a price; "" for none.
+  notice: string;
   onSaved: (unit: Unit) => void;
+  // "Ubah harga" on one of the unit's priced terms.
+  onChangePrice: (months: TermMonths) => void;
 };
 
 // The fields the API's errors can name; any other field goes to the alert.
-const FORM_FIELDS = ["label"];
+const FORM_FIELDS = ["label", "terms"];
 
-// "Tambah unit" and "Ubah unit": the unit's name. The save button sits outside the form, in the
-// panel's footer, and submits it through its `form` attribute.
+// "Tambah unit" and "Ubah unit": the unit's name, the terms it offers with their prices, and when
+// changing one, its price history. The save button sits outside the form, in the panel's footer,
+// and submits it through its `form` attribute.
 export function UnitForm({
   orgId,
   propertyId,
   propertyName,
+  propertyKind,
   unit,
+  today,
+  notice,
   onSaved,
+  onChangePrice,
 }: UnitFormProps) {
   const id = useId();
   const formId = `${id}-form`;
   const labelRef = useRef<HTMLInputElement>(null);
+  const termsRef = useRef<HTMLFieldSetElement>(null);
   const queryClient = useQueryClient();
   const [label, setLabel] = useState(unit?.label ?? "");
+  const [terms, setTerms] = useState<UnitTermRow[]>(() =>
+    initialTermRows(unit, propertyKind),
+  );
   const [errors, setErrors] = useState<UnitFormErrors>({});
   const [alert, setAlert] = useState<string | null>(null);
 
-  // A new unit changes the property's unit count and occupancy as well.
-  const invalidateUnits = () =>
-    queryClient.invalidateQueries({
-      queryKey: getListUnitsQueryKey(orgId, propertyId),
-    });
+  // A new unit changes the property's unit count and occupancy as well. A price typed for a term
+  // adds a row to the unit's price history.
+  const invalidateUnits = (saved: Unit) =>
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: getListUnitsQueryKey(orgId, propertyId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: getListUnitPricesQueryKey(orgId, saved.id),
+      }),
+    ]);
   const invalidateProperties = () =>
     Promise.all([
       queryClient.invalidateQueries({
@@ -72,10 +99,13 @@ export function UnitForm({
     ]);
   const create = useCreateUnit({
     mutation: {
-      onSuccess: () => Promise.all([invalidateUnits(), invalidateProperties()]),
+      onSuccess: (saved) =>
+        Promise.all([invalidateUnits(saved), invalidateProperties()]),
     },
   });
-  const update = useUpdateUnit({ mutation: { onSuccess: invalidateUnits } });
+  const update = useUpdateUnit({
+    mutation: { onSuccess: (saved) => invalidateUnits(saved) },
+  });
   const saving = create.isPending || update.isPending;
 
   function clearError(field: keyof UnitFormErrors) {
@@ -86,11 +116,25 @@ export function UnitForm({
     });
   }
 
+  function focusTerms() {
+    termsRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  }
+
+  function changeRow(changed: UnitTermRow) {
+    setTerms((current) =>
+      current.map((row) => (row.months === changed.months ? changed : row)),
+    );
+    clearError("terms");
+  }
+
   function handleError(error: unknown) {
     const failed = toFormError(error, FORM_FIELDS);
     if (failed.field === "label") {
       setErrors({ label: failed.message });
       labelRef.current?.focus();
+    } else if (failed.field === "terms") {
+      setErrors({ terms: failed.message });
+      focusTerms();
     } else {
       setAlert(failed.message);
     }
@@ -101,10 +145,11 @@ export function UnitForm({
     if (saving) return;
 
     setAlert(null);
-    const checked = checkUnitForm({ label });
+    const checked = checkUnitForm({ label, terms }, unit);
     if (!checked.ok) {
       setErrors(checked.errors);
-      labelRef.current?.focus();
+      if (checked.errors.label !== undefined) labelRef.current?.focus();
+      else focusTerms();
       return;
     }
     setErrors({});
@@ -125,6 +170,13 @@ export function UnitForm({
         onSubmit={handleSubmit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-[15px] font-semibold text-primary empty:hidden md:text-base"
+        >
+          {notice}
+        </p>
         {alert !== null && <FormAlert message={alert} />}
 
         <div className="flex flex-col gap-2">
@@ -164,6 +216,20 @@ export function UnitForm({
             </span>
           </p>
         </div>
+
+        <UnitTermsField
+          fieldsetRef={termsRef}
+          unit={unit}
+          rows={terms}
+          error={errors.terms}
+          disabled={saving}
+          onRowChange={changeRow}
+          onChangePrice={onChangePrice}
+        />
+
+        {unit !== undefined && (
+          <UnitPriceHistory orgId={orgId} unitId={unit.id} today={today} />
+        )}
       </form>
       <div className="flex gap-2.5 border-t px-6 py-4">
         <SheetClose asChild>

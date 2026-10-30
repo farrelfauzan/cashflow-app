@@ -1,7 +1,10 @@
 import type {
   PropertyInput,
   PropertyKind,
+  ScheduledPrice,
+  TermMonths,
   UnitInput,
+  UnitPriceInput,
 } from "@/lib/api/generated/model";
 
 export type PropertyPermissions = {
@@ -50,11 +53,56 @@ export type PropertyFormResult =
   | { ok: true; input: PropertyInput }
   | { ok: false; errors: PropertyFormErrors };
 
-export type UnitFormValues = {
-  label: string;
+// One row of "Masa sewa dan harga": whether the unit offers the term, and the price typed for it
+// (digits grouped with dots, "" for none).
+export type UnitTermRow = {
+  months: TermMonths;
+  checked: boolean;
+  priceText: string;
 };
 
-export type UnitFormErrors = Partial<Record<"label", string>>;
+export type UnitFormValues = {
+  label: string;
+  // Always the four terms, shortest first.
+  terms: readonly UnitTermRow[];
+};
+
+export type UnitFormErrors = Partial<Record<"label" | "terms", string>>;
+
+// What a checked term shows under its checkbox: the price in force, read-only, with the next
+// scheduled change and "Ubah harga"; or a field for a price.
+export type UnitTermRowView =
+  | { kind: "priced"; price: number; nextPrice: ScheduledPrice | undefined }
+  | { kind: "input"; nextPrice: ScheduledPrice | undefined };
+
+// Which view the unit panel shows: the unit's form, or "Ubah harga" for one term.
+export type UnitPanelView =
+  { kind: "unit" } | { kind: "price"; months: TermMonths };
+
+// One row of "Riwayat harga".
+export type UnitPriceHistoryRowView = {
+  id: string;
+  // "Per tahun · Rp15.000.000".
+  title: string;
+  // "Mulai 1 Jan 2027 · dicatat Pak Hendra Gunawan, 30 Okt 2026".
+  detail: string;
+  chip: "Akan berlaku" | "Berlaku sekarang" | null;
+};
+
+export type UnitPriceFormValues = {
+  months: TermMonths;
+  amountText: string;
+  // YYYY-MM-DD, "" for none.
+  effectiveFrom: string;
+};
+
+export type UnitPriceFormErrors = Partial<
+  Record<"months" | "amount" | "effectiveFrom", string>
+>;
+
+export type UnitPriceFormResult =
+  | { ok: true; input: UnitPriceInput }
+  | { ok: false; errors: UnitPriceFormErrors };
 
 export type UnitFormResult =
   { ok: true; input: UnitInput } | { ok: false; errors: UnitFormErrors };

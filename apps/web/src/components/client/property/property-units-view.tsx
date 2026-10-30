@@ -190,6 +190,7 @@ export function PropertyUnitsView({
         orgId={orgId}
         propertyId={property.id}
         propertyName={property.name}
+        propertyKind={property.kind}
         panel={unitPanel}
         units={units.data?.items ?? []}
         onPanelChange={setUnitPanel}
