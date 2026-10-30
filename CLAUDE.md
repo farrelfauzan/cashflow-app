@@ -303,10 +303,12 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
 
 ## Billing and reminders
 
-- A lease is billed every 1, 3, 6 or 12 months (its term, decision 32). A unit lists the terms
-  it offers, each with its own price typed by the owner, not months times the monthly rent;
-  by default a ruko offers 12 months and a kos, kontrakan or other unit 1, and at least one term
-  stays on.
+- A lease is billed every 1, 3, 6 or 12 months (its term, decision 32), or every N months for
+  a unit's custom term (decision 33): besides the four standard terms a unit may offer one term
+  of 2 to 60 months other than 3, 6 or 12, which the admin types, and it behaves exactly like the others. A unit lists
+  the terms it offers, each with its own price typed by the owner, not months times the monthly
+  rent; by default a ruko offers 12 months and a kos, kontrakan or other unit 1, and at least
+  one term stays on.
   A lease picks one offered term when it is created and keeps it; another term is a new lease.
 - Each lease bills on the anniversary of its own start date, in advance, one period per term: a
   monthly lease starting 15 Oct has periods 15 Oct to 14 Nov (due 15 Oct), 15 Nov to 14 Dec (due
@@ -374,7 +376,7 @@ per asset), message_log, audit_log, settings, staff_user, membership, role, role
   clean income. It is shown per property and unit where a cost belongs to one, and both figures
   drill down to the underlying rows (invoice lines, expenses, payroll payments). Extra charges
   are not a separate report category. Open until the report design (slices 9 and 10): whether
-  rent counts as billed or collected (it matters more for rent paid 3 to 12 months ahead), and
+  rent counts as billed or collected (it matters more for rent paid months or years ahead), and
   how shared costs are attributed to units.
 
 ## Payments
