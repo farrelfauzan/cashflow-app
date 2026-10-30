@@ -341,8 +341,13 @@ test.describe("Admin of the whole organization", () => {
     await page.keyboard.press("Escape");
     await expect(option).toHaveCount(0);
 
+    // Said as soon as the unit is chosen, before the rest of the form is filled in.
+    await expect(lease.getByText(NO_PRICE_MESSAGE)).toBeVisible();
+    await attachFullPageScreenshot(page, testInfo, "lease-form-no-price-hint");
+
     await lease.getByLabel("Mulai sewa").fill(jakartaToday(new Date()));
     await lease.getByRole("button", { name: "Simpan sewa" }).click();
+    // Once more after "Simpan sewa", now as the field's error, and only once.
     await expect(lease.getByText(NO_PRICE_MESSAGE)).toBeVisible();
     await expect(term).toHaveAttribute("aria-invalid", "true");
     await expect(term).toBeFocused();

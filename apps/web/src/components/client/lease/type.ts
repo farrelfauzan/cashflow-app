@@ -41,6 +41,9 @@ export type LeaseFormValues = LeaseTermsValues & {
   termMonths: TermMonths | null;
 };
 
+// The hint under "Masa sewa", and whether it needs the member's attention.
+export type TermHint = { text: string; tone: "muted" | "warning" };
+
 // The fields a check or the API can name. "propertyId" is the form's own: the API never sees it.
 export type LeaseFormField =
   | "propertyId"

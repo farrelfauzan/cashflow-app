@@ -35,6 +35,7 @@ import type {
   LeaseTermsValues,
   PlannedEndSuggestion,
   StartTiming,
+  TermHint,
   TermOption,
   TermPeriodNames,
 } from "./type";
@@ -373,10 +374,20 @@ export function termOptions(
 }
 
 // The hint under "Masa sewa": how often the chosen term is billed. A period's rent is the unit's
-// price in force on the day its invoice is made (CLAUDE.md "Billing and reminders").
-export function termHint(term: TermMonths | null): string {
-  if (term === null) return TERM_NO_CHOICE_HINT;
-  return `Tagihan dibuat sekali tiap ${TERM_PERIOD_WORDS[term]}, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.`;
+// price in force on the day its invoice is made (CLAUDE.md "Billing and reminders"). A chosen unit
+// with no priced term is a warning at once, so the admin learns it before filling in the rest.
+export function termHint(
+  unit: Pick<Unit, "terms"> | undefined,
+  term: TermMonths | null,
+): TermHint {
+  if (term !== null) {
+    return {
+      text: `Tagihan dibuat sekali tiap ${TERM_PERIOD_WORDS[term]}, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.`,
+      tone: "muted",
+    };
+  }
+  if (unit === undefined) return { text: TERM_NO_CHOICE_HINT, tone: "muted" };
+  return { text: NO_PRICE_MESSAGE, tone: "warning" };
 }
 
 export const NO_TERM_PRICE_TEXT = "belum ada harga";

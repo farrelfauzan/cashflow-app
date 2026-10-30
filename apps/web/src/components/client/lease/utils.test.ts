@@ -791,11 +791,28 @@ describe("termHint", () => {
       want: "Tagihan dibuat sekali tiap tahun, dibayar di muka. Harganya ikut harga unit yang berlaku saat tagihan dibuat.",
     },
   ] as const)("says how often $term months is billed", ({ term, want }) => {
-    expect(termHint(term)).toBe(want);
+    const unit = {
+      terms: [{ months: term, price: 1_250_000 }],
+    };
+    expect(termHint(unit, term)).toEqual({
+      text: want,
+      tone: "muted",
+    });
   });
 
-  it("says where the choices come from before one is made", () => {
-    expect(termHint(null)).toBe(TERM_NO_CHOICE_HINT);
+  it("says where the choices come from before a unit is chosen", () => {
+    expect(termHint(undefined, null)).toEqual({
+      text: TERM_NO_CHOICE_HINT,
+      tone: "muted",
+    });
+  });
+
+  it("warns as soon as the chosen unit has no priced term", () => {
+    const unit = { terms: [{ months: 1 as const }, { months: 12 as const }] };
+    expect(termHint(unit, null)).toEqual({
+      text: NO_PRICE_MESSAGE,
+      tone: "warning",
+    });
   });
 });
 

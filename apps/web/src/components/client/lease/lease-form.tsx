@@ -122,6 +122,7 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   const termMonths = selectedTerm(unit, chosenTerm);
   // The billing words and choices follow the term; monthly until a priced term is chosen.
   const term = termMonths ?? 1;
+  const termNote = termHint(unit, termMonths);
 
   const candidates = useListCollectorCandidates(orgId, fresh);
 
@@ -306,7 +307,9 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
               clearError("termMonths");
               clearError("billedFrom");
             }}
-            hint={termHint(termMonths)}
+            // After "Simpan sewa" the same message is the field's error; it shows once.
+            hint={errors.termMonths === termNote.text ? null : termNote.text}
+            hintTone={termNote.tone}
             error={errors.termMonths}
             disabled={saving || unit === undefined}
             className="md:[grid-area:term]"

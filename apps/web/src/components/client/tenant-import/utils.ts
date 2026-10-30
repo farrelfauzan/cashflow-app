@@ -61,7 +61,7 @@ export const OPTIONAL_COLUMNS = [
 export const RENT_NOTE =
   "sewa: harga satu periode. Boleh dikosongkan kalau unit sudah punya harga untuk jangka itu.";
 export const TERM_NOTE =
-  "jangka_bulan: 1, 3, 6 atau 12. Kosongkan untuk 1 bulan, atau satu-satunya jangka yang ditawarkan unit.";
+  "jangka_bulan: 1, 3, 6 atau 12. Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).";
 export const BILL_FROM_NOTE =
   "mulai_tagih: awal periode pertama yang ditagih. Kosongkan untuk menagih sejak tanggal mulai sewa.";
 // The notes under the columns, in the template's order.

@@ -437,7 +437,7 @@ test.describe("Admin of the whole organization", () => {
     // The format card names the new column and what an empty cell means.
     await expect(
       page.getByText(
-        "jangka_bulan: 1, 3, 6 atau 12. Kosongkan untuk 1 bulan, atau satu-satunya jangka yang ditawarkan unit.",
+        "jangka_bulan: 1, 3, 6 atau 12. Kalau kosong: 1 bulan bila unit menawarkannya, atau satu-satunya jangka unit. Unit baru memakai jangka bawaan jenisnya (ruko 12 bulan, lainnya 1 bulan).",
       ),
     ).toBeVisible();
 
