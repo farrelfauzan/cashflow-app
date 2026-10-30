@@ -381,6 +381,8 @@ export function customTermView(
 
 export const CUSTOM_TERM_LABEL = "Lainnya";
 export const CUSTOM_MONTHS_LABEL = "Jumlah bulan";
+// The range decision 33 allows; a hint only, the API judges it.
+export const CUSTOM_MONTHS_HINT = "2 sampai 60 bulan, selain 3, 6 dan 12.";
 
 // The price field of "Lainnya": "Harga per 4 bulan" once a month count is typed, "Harga per
 // periode" before.

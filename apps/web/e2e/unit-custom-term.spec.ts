@@ -208,6 +208,10 @@ test.describe("Admin of the whole organization", () => {
     const months = panel.getByLabel("Jumlah bulan");
     await expect(months).toBeVisible();
     await expect(months).toHaveAttribute("inputmode", "numeric");
+    // The range, as a hint the field is described by; the API still judges it.
+    await expect(months).toHaveAccessibleDescription(
+      "2 sampai 60 bulan, selain 3, 6 dan 12.",
+    );
     await expect(
       panel.getByLabel("Harga per periode", { exact: true }),
     ).toBeVisible();

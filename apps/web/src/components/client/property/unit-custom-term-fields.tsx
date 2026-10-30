@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { UnitCustomTermRow, UnitCustomTermView } from "./type";
 import {
+  CUSTOM_MONTHS_HINT,
   CUSTOM_MONTHS_LABEL,
   CUSTOM_TERM_LABEL,
   customTermPriceLabel,
+  FIELD_HINT_CLASS,
   FIELD_LABEL_CLASS,
   INPUT_CLASS,
   monthsDigits,
@@ -83,13 +85,18 @@ export function UnitCustomTermFields({
               disabled={disabled}
               aria-invalid={monthsError !== undefined}
               aria-describedby={
-                monthsError !== undefined ? `${id}-months-error` : undefined
+                monthsError !== undefined
+                  ? `${id}-months-error ${id}-months-hint`
+                  : `${id}-months-hint`
               }
               className={cn(INPUT_CLASS, "w-28")}
             />
             {monthsError !== undefined && (
               <FieldError id={`${id}-months-error`} message={monthsError} />
             )}
+            <p id={`${id}-months-hint`} className={FIELD_HINT_CLASS}>
+              {CUSTOM_MONTHS_HINT}
+            </p>
           </div>
           <RupiahField
             inputRef={priceRef}
