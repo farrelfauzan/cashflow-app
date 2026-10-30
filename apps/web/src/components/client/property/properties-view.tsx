@@ -18,6 +18,7 @@ import { toFormError } from "@/lib/api/form-error";
 import { useGetOrgMe } from "@/lib/api/generated/members/members";
 import { useListProperties } from "@/lib/api/generated/properties/properties";
 import type { AppAbility } from "@/lib/capabilities";
+import { useHydrated } from "@/lib/use-hydrated";
 import {
   LOADING_TEXT,
   ONLY_ASSIGNED_NOTE,
@@ -47,6 +48,9 @@ export function PropertiesView({
   organizationName,
 }: PropertiesViewProps) {
   const orgMe = useGetOrgMe(orgId);
+  // The shell loads getOrgMe too, and its answer can reach the shared cache before this view
+  // hydrates. Until hydration is done, render as the server did (without it).
+  const orgMeData = useHydrated() ? orgMe.data : undefined;
   const url = useListUrl();
   const page = readPage(url.searchParams);
   const pageSize = readPageSize(url.searchParams);
@@ -77,7 +81,7 @@ export function PropertiesView({
         onAdd={() => openPanel({ kind: "add" })}
       />
 
-      {orgMe.data !== undefined && (
+      {orgMeData !== undefined && (
         <div className="flex flex-col gap-1">
           {permissions.seesOnlyAssigned && (
             <p className="text-[15px] leading-normal font-semibold text-foreground/80 md:text-base">
@@ -108,7 +112,7 @@ export function PropertiesView({
             void properties.refetch();
           }}
         />
-      ) : orgMe.data === undefined || properties.data === undefined ? (
+      ) : orgMeData === undefined || properties.data === undefined ? (
         <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>
       ) : properties.data.total === 0 ? (
         <p className="text-base text-muted-foreground">
