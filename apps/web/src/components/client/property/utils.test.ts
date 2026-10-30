@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import type {
   Capability,
@@ -17,7 +18,6 @@ import type {
 } from "./type";
 import {
   changePriceLabel,
-  checkPropertyForm,
   checkUnitForm,
   checkUnitPriceForm,
   currentPriceText,
@@ -41,6 +41,7 @@ import {
   PRICE_BEFORE_TODAY_MESSAGE,
   priceHistoryRows,
   priceSavedNotice,
+  propertyFormSchema,
   priceTermOptions,
   termLabel,
   termPriceLabel,
@@ -351,10 +352,27 @@ describe("unitOccupancyView", () => {
   });
 });
 
-describe("checkPropertyForm", () => {
+// What the property form shows for these values: the input it sends, or the first message under
+// each field (as zodResolver puts them).
+function checkProperty(values: unknown) {
+  const result = propertyFormSchema.safeParse(values);
+  if (result.success) return { ok: true, input: result.data };
+  const { fieldErrors } = z.flattenError(result.error);
+  return {
+    ok: false,
+    errors: Object.fromEntries(
+      Object.entries(fieldErrors).map(([field, messages]) => [
+        field,
+        messages?.[0],
+      ]),
+    ),
+  };
+}
+
+describe("propertyFormSchema", () => {
   it("trims the name and the address and sends the kind", () => {
     expect(
-      checkPropertyForm({
+      checkProperty({
         name: "  Kos Melati ",
         kind: "kos",
         address: " Jl. Melati No. 12, Sleman  ",
@@ -370,18 +388,18 @@ describe("checkPropertyForm", () => {
   });
 
   it("sends an empty address, which clears it when editing", () => {
-    expect(
-      checkPropertyForm({ name: "Ruko", kind: "ruko", address: " " }),
-    ).toEqual({
-      ok: true,
-      input: { name: "Ruko", kind: "ruko", address: "" },
-    });
+    expect(checkProperty({ name: "Ruko", kind: "ruko", address: " " })).toEqual(
+      {
+        ok: true,
+        input: { name: "Ruko", kind: "ruko", address: "" },
+      },
+    );
   });
 
   it.each([
     {
       name: "nothing filled in",
-      values: { name: "  ", kind: null, address: "" },
+      values: { name: "  ", kind: undefined, address: "" },
       errors: { name: EMPTY_PROPERTY_NAME_MESSAGE, kind: NO_KIND_MESSAGE },
     },
     {
@@ -391,11 +409,14 @@ describe("checkPropertyForm", () => {
     },
     {
       name: "no kind",
-      values: { name: "Kos Melati", kind: null, address: "" },
+      values: { name: "Kos Melati", kind: undefined, address: "" },
       errors: { kind: NO_KIND_MESSAGE },
     },
   ])("refuses $name", ({ values, errors }) => {
-    expect(checkPropertyForm(values)).toEqual({ ok: false, errors });
+    expect(checkProperty(values)).toEqual({
+      ok: false,
+      errors,
+    });
   });
 });
 

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
   NO_DATE_MESSAGE,
   shortestTerm,
@@ -9,21 +11,18 @@ import type {
   ListPropertiesSort,
   ListUnitsSort,
   Property,
-  PropertyKind,
   ScheduledPrice,
   TermMonths,
   Unit,
   UnitPrice,
   UnitTermInput,
 } from "@/lib/api/generated/model";
+import { PropertyKind } from "@/lib/api/generated/model";
 import { formatDate, formatTimestampDate } from "@/lib/format/date";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
 
 import type {
-  PropertyFormErrors,
-  PropertyFormResult,
-  PropertyFormValues,
   PropertyPermissions,
   UnitFormErrors,
   UnitFormResult,
@@ -192,21 +191,16 @@ export const EMPTY_PROPERTY_NAME_MESSAGE = "Isi nama properti.";
 export const NO_KIND_MESSAGE = "Pilih jenis properti.";
 export const EMPTY_UNIT_LABEL_MESSAGE = "Isi nama unit.";
 
-export function checkPropertyForm(
-  values: PropertyFormValues,
-): PropertyFormResult {
-  const name = values.name.trim();
-  const errors: PropertyFormErrors = {};
-  if (name === "") errors.name = EMPTY_PROPERTY_NAME_MESSAGE;
-  if (values.kind === null) errors.kind = NO_KIND_MESSAGE;
-  if (values.kind === null || Object.keys(errors).length > 0) {
-    return { ok: false, errors };
-  }
-  return {
-    ok: true,
-    input: { name, kind: values.kind, address: values.address.trim() },
-  };
-}
+// "Tambah properti" and "Ubah properti": the name and the address are sent trimmed, and an empty
+// address clears it when editing.
+export const propertyFormSchema = z.object({
+  name: z.string().trim().min(1, EMPTY_PROPERTY_NAME_MESSAGE),
+  kind: z.enum(PropertyKind, { error: NO_KIND_MESSAGE }),
+  address: z.string().trim(),
+});
+
+// The property form's fields an API error can name; an error on any other field goes to the alert.
+export const PROPERTY_FORM_API_FIELDS = ["name", "kind", "address"] as const;
 
 export const NO_TERM_MESSAGE = "Pilih minimal satu masa sewa.";
 export const EMPTY_CUSTOM_MONTHS_MESSAGE = "Isi jumlah bulan.";
