@@ -6,14 +6,8 @@
  */
 
 /**
- * A billing term in months (decision 32). The lease is billed once per term, in advance.
+ * A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
+ * @minimum 1
+ * @maximum 60
  */
-export type TermMonths = typeof TermMonths[keyof typeof TermMonths];
-
-
-export const TermMonths = {
-  NUMBER_1: 1,
-  NUMBER_3: 3,
-  NUMBER_6: 6,
-  NUMBER_12: 12,
-} as const;
+export type TermMonths = number;
