@@ -18,10 +18,11 @@ import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Impor penyewa", against the real API (seed-demo data). Pak Hendra is Admin of the whole of
 // Griya Sejahtera and Supervisor in Kost Putri Anggrek; Mbak Sari is Admin limited to Kos Melati.
-// Only one test saves anything: a new property "Wisma Impor ..." (sorting after every seeded
-// property) with two tenants whose names start with W and Y (sorting after every seeded tenant)
-// and numbers 0813-5..., which no other spec uses. Every name and number is unique to the run,
-// project and retry. The file's contents are never logged.
+// Only one test saves anything through the import: a new property "Wisma Impor ..." (sorting
+// after every seeded property) with two tenants whose names start with W and Y (sorting after
+// every seeded tenant) and numbers 0813-5..., which no other spec uses. The term test makes its own
+// property "Wisma Impor Jangka ..." and its unit through the API. Every name and number is unique
+// to the run, project and retry. The file's contents are never logged.
 
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
@@ -342,7 +343,9 @@ test.describe("Admin of the whole organization", () => {
     const one = importRow(page, 2);
     await expect(one).toContainText("Siap");
     await expect(one).toContainText(first);
-    await expect(one).toContainText(`Kamar A1 · ${property} · Rp1.250.000`);
+    await expect(one).toContainText(
+      `Kamar A1 · ${property} · Per bulan · Rp1.250.000`,
+    );
     await expect(one).toContainText(
       `Mulai ${formatDate(firstStart)}, tagih dari ${formatDate(firstBill)}`,
     );
@@ -356,7 +359,9 @@ test.describe("Admin of the whole organization", () => {
     }
     const two = importRow(page, 3);
     await expect(two).toContainText("Siap");
-    await expect(two).toContainText(`Kamar A2 · ${property} · Rp1.350.000`);
+    await expect(two).toContainText(
+      `Kamar A2 · ${property} · Per bulan · Rp1.350.000`,
+    );
     await expect(two).toContainText(`Mulai ${formatDate(secondStart)}`);
     await expect(two).not.toContainText("tagih dari");
     // The second row finds the property the first one creates.
@@ -418,6 +423,68 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       list.getByRole("listitem").filter({ hasText: second }),
     ).toContainText("Kamar A2");
+
+    expect(outsideRequests).toEqual([]);
+  });
+
+  test("names a term the unit does not offer under jangka_bulan", async ({
+    page,
+  }, testInfo) => {
+    const outsideRequests = trackOutsideRequests(page);
+    await openImport(page);
+    const orgId = /\/o\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? "";
+
+    // The format card names the new column and what an empty cell means.
+    await expect(
+      page.getByText(
+        "jangka_bulan: 1, 3, 6 atau 12. Kosongkan untuk 1 bulan, atau satu-satunya jangka yang ditawarkan unit.",
+      ),
+    ).toBeVisible();
+
+    // A kos unit of the test's own that is rented by the month only.
+    const property = uniqueName(testInfo, "Wisma Impor Jangka");
+    const created = await page.request.post(`/api/orgs/${orgId}/properties`, {
+      data: { name: property, kind: "kos", address: "" },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const { id: propertyId } = (await created.json()) as { id: string };
+    const unit = await page.request.post(
+      `/api/orgs/${orgId}/properties/${propertyId}/units`,
+      { data: { label: "Kamar 1", terms: [{ months: 1, price: 1_250_000 }] } },
+    );
+    expect(unit.status(), await unit.text()).toBe(201);
+
+    const header = [
+      ...HEADER.slice(0, HEADER.indexOf("sewa") + 1),
+      "jangka_bulan",
+      ...HEADER.slice(HEADER.indexOf("sewa") + 1),
+    ];
+    await chooseFile(
+      page,
+      "penyewa-jangka.csv",
+      csv(header, [
+        [
+          property,
+          "kos",
+          "Kamar 1",
+          uniqueName(testInfo, "Wahyuni Jangka"),
+          tenantNumber(testInfo, 7),
+          "",
+          "3",
+          tenthOfMonth(1),
+          "",
+        ],
+      ]),
+    );
+    await check(page);
+    const row = importRow(page, 2);
+    await expect(row).toContainText("Perlu diperbaiki");
+    await expect(row).toContainText(
+      "Kolom jangka_bulan: Unit ini tidak menawarkan jangka sewa 3 bulan.",
+    );
+    await expect(
+      page.getByRole("button", { name: "Simpan 0 baris" }),
+    ).toBeDisabled();
 
     expect(outsideRequests).toEqual([]);
   });

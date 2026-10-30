@@ -3,7 +3,7 @@
 import { Info } from "lucide-react";
 
 import {
-  BILL_FROM_NOTE,
+  COLUMN_NOTES,
   LIMITS_TEXT,
   OLD_DUE_DAY_NOTE,
   OPTIONAL_COLUMNS,
@@ -42,9 +42,14 @@ export function ImportFormatCard({ orgId }: ImportFormatCardProps) {
         title="Kolom boleh dikosongkan"
         columns={OPTIONAL_COLUMNS}
       />
-      <p className="text-sm leading-normal text-muted-foreground md:text-base">
-        {BILL_FROM_NOTE}
-      </p>
+      {COLUMN_NOTES.map((note) => (
+        <p
+          key={note}
+          className="text-sm leading-normal text-muted-foreground md:text-base"
+        >
+          {note}
+        </p>
+      ))}
       <div className="flex items-start gap-2.5 rounded-xl bg-secondary px-3.5 py-3">
         <Info
           aria-hidden="true"
