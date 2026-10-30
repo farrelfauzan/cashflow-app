@@ -61,6 +61,8 @@ import {
   leaseTermFor,
   shortestTerm,
   TERM_PERIOD_WORDS,
+  termPeriodNames,
+  termPeriodWords,
   startDateHint,
   startTiming,
   billAllLabel,
@@ -701,6 +703,30 @@ describe("TERM_PERIOD_WORDS", () => {
       3: "3 bulan",
       6: "6 bulan",
       12: "tahun",
+    });
+  });
+});
+
+describe("termPeriodWords", () => {
+  it("uses the table for a standard term", () => {
+    expect(termPeriodWords(12)).toBe("tahun");
+  });
+
+  it("names a custom term by its months", () => {
+    expect(termPeriodWords(24)).toBe("24 bulan");
+  });
+});
+
+describe("termPeriodNames", () => {
+  it("uses the table for a standard term", () => {
+    expect(termPeriodNames(1).noun).toBe("bulan");
+  });
+
+  it("names a custom term as a period of its months", () => {
+    expect(termPeriodNames(2)).toEqual({
+      noun: "periode 2 bulan",
+      short: "periode",
+      plural: "periode-periode",
     });
   });
 });

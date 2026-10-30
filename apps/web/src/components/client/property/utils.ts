@@ -1,7 +1,7 @@
 import {
   NO_DATE_MESSAGE,
   shortestTerm,
-  TERM_PERIOD_WORDS,
+  termPeriodWords,
 } from "@/components/client/lease/utils";
 import { ApiError } from "@/lib/api/errors";
 import type { SortOptions } from "@/components/client/list/type";
@@ -162,7 +162,7 @@ export function unitRentText(unit: Pick<Unit, "terms">): string {
   const price = priced.find((term) => term.months === months)?.price;
   if (months === null || price === undefined) return NO_RENT_TEXT;
   const amount = formatRupiah(price);
-  return months === 1 ? amount : `${amount} per ${TERM_PERIOD_WORDS[months]}`;
+  return months === 1 ? amount : `${amount} per ${termPeriodWords(months)}`;
 }
 
 export function unitOccupancyView(
@@ -339,17 +339,17 @@ export const TERM_PRICE_HINT =
 
 // "Per bulan", "Per 3 bulan", "Per tahun".
 export function termLabel(months: TermMonths): string {
-  return `Per ${TERM_PERIOD_WORDS[months]}`;
+  return `Per ${termPeriodWords(months)}`;
 }
 
 // "Harga per tahun".
 export function termPriceLabel(months: TermMonths): string {
-  return `Harga per ${TERM_PERIOD_WORDS[months]}`;
+  return `Harga per ${termPeriodWords(months)}`;
 }
 
 // "Ubah harga per tahun", the name of a term's "Ubah harga" button.
 export function changePriceLabel(months: TermMonths): string {
-  return `Ubah harga per ${TERM_PERIOD_WORDS[months]}`;
+  return `Ubah harga per ${termPeriodWords(months)}`;
 }
 
 // "Mulai 1 Jan 2027: Rp1.600.000".
@@ -461,5 +461,5 @@ export function priceTermOptions(
 export function priceSavedNotice(
   price: Pick<UnitPrice, "months" | "effectiveFrom">,
 ): string {
-  return `Harga per ${TERM_PERIOD_WORDS[price.months]} dicatat, berlaku mulai ${formatDate(price.effectiveFrom)}.`;
+  return `Harga per ${termPeriodWords(price.months)} dicatat, berlaku mulai ${formatDate(price.effectiveFrom)}.`;
 }

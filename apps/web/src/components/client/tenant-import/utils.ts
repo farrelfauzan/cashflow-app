@@ -1,4 +1,4 @@
-import { TERM_PERIOD_WORDS } from "@/components/client/lease/utils";
+import { termPeriodWords } from "@/components/client/lease/utils";
 import { ApiError, GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
 import { API_BASE_PATH } from "@/lib/api/client";
 import type { ImportRow, ImportSummary } from "@/lib/api/generated/model";
@@ -211,7 +211,7 @@ function cell(value: string): string {
 function rowPlaceText(row: ImportRow): string {
   const parts = [cell(row.unitLabel), cell(row.propertyName)];
   if (row.values !== undefined) {
-    parts.push(`Per ${TERM_PERIOD_WORDS[row.values.termMonths]}`);
+    parts.push(`Per ${termPeriodWords(row.values.termMonths)}`);
     const rent = row.values.rentAmount;
     if (rent !== undefined) parts.push(formatRupiah(rent));
   }
