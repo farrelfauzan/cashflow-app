@@ -83,4 +83,7 @@ export async function openListPageOf(
       .catch(() => false);
     if (found) return;
   }
+  throw new Error(
+    `${name} was not on the page of the ${screen} list where the API put it, after 3 tries`,
+  );
 }
