@@ -69,7 +69,9 @@ func TestUnitPricesAndTermsOverHTTP(t *testing.T) {
 				http.StatusConflict, "term_not_offered", "months"},
 			{"a date before today", map[string]any{"months": 1, "amount": 900_000, "effectiveFrom": "2026-11-01"},
 				http.StatusConflict, "price_too_early", "effectiveFrom"},
-			{"an unknown term", map[string]any{"months": 2, "amount": 900_000, "effectiveFrom": "2027-01-01"},
+			{"a custom term the unit does not offer", map[string]any{"months": 2, "amount": 1_700_000, "effectiveFrom": "2027-01-01"},
+				http.StatusConflict, "term_not_offered", "months"},
+			{"a term over 60 months", map[string]any{"months": 61, "amount": 900_000, "effectiveFrom": "2027-01-01"},
 				http.StatusBadRequest, "invalid_input", "months"},
 			{"no amount", map[string]any{"months": 1, "effectiveFrom": "2027-01-01"}, http.StatusBadRequest, "invalid_input", "amount"},
 		}
@@ -133,7 +135,7 @@ func TestUnitPricesAndTermsOverHTTP(t *testing.T) {
 		})
 		requireError(t, resp, body, http.StatusConflict, "no_price", "termMonths")
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
-			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "termMonths": 5,
+			"tenantId": rina.Id, "unitId": kamar1.Id, "startDate": "2026-11-01", "termMonths": 61,
 		})
 		requireError(t, resp, body, http.StatusBadRequest, "invalid_input", "termMonths")
 		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
@@ -155,5 +157,27 @@ func TestUnitPricesAndTermsOverHTTP(t *testing.T) {
 		resp, body = admin.do(http.MethodPut, orgPath+"/leases/"+lease.Id.String(), map[string]any{"startDate": "2026-11-01", "depositAmount": 500000})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		require.Contains(t, string(body), `"termMonths":12`, "an update keeps the term")
+	})
+
+	t.Run("a unit offers one custom term and a lease bills by it", func(t *testing.T) {
+		resp, body := admin.do(http.MethodPost, orgPath+"/properties/"+melati.Id.String()+"/units", map[string]any{
+			"label": "Kamar 3", "terms": []map[string]any{{"months": 1, "price": 850_000}, {"months": 2, "price": 1_650_000}, {"months": 24}},
+		})
+		requireError(t, resp, body, http.StatusBadRequest, "invalid_input", "terms")
+
+		kamar3 := createUnit(apigen.UnitInput{Label: "Kamar 3", Terms: &[]apigen.UnitTermInput{
+			{Months: 2, Price: price(1_650_000)}, {Months: 1, Price: price(850_000)},
+		}})
+		require.Equal(t, []apigen.UnitTerm{{Months: 1, Price: price(850_000)}, {Months: 2, Price: price(1_650_000)}}, kamar3.Terms)
+
+		resp, body = admin.do(http.MethodPost, orgPath+"/tenants", map[string]any{"name": "Wulan Sari", "phone": "0812-1910-5009"})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		wulan := decode[apigen.Tenant](t, body)
+		resp, body = admin.do(http.MethodPost, orgPath+"/leases", map[string]any{
+			"tenantId": wulan.Id, "unitId": kamar3.Id, "startDate": "2026-11-01", "termMonths": 2,
+		})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"termMonths":2`)
+		require.Contains(t, string(body), `"periodRent":1650000`)
 	})
 }

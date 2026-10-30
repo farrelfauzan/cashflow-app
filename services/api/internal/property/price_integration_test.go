@@ -66,7 +66,7 @@ func TestUnitPrices(t *testing.T) {
 
 	t.Run("bad input names the field", func(t *testing.T) {
 		for field, in := range map[string]property.PriceInput{
-			"months":        {Months: 2, Amount: 1, EffectiveFrom: day(2027, 1, 1)},
+			"months":        {Months: 61, Amount: 1, EffectiveFrom: day(2027, 1, 1)},
 			"amount":        {Months: 1, EffectiveFrom: day(2027, 1, 1)},
 			"effectiveFrom": {Months: 1, Amount: 1},
 		} {

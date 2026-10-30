@@ -134,7 +134,7 @@ func TestTenantsAndLeases(t *testing.T) {
 			"tenantId":          {TenantID: uuid.New(), UnitID: w.kamar2.ID, TermMonths: 1, Terms: good},
 			"unitId":            {TenantID: rina.ID, UnitID: uuid.New(), TermMonths: 1, Terms: good},
 			"startDate":         {TenantID: rina.ID, UnitID: w.kamar2.ID, TermMonths: 1, Terms: tenant.Terms{}},
-			"termMonths":        {TenantID: rina.ID, UnitID: w.kamar2.ID, TermMonths: 2, Terms: good},
+			"termMonths":        {TenantID: rina.ID, UnitID: w.kamar2.ID, TermMonths: 61, Terms: good},
 			"depositAmount":     {TenantID: rina.ID, UnitID: w.kamar2.ID, TermMonths: 1, Terms: tenant.Terms{StartDate: good.StartDate, DepositAmount: -1}},
 			"collectorMemberId": {TenantID: rina.ID, UnitID: w.kamar2.ID, TermMonths: 1, Terms: tenant.Terms{StartDate: good.StartDate, CollectorMemberID: uuid.New()}},
 		}

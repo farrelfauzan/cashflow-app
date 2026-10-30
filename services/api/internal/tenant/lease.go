@@ -137,7 +137,7 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
 		return Lease{}, err
 	}
-	if !slices.Contains(unit.Terms, int16(in.TermMonths)) { //nolint:gosec // a valid term is 1 to 12
+	if !slices.Contains(unit.Terms, int16(in.TermMonths)) { //nolint:gosec // a valid term is 1 to 60
 		return Lease{}, &TermError{Err: ErrTermNotOffered, Field: "termMonths", Months: in.TermMonths}
 	}
 	if _, err := PriceInForce(ctx, q, p.OrganizationID, in.UnitID, in.TermMonths, enteredOn); err != nil {
@@ -148,7 +148,7 @@ func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principa
 	}
 	err = q.CreateLease(ctx, dbgen.CreateLeaseParams{
 		ID: id, OrganizationID: p.OrganizationID, UnitID: in.UnitID, TenantID: in.TenantID,
-		StartDate: terms.StartDate, TermMonths: int16(in.TermMonths), //nolint:gosec // a valid term is 1 to 12
+		StartDate: terms.StartDate, TermMonths: int16(in.TermMonths), //nolint:gosec // a valid term is 1 to 60
 		DepositAmount: terms.DepositAmount, CollectorStaffUserID: collector,
 		EnteredOn: enteredOn, BilledFrom: terms.BilledFrom,
 	})
@@ -429,8 +429,8 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 	return l
 }
 
-// termMessage is the message for a term that is not one of TermMonths.
-const termMessage = "Jangka sewa harus 1, 3, 6 atau 12 bulan."
+// termMessage is the message for a term that is not a valid one (see ValidTerm).
+const termMessage = "Jangka sewa harus 1 sampai 60 bulan."
 
 // ValidTerms checks lease terms for a lease billed every term months and returns them with the
 // dates as calendar days. Errors are *InputError. A BilledFrom given must be a period start of

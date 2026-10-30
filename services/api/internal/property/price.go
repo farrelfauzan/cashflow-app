@@ -17,8 +17,10 @@ import (
 
 // The messages shared by the unit and price inputs.
 const (
-	termMessage  = "Jangka sewa harus 1, 3, 6 atau 12 bulan."
+	termMessage  = "Jangka sewa harus 1 sampai 60 bulan."
 	priceMessage = "Harga sewa harus lebih dari Rp0."
+	// customTermMessage is for a second term outside 1, 3, 6 and 12 months (decision 33).
+	customTermMessage = "Selain 1, 3, 6 dan 12 bulan, unit hanya bisa menawarkan satu jangka sewa lain."
 )
 
 // ListUnitPrices returns a unit's whole price history (decision 32), the latest effective date
@@ -69,7 +71,7 @@ func (s *Service) CreateUnitPriceTx(ctx context.Context, tx pgx.Tx, p authz.Prin
 	if err := s.authz.Authorize(ctx, tx, p, unitRequest(authz.ActionUnitManage, u.PropertyID, unitID)); err != nil {
 		return UnitPrice{}, err
 	}
-	if !slices.Contains(u.Terms, int16(in.Months)) { //nolint:gosec // a valid term is 1 to 12
+	if !slices.Contains(u.Terms, int16(in.Months)) { //nolint:gosec // a valid term is 1 to 60
 		return UnitPrice{}, &tenant.TermError{Err: tenant.ErrTermNotOffered, Field: "months", Months: in.Months}
 	}
 	if in.EffectiveFrom.Before(tenant.Today(s.clock)) {
@@ -141,7 +143,7 @@ func recordPrices(ctx context.Context, q *dbgen.Queries, p authz.Principal, unit
 func insertPrice(ctx context.Context, q *dbgen.Queries, p authz.Principal, unitID uuid.UUID, in PriceInput) (uuid.UUID, error) {
 	r, err := q.CreateUnitPrice(ctx, dbgen.CreateUnitPriceParams{
 		ID: uuid.New(), OrganizationID: p.OrganizationID, UnitID: unitID,
-		TermMonths: int16(in.Months), //nolint:gosec // a valid term is 1 to 12
+		TermMonths: int16(in.Months), //nolint:gosec // a valid term is 1 to 60
 		Amount:     in.Amount, EffectiveFrom: in.EffectiveFrom,
 		CreatedByStaffUserID: uuid.NullUUID{UUID: p.UserID, Valid: p.UserID != uuid.Nil},
 	})
@@ -216,7 +218,7 @@ func attachPrices(ctx context.Context, q *dbgen.Queries, org uuid.UUID, day time
 func termMonths(terms []TermInput) []int16 {
 	out := make([]int16, len(terms))
 	for i, t := range terms {
-		out[i] = int16(t.Months) //nolint:gosec // a valid term is 1 to 12
+		out[i] = int16(t.Months) //nolint:gosec // a valid term is 1 to 60
 	}
 	return out
 }
