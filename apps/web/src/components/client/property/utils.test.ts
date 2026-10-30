@@ -67,6 +67,9 @@ import {
   unitOccupancyView,
   unitRentText,
   unitsReadOnly,
+  NO_PRICE_TEXT,
+  unitPriceTermViews,
+  unitRowAction,
 } from "./utils";
 
 const NO_PROPERTY_PERMISSIONS: PropertyPermissions = {
@@ -214,6 +217,72 @@ const unit: Unit = {
   createdAt: "2026-10-01T03:00:00Z",
   updatedAt: "2026-10-01T03:00:00Z",
 };
+
+describe("unitRowAction", () => {
+  it.each<{ name: string; capabilities: Capability[]; want: string }>([
+    {
+      name: "an Admin edits the unit",
+      capabilities: capabilities({
+        "property:read": "allow",
+        "unit:read": "allow",
+        "unit:manage": "allow",
+      }),
+      want: "edit",
+    },
+    {
+      name: "a Supervisor sees its prices",
+      capabilities: capabilities({
+        "property:read": "allow",
+        "unit:read": "allow",
+        "unit:manage": "deny",
+      }),
+      want: "prices",
+    },
+    {
+      name: "a member limited to some properties sees their prices",
+      capabilities: capabilities({
+        "property:read": "conditional",
+        "unit:read": "conditional",
+      }),
+      want: "prices",
+    },
+    {
+      name: "a member who cannot read units gets no button",
+      capabilities: capabilities({ "property:read": "allow" }),
+      want: "none",
+    },
+  ])("$name", ({ capabilities: given, want }) => {
+    const ability = createAppAbility(given);
+    expect(unitRowAction(propertyPermissions(ability), ability)).toBe(want);
+  });
+});
+
+describe("unitPriceTermViews", () => {
+  it("lists the terms shortest first with their price and the one to come", () => {
+    expect(
+      unitPriceTermViews({
+        terms: [
+          {
+            months: 12,
+            price: 15_000_000,
+            nextPrice: { amount: 16_000_000, effectiveFrom: "2027-01-01" },
+          },
+          { months: 4 },
+          { months: 1, price: 1_200_000 },
+        ],
+      }),
+    ).toEqual([
+      { months: 1, label: "Per bulan", price: "Rp1.200.000", next: null },
+      { months: 4, label: "Per 4 bulan", price: NO_PRICE_TEXT, next: null },
+      {
+        months: 12,
+        label: "Per tahun",
+        price: "Rp15.000.000",
+        next: "Mulai 1 Jan 2027: Rp16.000.000",
+      },
+    ]);
+  });
+});
 
 describe("propertyKindLabel", () => {
   it("names every kind in Indonesian, in the form's order", () => {

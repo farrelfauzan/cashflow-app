@@ -305,6 +305,10 @@ test.describe("Admin of the whole organization", () => {
       { months: 12, price: 15_000_000 },
     ]);
     await openPropertyPage(page, orgId, property);
+    // An admin gets "Ubah" on a unit, never the read-only "Harga".
+    await expect(
+      page.getByRole("button", { name: /^Lihat harga/ }),
+    ).toHaveCount(0);
 
     const panel = await openUnitForm(page, "Kamar 2");
     await panel.getByRole("button", { name: "Ubah harga per tahun" }).click();
@@ -439,7 +443,9 @@ test.describe("Admin of the whole organization", () => {
 test.describe("Supervisor", () => {
   test.use({ storageState: HENDRA.storageState });
 
-  test("sees no Ubah on units", async ({ page }) => {
+  test("sees no Ubah on units, and a unit's terms and Riwayat harga read-only", async ({
+    page,
+  }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
     await openOrganization(page, ANGGREK);
     await page.goto(`${page.url()}/properties`);
@@ -460,6 +466,41 @@ test.describe("Supervisor", () => {
     await expect(page.getByRole("button", { name: "Tambah unit" })).toHaveCount(
       0,
     );
+
+    // "Harga" on a unit opens its prices, read-only.
+    const open = page.getByRole("button", {
+      name: "Lihat harga Kamar 3",
+      exact: true,
+    });
+    await expectTouchTarget(open);
+    await attachViewportScreenshot(page, testInfo, "unit-list-supervisor");
+    await open.click();
+    const panel = page.getByRole("dialog", { name: "Harga unit" });
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("Kamar 3 · Kos Putri Anggrek");
+    const terms = panel.getByRole("list", { name: "Masa sewa dan harga" });
+    await expect(terms.getByRole("listitem")).toHaveCount(1);
+    await expect(terms.getByRole("listitem")).toContainText("Per bulan");
+    await expect(terms.getByRole("listitem")).toContainText("Rp800.000");
+    await expect(historyRow(panel, "Per bulan · Rp800.000")).toContainText(
+      "Berlaku sekarang",
+    );
+    expect(
+      await fontSize(
+        historyRow(panel, "Per bulan · Rp800.000").locator("span").last(),
+      ),
+    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+    // Nothing in it changes anything.
+    await expect(panel.getByRole("textbox")).toHaveCount(0);
+    await expect(panel.getByRole("checkbox")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: /^Ubah/ })).toHaveCount(0);
+    await attachViewportScreenshot(page, testInfo, "unit-prices-supervisor");
+
+    // The footer's "Tutup" (the sheet's X, also "Tutup", comes after it).
+    const close = panel.getByRole("button", { name: "Tutup" }).first();
+    await expectTouchTarget(close);
+    await close.click();
+    await expect(panel).toHaveCount(0);
 
     expect(outsideRequests).toEqual([]);
   });
