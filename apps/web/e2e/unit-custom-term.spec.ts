@@ -391,8 +391,14 @@ test.describe("Admin of the whole organization", () => {
     const terms = panel.getByRole("group", { name: TERMS });
     await expect(terms.getByText(body.error.message)).toBeVisible();
     await expect(panel).toBeVisible();
+    // The terms' first checkbox takes the focus.
+    await expect(termCheckbox(panel, "Per bulan")).toBeFocused();
     await terms.getByText(body.error.message).scrollIntoViewIfNeeded();
     await attachViewportScreenshot(page, testInfo, "unit-custom-term-bad-n");
+
+    // Changing the custom row clears the API's error.
+    await panel.getByLabel("Jumlah bulan").fill("60");
+    await expect(terms.getByText(body.error.message)).toHaveCount(0);
 
     expect(outsideRequests).toEqual([]);
   });

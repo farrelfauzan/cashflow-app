@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useId, type Ref } from "react";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { RupiahField } from "@/components/client/form/rupiah-field";
@@ -24,6 +24,9 @@ import {
 type UnitCustomTermFieldsProps = {
   row: UnitCustomTermRow;
   view: Extract<UnitCustomTermView, { kind: "lainnya" }>;
+  // "Jumlah bulan" and the price field, for the form to focus.
+  monthsRef: Ref<HTMLInputElement>;
+  priceRef: Ref<HTMLInputElement>;
   // Under "Jumlah bulan" and under the price field.
   monthsError: string | undefined;
   priceError: string | undefined;
@@ -38,6 +41,8 @@ type UnitCustomTermFieldsProps = {
 export function UnitCustomTermFields({
   row,
   view,
+  monthsRef,
+  priceRef,
   monthsError,
   priceError,
   disabled,
@@ -46,7 +51,6 @@ export function UnitCustomTermFields({
   onPriceTextChange,
 }: UnitCustomTermFieldsProps) {
   const id = useId();
-  const priceRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="flex flex-col gap-2.5 border-t py-2.5 first:border-t-0">
@@ -71,6 +75,7 @@ export function UnitCustomTermFields({
               {CUSTOM_MONTHS_LABEL}
             </Label>
             <Input
+              ref={monthsRef}
               id={`${id}-months`}
               name="custom-months"
               type="text"

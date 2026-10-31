@@ -13,13 +13,12 @@ import { createAppAbility } from "@/lib/capabilities";
 
 import type {
   PropertyPermissions,
+  StandardTermKey,
   UnitCustomTermRow,
-  UnitTermRow,
+  UnitFormValues,
 } from "./type";
 import {
   changePriceLabel,
-  checkUnitForm,
-  checkUnitPriceForm,
   currentPriceText,
   customMonths,
   customTermPriceLabel,
@@ -35,7 +34,7 @@ import {
   dropsOfferedTerm,
   EMPTY_PRICE_MESSAGE,
   FUTURE_PRICE_CHIP,
-  initialTermRows,
+  initialUnitFormValues,
   nextPriceText,
   NO_TERM_MESSAGE,
   PRICE_BEFORE_TODAY_MESSAGE,
@@ -45,6 +44,8 @@ import {
   priceTermOptions,
   termLabel,
   termPriceLabel,
+  unitFormSchema,
+  unitPriceFormSchema,
   unitTermRowView,
   ZERO_PRICE_MESSAGE,
   TERM_PRICE_HINT,
@@ -497,22 +498,54 @@ const NO_CUSTOM: UnitCustomTermRow = {
   priceText: "",
 };
 
-// The four rows of "Masa sewa dan harga" with the given ones checked and typed.
-function rows(given: Partial<Record<1 | 3 | 6 | 12, string>>): UnitTermRow[] {
-  return ([1, 3, 6, 12] as const).map((months) => ({
-    months,
-    checked: given[months] !== undefined,
-    priceText: given[months] ?? "",
-  }));
+// The four standard terms of "Masa sewa dan harga" with the given ones checked and typed.
+function rows(
+  given: Partial<Record<StandardTermKey, string>>,
+): Pick<UnitFormValues, "terms" | "prices"> {
+  return {
+    terms: {
+      1: given[1] !== undefined,
+      3: given[3] !== undefined,
+      6: given[6] !== undefined,
+      12: given[12] !== undefined,
+    },
+    prices: {
+      1: given[1] ?? "",
+      3: given[3] ?? "",
+      6: given[6] ?? "",
+      12: given[12] ?? "",
+    },
+  };
 }
 
-describe("checkUnitForm", () => {
+// What a form sends for these values, or the first message under each of its fields, by the
+// field's name ("prices.12"), as zodResolver puts them.
+function checkForm<Output>(schema: z.ZodType<Output>, values: unknown) {
+  const result = schema.safeParse(values);
+  if (result.success) return { ok: true, input: result.data };
+  const errors: Record<string, string> = {};
+  for (const issue of result.error.issues) {
+    const field = issue.path.join(".");
+    if (!(field in errors)) errors[field] = issue.message;
+  }
+  return { ok: false, errors };
+}
+
+// "Tambah unit" (no unit) or "Ubah unit" for these values.
+function checkUnitForm(
+  values: UnitFormValues,
+  unit: Pick<Unit, "terms"> | undefined,
+) {
+  return checkForm(unitFormSchema(unit), values);
+}
+
+describe("unitFormSchema", () => {
   it("sends a new unit's checked terms, with a price only where one is typed", () => {
     expect(
       checkUnitForm(
         {
           label: " Kamar 11 ",
-          terms: rows({ 1: "1.250.000", 12: "" }),
+          ...rows({ 1: "1.250.000", 12: "" }),
           custom: NO_CUSTOM,
         },
         undefined,
@@ -529,10 +562,10 @@ describe("checkUnitForm", () => {
   it("never sends a price typed for a term that is then unchecked", () => {
     const values = {
       label: "Kamar 11",
-      terms: rows({ 1: "" }),
+      ...rows({ 1: "" }),
       custom: NO_CUSTOM,
     };
-    values.terms[3] = { months: 12, checked: false, priceText: "15.000.000" };
+    values.prices[12] = "15.000.000";
     expect(checkUnitForm(values, undefined)).toEqual({
       ok: true,
       input: { label: "Kamar 11", terms: [{ months: 1 }] },
@@ -546,7 +579,7 @@ describe("checkUnitForm", () => {
     // The monthly term has a price in force: it shows no field, so nothing typed for it goes.
     const values = {
       label: "Kamar 01",
-      terms: rows({ 1: "9.999", 3: "3.300.000", 12: "15.000.000" }),
+      ...rows({ 1: "9.999", 3: "3.300.000", 12: "15.000.000" }),
       custom: NO_CUSTOM,
     };
     expect(checkUnitForm(values, saved)).toEqual({
@@ -565,7 +598,7 @@ describe("checkUnitForm", () => {
   it("sends an offered term without a price when its field stays empty", () => {
     expect(
       checkUnitForm(
-        { label: "Kamar 01", terms: rows({ 3: "" }), custom: NO_CUSTOM },
+        { label: "Kamar 01", ...rows({ 3: "" }), custom: NO_CUSTOM },
         { terms: [{ months: 3 }] },
       ),
     ).toEqual({
@@ -577,17 +610,17 @@ describe("checkUnitForm", () => {
   it.each([
     {
       name: "no label",
-      values: { label: " ", terms: rows({ 1: "" }), custom: NO_CUSTOM },
+      values: { label: " ", ...rows({ 1: "" }), custom: NO_CUSTOM },
       errors: { label: EMPTY_UNIT_LABEL_MESSAGE },
     },
     {
       name: "no term",
-      values: { label: "Kamar 01", terms: rows({}), custom: NO_CUSTOM },
+      values: { label: "Kamar 01", ...rows({}), custom: NO_CUSTOM },
       errors: { terms: NO_TERM_MESSAGE },
     },
     {
       name: "neither",
-      values: { label: "", terms: rows({}), custom: NO_CUSTOM },
+      values: { label: "", ...rows({}), custom: NO_CUSTOM },
       errors: { label: EMPTY_UNIT_LABEL_MESSAGE, terms: NO_TERM_MESSAGE },
     },
   ])("refuses $name", ({ values, errors }) => {
@@ -599,18 +632,18 @@ describe("checkUnitForm", () => {
       checkUnitForm(
         {
           label: "Kamar 01",
-          terms: rows({ 1: "1.250.000", 12: "0" }),
+          ...rows({ 1: "1.250.000", 12: "0" }),
           custom: NO_CUSTOM,
         },
         undefined,
       ),
-    ).toEqual({ ok: false, errors: { prices: { 12: ZERO_PRICE_MESSAGE } } });
+    ).toEqual({ ok: false, errors: { "prices.12": ZERO_PRICE_MESSAGE } });
   });
 
   it("ignores what is typed for a term with a price in force, even Rp0", () => {
     expect(
       checkUnitForm(
-        { label: "Kamar 01", terms: rows({ 1: "0" }), custom: NO_CUSTOM },
+        { label: "Kamar 01", ...rows({ 1: "0" }), custom: NO_CUSTOM },
         { terms: [{ months: 1, price: 1_200_000 }] },
       ),
     ).toEqual({
@@ -700,7 +733,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({ 1: "1.250.000" }),
+          ...rows({ 1: "1.250.000" }),
           custom: {
             checked: true,
             showsSaved: false,
@@ -727,7 +760,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({}),
+          ...rows({}),
           custom: {
             checked: true,
             showsSaved: false,
@@ -748,7 +781,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({ 1: "" }),
+          ...rows({ 1: "" }),
           custom: {
             checked: false,
             showsSaved: false,
@@ -769,7 +802,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Ruko 2A",
-          terms: rows({ 12: "" }),
+          ...rows({ 12: "" }),
           custom: { ...initialCustomTermRow(pricedCustom), priceText: "1" },
         },
         pricedCustom,
@@ -785,7 +818,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({ 1: "" }),
+          ...rows({ 1: "" }),
           custom: {
             ...initialCustomTermRow(unpricedCustom),
             priceText: "4.800.000",
@@ -807,7 +840,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Ruko 2",
-          terms: rows({}),
+          ...rows({}),
           custom: initialCustomTermRow(pricedCustom),
         },
         pricedCustom,
@@ -823,7 +856,7 @@ describe("the custom term row", () => {
       toggleCustomTerm(initialCustomTermRow(pricedCustom), false),
       true,
     );
-    const values = { label: "Ruko 2", terms: rows({ 12: "" }), custom: again };
+    const values = { label: "Ruko 2", ...rows({ 12: "" }), custom: again };
     expect(checkUnitForm(values, pricedCustom)).toEqual({
       ok: true,
       input: { label: "Ruko 2", terms: [{ months: 12 }, { months: 24 }] },
@@ -845,13 +878,13 @@ describe("the custom term row", () => {
       initialCustomTermRow(pricedCustom),
       false,
     );
-    expect(dropsOfferedTerm(pricedCustom, rows({ 12: "" }), unticked)).toBe(
-      true,
-    );
+    expect(
+      dropsOfferedTerm(pricedCustom, rows({ 12: "" }).terms, unticked),
+    ).toBe(true);
     expect(
       dropsOfferedTerm(
         pricedCustom,
-        rows({ 12: "" }),
+        rows({ 12: "" }).terms,
         initialCustomTermRow(pricedCustom),
       ),
     ).toBe(false);
@@ -861,24 +894,24 @@ describe("the custom term row", () => {
     {
       name: "empty Jumlah bulan",
       custom: { monthsText: "", priceText: "" },
-      errors: { customMonths: EMPTY_CUSTOM_MONTHS_MESSAGE },
+      errors: { "custom.monthsText": EMPTY_CUSTOM_MONTHS_MESSAGE },
     },
     ...["1", "3", "6", "12"].map((monthsText) => ({
       name: `a standard term (${monthsText})`,
       custom: { monthsText, priceText: "" },
-      errors: { customMonths: STANDARD_CUSTOM_MONTHS_MESSAGE },
+      errors: { "custom.monthsText": STANDARD_CUSTOM_MONTHS_MESSAGE },
     })),
     {
       name: "a typed price of Rp0",
       custom: { monthsText: "4", priceText: "0" },
-      errors: { customPrice: ZERO_PRICE_MESSAGE },
+      errors: { "custom.priceText": ZERO_PRICE_MESSAGE },
     },
     {
       name: "both",
       custom: { monthsText: "", priceText: "0" },
       errors: {
-        customMonths: EMPTY_CUSTOM_MONTHS_MESSAGE,
-        customPrice: ZERO_PRICE_MESSAGE,
+        "custom.monthsText": EMPTY_CUSTOM_MONTHS_MESSAGE,
+        "custom.priceText": ZERO_PRICE_MESSAGE,
       },
     },
   ])("refuses Lainnya with $name", ({ custom, errors }) => {
@@ -886,7 +919,7 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({ 1: "" }),
+          ...rows({ 1: "" }),
           custom: { checked: true, showsSaved: false, ...custom },
         },
         undefined,
@@ -899,7 +932,7 @@ describe("the custom term row", () => {
       const result = checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({}),
+          ...rows({}),
           custom: {
             checked: true,
             showsSaved: false,
@@ -921,19 +954,22 @@ describe("the custom term row", () => {
       checkUnitForm(
         {
           label: "Kamar 5",
-          terms: rows({ 1: "" }),
+          ...rows({ 1: "" }),
           custom: { ...initialCustomTermRow(unpricedCustom), priceText: "0" },
         },
         unpricedCustom,
       ),
-    ).toEqual({ ok: false, errors: { customPrice: ZERO_PRICE_MESSAGE } });
+    ).toEqual({
+      ok: false,
+      errors: { "custom.priceText": ZERO_PRICE_MESSAGE },
+    });
   });
 
   it("counts a ticked custom row as a term", () => {
     const unticked = { ...NO_CUSTOM, monthsText: "4" };
     expect(
       checkUnitForm(
-        { label: "Kamar 5", terms: rows({}), custom: unticked },
+        { label: "Kamar 5", ...rows({}), custom: unticked },
         undefined,
       ),
     ).toEqual({ ok: false, errors: { terms: NO_TERM_MESSAGE } });
@@ -1035,25 +1071,35 @@ describe("unit terms", () => {
     { kind: "ruko" as const, want: 12 },
   ])("a new $kind unit starts with $want months", ({ kind, want }) => {
     expect(defaultUnitTerm(kind)).toBe(want);
-    expect(
-      initialTermRows(undefined, kind)
-        .filter((row) => row.checked)
-        .map((row) => row.months),
-    ).toEqual([want]);
+    const start = initialUnitFormValues(undefined, kind);
+    expect(start.terms).toEqual({
+      1: want === 1,
+      3: false,
+      6: false,
+      12: want === 12,
+    });
+    expect(start).toEqual({
+      label: "",
+      ...rows({}),
+      terms: start.terms,
+      custom: NO_CUSTOM,
+    });
   });
 
-  it("a changed unit starts with its offered terms, in the four rows' order", () => {
+  it("a changed unit starts with its label and offered terms, no price typed", () => {
     expect(
-      initialTermRows(
-        { terms: [{ months: 12, price: 15_000_000 }, { months: 3 }] },
+      initialUnitFormValues(
+        {
+          label: "Ruko 1",
+          terms: [{ months: 12, price: 15_000_000 }, { months: 3 }],
+        },
         "ruko",
       ),
-    ).toEqual([
-      { months: 1, checked: false, priceText: "" },
-      { months: 3, checked: true, priceText: "" },
-      { months: 6, checked: false, priceText: "" },
-      { months: 12, checked: true, priceText: "" },
-    ]);
+    ).toEqual({
+      label: "Ruko 1",
+      ...rows({ 3: "", 12: "" }),
+      custom: NO_CUSTOM,
+    });
   });
 
   it("shows a priced term read-only and any other with a field", () => {
@@ -1085,11 +1131,13 @@ describe("unit terms", () => {
 
   it("notices an offered term that is unchecked, only when changing a unit", () => {
     const saved: Pick<Unit, "terms"> = { terms: [{ months: 1 }] };
-    expect(dropsOfferedTerm(saved, rows({ 12: "" }), NO_CUSTOM)).toBe(true);
-    expect(dropsOfferedTerm(saved, rows({ 1: "", 12: "" }), NO_CUSTOM)).toBe(
-      false,
+    expect(dropsOfferedTerm(saved, rows({ 12: "" }).terms, NO_CUSTOM)).toBe(
+      true,
     );
-    expect(dropsOfferedTerm(undefined, rows({}), NO_CUSTOM)).toBe(false);
+    expect(
+      dropsOfferedTerm(saved, rows({ 1: "", 12: "" }).terms, NO_CUSTOM),
+    ).toBe(false);
+    expect(dropsOfferedTerm(undefined, rows({}).terms, NO_CUSTOM)).toBe(false);
   });
 
   it("names the terms and their prices", () => {
@@ -1174,52 +1222,56 @@ describe("priceHistoryRows", () => {
 
 describe("Ubah harga", () => {
   const today = "2026-10-30";
+  const checkUnitPriceForm = (values: unknown) =>
+    checkForm(unitPriceFormSchema(today), values);
 
   it("sends the term, the amount as an integer and the date", () => {
     expect(
-      checkUnitPriceForm(
-        { months: 12, amountText: "16.000.000", effectiveFrom: "2027-01-01" },
-        today,
-      ),
+      checkUnitPriceForm({
+        months: 12,
+        amount: "16.000.000",
+        effectiveFrom: "2027-01-01",
+      }),
     ).toEqual({
       ok: true,
       input: { months: 12, amount: 16_000_000, effectiveFrom: "2027-01-01" },
     });
     expect(
-      checkUnitPriceForm(
-        { months: 1, amountText: "1.300.000", effectiveFrom: today },
-        today,
-      ).ok,
+      checkUnitPriceForm({
+        months: 1,
+        amount: "1.300.000",
+        effectiveFrom: today,
+      }).ok,
     ).toBe(true);
   });
 
   it.each([
     {
       name: "no amount",
-      values: { months: 12 as const, amountText: "", effectiveFrom: today },
+      values: { months: 12 as const, amount: "", effectiveFrom: today },
       errors: { amount: EMPTY_PRICE_MESSAGE },
     },
     {
       name: "a zero amount",
-      values: { months: 12 as const, amountText: "0", effectiveFrom: today },
+      values: { months: 12 as const, amount: "0", effectiveFrom: today },
       errors: { amount: ZERO_PRICE_MESSAGE },
     },
     {
       name: "a date before today",
       values: {
         months: 12 as const,
-        amountText: "16.000.000",
+        amount: "16.000.000",
         effectiveFrom: "2026-10-29",
       },
       errors: { effectiveFrom: PRICE_BEFORE_TODAY_MESSAGE },
     },
     {
       name: "no date and no amount",
-      values: { months: 12 as const, amountText: "", effectiveFrom: "" },
+      values: { months: 12 as const, amount: "", effectiveFrom: "" },
       errors: { amount: EMPTY_PRICE_MESSAGE, effectiveFrom: "Isi tanggalnya." },
     },
   ])("refuses $name", ({ values, errors }) => {
-    expect(checkUnitPriceForm(values, today)).toEqual({ ok: false, errors });
+    expect(checkUnitPriceForm(values)).toEqual({ ok: false, errors });
   });
 
   it("offers the unit's terms, shortest first, with today's price under them", () => {

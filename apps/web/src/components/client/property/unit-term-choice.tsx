@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useId, type Ref } from "react";
 
 import { RupiahField } from "@/components/client/form/rupiah-field";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,10 @@ import {
 type UnitTermChoiceProps = {
   row: UnitTermRow;
   view: UnitTermRowView;
+  // The checkbox, for the form to focus; none when the form does not.
+  checkboxRef?: Ref<HTMLButtonElement>;
+  // The price field, for the form to focus.
+  priceRef: Ref<HTMLInputElement>;
   // Under the price field.
   priceError: string | undefined;
   disabled: boolean;
@@ -33,6 +37,8 @@ type UnitTermChoiceProps = {
 export function UnitTermChoice({
   row,
   view,
+  checkboxRef,
+  priceRef,
   priceError,
   disabled,
   onCheckedChange,
@@ -40,7 +46,6 @@ export function UnitTermChoice({
   onChangePrice,
 }: UnitTermChoiceProps) {
   const id = useId();
-  const priceRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="flex flex-col gap-2.5 border-t py-2.5 first:border-t-0">
@@ -49,6 +54,7 @@ export function UnitTermChoice({
         className="min-h-11 gap-3 text-base leading-normal font-semibold md:text-[17px]"
       >
         <Checkbox
+          ref={checkboxRef}
           id={`${id}-checked`}
           checked={row.checked}
           onCheckedChange={(checked) => onCheckedChange(checked === true)}
