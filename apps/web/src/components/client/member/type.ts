@@ -1,7 +1,5 @@
 import type { Member, RoleGrant } from "@/lib/api/generated/model";
 
-export type TextFieldErrors = Partial<Record<"name" | "phone", string>>;
-
 export type OpenPanel = Exclude<MemberPanelState, { kind: "closed" }>;
 
 export type Outcome = { message: string; failed: boolean };
@@ -65,6 +63,13 @@ export type RoleFormState = {
 // Where the form shows a problem it finds before sending: under one role, or under the roles
 // as a whole.
 export type RoleFormErrors = Partial<Record<ScopedRoleKey | "roles", string>>;
+
+// The form's errors under "roles": one per role, and its own message for the roles as a whole.
+export type RoleFormErrorTree = {
+  message?: string;
+  admin?: { message?: string };
+  karyawan?: { message?: string };
+};
 
 // Role labels: how a member's roles read on screen.
 export type RoleChip = {

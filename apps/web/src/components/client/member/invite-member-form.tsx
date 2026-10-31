@@ -1,10 +1,12 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId } from "react";
+import { Controller } from "react-hook-form";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,16 +17,14 @@ import {
   useInviteMember,
 } from "@/lib/api/generated/members/members";
 import {
-  inviteFormError,
-  inviteRoleForm,
-  roleFormErrors,
-  roleGrantsFromForm,
-  EMPTY_NAME_MESSAGE,
-  EMPTY_PHONE_MESSAGE,
   INPUT_CLASS,
+  INVITE_FORM_API_FIELDS,
   NAME_MAX_LENGTH,
+  inviteFormError,
+  inviteFormSchema,
+  inviteRoleForm,
+  roleFieldErrors,
 } from "./utils";
-import type { RoleFormErrors, TextFieldErrors } from "./type";
 
 import { RoleFields } from "./role-fields";
 
@@ -44,15 +44,16 @@ export function InviteMemberForm({
 }: InviteMemberFormProps) {
   const id = useId();
   const formId = `${id}-form`;
-  const nameRef = useRef<HTMLInputElement>(null);
-  const phoneRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [roles, setRoles] = useState(inviteRoleForm);
-  const [fieldErrors, setFieldErrors] = useState<TextFieldErrors>({});
-  const [roleErrors, setRoleErrors] = useState<RoleFormErrors>({});
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, field, showApiError, alert } = useApiForm({
+    schema: inviteFormSchema,
+    defaultValues: { name: "", phone: "", roles: inviteRoleForm() },
+    apiFields: INVITE_FORM_API_FIELDS,
+    apiError: inviteFormError,
+  });
+  const { errors } = form.formState;
+  const nameError = errors.name?.message;
+  const phoneError = errors.phone?.message;
   const invite = useInviteMember({
     mutation: {
       onSuccess: () =>
@@ -63,62 +64,23 @@ export function InviteMemberForm({
   });
   const sending = invite.isPending || invite.isSuccess;
 
-  function focusField(field: keyof TextFieldErrors) {
-    (field === "name" ? nameRef : phoneRef).current?.focus();
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit((input) => {
     if (sending) return;
-
-    setAlert(null);
-    const typedName = name.trim();
-    const typedPhone = phone.trim();
-    const found: TextFieldErrors = {};
-    if (typedName === "") found.name = EMPTY_NAME_MESSAGE;
-    if (typedPhone === "") found.phone = EMPTY_PHONE_MESSAGE;
-    const foundRoles = roleFormErrors(roles);
-    setFieldErrors(found);
-    setRoleErrors(foundRoles);
-    if (found.name !== undefined) return focusField("name");
-    if (found.phone !== undefined) return focusField("phone");
-    if (Object.keys(foundRoles).length > 0) return;
-
     invite.mutate(
-      {
-        orgId,
-        data: {
-          name: typedName,
-          phone: typedPhone,
-          roles: roleGrantsFromForm(roles),
-        },
-      },
-      {
-        onSuccess: onInvited,
-        onError: (error) => {
-          const { field, message } = inviteFormError(error);
-          if (field === "name" || field === "phone") {
-            setFieldErrors({ [field]: message });
-            focusField(field);
-          } else if (field === "roles") {
-            setRoleErrors({ roles: message });
-          } else {
-            setAlert(message);
-          }
-        },
-      },
+      { orgId, data: input },
+      { onSuccess: onInvited, onError: showApiError },
     );
-  }
+  });
 
   return (
     <>
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
+        {alert !== undefined && <FormAlert message={alert} />}
 
         <div className="flex flex-col gap-2">
           <Label
@@ -128,29 +90,21 @@ export function InviteMemberForm({
             Nama
           </Label>
           <Input
-            ref={nameRef}
             id={`${id}-name`}
-            name="name"
             type="text"
             autoComplete="off"
             maxLength={NAME_MAX_LENGTH}
             placeholder="Contoh: Mas Rizal Fauzi"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setFieldErrors(({ phone: phoneError }) => ({
-                phone: phoneError,
-              }));
-            }}
+            {...field("name")}
             disabled={sending}
-            aria-invalid={fieldErrors.name !== undefined}
+            aria-invalid={nameError !== undefined}
             aria-describedby={
-              fieldErrors.name !== undefined ? `${id}-name-error` : undefined
+              nameError !== undefined ? `${id}-name-error` : undefined
             }
             className={INPUT_CLASS}
           />
-          {fieldErrors.name !== undefined && (
-            <FieldError id={`${id}-name-error`} message={fieldErrors.name} />
+          {nameError !== undefined && (
+            <FieldError id={`${id}-name-error`} message={nameError} />
           )}
         </div>
 
@@ -162,29 +116,23 @@ export function InviteMemberForm({
             Nomor WhatsApp
           </Label>
           <Input
-            ref={phoneRef}
             id={`${id}-phone`}
-            name="phone"
             type="tel"
             inputMode="tel"
             autoComplete="off"
             placeholder="0812-3456-7890"
-            value={phone}
-            onChange={(event) => {
-              setPhone(event.target.value);
-              setFieldErrors(({ name: nameError }) => ({ name: nameError }));
-            }}
+            {...field("phone")}
             disabled={sending}
-            aria-invalid={fieldErrors.phone !== undefined}
+            aria-invalid={phoneError !== undefined}
             aria-describedby={
-              fieldErrors.phone !== undefined
+              phoneError !== undefined
                 ? `${id}-phone-error ${id}-phone-hint`
                 : `${id}-phone-hint`
             }
             className={INPUT_CLASS}
           />
-          {fieldErrors.phone !== undefined && (
-            <FieldError id={`${id}-phone-error`} message={fieldErrors.phone} />
+          {phoneError !== undefined && (
+            <FieldError id={`${id}-phone-error`} message={phoneError} />
           )}
           <p
             id={`${id}-phone-hint`}
@@ -195,16 +143,22 @@ export function InviteMemberForm({
           </p>
         </div>
 
-        <RoleFields
-          mode="invite"
-          value={roles}
-          onChange={(next) => {
-            setRoles(next);
-            setRoleErrors({});
-          }}
-          properties={properties}
-          errors={roleErrors}
-          disabled={sending}
+        <Controller
+          control={form.control}
+          name="roles"
+          render={({ field: roles }) => (
+            <RoleFields
+              mode="invite"
+              value={roles.value}
+              onChange={(next) => {
+                roles.onChange(next);
+                form.clearErrors("roles");
+              }}
+              properties={properties}
+              errors={roleFieldErrors(errors.roles)}
+              disabled={sending}
+            />
+          )}
         />
       </form>
       <div className="flex gap-2.5 border-t px-6 py-4">
