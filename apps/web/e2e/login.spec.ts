@@ -186,8 +186,12 @@ test("checks the phone field before and after asking the API", async ({
   await expect(phoneField(page)).toBeFocused();
   expect(codeRequests).toEqual([]);
 
-  // Not a number the API accepts: its own message, under the field.
+  // Typing clears the message; the next submit checks again.
   await phoneField(page).fill("12345");
+  await expect(alerts(page)).toHaveCount(0);
+  await expect(phoneField(page)).not.toHaveAttribute("aria-invalid", "true");
+
+  // Not a number the API accepts: its own message, under the field.
   await page.getByRole("button", { name: "Kirim kode" }).click();
   await expect(alerts(page)).toHaveText("Nomor WhatsApp tidak valid.");
   await expect(phoneField(page)).toHaveAttribute("aria-invalid", "true");
@@ -237,6 +241,10 @@ test("a wrong code shows the API's error under the field; a new code works", asy
   await expect(codeField(page)).toBeFocused();
   expect(verifyRequests).toHaveLength(1);
   await attachFullPageScreenshot(page, testInfo, "login-wrong-code");
+  // The wrong code is selected, so the next digit typed replaces it and clears the message.
+  await codeField(page).press("1");
+  await expect(codeField(page)).toHaveValue("1");
+  await expect(codeField(page)).not.toHaveAttribute("aria-invalid", "true");
 
   // A new code cancels the old one.
   const resendOffset = await devlogOffset(devlogFilePath());
