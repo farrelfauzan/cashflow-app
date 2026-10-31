@@ -393,6 +393,12 @@ test.describe("Admin of the whole organization", () => {
     await expect(pricing.getByLabel("Berlaku mulai")).toBeFocused();
     expect(priceRequests).toEqual([]);
 
+    // Editing the date clears its error; it is checked again on the next save.
+    await pricing.getByLabel("Berlaku mulai").fill(jakartaToday(new Date()));
+    await expect(
+      pricing.getByText("Tanggal tidak boleh sebelum hari ini."),
+    ).toHaveCount(0);
+
     await pricing.getByRole("button", { name: "Kembali" }).click();
     const back = page.getByRole("dialog", { name: "Ubah unit" });
     await expect(back.getByLabel("Nama unit")).toHaveValue("Kamar 3B");
@@ -435,6 +441,20 @@ test.describe("Admin of the whole organization", () => {
     await expect(termCheckbox(panel, "Per bulan")).toBeFocused();
     expect(unitWrites).toEqual([]);
     await expect(panel).toBeVisible();
+
+    // Ticking a term clears the group's error. A typed Rp0 is refused under that term's price,
+    // which takes the focus.
+    await termCheckbox(panel, "Per 3 bulan").click();
+    await expect(panel.getByText("Pilih minimal satu masa sewa.")).toHaveCount(
+      0,
+    );
+    const quarterly = panel.getByLabel("Harga per 3 bulan", { exact: true });
+    await quarterly.fill("0");
+    await panel.getByRole("button", { name: "Simpan unit" }).click();
+    await expect(panel.getByText("Harga harus lebih dari Rp0.")).toBeVisible();
+    await expect(quarterly).toHaveAttribute("aria-invalid", "true");
+    await expect(quarterly).toBeFocused();
+    expect(unitWrites).toEqual([]);
 
     expect(outsideRequests).toEqual([]);
   });

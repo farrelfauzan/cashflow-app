@@ -11,7 +11,7 @@ import {
 import { z } from "zod";
 import { id } from "zod/locales";
 
-import { toFormError } from "@/lib/api/form-error";
+import { toFormError, type FormError } from "@/lib/api/form-error";
 
 // A check without its own message (none should be) still speaks Bahasa Indonesia.
 z.config(id());
@@ -24,6 +24,10 @@ type ApiFormOptions<Input extends FieldValues, Output> = {
   // The fields of this form an API error can name ("name", "address"); the form's field names
   // are the API's. An error naming any other field, or none, goes to the alert.
   apiFields: readonly Path<Input>[];
+  // Where this form shows a refused request, when that depends on more than the field the API
+  // names (an error that names a field but is not a typing mistake goes to the alert). By
+  // default, under the named field when it is one of apiFields.
+  apiError?: (error: unknown) => FormError;
 };
 
 // The one way a panel form is set up with react-hook-form:
@@ -37,6 +41,7 @@ export function useApiForm<Input extends FieldValues, Output>({
   schema,
   defaultValues,
   apiFields,
+  apiError = (error) => toFormError(error, apiFields),
 }: ApiFormOptions<Input, Output>) {
   const form = useForm<Input, unknown, Output>({
     resolver: zodResolver(schema),
@@ -52,7 +57,7 @@ export function useApiForm<Input extends FieldValues, Output>({
   }
 
   function showApiError(error: unknown) {
-    const failed = toFormError(error, apiFields);
+    const failed = apiError(error);
     const apiField = apiFields.find((name) => name === failed.field);
     if (apiField === undefined) {
       setError("root.server", { type: "server", message: failed.message });

@@ -394,7 +394,8 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel).toHaveCount(0);
     await expect(unitRow(units, "Kamar 02")).toContainText("Belum diisi");
 
-    // The same label again, in other letters, comes back from the API under the label.
+    // The same label again, in other letters, comes back from the API under the label, which
+    // takes the focus.
     await page.getByRole("button", { name: "Tambah unit" }).click();
     await panel.getByLabel("Nama unit").fill("kamar 01");
     await panel.getByRole("button", { name: "Simpan unit" }).click();
@@ -402,6 +403,7 @@ test.describe("Admin of the whole organization", () => {
       "aria-invalid",
       "true",
     );
+    await expect(panel.getByLabel("Nama unit")).toBeFocused();
     await expect(panel.getByRole("alert")).toBeVisible();
     await panel.getByRole("button", { name: "Batal" }).click();
     await expect(panel).toHaveCount(0);

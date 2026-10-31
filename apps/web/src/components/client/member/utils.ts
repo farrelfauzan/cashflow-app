@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { ApiError } from "@/lib/api/errors";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 import { formatTimestampDate } from "@/lib/format/date";
@@ -10,6 +12,7 @@ import type {
   MemberStatusView,
   ResendError,
   RoleChip,
+  RoleFormErrorTree,
   RoleFormErrors,
   RoleFormState,
   ScopedRoleKey,
@@ -86,14 +89,18 @@ export function inviteFormError(error: unknown): FormError {
   if (error instanceof ApiError && error.code === "already_member") {
     return { field: null, message: error.message };
   }
-  return toFormError(error, ["name", "phone", "roles"]);
+  return toFormError(error, INVITE_FORM_API_FIELDS);
 }
 
 // "Atur akses": invalid_input on roles goes under the roles; everything else (last_admin, 403,
 // a member removed meanwhile) in the alert.
 export function accessFormError(error: unknown): FormError {
-  return toFormError(error, ["roles"]);
+  return toFormError(error, ACCESS_FORM_API_FIELDS);
 }
+
+// The fields of "Tambah anggota" and "Atur akses" an API error can name.
+export const INVITE_FORM_API_FIELDS = ["name", "phone", "roles"] as const;
+export const ACCESS_FORM_API_FIELDS = ["roles"] as const;
 
 export const UNDELIVERABLE_HINT = "Periksa nomornya bersama anggota ini.";
 
@@ -235,6 +242,42 @@ export function roleFormErrors(state: RoleFormState): RoleFormErrors {
     errors.roles = NO_ROLE_MESSAGE;
   }
   return errors;
+}
+
+// The roles part of both forms: roleFormErrors' checks, each under its own role ("roles.admin")
+// or under the roles as a whole ("roles"), and the grants the API takes.
+const roleFormSchema = z
+  .custom<RoleFormState>()
+  .superRefine((state, ctx) => {
+    for (const [key, message] of Object.entries(roleFormErrors(state))) {
+      ctx.addIssue({
+        code: "custom",
+        message,
+        path: key === "roles" ? [] : [key],
+      });
+    }
+  })
+  .transform(roleGrantsFromForm);
+
+// "Tambah anggota": name and number trimmed, and the roles as grants.
+export const inviteFormSchema = z.object({
+  name: z.string().trim().min(1, EMPTY_NAME_MESSAGE),
+  phone: z.string().trim().min(1, EMPTY_PHONE_MESSAGE),
+  roles: roleFormSchema,
+});
+
+// "Atur akses": the roles as grants.
+export const accessFormSchema = z.object({ roles: roleFormSchema });
+
+// The role messages as RoleFields shows them, from the form's errors under "roles".
+export function roleFieldErrors(
+  errors: RoleFormErrorTree | undefined,
+): RoleFormErrors {
+  return {
+    admin: errors?.admin?.message,
+    karyawan: errors?.karyawan?.message,
+    roles: errors?.message,
+  };
 }
 
 export function toggleProperty(

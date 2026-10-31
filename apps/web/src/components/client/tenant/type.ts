@@ -1,9 +1,11 @@
+import type { z } from "zod";
+
 import type {
   Lease,
   ListTenantsStatus,
   Tenant,
-  TenantInput,
 } from "@/lib/api/generated/model";
+import type { tenantFormSchema } from "./utils";
 
 // Tenant status: what a lease (or a tenant without one) is, from the lease's status and dates.
 export type StatusTone = "active" | "upcoming" | "ended" | "none";
@@ -54,19 +56,7 @@ export type TenantPanelState =
 
 export type OpenTenantPanel = Exclude<TenantPanelState, { kind: "closed" }>;
 
-export type TenantFormValues = {
-  name: string;
-  phone: string;
-  note: string;
-};
-
-// "note" is never found by the form (any text is fine); it is where an API error on it is shown.
-export type TenantFormErrors = Partial<
-  Record<"name" | "phone" | "note", string>
->;
-
-export type TenantFormResult =
-  { ok: true; input: TenantInput } | { ok: false; errors: TenantFormErrors };
+export type TenantFormValues = z.input<typeof tenantFormSchema>;
 
 // Tenant filters: what the API narrows the list to, read from the URL. Each is undefined when it
 // is not set, so the request and its query key leave it out.

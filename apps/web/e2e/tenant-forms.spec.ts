@@ -207,8 +207,12 @@ test.describe("Admin of the whole organization", () => {
     await expect(form.getByText("Isi nomor WhatsApp.")).toBeVisible();
     await expect(form.getByLabel("Nama penyewa")).toBeFocused();
 
-    // A number another tenant has: the API's message under the number.
+    // Typing the name clears only its own message.
     await form.getByLabel("Nama penyewa").fill(name);
+    await expect(form.getByText("Isi nama penyewa.")).toHaveCount(0);
+    await expect(form.getByText("Isi nomor WhatsApp.")).toBeVisible();
+
+    // A number another tenant has: the API's message under the number.
     await form.getByLabel("Nomor WhatsApp").fill("0813-0001-0002");
     await form
       .getByLabel("Catatan (boleh dikosongkan)")
@@ -227,7 +231,9 @@ test.describe("Admin of the whole organization", () => {
     await expectTouchTarget(form.getByLabel("Nama penyewa"));
     await attachFullPageScreenshot(page, testInfo, "tenant-form");
 
+    // Changing the number clears the API's message.
     await form.getByLabel("Nomor WhatsApp").fill(phone);
+    await expect(form.getByText(TAKEN_MESSAGE)).toHaveCount(0);
     await form.getByRole("button", { name: "Simpan penyewa" }).click();
     const added = page.getByRole("dialog", { name: "Penyewa ditambahkan" });
     await expect(added).toContainText(

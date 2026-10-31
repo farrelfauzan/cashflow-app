@@ -1,9 +1,11 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useId, useState, type FormEvent } from "react";
+import { useId } from "react";
+import { Controller } from "react-hook-form";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { Button } from "@/components/ui/button";
 import { SheetClose } from "@/components/ui/sheet";
 import type { Member, Property } from "@/lib/api/generated/model";
@@ -12,12 +14,12 @@ import {
   useSetMemberRoles,
 } from "@/lib/api/generated/members/members";
 import {
+  ACCESS_FORM_API_FIELDS,
   accessFormError,
-  roleFormErrors,
+  accessFormSchema,
+  roleFieldErrors,
   roleFormFromRoles,
-  roleGrantsFromForm,
 } from "./utils";
-import type { RoleFormErrors } from "./type";
 
 import { MemberStatusSection } from "./member-status-section";
 import { RoleFields } from "./role-fields";
@@ -41,9 +43,12 @@ export function MemberAccessForm({
 }: MemberAccessFormProps) {
   const formId = useId();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState(() => roleFormFromRoles(member.roles));
-  const [errors, setErrors] = useState<RoleFormErrors>({});
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, showApiError, alert } = useApiForm({
+    schema: accessFormSchema,
+    defaultValues: { roles: roleFormFromRoles(member.roles) },
+    apiFields: ACCESS_FORM_API_FIELDS,
+    apiError: accessFormError,
+  });
   const save = useSetMemberRoles({
     mutation: {
       onSuccess: () =>
@@ -54,31 +59,13 @@ export function MemberAccessForm({
   });
   const saving = save.isPending || save.isSuccess;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit((input) => {
     if (saving) return;
-
-    setAlert(null);
-    const found = roleFormErrors(form);
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
-
     save.mutate(
-      {
-        orgId,
-        memberId: member.id,
-        data: { roles: roleGrantsFromForm(form) },
-      },
-      {
-        onSuccess: onSaved,
-        onError: (error) => {
-          const { field, message } = accessFormError(error);
-          if (field === "roles") setErrors({ roles: message });
-          else setAlert(message);
-        },
-      },
+      { orgId, memberId: member.id, data: input },
+      { onSuccess: onSaved, onError: showApiError },
     );
-  }
+  });
 
   return (
     <>
@@ -86,20 +73,26 @@ export function MemberAccessForm({
         <form
           id={formId}
           noValidate
-          onSubmit={handleSubmit}
+          onSubmit={submit}
           className="flex flex-col gap-4"
         >
-          {alert !== null && <FormAlert message={alert} />}
-          <RoleFields
-            mode="edit"
-            value={form}
-            onChange={(next) => {
-              setForm(next);
-              setErrors({});
-            }}
-            properties={properties}
-            errors={errors}
-            disabled={saving}
+          {alert !== undefined && <FormAlert message={alert} />}
+          <Controller
+            control={form.control}
+            name="roles"
+            render={({ field: roles }) => (
+              <RoleFields
+                mode="edit"
+                value={roles.value}
+                onChange={(next) => {
+                  roles.onChange(next);
+                  form.clearErrors("roles");
+                }}
+                properties={properties}
+                errors={roleFieldErrors(form.formState.errors.roles)}
+                disabled={saving}
+              />
+            )}
           />
           <p className="rounded-[10px] bg-secondary/60 px-3.5 py-3 text-[15px] leading-normal text-foreground/85">
             Peran yang dibatasi ke properti hanya berlaku untuk data properti

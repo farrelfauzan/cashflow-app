@@ -265,6 +265,41 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByText("Isi nama anggota.")).toBeVisible();
     await expect(panel.getByText("Isi nomor WhatsApp.")).toBeVisible();
     await expect(panel.getByLabel("Nama")).toBeFocused();
+
+    // Typing the name clears only its own message.
+    await panel.getByLabel("Nama").fill(name);
+    await expect(panel.getByText("Isi nama anggota.")).toHaveCount(0);
+    await expect(panel.getByText("Isi nomor WhatsApp.")).toBeVisible();
+
+    // No role, then a role limited to properties without one: each under its place, nothing
+    // sent; changing the roles clears them.
+    const invites: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().endsWith("/members")) {
+        invites.push(request.url());
+      }
+    });
+    await panel.getByLabel("Nomor WhatsApp").fill(phone);
+    await panel.getByRole("checkbox", { name: "Karyawan" }).uncheck();
+    await panel
+      .getByRole("button", { name: "Tambah dan kirim undangan" })
+      .click();
+    await expect(panel.getByText("Pilih minimal satu peran.")).toBeVisible();
+    await panel.getByRole("checkbox", { name: "Karyawan" }).check();
+    await expect(panel.getByText("Pilih minimal satu peran.")).toHaveCount(0);
+    await panel
+      .getByRole("radiogroup", { name: "Wilayah Karyawan" })
+      .getByRole("radio", { name: "Hanya properti tertentu" })
+      .check();
+    await panel
+      .getByRole("button", { name: "Tambah dan kirim undangan" })
+      .click();
+    await expect(panel.getByText("Pilih minimal satu properti.")).toBeVisible();
+    expect(invites).toEqual([]);
+    await panel.getByRole("checkbox", { name: "Kontrakan Mawar" }).check();
+    await expect(panel.getByText("Pilih minimal satu properti.")).toHaveCount(
+      0,
+    );
     await panel.getByRole("button", { name: "Batal" }).click();
     await expect(panel).toHaveCount(0);
 
