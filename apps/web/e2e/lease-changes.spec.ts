@@ -253,6 +253,18 @@ test.describe("Admin of the whole organization", () => {
       form.getByRole("group", { name: "Mulai tagih dari" }),
     ).toHaveCount(0);
 
+    // An empty start date is refused before anything is sent, under its own field, which takes
+    // the focus; editing another field leaves the message, editing the date clears it.
+    const startDate = form.getByLabel("Mulai sewa");
+    await startDate.fill("");
+    await form.getByRole("button", { name: "Simpan sewa" }).click();
+    await expect(form.getByText("Isi tanggal mulai sewa.")).toBeVisible();
+    await expect(startDate).toBeFocused();
+    await form.getByLabel("Uang jaminan").fill("3000000");
+    await expect(form.getByText("Isi tanggal mulai sewa.")).toBeVisible();
+    await startDate.fill(jakartaToday(new Date()));
+    await expect(form.getByText("Isi tanggal mulai sewa.")).toHaveCount(0);
+
     await form.getByLabel("Uang jaminan").fill("3000000");
     await expect(form.getByLabel("Uang jaminan")).toHaveValue("3.000.000");
     await choose(page, form, "Penagih", collector);
