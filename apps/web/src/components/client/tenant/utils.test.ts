@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { ApiError } from "@/lib/api/errors";
 import type {
@@ -21,7 +22,6 @@ import {
   movedOutNotice,
   plannedEndNotice,
   billedNote,
-  checkTenantForm,
   CLEAR_FILTERS,
   EMPTY_TENANT_NAME_MESSAGE,
   EMPTY_TENANT_PHONE_MESSAGE,
@@ -30,6 +30,7 @@ import {
   noLeaseText,
   tenantAddedNotice,
   tenantAddedText,
+  tenantFormSchema,
   tenantFormValues,
   tenantSavedNotice,
   extraLeasesText,
@@ -512,10 +513,27 @@ describe("needsLease", () => {
   });
 });
 
-describe("checkTenantForm", () => {
+// What the tenant form shows for these values: the input it sends, or the first message under
+// each field (as zodResolver puts them).
+function checkTenant(values: unknown) {
+  const result = tenantFormSchema.safeParse(values);
+  if (result.success) return { ok: true, input: result.data };
+  const { fieldErrors } = z.flattenError(result.error);
+  return {
+    ok: false,
+    errors: Object.fromEntries(
+      Object.entries(fieldErrors).map(([field, messages]) => [
+        field,
+        messages?.[0],
+      ]),
+    ),
+  };
+}
+
+describe("tenantFormSchema", () => {
   it("trims and sends name, number and note", () => {
     expect(
-      checkTenantForm({
+      checkTenant({
         name: "  Bu Dewi Lestari ",
         phone: " 0812-3456-7899 ",
         note: " bayar lewat anaknya ",
@@ -531,8 +549,10 @@ describe("checkTenantForm", () => {
   });
 
   it("sends an empty note when there is none", () => {
-    const checked = checkTenantForm({ name: "A", phone: "0812", note: "  " });
-    expect(checked.ok && checked.input.note).toBe("");
+    expect(checkTenant({ name: "A", phone: "0812", note: "  " })).toEqual({
+      ok: true,
+      input: { name: "A", phone: "0812", note: "" },
+    });
   });
 
   it.each([
@@ -555,7 +575,7 @@ describe("checkTenantForm", () => {
       },
     },
   ])("refuses $name", ({ values, want }) => {
-    expect(checkTenantForm(values)).toEqual({ ok: false, errors: want });
+    expect(checkTenant(values)).toEqual({ ok: false, errors: want });
   });
 });
 

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
   leaseUnitText,
   termPeriodWords,
@@ -28,8 +30,6 @@ import type {
   LeasePanelKind,
   LeaseView,
   StatusView,
-  TenantFormErrors,
-  TenantFormResult,
   TenantFormValues,
   TenantListFilters,
   TenantPermissions,
@@ -224,18 +224,15 @@ export const TENANT_NOTE_MAX_LENGTH = 500;
 export const EMPTY_TENANT_NAME_MESSAGE = "Isi nama penyewa.";
 export const EMPTY_TENANT_PHONE_MESSAGE = "Isi nomor WhatsApp.";
 
-// The fields the API's errors can name; any other field goes to the alert.
-export const TENANT_FORM_FIELDS = ["name", "phone", "note"] as const;
+// The fields the API's errors can name; any other field goes to the alert. The note has no
+// check of its own (any text is fine); it is only where an API error on it is shown.
+export const TENANT_FORM_API_FIELDS = ["name", "phone", "note"] as const;
 
-export function checkTenantForm(values: TenantFormValues): TenantFormResult {
-  const name = values.name.trim();
-  const phone = values.phone.trim();
-  const errors: TenantFormErrors = {};
-  if (name === "") errors.name = EMPTY_TENANT_NAME_MESSAGE;
-  if (phone === "") errors.phone = EMPTY_TENANT_PHONE_MESSAGE;
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, input: { name, phone, note: values.note.trim() } };
-}
+export const tenantFormSchema = z.object({
+  name: z.string().trim().min(1, EMPTY_TENANT_NAME_MESSAGE),
+  phone: z.string().trim().min(1, EMPTY_TENANT_PHONE_MESSAGE),
+  note: z.string().trim(),
+});
 
 // The form's starting text: empty when adding, the tenant's own when changing them, with the
 // number the way people read it.
