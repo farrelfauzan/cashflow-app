@@ -1,8 +1,9 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useId } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import {
   FIELD_HINT_CLASS,
   FIELD_LABEL_CLASS,
@@ -10,12 +11,16 @@ import {
 } from "@/components/client/form/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toFormError } from "@/lib/api/form-error";
 import type { Lease } from "@/lib/api/generated/model";
 import { useMoveOut } from "@/lib/api/generated/tenants/tenants";
 import { formatDate } from "@/lib/format/date";
 import { cn } from "@/lib/utils";
-import { CANCEL_BOOKING_HINT, cancelBookingText } from "./utils";
+import {
+  CANCEL_BOOKING_API_FIELDS,
+  CANCEL_BOOKING_HINT,
+  cancelBookingFormSchema,
+  cancelBookingText,
+} from "./utils";
 
 import { LeaseInfoNote } from "./lease-info-note";
 import { LeasePanelFooter } from "./lease-panel-footer";
@@ -39,36 +44,34 @@ export function CancelBookingForm({
   const id = useId();
   const formId = `${id}-form`;
   const refresh = useRefreshLease(orgId);
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, showApiError, alert } = useApiForm({
+    schema: cancelBookingFormSchema,
+    defaultValues: {},
+    apiFields: CANCEL_BOOKING_API_FIELDS,
+  });
 
   const moveOut = useMoveOut({
     mutation: { onSuccess: (ended) => refresh(ended, true) },
   });
   const saving = moveOut.isPending;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit(() => {
     if (saving) return;
-    setAlert(null);
     moveOut.mutate(
       { orgId, leaseId: lease.id, data: { endDate: lease.startDate } },
-      {
-        onSuccess: onSaved,
-        // The date is not the member's to change, so every refusal goes to the alert.
-        onError: (failure) => setAlert(toFormError(failure, []).message),
-      },
+      { onSuccess: onSaved, onError: showApiError },
     );
-  }
+  });
 
   return (
     <>
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
+        {alert !== undefined && <FormAlert message={alert} />}
         <LeaseInfoNote text={cancelBookingText(lease.startDate)} />
         <div className="flex min-w-0 flex-col gap-2">
           <Label htmlFor={`${id}-end`} className={FIELD_LABEL_CLASS}>

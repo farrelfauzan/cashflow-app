@@ -95,6 +95,12 @@ export type CollectorOption = {
 export type DateCheck =
   { ok: true; date: string } | { ok: false; error: string };
 
+// "Rencana keluar"'s field: YYYY-MM-DD from the date input, "" when cleared.
+export type PlannedEndFormValues = { plannedEndDate: string };
+
+// "Catat pindah keluar"'s field: YYYY-MM-DD from the date input, "" when cleared.
+export type MoveOutFormValues = { endDate: string };
+
 // "Rencana keluar"'s suggestion: the day before the next period starts, and that next start.
 export type PlannedEndSuggestion = {
   date: string;
@@ -113,6 +119,9 @@ export type ChargeEntry = {
 // The entries by charge type id; a type without one is unchecked and empty.
 export type ChargeEntries = Readonly<Record<string, ChargeEntry>>;
 
+// What "Biaya tambahan" holds: an entry per charge type, each row's field ("charges.<id>").
+export type LeaseChargesFormValues = { charges: ChargeEntries };
+
 // One row of the form: a non-metered charge type and its entry.
 export type ChargeRow = ChargeEntry & {
   chargeTypeId: string;
@@ -122,12 +131,12 @@ export type ChargeRow = ChargeEntry & {
 // The message under each bad row, by charge type id.
 export type ChargeErrors = Partial<Record<string, string>>;
 
-// What the check sends: the request, and the charge type id of the row sent at each index, so
-// an API error on charges[i] goes back under its row. Or the rows' errors, and the first bad
-// row in display order.
+// What the check sends, or the message under each bad row (in display order).
 export type LeaseChargesResult =
-  | { ok: true; input: LeaseChargesInput; sent: readonly string[] }
-  | { ok: false; errors: ChargeErrors; first: string };
+  { ok: true; input: LeaseChargesInput } | { ok: false; errors: ChargeErrors };
+
+// "Jenis biaya baru"'s fields: the name as typed, and whether the amount comes from a meter.
+export type ChargeTypeFormValues = { name: string; metered: boolean };
 
 // "Nama biaya" in "Jenis biaya baru": the trimmed name to send, or the message under the field.
 export type ChargeTypeNameCheck =

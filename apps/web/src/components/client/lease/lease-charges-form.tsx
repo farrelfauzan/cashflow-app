@@ -1,9 +1,11 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { FIELD_HINT_CLASS } from "@/components/client/form/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
@@ -12,22 +14,21 @@ import {
   useListChargeTypes,
   useSetLeaseCharges,
 } from "@/lib/api/generated/tenants/tenants";
-import type { ChargeEntries, ChargeErrors } from "./type";
 import {
   ADD_CHARGE_TYPE_LABEL,
-  chargeAmountId,
-  chargeApiFields,
   chargeEntriesFromLease,
-  chargeRowForApiField,
+  chargeField,
+  chargeFields,
   chargeRows,
   chargesTermHint,
-  checkLeaseCharges,
   LEASE_CHARGES_INTRO,
+  chargeRowApiError,
+  leaseChargesFormSchema,
   LOADING_CHARGE_TYPES_TEXT,
   METERED_CHARGES_NOTE,
   meteredChargeTypeAddedText,
   NO_FIXED_CHARGE_TYPES_TEXT,
-  withChargeAmount,
+  registerInOrder,
   withChargeChecked,
 } from "./utils";
 
@@ -63,11 +64,12 @@ export function LeaseChargesForm({
   const types = useListChargeTypes(orgId, {
     query: { refetchOnMount: "always" },
   });
-  const [entries, setEntries] = useState<ChargeEntries>(() =>
-    chargeEntriesFromLease(lease.charges),
-  );
-  const [errors, setErrors] = useState<ChargeErrors>({});
-  const [alert, setAlert] = useState<string | null>(null);
+  const chargeTypes = types.data?.chargeTypes ?? [];
+  const { form, showApiError, alert } = useApiForm({
+    schema: leaseChargesFormSchema(chargeTypes),
+    defaultValues: { charges: chargeEntriesFromLease(lease.charges) },
+    apiFields: chargeFields(chargeTypes),
+  });
   const [boxOpen, setBoxOpen] = useState(false);
   const [meteredAdded, setMeteredAdded] = useState<string | null>(null);
   const termHint = chargesTermHint(lease.termMonths);
@@ -77,67 +79,43 @@ export function LeaseChargesForm({
   });
   const saving = save.isPending;
 
-  const rows =
-    types.data === undefined ? [] : chargeRows(types.data.chargeTypes, entries);
+  const rows = chargeRows(chargeTypes, {});
 
-  // Focus a row's amount: the first bad one after a refused save, or a type just added. Each
-  // request is handled once, when the row is there and the form is enabled.
-  const [focusRow, setFocusRow] = useState<{ id: string } | null>(null);
-  const focused = useRef<object | null>(null);
-  useEffect(() => {
-    if (focusRow === null || saving || focused.current === focusRow) return;
-    const input = document.getElementById(chargeAmountId(id, focusRow.id));
-    if (input === null) return;
-    focused.current = focusRow;
-    input.focus();
-    // types.data: a type just added has its row once the list is loaded again.
-  }, [focusRow, saving, types.data, id]);
-
-  function changeRow(chargeTypeId: string, next: ChargeEntries) {
-    setEntries(next);
-    setErrors((current) => ({ ...current, [chargeTypeId]: undefined }));
-  }
-
+  // A type just added is checked and its amount focused. The list of types is already loaded
+  // again, so rendering now shows its row, and its amount can take the focus.
   function handleAdded(type: ChargeType) {
-    setBoxOpen(false);
     if (type.metered) {
+      setBoxOpen(false);
       setMeteredAdded(meteredChargeTypeAddedText(type.name));
       return;
     }
-    setMeteredAdded(null);
-    setEntries((current) => withChargeChecked(current, type.id, true));
-    setFocusRow({ id: type.id });
+    const name = chargeField(type.id);
+    flushSync(() => {
+      setBoxOpen(false);
+      setMeteredAdded(null);
+      form.setValue(name, withChargeChecked(form.getValues(name), true));
+    });
+    form.setFocus(name);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const check = form.handleSubmit((input) => {
     // Without the types the rows are unknown, and sending none would remove every extra.
     if (saving || types.data === undefined) return;
-    const checked = checkLeaseCharges(rows);
-    if (!checked.ok) {
-      setErrors(checked.errors);
-      setFocusRow({ id: checked.first });
-      return;
-    }
-    setErrors({});
-    setAlert(null);
-    const { sent } = checked;
     save.mutate(
-      { orgId, leaseId: lease.id, data: checked.input },
+      { orgId, leaseId: lease.id, data: input },
       {
         onSuccess: onSaved,
-        onError: (failure) => {
-          const failed = toFormError(failure, chargeApiFields(sent));
-          const row = chargeRowForApiField(failed.field, sent);
-          if (row === null) {
-            setAlert(failed.message);
-            return;
-          }
-          setErrors({ [row]: failed.message });
-          setFocusRow({ id: row });
-        },
+        // An error on charges[i] goes under the row sent at index i.
+        onError: (failure, variables) =>
+          showApiError(chargeRowApiError(failure, variables.data)),
       },
     );
+  });
+
+  // A failed check focuses the first bad row on screen (registerInOrder).
+  function submit(event: FormEvent<HTMLFormElement>) {
+    registerInOrder(form, chargeFields(chargeTypes));
+    return check(event);
   }
 
   let list;
@@ -161,22 +139,10 @@ export function LeaseChargesForm({
         {rows.map((row) => (
           <LeaseChargeRow
             key={row.chargeTypeId}
-            amountId={chargeAmountId(id, row.chargeTypeId)}
-            row={row}
-            error={errors[row.chargeTypeId]}
+            form={form}
+            chargeTypeId={row.chargeTypeId}
+            name={row.name}
             disabled={saving}
-            onCheckedChange={(checked) =>
-              changeRow(
-                row.chargeTypeId,
-                withChargeChecked(entries, row.chargeTypeId, checked),
-              )
-            }
-            onAmountChange={(text) =>
-              changeRow(
-                row.chargeTypeId,
-                withChargeAmount(entries, row.chargeTypeId, text),
-              )
-            }
           />
         ))}
       </div>
@@ -188,10 +154,10 @@ export function LeaseChargesForm({
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
+        {alert !== undefined && <FormAlert message={alert} />}
         <p className="text-[15px] leading-[1.55] md:text-base">
           {LEASE_CHARGES_INTRO}
         </p>

@@ -301,10 +301,17 @@ test.describe("Admin of the whole organization", () => {
     // A day before today: the form says so before anything is sent.
     await date.fill(tenthOfMonth(-1));
     await form.getByRole("button", { name: "Simpan rencana keluar" }).click();
+    await expect(date).toHaveAccessibleDescription(
+      /^Rencana keluar tidak boleh sebelum hari ini\./,
+    );
+    await expect(date).toHaveAttribute("aria-invalid", "true");
+    await expect(date).toBeFocused();
+    // Editing the date clears its message.
+    await date.fill(tenthOfMonth(0));
     await expect(
       form.getByText("Rencana keluar tidak boleh sebelum hari ini."),
-    ).toBeVisible();
-    await expect(date).toBeFocused();
+    ).toHaveCount(0);
+    await expect(date).toHaveAttribute("aria-invalid", "false");
 
     const planned = tenthOfMonth(1);
     await date.fill(planned);
@@ -366,6 +373,21 @@ test.describe("Admin of the whole organization", () => {
     const save = form.getByRole("button", { name: "Catat pindah keluar" });
     await expectTouchTarget(save);
     await attachViewportScreenshot(page, testInfo, "lease-move-out");
+
+    // A day after today: the form says so under the date, before anything is sent, and editing
+    // the date clears it.
+    const date = form.getByLabel("Hari terakhir menyewa");
+    await date.fill(tenthOfMonth(1));
+    await save.click();
+    await expect(date).toHaveAccessibleDescription(
+      /^Tanggal keluar tidak boleh setelah hari ini\./,
+    );
+    await expect(date).toBeFocused();
+    await date.fill(jakartaToday(new Date()));
+    await expect(
+      form.getByText("Tanggal keluar tidak boleh setelah hari ini."),
+    ).toHaveCount(0);
+    await expect(date).toHaveAttribute("aria-invalid", "false");
 
     await save.click();
     await expect(form).toHaveCount(0);

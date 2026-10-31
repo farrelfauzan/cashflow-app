@@ -1,18 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
+import { ApiError } from "@/lib/api/errors";
 import type { ChargeType, Lease, Unit } from "@/lib/api/generated/model";
 
 import type { ChargeRow, LeaseFormValues, LeaseTermsValues } from "./type";
 import {
   BAD_CHARGE_AMOUNT_MESSAGE,
-  chargeAmountId,
+  cancelBookingFormSchema,
   chargeAmountLabel,
-  chargeApiFields,
   chargeEntriesFromLease,
+  chargeField,
+  chargeFields,
   chargeRowForApiField,
   chargeRows,
+  chargeTypeFormSchema,
   checkChargeTypeName,
   checkLeaseCharges,
+  chargeRowApiError,
+  leaseChargesFormSchema,
+  moveOutFormSchema,
+  plannedEndFormSchema,
   EMPTY_CHARGE_TYPE_NAME_MESSAGE,
   LONG_CHARGE_TYPE_NAME_MESSAGE,
   meteredChargeTypeAddedText,
@@ -1908,6 +1916,82 @@ describe("checkMoveOut", () => {
   });
 });
 
+// What a lease form shows for these values: the input it sends, or each message under its path
+// (as zodResolver puts them).
+function checkForm(schema: z.ZodType, values: unknown) {
+  const result = schema.safeParse(values);
+  if (result.success) return { ok: true, input: result.data };
+  return {
+    ok: false,
+    errors: Object.fromEntries(
+      result.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+    ),
+  };
+}
+
+describe("plannedEndFormSchema", () => {
+  const schema = plannedEndFormSchema("2026-09-15", TODAY);
+
+  it("sends a date checkPlannedEnd accepts", () => {
+    expect(checkForm(schema, { plannedEndDate: "2026-11-14" })).toEqual({
+      ok: true,
+      input: { plannedEndDate: "2026-11-14" },
+    });
+  });
+
+  it.each([
+    { date: "", want: NO_DATE_MESSAGE },
+    { date: "2026-10-27", want: PLANNED_END_BEFORE_TODAY_MESSAGE },
+  ])("puts '$date' under the field", ({ date, want }) => {
+    expect(checkForm(schema, { plannedEndDate: date })).toEqual({
+      ok: false,
+      errors: { plannedEndDate: want },
+    });
+  });
+
+  it("refuses a date before a booking's start", () => {
+    expect(
+      checkForm(plannedEndFormSchema("2026-12-05", TODAY), {
+        plannedEndDate: "2026-12-01",
+      }),
+    ).toEqual({
+      ok: false,
+      errors: { plannedEndDate: PLANNED_END_BEFORE_START_MESSAGE },
+    });
+  });
+});
+
+describe("moveOutFormSchema", () => {
+  const schema = moveOutFormSchema("2026-09-15", TODAY);
+
+  it("sends a date checkMoveOut accepts", () => {
+    expect(checkForm(schema, { endDate: TODAY })).toEqual({
+      ok: true,
+      input: { endDate: TODAY },
+    });
+  });
+
+  it.each([
+    { date: "", want: NO_DATE_MESSAGE },
+    { date: "2026-09-14", want: END_BEFORE_START_MESSAGE },
+    { date: "2026-10-29", want: END_AFTER_TODAY_MESSAGE },
+  ])("puts '$date' under the field", ({ date, want }) => {
+    expect(checkForm(schema, { endDate: date })).toEqual({
+      ok: false,
+      errors: { endDate: want },
+    });
+  });
+});
+
+describe("cancelBookingFormSchema", () => {
+  it("asks nothing", () => {
+    expect(checkForm(cancelBookingFormSchema, {})).toEqual({
+      ok: true,
+      input: {},
+    });
+  });
+});
+
 describe("lease copy", () => {
   it("names the unit and the booking's start", () => {
     expect(leaseUnitText(leaseOf())).toBe("Kamar 07 · Kos Melati");
@@ -1997,25 +2081,22 @@ describe("lease charges", () => {
   });
 
   it("checks a row when an amount is typed into it", () => {
-    const typed = withChargeAmount({}, "t-park", "10.000");
-    expect(typed).toEqual({ "t-park": { checked: true, amount: "10.000" } });
+    const typed = withChargeAmount(undefined, "10.000");
+    expect(typed).toEqual({ checked: true, amount: "10.000" });
     // Emptying the field leaves the checkbox as it is.
-    expect(withChargeAmount(typed, "t-park", "")).toEqual({
-      "t-park": { checked: true, amount: "" },
-    });
-    const unchecked = { "t-park": { checked: false, amount: "" } };
-    expect(withChargeAmount(unchecked, "t-park", "")).toEqual(unchecked);
+    expect(withChargeAmount(typed, "")).toEqual({ checked: true, amount: "" });
+    const unchecked = { checked: false, amount: "" };
+    expect(withChargeAmount(unchecked, "")).toEqual(unchecked);
   });
 
   it("keeps the typed text when a row is unchecked", () => {
-    const entries = { "t-wifi": { checked: true, amount: "50.000" } };
-    const unchecked = withChargeChecked(entries, "t-wifi", false);
-    expect(unchecked).toEqual({
-      "t-wifi": { checked: false, amount: "50.000" },
-    });
-    expect(withChargeChecked(unchecked, "t-wifi", true)).toEqual(entries);
-    expect(withChargeChecked({}, "t-new", true)).toEqual({
-      "t-new": { checked: true, amount: "" },
+    const entry = { checked: true, amount: "50.000" };
+    const unchecked = withChargeChecked(entry, false);
+    expect(unchecked).toEqual({ checked: false, amount: "50.000" });
+    expect(withChargeChecked(unchecked, true)).toEqual(entry);
+    expect(withChargeChecked(undefined, true)).toEqual({
+      checked: true,
+      amount: "",
     });
   });
 
@@ -2034,7 +2115,6 @@ describe("lease charges", () => {
           { chargeTypeId: "t-wifi", amount: 1_250_000 },
         ],
       },
-      sent: ["t-clean", "t-wifi"],
     });
   });
 
@@ -2043,11 +2123,10 @@ describe("lease charges", () => {
       checkLeaseCharges([
         row({ chargeTypeId: "t-wifi", checked: false, amount: "50.000" }),
       ]),
-    ).toEqual({ ok: true, input: { charges: [] }, sent: [] });
+    ).toEqual({ ok: true, input: { charges: [] } });
     expect(checkLeaseCharges([])).toEqual({
       ok: true,
       input: { charges: [] },
-      sent: [],
     });
   });
 
@@ -2069,18 +2148,11 @@ describe("lease charges", () => {
         "t-park": BAD_CHARGE_AMOUNT_MESSAGE,
         "t-wifi": BAD_CHARGE_AMOUNT_MESSAGE,
       },
-      first: "t-park",
     });
   });
 
   it("maps an API field on charges[i] back to the row sent at index i", () => {
     const sent = ["t-clean", "t-wifi"];
-    expect(chargeApiFields(sent)).toEqual([
-      "charges[0].amount",
-      "charges[0].chargeTypeId",
-      "charges[1].amount",
-      "charges[1].chargeTypeId",
-    ]);
     expect(chargeRowForApiField("charges[1].amount", sent)).toBe("t-wifi");
     expect(chargeRowForApiField("charges[0].chargeTypeId", sent)).toBe(
       "t-clean",
@@ -2126,9 +2198,148 @@ describe("lease charges", () => {
     expect(checkChargeTypeName(input)).toEqual(want);
   });
 
+  it("names each row's field by its charge type, in display order", () => {
+    expect(chargeField("t-wifi")).toBe("charges.t-wifi");
+    expect(chargeFields(TYPES)).toEqual([
+      "charges.t-clean",
+      "charges.t-park",
+      "charges.t-wifi",
+    ]);
+    expect(chargeFields([])).toEqual([]);
+  });
+
+  describe("leaseChargesFormSchema", () => {
+    const schema = leaseChargesFormSchema(TYPES);
+
+    it("sends the checked rows in display order, as integers", () => {
+      expect(
+        checkForm(schema, {
+          charges: {
+            "t-wifi": { checked: true, amount: "1.250.000" },
+            "t-park": { checked: false, amount: "10.000" },
+            "t-clean": { checked: true, amount: "25.000" },
+          },
+        }),
+      ).toEqual({
+        ok: true,
+        input: {
+          charges: [
+            { chargeTypeId: "t-clean", amount: 25_000 },
+            { chargeTypeId: "t-wifi", amount: 1_250_000 },
+          ],
+        },
+      });
+    });
+
+    it("leaves out a metered type and a type it does not list", () => {
+      expect(
+        checkForm(schema, {
+          charges: {
+            "t-air": { checked: true, amount: "" },
+            "t-gone": { checked: true, amount: "" },
+          },
+        }),
+      ).toEqual({ ok: true, input: { charges: [] } });
+    });
+
+    it("puts each bad row's message under its field, first row first", () => {
+      expect(
+        checkForm(schema, {
+          charges: {
+            "t-wifi": { checked: true, amount: "0" },
+            "t-clean": { checked: true, amount: "" },
+            "t-park": { checked: false, amount: "" },
+          },
+        }),
+      ).toEqual({
+        ok: false,
+        errors: {
+          "charges.t-clean": BAD_CHARGE_AMOUNT_MESSAGE,
+          "charges.t-wifi": BAD_CHARGE_AMOUNT_MESSAGE,
+        },
+      });
+      const result = schema.safeParse({
+        charges: {
+          "t-wifi": { checked: true, amount: "" },
+          "t-clean": { checked: true, amount: "" },
+        },
+      });
+      expect(result.error?.issues.map((issue) => issue.path)).toEqual([
+        ["charges", "t-clean"],
+        ["charges", "t-wifi"],
+      ]);
+    });
+
+    it("sends nothing before the types are known, and refuses nothing", () => {
+      expect(
+        checkForm(leaseChargesFormSchema([]), {
+          charges: { "t-wifi": { checked: true, amount: "" } },
+        }),
+      ).toEqual({ ok: true, input: { charges: [] } });
+    });
+  });
+
+  describe("chargeRowApiError", () => {
+    const input = {
+      charges: [
+        { chargeTypeId: "t-clean", amount: 25_000 },
+        { chargeTypeId: "t-wifi", amount: 50_000 },
+      ],
+    };
+    const apiError = (field: string | undefined) =>
+      new ApiError({
+        status: 400,
+        code: "invalid",
+        message: "Jumlah tidak sah.",
+        field,
+      });
+
+    it.each([
+      { field: "charges[1].amount", want: "charges.t-wifi" },
+      { field: "charges[0].chargeTypeId", want: "charges.t-clean" },
+      { field: "charges[2].amount", want: null },
+      { field: "charges", want: null },
+      { field: undefined, want: null },
+    ])("names $want for an error on $field", ({ field, want }) => {
+      const mapped = chargeRowApiError(apiError(field), input);
+      expect(mapped).toBeInstanceOf(ApiError);
+      expect(mapped).toMatchObject({
+        status: 400,
+        code: "invalid",
+        message: "Jumlah tidak sah.",
+      });
+      expect((mapped as ApiError).field).toBe(want ?? undefined);
+    });
+
+    it("leaves anything that is not the API's error as it is", () => {
+      const failure = new Error("boom");
+      expect(chargeRowApiError(failure, input)).toBe(failure);
+    });
+  });
+
+  describe("chargeTypeFormSchema", () => {
+    it("sends the trimmed name and whether it is metered", () => {
+      expect(
+        checkForm(chargeTypeFormSchema, {
+          name: "  Air galon ",
+          metered: true,
+        }),
+      ).toEqual({ ok: true, input: { name: "Air galon", metered: true } });
+    });
+
+    it.each([
+      { name: "", want: EMPTY_CHARGE_TYPE_NAME_MESSAGE },
+      { name: "   ", want: EMPTY_CHARGE_TYPE_NAME_MESSAGE },
+      { name: "a".repeat(51), want: LONG_CHARGE_TYPE_NAME_MESSAGE },
+    ])("puts a bad name under the field: '$name'", ({ name, want }) => {
+      expect(checkForm(chargeTypeFormSchema, { name, metered: false })).toEqual(
+        { ok: false, errors: { name: want } },
+      );
+    });
+  });
+
   it("words the rows and the metered line", () => {
     expect(chargeAmountLabel("Wi-Fi")).toBe("Jumlah Wi-Fi");
-    expect(chargeAmountId("f1", "t-wifi")).toBe("f1-t-wifi-amount");
     expect(meteredChargeTypeAddedText("Listrik")).toBe(
       "Jenis biaya Listrik ditambahkan. Biaya dari meteran dicatat tiap bulan, jadi tidak diatur di sini.",
     );
