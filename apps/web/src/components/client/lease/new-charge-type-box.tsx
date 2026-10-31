@@ -1,10 +1,12 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, type KeyboardEvent } from "react";
+import { Controller } from "react-hook-form";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import {
   FIELD_HINT_CLASS,
   FIELD_LABEL_CLASS,
@@ -14,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toFormError } from "@/lib/api/form-error";
 import type { ChargeType } from "@/lib/api/generated/model";
 import {
   getListChargeTypesQueryKey,
@@ -27,7 +28,7 @@ import {
   CHARGE_TYPE_NAME_MAX_LENGTH,
   CHARGE_TYPE_NAME_PLACEHOLDER,
   CREATE_CHARGE_TYPE_LABEL,
-  checkChargeTypeName,
+  chargeTypeFormSchema,
   NEW_CHARGE_TYPE_HINT,
   NEW_CHARGE_TYPE_TITLE,
 } from "./utils";
@@ -41,8 +42,9 @@ type NewChargeTypeBoxProps = {
 };
 
 // "Jenis biaya baru" inside "Biaya tambahan": a name and whether it is metered, added for the
-// whole organization. It sits inside the panel's form, so it is not a form of its own: its button
-// is type="button", and Enter in the name adds the type instead of saving the panel.
+// whole organization. It sits inside the panel's form, so it is not a <form> of its own (its
+// react-hook-form form is submitted by hand): its button is type="button", and Enter in the name
+// adds the type instead of saving the panel.
 export function NewChargeTypeBox({
   orgId,
   disabled,
@@ -52,38 +54,26 @@ export function NewChargeTypeBox({
   const titleId = `${id}-title`;
   const errorId = `${id}-name-error`;
   const queryClient = useQueryClient();
-  const nameRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState("");
-  const [metered, setMetered] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, field, showApiError, alert } = useApiForm({
+    schema: chargeTypeFormSchema,
+    defaultValues: { name: "", metered: false },
+    apiFields: CHARGE_TYPE_API_FIELDS,
+  });
+  const error = form.formState.errors.name?.message;
 
   const create = useCreateChargeType();
   const adding = create.isPending;
   const busy = disabled || adding;
 
-  // The name gets focus when the box opens, and again after a refused add.
-  // Each request is handled once, as soon as the field is enabled.
-  const [focusName, setFocusName] = useState<object>({});
-  const focused = useRef<object | null>(null);
+  // The name gets focus when the box opens; a refused add focuses it again (useApiForm).
   useEffect(() => {
-    if (busy || focused.current === focusName) return;
-    focused.current = focusName;
-    nameRef.current?.focus();
-  }, [focusName, busy]);
+    form.setFocus("name");
+  }, [form]);
 
-  function add() {
+  const add = form.handleSubmit((input) => {
     if (busy) return;
-    const checked = checkChargeTypeName(name);
-    if (!checked.ok) {
-      setError(checked.error);
-      setFocusName({});
-      return;
-    }
-    setError(undefined);
-    setAlert(null);
     create.mutate(
-      { orgId, data: { name: checked.name, metered } },
+      { orgId, data: input },
       {
         onSuccess: async (type) => {
           await queryClient.invalidateQueries({
@@ -91,23 +81,15 @@ export function NewChargeTypeBox({
           });
           onAdded(type);
         },
-        onError: (failure) => {
-          const failed = toFormError(failure, CHARGE_TYPE_API_FIELDS);
-          if (failed.field !== null) {
-            setError(failed.message);
-            setFocusName({});
-          } else {
-            setAlert(failed.message);
-          }
-        },
+        onError: showApiError,
       },
     );
-  }
+  });
 
   function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    add();
+    if (!busy) void add();
   }
 
   return (
@@ -119,24 +101,18 @@ export function NewChargeTypeBox({
       <p id={titleId} className="text-base font-bold md:text-[17px]">
         {NEW_CHARGE_TYPE_TITLE}
       </p>
-      {alert !== null && <FormAlert message={alert} />}
+      {alert !== undefined && <FormAlert message={alert} />}
       <div className="flex flex-col gap-2">
         <Label htmlFor={`${id}-name`} className={FIELD_LABEL_CLASS}>
           {CHARGE_TYPE_NAME_LABEL}
         </Label>
         <Input
-          ref={nameRef}
+          {...field("name")}
           id={`${id}-name`}
-          name="chargeTypeName"
           type="text"
           autoComplete="off"
           maxLength={CHARGE_TYPE_NAME_MAX_LENGTH}
           placeholder={CHARGE_TYPE_NAME_PLACEHOLDER}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setError(undefined);
-          }}
           onKeyDown={handleNameKeyDown}
           disabled={busy}
           aria-invalid={error !== undefined}
@@ -149,12 +125,19 @@ export function NewChargeTypeBox({
         htmlFor={`${id}-metered`}
         className="min-h-11 gap-3 text-[15px] leading-normal font-semibold md:text-base"
       >
-        <Checkbox
-          id={`${id}-metered`}
-          checked={metered}
-          onCheckedChange={(checked) => setMetered(checked === true)}
-          disabled={busy}
-          className="size-[22px]"
+        <Controller
+          control={form.control}
+          name="metered"
+          render={({ field: metered }) => (
+            <Checkbox
+              ref={metered.ref}
+              id={`${id}-metered`}
+              checked={metered.value}
+              onCheckedChange={(checked) => metered.onChange(checked === true)}
+              disabled={busy}
+              className="size-[22px]"
+            />
+          )}
         />
         {CHARGE_TYPE_METERED_LABEL}
       </Label>
@@ -162,7 +145,9 @@ export function NewChargeTypeBox({
         type="button"
         variant="outline"
         disabled={busy}
-        onClick={add}
+        onClick={() => {
+          if (!busy) void add();
+        }}
         className="h-12 rounded-xl border-[1.5px] bg-card px-[18px] text-base font-semibold"
       >
         {adding ? "Menambahkan…" : CREATE_CHARGE_TYPE_LABEL}

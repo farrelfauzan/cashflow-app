@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useId, useState } from "react";
+import { Controller } from "react-hook-form";
 
 import { DateField } from "@/components/client/form/date-field";
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { Button } from "@/components/ui/button";
-import { toFormError } from "@/lib/api/form-error";
 import type { Lease } from "@/lib/api/generated/model";
 import { useSetLeasePlannedEnd } from "@/lib/api/generated/tenants/tenants";
 import {
   PLANNED_END_API_FIELDS,
-  checkPlannedEnd,
   currentPlannedEndText,
   plannedEndEffects,
+  plannedEndFormSchema,
   plannedEndHint,
   plannedEndSuggestion,
 } from "./utils";
@@ -43,80 +44,59 @@ export function PlannedEndForm({
   const id = useId();
   const formId = `${id}-form`;
   const refresh = useRefreshLease(orgId);
-  const dateRef = useRef<HTMLInputElement>(null);
   const [suggestion] = useState(() =>
     plannedEndSuggestion(lease.startDate, today, lease.termMonths),
   );
-  const [date, setDate] = useState(
-    () => lease.plannedEndDate ?? suggestion.date,
-  );
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, showApiError, alert } = useApiForm({
+    schema: plannedEndFormSchema(lease.startDate, today),
+    defaultValues: { plannedEndDate: lease.plannedEndDate ?? suggestion.date },
+    apiFields: PLANNED_END_API_FIELDS,
+  });
 
   const save = useSetLeasePlannedEnd({
     mutation: { onSuccess: (saved) => refresh(saved, false) },
   });
   const saving = save.isPending;
 
-  // Focus the date after a refused save, once the field is enabled again.
-  const [focusDate, setFocusDate] = useState<object | null>(null);
-  useEffect(() => {
-    if (focusDate !== null && !saving) dateRef.current?.focus();
-  }, [focusDate, saving]);
-
-  function showError(message: string) {
-    setError(message);
-    setFocusDate({});
-  }
-
   function send(plannedEndDate: string | null) {
-    setAlert(null);
     save.mutate(
       { orgId, leaseId: lease.id, data: { plannedEndDate } },
-      {
-        onSuccess: onSaved,
-        onError: (failure) => {
-          const failed = toFormError(failure, PLANNED_END_API_FIELDS);
-          if (failed.field !== null) showError(failed.message);
-          else setAlert(failed.message);
-        },
-      },
+      { onSuccess: onSaved, onError: showApiError },
     );
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit((input) => {
     if (saving) return;
-    const checked = checkPlannedEnd(date, lease.startDate, today);
-    if (!checked.ok) {
-      showError(checked.error);
-      return;
-    }
-    setError(undefined);
-    send(checked.date);
-  }
+    send(input.plannedEndDate);
+  });
 
   return (
     <>
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
-        <DateField
-          inputRef={dateRef}
-          label="Hari terakhir penyewa tinggal"
+        {alert !== undefined && <FormAlert message={alert} />}
+        <Controller
+          control={form.control}
           name="plannedEndDate"
-          value={date}
-          onChange={(next) => {
-            setDate(next);
-            setError(undefined);
-          }}
-          hint={plannedEndHint(suggestion, lease.termMonths)}
-          error={error}
-          disabled={saving}
+          render={({ field, fieldState }) => (
+            <DateField
+              inputRef={field.ref}
+              label="Hari terakhir penyewa tinggal"
+              name="plannedEndDate"
+              value={field.value}
+              onChange={(date) => {
+                field.onChange(date);
+                form.clearErrors("plannedEndDate");
+              }}
+              hint={plannedEndHint(suggestion, lease.termMonths)}
+              error={fieldState.error?.message}
+              disabled={saving}
+            />
+          )}
         />
         <LeaseEffectsBox items={plannedEndEffects(lease.termMonths)} />
         {lease.plannedEndDate !== undefined && (
@@ -129,7 +109,10 @@ export function PlannedEndForm({
               variant="outline"
               disabled={saving}
               onClick={() => {
-                if (!saving) send(null);
+                if (saving) return;
+                // Sent without the date's check; only the alert of an earlier refusal goes.
+                form.clearErrors("root.server");
+                send(null);
               }}
               className="h-11 self-start rounded-xl border-[1.5px] border-destructive bg-card px-[18px] text-[15px] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive md:text-base"
             >

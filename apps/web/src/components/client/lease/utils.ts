@@ -1,9 +1,15 @@
+import type { FieldValues, Path, UseFormReturn } from "react-hook-form";
+import { z } from "zod";
+
+import { ApiError } from "@/lib/api/errors";
 import type {
   ChargeType,
+  ChargeTypeInput,
   Collector,
   CollectorCandidate,
   Lease,
   LeaseCharge,
+  LeaseChargesInput,
   LeaseInput,
   LeaseTerms,
   TermMonths,
@@ -21,11 +27,13 @@ import type {
   ChargeEntry,
   ChargeErrors,
   ChargeRow,
+  ChargeTypeFormValues,
   ChargeTypeNameCheck,
   CollectorOption,
   DateCheck,
   DateOption,
   EditStartBox,
+  LeaseChargesFormValues,
   LeaseChargesResult,
   LeaseFormErrors,
   LeaseFormField,
@@ -33,6 +41,8 @@ import type {
   LeaseFormValues,
   LeaseTermsResult,
   LeaseTermsValues,
+  MoveOutFormValues,
+  PlannedEndFormValues,
   PlannedEndSuggestion,
   StartTiming,
   TermHint,
@@ -678,8 +688,8 @@ export const END_AFTER_TODAY_MESSAGE =
 export const EFFECTS_TITLE = "Yang terjadi setelah ini";
 
 // The API fields these forms show errors under; any other goes to the alert.
-export const PLANNED_END_API_FIELDS: readonly string[] = ["plannedEndDate"];
-export const MOVE_OUT_API_FIELDS: readonly string[] = ["endDate"];
+export const PLANNED_END_API_FIELDS = ["plannedEndDate"] as const;
+export const MOVE_OUT_API_FIELDS = ["endDate"] as const;
 
 // What a planned end does, per period of the lease's term.
 export function plannedEndEffects(term: TermMonths): string[] {
@@ -742,6 +752,29 @@ export function checkPlannedEnd(
   return { ok: true, date };
 }
 
+// A date field checked by one of the checks above: its message under the field, or the date to
+// send.
+function checkedDate(check: (date: string) => DateCheck) {
+  return z.string().transform((date, ctx) => {
+    const checked = check(date);
+    if (!checked.ok) {
+      ctx.addIssue({ code: "custom", message: checked.error });
+      return z.NEVER;
+    }
+    return checked.date;
+  });
+}
+
+// "Rencana keluar": checkPlannedEnd's rule on the date it sends.
+export function plannedEndFormSchema(
+  start: string,
+  today: string,
+): z.ZodType<{ plannedEndDate: string }, PlannedEndFormValues> {
+  return z.object({
+    plannedEndDate: checkedDate((date) => checkPlannedEnd(date, start, today)),
+  });
+}
+
 export function moveOutHint(start: string): string {
   return `Diisi hari ini. Tidak boleh sebelum tanggal mulai sewa (${formatDate(start)}) dan tidak boleh setelah hari ini.`;
 }
@@ -758,10 +791,25 @@ export function checkMoveOut(
   return { ok: true, date };
 }
 
+// "Catat pindah keluar": checkMoveOut's rule on the date it sends.
+export function moveOutFormSchema(
+  start: string,
+  today: string,
+): z.ZodType<{ endDate: string }, MoveOutFormValues> {
+  return z.object({
+    endDate: checkedDate((date) => checkMoveOut(date, start, today)),
+  });
+}
+
 // "Batalkan sewa" for a booking (boards Sewa-Batal.dc.html and Sewa-Batal-Phone.dc.html).
 export function cancelBookingText(start: string): string {
   return `Sewa ini belum dimulai (mulai ${formatDate(start)}). Kalau dibatalkan, unit langsung kosong lagi dan sewa ini tidak akan pernah ditagih.`;
 }
+
+// "Batalkan sewa" asks nothing: the date is the booking's start date. Every refusal goes to the
+// alert, since the date is not the member's to change.
+export const cancelBookingFormSchema = z.object({});
+export const CANCEL_BOOKING_API_FIELDS = [] as const;
 
 export const CANCEL_BOOKING_HINT =
   "Diisi otomatis sama dengan tanggal mulai. Sewa yang belum dimulai hanya bisa dibatalkan dengan tanggal itu.";
@@ -802,13 +850,15 @@ export const EMPTY_CHARGE_TYPE_NAME_MESSAGE = "Isi nama biaya.";
 export const LONG_CHARGE_TYPE_NAME_MESSAGE = `Nama biaya paling panjang ${CHARGE_TYPE_NAME_MAX_LENGTH} huruf.`;
 
 // The API field "Jenis biaya baru" shows its errors under; any other goes to the box's alert.
-export const CHARGE_TYPE_API_FIELDS: readonly string[] = ["name"];
+export const CHARGE_TYPE_API_FIELDS = ["name"] as const;
 
-const NO_ENTRY: ChargeEntry = { checked: false, amount: "" };
+// A charge type without an entry: unchecked and empty.
+export const NO_CHARGE_ENTRY: ChargeEntry = { checked: false, amount: "" };
 
-// A row's amount input id, under the form's own id, so the form can focus it.
-export function chargeAmountId(formId: string, chargeTypeId: string): string {
-  return `${formId}-${chargeTypeId}-amount`;
+// A row's field in the form: its entry, under its charge type id ("charges.<id>"). The row's
+// messages go under it, and it focuses the row's amount.
+export function chargeField(chargeTypeId: string): `charges.${string}` {
+  return `charges.${chargeTypeId}`;
 }
 
 // The amount field's accessible name in a row: "Jumlah Wi-Fi".
@@ -846,32 +896,33 @@ export function chargeRows(
     .map((type) => ({
       chargeTypeId: type.id,
       name: type.name,
-      ...(entries[type.id] ?? NO_ENTRY),
+      ...(entries[type.id] ?? NO_CHARGE_ENTRY),
     }));
+}
+
+// The fields of the rows, in display order: where an API error on a row can go.
+export function chargeFields(
+  types: readonly ChargeType[],
+): `charges.${string}`[] {
+  return chargeRows(types, {}).map((row) => chargeField(row.chargeTypeId));
 }
 
 // A row's amount typed: typing into an unchecked row checks it. Emptying the field leaves the
 // checkbox as it is.
 export function withChargeAmount(
-  entries: ChargeEntries,
-  chargeTypeId: string,
+  entry: ChargeEntry | undefined,
   amount: string,
-): ChargeEntries {
-  const entry = entries[chargeTypeId] ?? NO_ENTRY;
-  return {
-    ...entries,
-    [chargeTypeId]: { checked: entry.checked || amount !== "", amount },
-  };
+): ChargeEntry {
+  const current = entry ?? NO_CHARGE_ENTRY;
+  return { checked: current.checked || amount !== "", amount };
 }
 
 // A row checked or unchecked. Unchecking keeps the typed text; the row is just not sent.
 export function withChargeChecked(
-  entries: ChargeEntries,
-  chargeTypeId: string,
+  entry: ChargeEntry | undefined,
   checked: boolean,
-): ChargeEntries {
-  const entry = entries[chargeTypeId] ?? NO_ENTRY;
-  return { ...entries, [chargeTypeId]: { ...entry, checked } };
+): ChargeEntry {
+  return { ...(entry ?? NO_CHARGE_ENTRY), checked };
 }
 
 // What "Simpan biaya tambahan" checks and sends: the checked rows in display order, each with a
@@ -881,36 +932,45 @@ export function checkLeaseCharges(
   rows: readonly ChargeRow[],
 ): LeaseChargesResult {
   const errors: ChargeErrors = {};
-  let first: string | null = null;
+  let bad = false;
   const charges: { chargeTypeId: string; amount: number }[] = [];
   for (const row of rows) {
     if (!row.checked) continue;
     const amount = parseRupiahInput(row.amount);
     if (amount === null || amount < 1) {
       errors[row.chargeTypeId] = BAD_CHARGE_AMOUNT_MESSAGE;
-      first ??= row.chargeTypeId;
+      bad = true;
       continue;
     }
     charges.push({ chargeTypeId: row.chargeTypeId, amount });
   }
-  if (first !== null) return { ok: false, errors, first };
-  return {
-    ok: true,
-    input: { charges },
-    sent: charges.map((charge) => charge.chargeTypeId),
-  };
+  if (bad) return { ok: false, errors };
+  return { ok: true, input: { charges } };
+}
+
+// "Biaya tambahan": checkLeaseCharges on the rows of the types (`types`, the API's list) with the
+// form's entries. Each bad row's message goes under its field (chargeField), in display order.
+export function leaseChargesFormSchema(
+  types: readonly ChargeType[],
+): z.ZodType<LeaseChargesInput, LeaseChargesFormValues> {
+  return z
+    .object({ charges: z.custom<ChargeEntries>() })
+    .transform((values, ctx) => {
+      const checked = checkLeaseCharges(chargeRows(types, values.charges));
+      if (checked.ok) return checked.input;
+      for (const [chargeTypeId, message] of Object.entries(checked.errors)) {
+        if (message === undefined) continue;
+        ctx.addIssue({
+          code: "custom",
+          message,
+          path: ["charges", chargeTypeId],
+        });
+      }
+      return z.NEVER;
+    });
 }
 
 const CHARGE_API_FIELD = /^charges\[(\d+)\]\.(amount|chargeTypeId)$/;
-
-// The API fields that can name a row of a request: charges[i].amount and charges[i].chargeTypeId
-// for every index sent. Any other field (such as "charges") goes to the alert.
-export function chargeApiFields(sent: readonly string[]): string[] {
-  return sent.flatMap((_, i) => [
-    `charges[${i}].amount`,
-    `charges[${i}].chargeTypeId`,
-  ]);
-}
 
 // The charge type id of the row an API field names, from the rows in the order they were sent;
 // null for a field that names no row sent.
@@ -924,6 +984,50 @@ export function chargeRowForApiField(
   return sent[Number(match[1])] ?? null;
 }
 
+// A refused save of `input` as "Biaya tambahan" shows it: an error on charges[i] names the field
+// of the row sent at index i (chargeField), so it goes under that row; any other field is
+// dropped, so it goes to the alert. Anything that is not the API's error stays as it is.
+export function chargeRowApiError(
+  error: unknown,
+  input: LeaseChargesInput,
+): unknown {
+  if (!(error instanceof ApiError)) return error;
+  const sent = input.charges.map((charge) => charge.chargeTypeId);
+  const row = chargeRowForApiField(error.field ?? null, sent);
+  return new ApiError({
+    status: error.status,
+    code: error.code,
+    message: error.message,
+    field: row === null ? undefined : chargeField(row),
+  });
+}
+
+// The options that keep a field's value, error and state while it is unregistered.
+const KEEP_FIELD_STATE = {
+  keepValue: true,
+  keepDefaultValue: true,
+  keepError: true,
+  keepDirty: true,
+  keepTouched: true,
+  keepIsValid: true,
+  keepIsValidating: true,
+} as const;
+
+// react-hook-form focuses the first field with an error in the order the fields were registered,
+// and a field registers when it first renders: a row that appears later (a type just added, or
+// one another member added) would come last wherever it sits on screen. Registering the fields
+// again in display order, keeping their values, errors and inputs, makes a failed check focus the
+// first bad row on screen.
+export function registerInOrder<Values extends FieldValues>(
+  form: Pick<UseFormReturn<Values>, "register" | "unregister">,
+  names: readonly Path<Values>[],
+) {
+  for (const name of names) {
+    form.unregister(name, KEEP_FIELD_STATE);
+    form.register(name);
+  }
+}
+
 // "Nama biaya": not empty and at most CHARGE_TYPE_NAME_MAX_LENGTH characters once trimmed.
 export function checkChargeTypeName(name: string): ChargeTypeNameCheck {
   const trimmed = name.trim();
@@ -934,3 +1038,19 @@ export function checkChargeTypeName(name: string): ChargeTypeNameCheck {
   }
   return { ok: true, name: trimmed };
 }
+
+// "Jenis biaya baru": checkChargeTypeName's rule on the name it sends, and whether it is metered.
+export const chargeTypeFormSchema: z.ZodType<
+  ChargeTypeInput,
+  ChargeTypeFormValues
+> = z.object({
+  name: z.string().transform((name, ctx) => {
+    const checked = checkChargeTypeName(name);
+    if (!checked.ok) {
+      ctx.addIssue({ code: "custom", message: checked.error });
+      return z.NEVER;
+    }
+    return checked.name;
+  }),
+  metered: z.boolean(),
+});

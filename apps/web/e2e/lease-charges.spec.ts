@@ -368,7 +368,10 @@ test.describe("Admin of the whole organization", () => {
       },
     );
     const kebersihan = uniqueName(testInfo, "Kebersihan Uji");
+    // Sorts before "Kebersihan", so its row is the first on screen.
+    const iuran = uniqueName(testInfo, "Iuran Uji");
     await createChargeType(page, orgId, kebersihan);
+    await createChargeType(page, orgId, iuran);
     await openTenantPage(page, orgId, tenant);
     const card = page.getByRole("region", {
       name: `${unit.label} · ${property.name}`,
@@ -376,15 +379,54 @@ test.describe("Admin of the whole organization", () => {
     await card.getByRole("button", { name: PANEL, exact: true }).click();
     const panel = page.getByRole("dialog", { name: PANEL });
 
+    // Both rows refused, each with its message under it; the first on screen takes the focus.
     await chargeBox(panel, kebersihan).click();
+    await chargeBox(panel, iuran).click();
     await panel.getByRole("button", { name: SAVE }).click();
-    await expect(panel.getByText(BAD_AMOUNT)).toBeVisible();
-    await expect(chargeAmount(panel, kebersihan)).toBeFocused();
-    await expect(chargeAmount(panel, kebersihan)).toHaveAttribute(
+    await expect(panel.getByText(BAD_AMOUNT)).toHaveCount(2);
+    for (const name of [iuran, kebersihan]) {
+      await expect(chargeAmount(panel, name)).toHaveAccessibleDescription(
+        BAD_AMOUNT,
+      );
+      await expect(chargeAmount(panel, name)).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+    }
+    await expect(chargeAmount(panel, iuran)).toBeFocused();
+
+    // Editing a row clears only its own message.
+    await page.keyboard.type("5000");
+    await expect(chargeAmount(panel, iuran)).toHaveAttribute(
       "aria-invalid",
-      "true",
+      "false",
+    );
+    await expect(panel.getByText(BAD_AMOUNT)).toHaveCount(1);
+    await expect(chargeAmount(panel, kebersihan)).toHaveAccessibleDescription(
+      BAD_AMOUNT,
     );
     await expect(panel).toBeVisible();
+
+    // A type added from the panel registers its row last, yet sorts above both rows: a failed
+    // check still focuses the first bad row on screen, and the row with an amount keeps it.
+    const asuransi = uniqueName(testInfo, "Asuransi Uji");
+    await panel.getByRole("button", { name: ADD_TYPE, exact: true }).click();
+    const box = panel.getByRole("group", { name: "Jenis biaya baru" });
+    await box.getByLabel("Nama biaya").fill(asuransi);
+    await box.getByRole("button", { name: CREATE_TYPE, exact: true }).click();
+    await expect(box).toHaveCount(0);
+    await expect(chargeBox(panel, asuransi)).toBeChecked();
+    await chargeAmount(panel, iuran).focus();
+    await panel.getByRole("button", { name: SAVE }).click();
+    await expect(panel.getByText(BAD_AMOUNT)).toHaveCount(2);
+    for (const name of [asuransi, kebersihan]) {
+      await expect(chargeAmount(panel, name)).toHaveAccessibleDescription(
+        BAD_AMOUNT,
+      );
+    }
+    await expect(chargeAmount(panel, asuransi)).toBeFocused();
+    await expect(chargeAmount(panel, iuran)).toHaveValue("5.000");
+    await expect(chargeBox(panel, iuran)).toBeChecked();
 
     await panel.getByRole("button", { name: "Batal" }).click();
     await expect(panel).toHaveCount(0);
