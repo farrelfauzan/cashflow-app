@@ -82,6 +82,24 @@ func checkInvariants(t *rapid.T, l *ledger, rows []billing.Row) {
 	if anyOutstanding && anyRemainder {
 		t.Fatalf("an invoice is still outstanding while a payment has money left")
 	}
+	// Oldest first, also after reversals: no invoice this run paid may sort after an invoice
+	// that is still outstanding once the run is done.
+	paidNow := map[uuid.UUID]bool{}
+	for _, r := range rows {
+		if r.Amount > 0 {
+			paidNow[r.InvoiceID] = true
+		}
+	}
+	var oldestOpen *billing.Invoice
+	for _, inv := range sortInvoices(l.invoices) {
+		if oldestOpen == nil && paid[inv.ID] < inv.Billed {
+			oldestOpen = &inv
+			continue
+		}
+		if oldestOpen != nil && paidNow[inv.ID] {
+			t.Fatalf("invoice %s was paid while the older invoice %s is still outstanding", inv.ID, oldestOpen.ID)
+		}
+	}
 	if want := min(totalNet, totalBilled); totalAllocated != want {
 		t.Fatalf("allocated %d in total, want min(net %d, billed %d) = %d", totalAllocated, totalNet, totalBilled, want)
 	}

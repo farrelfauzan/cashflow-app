@@ -582,3 +582,28 @@ func TestActiveOrganizationIDs(t *testing.T) {
 		require.Equal(t, want, ids(t))
 	})
 }
+
+// TestActiveOrganizationIDsIsTheOnlySecurityDefiner guards the organization_list_ids policy.
+// The policy lets the migration role read every organization while app.list_org_ids is on, and
+// any role can turn a custom setting on for its own session. Today only active_organization_ids()
+// runs as that role, and it returns ids only. A second SECURITY DEFINER function owned by the
+// migration role could read organizations under the same setting, so adding one must be
+// reviewed against the policy, and this test says so.
+func TestActiveOrganizationIDsIsTheOnlySecurityDefiner(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	owner, err := pgx.Connect(ctx, env.URLs.Owner)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, owner.Close(ctx)) })
+
+	rows, err := owner.Query(ctx, `
+		SELECT p.proname FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		WHERE n.nspname = 'public' AND p.prosecdef
+		ORDER BY p.proname`)
+	require.NoError(t, err)
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	require.Equal(t, []string{"active_organization_ids"}, names,
+		"a new SECURITY DEFINER function must be checked against the organization_list_ids policy in 00011_money.sql")
+}

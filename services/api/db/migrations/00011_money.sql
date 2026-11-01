@@ -316,7 +316,10 @@ GRANT SELECT ON invoice_balance, tenant_balance TO cashflow_app;
 -- superuser (it is in tests, it should not be in production). So the function sets
 -- app.list_org_ids for its own duration, and one policy lets only the role that ran this
 -- migration (the function's owner) read every organization while that setting is on. The app
--- role cannot use the policy whatever it sets.
+-- role cannot use the policy whatever it sets. Any role can turn the setting on for its own
+-- session, so a second SECURITY DEFINER function owned by the migration role that reads
+-- organization would see every one: TestActiveOrganizationIDsIsTheOnlySecurityDefiner fails
+-- until such a function is reviewed against this policy.
 CREATE POLICY organization_list_ids ON organization FOR SELECT TO CURRENT_USER
     USING (current_setting('app.list_org_ids', true) = 'on');
 
