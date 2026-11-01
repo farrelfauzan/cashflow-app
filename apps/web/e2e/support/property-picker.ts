@@ -9,6 +9,6 @@ export async function chooseProperty(
   name: string,
 ): Promise<void> {
   await scope.getByRole("combobox", { name: "Properti" }).click();
-  await page.getByPlaceholder("Cari nama properti").fill(name);
+  await page.getByRole("combobox", { name: "Cari nama properti" }).fill(name);
   await page.getByRole("option", { name, exact: true }).click();
 }

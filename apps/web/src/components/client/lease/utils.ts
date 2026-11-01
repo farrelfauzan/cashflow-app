@@ -448,6 +448,7 @@ export const NO_FREE_UNIT_TEXT = "Semua unit di properti ini sudah terisi.";
 export const NO_PROPERTY_TEXT =
   "Belum ada properti. Tambahkan properti dan unitnya dulu.";
 export const PROPERTY_SEARCH_PLACEHOLDER = "Cari nama properti";
+export const PROPERTY_LIST_LABEL = "Daftar properti";
 export const NO_PROPERTY_FOUND_TEXT = "Tidak ada properti dengan nama itu.";
 export const PROPERTIES_LOADING_TEXT = "Memuat properti…";
 

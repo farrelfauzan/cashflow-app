@@ -48,6 +48,8 @@ type SearchSelectFieldProps = {
   search: string;
   onSearchChange: (search: string) => void;
   searchPlaceholder: string;
+  // The open list's accessible name.
+  listLabel: string;
   // True while the choices for the current search are not here yet.
   loading: boolean;
   loadingText: string;
@@ -76,6 +78,7 @@ export function SearchSelectField({
   search,
   onSearchChange,
   searchPlaceholder,
+  listLabel,
   loading,
   loadingText,
   emptyText,
@@ -89,7 +92,8 @@ export function SearchSelectField({
   const id = useId();
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
-  const listId = `${id}-list`;
+  // The open popover, which holds the search box and the list.
+  const popupId = `${id}-popup`;
   const describedBy = [
     error !== undefined ? errorId : null,
     hint !== null ? hintId : null,
@@ -117,7 +121,7 @@ export function SearchSelectField({
             type="button"
             role="combobox"
             aria-expanded={open}
-            aria-controls={listId}
+            aria-controls={popupId}
             disabled={disabled}
             aria-invalid={error !== undefined}
             aria-describedby={describedBy === "" ? undefined : describedBy}
@@ -128,16 +132,23 @@ export function SearchSelectField({
             <ChevronDownIcon aria-hidden="true" className="size-4 opacity-50" />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className={SEARCH_SELECT_CONTENT_CLASS}>
-          <Command shouldFilter={false} className={SEARCH_SELECT_COMMAND_CLASS}>
+        <PopoverContent
+          id={popupId}
+          align="start"
+          className={SEARCH_SELECT_CONTENT_CLASS}
+        >
+          <Command
+            label={searchPlaceholder}
+            shouldFilter={false}
+            className={SEARCH_SELECT_COMMAND_CLASS}
+          >
             <CommandInput
               value={search}
               onValueChange={onSearchChange}
               placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
               className={SEARCH_SELECT_INPUT_CLASS}
             />
-            <CommandList className="max-h-64">
+            <CommandList label={listLabel} className="max-h-64">
               {loading ? (
                 <p role="status" className={SEARCH_SELECT_MESSAGE_CLASS}>
                   {loadingText}

@@ -45,6 +45,7 @@ import {
   NO_PROPERTY_FOUND_TEXT,
   NO_PROPERTY_TEXT,
   PROPERTIES_LOADING_TEXT,
+  PROPERTY_LIST_LABEL,
   PROPERTY_SEARCH_PLACEHOLDER,
   collectorOptions,
   freeUnits,
@@ -244,9 +245,6 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
         {properties.isError && (
           <FormAlert message={toFormError(properties.error, []).message} />
         )}
-        {foundProperties.isError && (
-          <FormAlert message={toFormError(foundProperties.error, []).message} />
-        )}
 
         <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'prop_unit_billed'_'term_term_billed'_'deposit_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
           <SearchSelectField
@@ -273,7 +271,13 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             searchPlaceholder={PROPERTY_SEARCH_PLACEHOLDER}
             loading={searching}
             loadingText={PROPERTIES_LOADING_TEXT}
-            emptyText={NO_PROPERTY_FOUND_TEXT}
+            listLabel={PROPERTY_LIST_LABEL}
+            // A failed search says why in the list, not "no property with that name".
+            emptyText={
+              foundProperties.isError
+                ? toFormError(foundProperties.error, []).message
+                : NO_PROPERTY_FOUND_TEXT
+            }
             listNote={
               searchedName === "" && properties.data !== undefined
                 ? propertyListNote(propertyItems.length, properties.data.total)

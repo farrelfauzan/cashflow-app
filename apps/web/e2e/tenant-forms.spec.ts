@@ -541,7 +541,18 @@ test.describe("Admin of an organization with many properties", () => {
 
     await picker.click();
     await expect(picker).toHaveAttribute("aria-expanded", "true");
-    const search = page.getByPlaceholder("Cari nama properti");
+    // The search box and the list carry their own names, and the trigger controls the popup.
+    const search = page.getByRole("combobox", { name: "Cari nama properti" });
+    await expect(
+      page.getByRole("listbox", { name: "Daftar properti" }),
+    ).toBeVisible();
+    const popupId = await picker.getAttribute("aria-controls");
+    expect(popupId).not.toBeNull();
+    await expect(
+      page
+        .locator(`[id="${popupId}"]`)
+        .getByRole("listbox", { name: "Daftar properti" }),
+    ).toBeVisible();
     await expect(search).toBeFocused();
     await expectTouchTarget(search);
     await expect(page.getByRole("option")).toHaveCount(20);
@@ -579,12 +590,36 @@ test.describe("Admin of an organization with many properties", () => {
     await expect(
       page.getByText(`Menampilkan 20 dari ${properties.total}`),
     ).toHaveCount(0);
+    // One match is not picked for the member: the auto-choice is for an organization with one
+    // property, not for a search with one result.
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await expect(picker).toContainText("Pilih properti");
+    await expect(lease.getByRole("combobox", { name: "Unit" })).toBeDisabled();
 
     // A name nobody has says so.
     await search.fill("Properti yang tidak ada");
     await expect(
       page.getByText("Tidak ada properti dengan nama itu."),
     ).toBeVisible();
+    // A failed search says why in the list, not that no property has the name.
+    const unavailable = "Layanan sedang tidak tersedia. Coba lagi sebentar.";
+    await page.route(`**/api/orgs/${orgId}/properties?*q=*`, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "unavailable", message: unavailable },
+        }),
+      }),
+    );
+    await search.fill("Kos yang gagal dicari");
+    await expect(
+      page.getByRole("listbox", { name: "Daftar properti" }),
+    ).toContainText(unavailable);
+    await expect(
+      page.getByText("Tidak ada properti dengan nama itu."),
+    ).toHaveCount(0);
+    await page.unrouteAll();
     await search.fill(last.name);
 
     // Picking it closes the list, keeps its name on the trigger and opens the units.
