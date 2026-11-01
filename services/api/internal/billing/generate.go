@@ -103,22 +103,9 @@ func (s *Service) GenerateOrg(ctx context.Context, org uuid.UUID) (Result, error
 // lease's term it creates nothing, logs an error and returns an error wrapping tenant.ErrNoPrice.
 func (s *Service) GenerateLease(ctx context.Context, tx pgx.Tx, org, leaseID uuid.UUID, today time.Time) (int, error) {
 	q := dbgen.New(tx)
-	r, err := q.LockLeaseForBilling(ctx, dbgen.LockLeaseForBillingParams{OrganizationID: org, ID: leaseID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("locking lease for billing: %w", err)
-	}
-	if r.Status != tenant.StatusActive {
-		return 0, nil
-	}
-	l := billedLease{
-		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, PropertyID: r.PropertyID,
-		Dates: LeaseDates{
-			Start: r.StartDate, EnteredOn: r.EnteredOn, BilledFrom: r.BilledFrom, TermMonths: int(r.TermMonths),
-			PlannedEnd: r.PlannedEndDate, End: r.EndDate,
-		},
+	l, ok, err := lockActiveLease(ctx, q, org, leaseID)
+	if err != nil || !ok {
+		return 0, err
 	}
 	n, err := s.createMissing(ctx, q, tx, org, l, today)
 	if err != nil || n == 0 {
@@ -130,23 +117,84 @@ func (s *Service) GenerateLease(ctx context.Context, tx pgx.Tx, org, leaseID uui
 	return n, nil
 }
 
+// PreviewLease returns the invoices GenerateLease would create for one lease on today, without
+// creating them: how many, and what they bill in total. The tenant import's dry run shows it, so
+// a sheet without "Mulai tagih dari" cannot create years of debt unnoticed. It runs inside the
+// caller's organization transaction and takes the same locks as generation. An ended or missing
+// lease previews nothing; with no price in force it returns an error wrapping tenant.ErrNoPrice.
+func PreviewLease(ctx context.Context, tx pgx.Tx, org, leaseID uuid.UUID, today time.Time) (count int, total int64, err error) {
+	q := dbgen.New(tx)
+	l, ok, err := lockActiveLease(ctx, q, org, leaseID)
+	if err != nil || !ok {
+		return 0, 0, err
+	}
+	planned, err := planMissing(ctx, q, org, l, today)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, p := range planned {
+		total += p.Amount()
+	}
+	return len(planned), total, nil
+}
+
+// lockActiveLease locks a lease for billing (see the lock order above) and reads it after the
+// lock. ok is false when the lease is missing or no longer active.
+func lockActiveLease(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID) (billedLease, bool, error) {
+	r, err := q.LockLeaseForBilling(ctx, dbgen.LockLeaseForBillingParams{OrganizationID: org, ID: leaseID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return billedLease{}, false, nil
+	}
+	if err != nil {
+		return billedLease{}, false, fmt.Errorf("locking lease for billing: %w", err)
+	}
+	if r.Status != tenant.StatusActive {
+		return billedLease{}, false, nil
+	}
+	return billedLease{
+		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, PropertyID: r.PropertyID,
+		Dates: LeaseDates{
+			Start: r.StartDate, EnteredOn: r.EnteredOn, BilledFrom: r.BilledFrom, TermMonths: int(r.TermMonths),
+			PlannedEnd: r.PlannedEndDate, End: r.EndDate,
+		},
+	}, true, nil
+}
+
 // billedLease is what generation needs to know about a lease.
 type billedLease struct {
 	ID, TenantID, UnitID, PropertyID uuid.UUID
 	Dates                            LeaseDates
 }
 
-// createMissing inserts the lease's invoices that DuePeriods asks for and that do not exist
-// yet, each with its lines, and audits each one. The caller holds the lease row lock and runs
-// allocation afterwards. It returns how many it inserted.
-func (s *Service) createMissing(ctx context.Context, q *dbgen.Queries, tx pgx.Tx, org uuid.UUID, l billedLease, today time.Time) (int, error) {
+// plannedInvoice is one invoice generation would insert: a period with its lines.
+type plannedInvoice struct {
+	Period tenant.Period
+	Lines  []Line
+}
+
+// Amount is what the invoice bills: the sum of its lines.
+func (p plannedInvoice) Amount() int64 {
+	var total int64
+	for _, ln := range p.Lines {
+		total += ln.Amount
+	}
+	return total
+}
+
+// planMissing returns the lease's invoices that DuePeriods asks for and that do not exist yet,
+// each with its lines: the price in force today for the lease's term and the lease's fixed
+// charges. Generation inserts exactly these, and the import's dry run shows them, so the two
+// never differ. With no price in force it returns an error wrapping tenant.ErrNoPrice. The
+// caller holds the lease row lock; planMissing locks the unit FOR SHARE before reading the
+// price, so a price recorded at the same moment cannot contradict the invoice.
+func planMissing(ctx context.Context, q *dbgen.Queries, org uuid.UUID, l billedLease, today time.Time) ([]plannedInvoice, error) {
 	due := DuePeriods(l.Dates, today)
 	if len(due) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 	existing, err := q.ListLeaseInvoicePeriods(ctx, dbgen.ListLeaseInvoicePeriodsParams{OrganizationID: org, LeaseID: l.ID})
 	if err != nil {
-		return 0, fmt.Errorf("loading the lease's invoices: %w", err)
+		return nil, fmt.Errorf("loading the lease's invoices: %w", err)
 	}
 	have := make(map[string]bool, len(existing))
 	for _, d := range existing {
@@ -159,30 +207,46 @@ func (s *Service) createMissing(ctx context.Context, q *dbgen.Queries, tx pgx.Tx
 		}
 	}
 	if len(missing) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	if _, err := q.LockUnitForBilling(ctx, dbgen.LockUnitForBillingParams{OrganizationID: org, ID: l.UnitID}); err != nil {
-		return 0, fmt.Errorf("locking unit for billing: %w", err)
+		return nil, fmt.Errorf("locking unit for billing: %w", err)
 	}
 	rent, err := tenant.PriceInForce(ctx, q, org, l.UnitID, l.Dates.TermMonths, today)
 	if errors.Is(err, tenant.ErrNoPrice) {
-		s.log.ErrorContext(ctx, "no price in force for a lease's term; no invoice generated",
-			"organization", org, "lease", l.ID, "unit", l.UnitID, "termMonths", l.Dates.TermMonths)
-		return 0, fmt.Errorf("lease %s: %w", l.ID, err)
+		return nil, fmt.Errorf("lease %s: %w", l.ID, err)
 	}
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	charges, err := fixedCharges(ctx, q, org, l.ID)
 	if err != nil {
+		return nil, err
+	}
+	out := make([]plannedInvoice, len(missing))
+	for i, p := range missing {
+		out[i] = plannedInvoice{Period: p, Lines: InvoiceLines(p, l.Dates.TermMonths, rent, charges)}
+	}
+	return out, nil
+}
+
+// createMissing inserts the lease's invoices that planMissing returns, each with its lines, and
+// audits each one. The caller holds the lease row lock and runs allocation afterwards. It
+// returns how many it inserted.
+func (s *Service) createMissing(ctx context.Context, q *dbgen.Queries, tx pgx.Tx, org uuid.UUID, l billedLease, today time.Time) (int, error) {
+	planned, err := planMissing(ctx, q, org, l, today)
+	if errors.Is(err, tenant.ErrNoPrice) {
+		s.log.ErrorContext(ctx, "no price in force for a lease's term; no invoice generated",
+			"organization", org, "lease", l.ID, "unit", l.UnitID, "termMonths", l.Dates.TermMonths)
+	}
+	if err != nil || len(planned) == 0 {
 		return 0, err
 	}
-
 	now := s.clock.Now()
 	created := 0
-	for _, p := range missing {
-		ok, err := s.insertInvoice(ctx, q, tx, org, l, p, InvoiceLines(p, l.Dates.TermMonths, rent, charges), now)
+	for _, p := range planned {
+		ok, err := s.insertInvoice(ctx, q, tx, org, l, p.Period, p.Lines, now)
 		if err != nil {
 			return 0, err
 		}

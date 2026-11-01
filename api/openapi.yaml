@@ -1866,7 +1866,7 @@ components:
 
     ImportRow:
       type: object
-      required: [line, status, errors, notes, propertyName, unitLabel, tenantName]
+      required: [line, status, errors, notes, propertyName, unitLabel, tenantName, invoiceCount, invoiceTotal]
       properties:
         line: { type: integer, description: "Line number in the file, counting the header as line 1." }
         status:
@@ -1887,6 +1887,18 @@ components:
         propertyName: { type: string, description: "The properti cell as read from the file, trimmed; empty when the cell is empty." }
         unitLabel: { type: string, description: "The kamar cell as read from the file, trimmed; empty when the cell is empty." }
         tenantName: { type: string, description: "The nama_penyewa cell as read from the file, trimmed; empty when the cell is empty." }
+        invoiceCount:
+          type: integer
+          description: >
+            How many invoices the lease this row creates gets once the import is saved, as invoice
+            generation makes them today: every period from mulai_tagih (the start date when empty)
+            whose due date is within 7 days. A lease entered late gets all its past periods, so a
+            large number here usually means mulai_tagih is missing. 0 when the row creates no lease
+            (an existing lease is matched, or the row has errors) or a booking starts later.
+        invoiceTotal:
+          type: integer
+          format: int64
+          description: What those invoices bill in total, in rupiah (rent plus fixed charges). 0 with invoiceCount 0.
 
     ImportRowValues:
       type: object
@@ -1918,7 +1930,7 @@ components:
 
     ImportSummary:
       type: object
-      required: [rows, rowsWithErrors, propertiesCreated, unitsCreated, tenantsCreated, leasesCreated, leasesMatched]
+      required: [rows, rowsWithErrors, propertiesCreated, unitsCreated, tenantsCreated, leasesCreated, leasesMatched, invoiceCount, invoiceTotal]
       properties:
         rows: { type: integer }
         rowsWithErrors: { type: integer }
@@ -1927,6 +1939,8 @@ components:
         tenantsCreated: { type: integer }
         leasesCreated: { type: integer }
         leasesMatched: { type: integer }
+        invoiceCount: { type: integer, description: "The rows' invoiceCount added up: the invoices the whole file creates." }
+        invoiceTotal: { type: integer, format: int64, description: "The rows' invoiceTotal added up, in rupiah." }
 
     ImportWarning:
       type: object

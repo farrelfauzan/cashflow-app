@@ -77,6 +77,7 @@ func toAPIImportResult(res tenantimport.Result) apigen.ImportResult {
 			PropertiesCreated: res.Summary.PropertiesCreated, UnitsCreated: res.Summary.UnitsCreated,
 			TenantsCreated: res.Summary.TenantsCreated, LeasesCreated: res.Summary.LeasesCreated,
 			LeasesMatched: res.Summary.LeasesMatched,
+			InvoiceCount:  res.Summary.InvoiceCount, InvoiceTotal: res.Summary.InvoiceTotal,
 		},
 		Warnings: make([]apigen.ImportWarning, len(res.Warnings)),
 		Rows:     make([]apigen.ImportRow, len(res.Rows)),
@@ -90,6 +91,7 @@ func toAPIImportResult(res tenantimport.Result) apigen.ImportResult {
 			Property: importAction(row.Property), Unit: importAction(row.Unit),
 			Tenant: importAction(row.Tenant), Lease: importAction(row.Lease),
 			PropertyName: row.PropertyName, UnitLabel: row.UnitLabel, TenantName: row.TenantName,
+			InvoiceCount: row.InvoiceCount, InvoiceTotal: row.InvoiceTotal,
 		}
 		if !row.OK() {
 			r.Status = apigen.ImportRowStatusError

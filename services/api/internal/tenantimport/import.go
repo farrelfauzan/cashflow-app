@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
@@ -53,6 +54,11 @@ type Row struct {
 	// The property, unit and tenant names as read from the file, trimmed, whatever else the
 	// row got wrong.
 	PropertyName, UnitLabel, TenantName string
+	// InvoiceCount and InvoiceTotal are the invoices the lease this row creates gets once it is
+	// saved, as invoice generation makes them today (billing.PreviewLease): every period from
+	// "Mulai tagih dari" due within the lead time. Zero when the row creates no lease.
+	InvoiceCount int
+	InvoiceTotal int64
 }
 
 // Values are the lease terms read from a row, shown so a dry run says exactly what is saved.
@@ -75,6 +81,9 @@ type Summary struct {
 	Rows, RowsWithErrors                                           int
 	PropertiesCreated, UnitsCreated, TenantsCreated, LeasesCreated int
 	LeasesMatched                                                  int
+	// InvoiceCount and InvoiceTotal add up the rows' invoices.
+	InvoiceCount int
+	InvoiceTotal int64
 }
 
 // Result is the outcome of an import.
@@ -196,10 +205,34 @@ func (s *Service) importRow(ctx context.Context, tx pgx.Tx, p authz.Principal, r
 		}
 		return row, uuid.Nil, err
 	}
+	if leaseID != uuid.Nil {
+		if err := s.previewInvoices(ctx, sp, p.OrganizationID, leaseID, &row); err != nil {
+			if rbErr := sp.Rollback(ctx); rbErr != nil {
+				return row, uuid.Nil, fmt.Errorf("rolling back savepoint: %w", rbErr)
+			}
+			return row, uuid.Nil, err
+		}
+	}
 	if err := sp.Commit(ctx); err != nil {
 		return row, uuid.Nil, fmt.Errorf("releasing savepoint: %w", err)
 	}
 	return row, leaseID, nil
+}
+
+// previewInvoices sets the row's invoice count and total from the invoices its new lease gets,
+// through the same planning invoice generation uses, so the dry run shows what the import will
+// bill. A term with no price in force today gets no invoice, and the row says so in a note.
+func (s *Service) previewInvoices(ctx context.Context, tx pgx.Tx, org, leaseID uuid.UUID, row *Row) error {
+	n, total, err := billing.PreviewLease(ctx, tx, org, leaseID, tenant.Today(s.clock))
+	if errors.Is(err, tenant.ErrNoPrice) {
+		row.Notes = append(row.Notes, "Belum ada harga yang berlaku hari ini untuk jangka sewa ini, jadi sewa ini belum ditagih. Isi harganya di unit.")
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("previewing the lease's invoices: %w", err)
+	}
+	row.InvoiceCount, row.InvoiceTotal = n, total
+	return nil
 }
 
 // input is a record turned into the services' inputs, already validated by them.
@@ -503,6 +536,8 @@ func (s *Summary) add(row Row) {
 	if row.Lease == Matched {
 		s.LeasesMatched++
 	}
+	s.InvoiceCount += row.InvoiceCount
+	s.InvoiceTotal += row.InvoiceTotal
 }
 
 // oldDueDayNote warns when an older template's due day differs from the start date's day, since

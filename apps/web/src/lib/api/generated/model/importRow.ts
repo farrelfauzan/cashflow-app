@@ -27,4 +27,8 @@ export interface ImportRow {
   unitLabel: string;
   /** The nama_penyewa cell as read from the file, trimmed; empty when the cell is empty. */
   tenantName: string;
+  /** How many invoices the lease this row creates gets once the import is saved, as invoice generation makes them today: every period from mulai_tagih (the start date when empty) whose due date is within 7 days. A lease entered late gets all its past periods, so a large number here usually means mulai_tagih is missing. 0 when the row creates no lease (an existing lease is matched, or the row has errors) or a booking starts later. */
+  invoiceCount: number;
+  /** What those invoices bill in total, in rupiah (rent plus fixed charges). 0 with invoiceCount 0. */
+  invoiceTotal: number;
 }
