@@ -1091,7 +1091,8 @@ paths:
           description: >
             open: nothing paid; partial: some paid; paid; cancelled (corrected to zero);
             unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its
-            due date. Empty means every invoice.
+            due date, of any month (period is ignored, since debt is not tied to one month; the
+            dashboard's arrears link here). Empty means every invoice.
           schema:
             type: string
             enum: [open, partial, paid, cancelled, unpaid, overdue]
@@ -2324,7 +2325,7 @@ components:
 
     InvoiceListItem:
       type: object
-      required: [id, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines]
+      required: [id, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines]
       properties:
         id: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
@@ -2336,6 +2337,7 @@ components:
         period: { type: string, format: date }
         periodEnd: { type: string, format: date }
         dueDate: { type: string, format: date }
+        issuedOn: { type: string, format: date, description: "The day the invoice was made, Asia/Jakarta (terbit)." }
         amount: { type: integer, format: int64 }
         billed: { type: integer, format: int64 }
         paid: { type: integer, format: int64 }

@@ -28,6 +28,8 @@ const (
 	ActionPaymentRead      = "payment:read"
 	ActionPaymentRecord    = "payment:record"
 	ActionCorrectionCreate = "correction:create"
+
+	ActionReportRead = "report:read"
 )
 
 // catalog lists every action the app knows, by resource. A policy may only name these, or

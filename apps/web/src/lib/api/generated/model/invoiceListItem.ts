@@ -18,6 +18,8 @@ export interface InvoiceListItem {
   period: string;
   periodEnd: string;
   dueDate: string;
+  /** The day the invoice was made, Asia/Jakarta (terbit). */
+  issuedOn: string;
   amount: number;
   billed: number;
   paid: number;

@@ -873,10 +873,13 @@ type InvoiceList struct {
 
 // InvoiceListItem defines model for InvoiceListItem.
 type InvoiceListItem struct {
-	Amount      int64              `json:"amount"`
-	Billed      int64              `json:"billed"`
-	DueDate     openapi_types.Date `json:"dueDate"`
-	Id          openapi_types.UUID `json:"id"`
+	Amount  int64              `json:"amount"`
+	Billed  int64              `json:"billed"`
+	DueDate openapi_types.Date `json:"dueDate"`
+	Id      openapi_types.UUID `json:"id"`
+
+	// IssuedOn The day the invoice was made, Asia/Jakarta (terbit).
+	IssuedOn    openapi_types.Date `json:"issuedOn"`
 	LeaseId     openapi_types.UUID `json:"leaseId"`
 	Lines       []InvoiceLine      `json:"lines"`
 	Outstanding int64              `json:"outstanding"`
@@ -1565,7 +1568,7 @@ type ListInvoicesParams struct {
 	// Period A month, YYYY-MM; this month in Asia/Jakarta when empty. A bad value is a 400 with field period.
 	Period *Period `form:"period,omitempty" json:"period,omitempty"`
 
-	// Status open: nothing paid; partial: some paid; paid; cancelled (corrected to zero); unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its due date. Empty means every invoice.
+	// Status open: nothing paid; partial: some paid; paid; cancelled (corrected to zero); unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its due date, of any month (period is ignored, since debt is not tied to one month; the dashboard's arrears link here). Empty means every invoice.
 	Status     *ListInvoicesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 	PropertyId *openapi_types.UUID       `form:"propertyId,omitempty" json:"propertyId,omitempty"`
 

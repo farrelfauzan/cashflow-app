@@ -18,7 +18,7 @@ export type ListInvoicesParams = {
  */
 period?: PeriodParameter;
 /**
- * open: nothing paid; partial: some paid; paid; cancelled (corrected to zero); unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its due date. Empty means every invoice.
+ * open: nothing paid; partial: some paid; paid; cancelled (corrected to zero); unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its due date, of any month (period is ignored, since debt is not tied to one month; the dashboard's arrears link here). Empty means every invoice.
  */
 status?: ListInvoicesStatus;
 propertyId?: string;
