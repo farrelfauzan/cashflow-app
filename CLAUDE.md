@@ -21,10 +21,12 @@ summarizes, reminds and reports.
 - **Web:** `apps/web` has every phase A screen (W1 to W9): login, organization picker, members
   and roles, properties and units with terms and prices, tenants and leases, and the import.
   Forms use react-hook-form with a zod resolver through one shared hook.
-- **WhatsApp sending works through GOWA.** `internal/messaging/gowa` sends login codes today,
-  proven on a real linked phone (2026-11-01). In development `WHATSAPP_PROVIDER=devlog` writes
-  messages to the API log instead, and only development may use it. Inbound messages (the GOWA
-  webhook), the message log and send pacing are slice 5.
+- **WhatsApp sending works through GOWA and Twilio.** `internal/messaging/gowa` sent a login
+  code to a real linked phone (2026-11-01), then WhatsApp restricted that number.
+  `internal/messaging/twilio` sends through the Twilio sandbox in development (decision 35).
+  In development `WHATSAPP_PROVIDER=devlog` writes messages to the API log instead, and only
+  development may use it. Inbound messages (webhooks), the message log and send pacing are
+  slice 5.
 - **Plan and records** live in `docs/` (start at `docs/README.md`): the roadmap, how a slice is
   built, the decision log, the architecture, and one doc per phase. When a slice finishes,
   update its phase doc and the status table; when a decision is made, add it to
@@ -43,10 +45,11 @@ summarizes, reminds and reports.
   `.claude/rules/nextjs-rules.md`.
 - **Design is under revision.** `design/` (once added) is the reference for structure,
   copy and flows, but flows may still change. Confirm a flow before building it.
-- **WhatsApp**: one platform-wide number for all organizations (decided). Launch on GOWA
-  (decided), because the WhatsApp Cloud API needs a registered company (PT) we do not have yet.
-  Everything stays designed so a Cloud API adapter can replace GOWA later behind
-  `MessagingProvider` without touching callers. See "Messaging".
+- **WhatsApp**: one platform-wide number for all organizations (decided). The provider for the
+  pilot and launch is open again (decision 35): GOWA's number was restricted, and the WhatsApp
+  Cloud API needs a registered company (PT) and a verified Meta business we do not have yet.
+  GOWA, Twilio and a later Cloud API adapter all sit behind `MessagingProvider`, so switching
+  never touches callers. See "Messaging".
 - Ask before deviating from any decision marked **Decided** below.
 
 ## Decisions
@@ -60,12 +63,12 @@ summarizes, reminds and reports.
 | Staff auth | **Decided** | OTP over WhatsApp (admin, karyawan, Supervisor). |
 | Authorization | **Decided** | RBAC in the style of AWS IAM: `resource:verb` permissions, policy documents with Allow/Deny statements, default deny, explicit Deny wins. Details in "Authorization (RBAC)". |
 | Multi-tenancy | **Decided** | `organization_id` on every business row, enforced in app layer AND Postgres RLS. |
-| Provider interfaces | **Decided** | `MessagingProvider` (adapters: `gowa` at launch, `devlog` for development, a Cloud API adapter later), `BankTransferProvider`, and an AutoGoPay client, each with fakes. `DisbursementProvider` is deferred (see Disbursement). |
+| Provider interfaces | **Decided** | `MessagingProvider` (adapters: `gowa`, `twilio`, `devlog` for development, a Cloud API adapter later), `BankTransferProvider`, and an AutoGoPay client, each with fakes. `DisbursementProvider` is deferred (see Disbursement). |
 | Web / API / data / infra | **Decided** | Next.js 16 App Router PWA (React 19, TypeScript strict) + Tailwind 4 (one responsive app), TanStack Query, shadcn/ui, Go API and worker (one module, two binaries), PostgreSQL, Redis for the queue, Docker Compose on a VPS. |
 | Data layer | **Decided** | sqlc over pgx v5 with goose SQL migrations, no ORM. ent was compared and rejected: money rules are easier to review and safer as plain SQL, and the team is new to Go. |
 | Libraries and tooling | Tentative | chi, pgx v5, goose, asynq on Redis (replaces BullMQ), OpenAPI contract with oapi-codegen for Go and Orval for the web (TypeScript types, request functions and TanStack Query hooks through one axios mutator; replaces `packages/shared`), react-hook-form with a zod resolver for forms (zod only for friendly early messages, decision 20), S3-compatible storage (R2), Caddy, GitHub Actions with GHCR. Queue library is revisited after slice 3 (River, Postgres-backed, is the alternative). |
-| WhatsApp account | **Decided** | ONE platform-owned number sends for every organization. No per-org WA numbers or tokens. At launch it is a WhatsApp Business app number linked to GOWA; later it can move to a WhatsApp Business Account on the Cloud API. |
-| WhatsApp provider | **Decided** | Launch: GOWA (self-hosted `aldinokemal/go-whatsapp-web-multidevice`, pinned image), because the Cloud API needs a registered company (PT) and there is none yet. Later: WhatsApp Cloud API, integrated directly, once a PT exists. Both sit behind `MessagingProvider`; templates have names and ordered parameters and buttons carry both a payload and a link, so the switch is a new adapter, not a rewrite. |
+| WhatsApp account | **Decided** | ONE platform-owned number sends for every organization. No per-org WA numbers or tokens. Which provider drives it is open ("WhatsApp provider" below, decision 35). |
+| WhatsApp provider | Open | Built: GOWA (self-hosted `aldinokemal/go-whatsapp-web-multidevice`, pinned image), chosen for launch because the Cloud API needs a registered company (PT) and there is none yet; WhatsApp restricted its number on 2026-11-01. Twilio (decision 35, the user's choice of 2026-11-01): the sandbox in development now; a verified Twilio sender would need approved templates. Later: WhatsApp Cloud API, integrated directly, once a PT and a verified Meta business exist. The pilot and launch provider is decided once the company and Meta verification question is answered. All sit behind `MessagingProvider`; templates have names and ordered parameters and buttons carry both a payload and a link, so a switch is a new adapter, not a rewrite. |
 | Disbursement | Deferred | No `DisbursementProvider` for now: payroll is paid by hand and recorded in the app, as in the design. Revisit (Flip for Business or Xendit) only if the owner wants the app to send money. Confirm by week 14 of the project plan. |
 | Bank transfer | Open | Default: static open-amount VA per tenant. Second adapter: bank-mutation polling (e.g. Moota). Chosen per organization. |
 
@@ -438,11 +441,17 @@ parameters and optional buttons; the adapter turns that into what its provider a
 Every message goes to `message_log` with its status and `organization_id`.
 
 **Adapters**
-- `gowa` (launch): a self-hosted GOWA server drives the platform number, linked like WhatsApp
+- `gowa`: a self-hosted GOWA server drives the platform number, linked like WhatsApp
   Web. The API calls `POST /send/message` with basic auth (`GOWA_URL`, `GOWA_USERNAME`,
   `GOWA_PASSWORD`, optional `GOWA_DEVICE_ID`). GOWA's error codes map to `ErrRateLimited`,
   `ErrUndeliverable` and `ErrNotConnected`; the last one means an operator must re-link the
   phone, so it is logged as an error and shown to users as a 503.
+- `twilio` (decision 35): Twilio's Messages API with basic auth (`TWILIO_ACCOUNT_SID`,
+  `TWILIO_AUTH_TOKEN`) from `TWILIO_WHATSAPP_FROM`, sending the rendered text. Twilio's error
+  codes map to the same three errors. Today it is the Twilio sandbox, development only (the
+  sandbox number is refused elsewhere): it reaches only phones that joined it, and free-form text
+  only within 24 hours of the phone's last message. Outside that window Twilio accepts the message
+  and fails it later, which the app cannot see before status callbacks (slice 5).
 - `devlog` (development only): renders the message and writes it to the log.
 - Cloud API (later, once a PT exists): templates registered with Meta under the same names,
   parameters in the same order, native reply buttons using the payload.
@@ -496,8 +505,8 @@ payment checker; broken-promise threshold; move-out-with-arrears rule; payment r
 ## Testing rules
 
 - Never call real payment or WA APIs in tests. Use adapters with fakes and contract tests. The
-  GOWA adapter is tested against an `httptest` server that checks the request GOWA expects and
-  replays its real responses and error codes.
+  GOWA and Twilio adapters are tested against an `httptest` server that checks the request the
+  provider expects and replays its real responses and error codes.
 - Unit tests use fakes and run on every push. Integration tests carry `//go:build integration`,
   use testcontainers for PostgreSQL and Redis and an injected clock set to Asia/Jakarta, and run
   in CI. Tenant isolation, webhook idempotency, reconcile and cash-book tests are integration tests.

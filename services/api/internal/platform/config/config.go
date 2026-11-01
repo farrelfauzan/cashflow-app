@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/sethvargo/go-envconfig/v2"
@@ -41,13 +42,15 @@ type API struct {
 	// example https://app.example.id. Required outside development, where it must be https;
 	// development defaults to the Next.js dev server.
 	PublicWebOrigin string `env:"PUBLIC_WEB_ORIGIN"`
-	// WhatsAppProvider picks the messaging adapter: "gowa" (launch) or "devlog" (development
-	// only). "cloudapi" is reserved for the WhatsApp Cloud API adapter, not built yet.
+	// WhatsAppProvider picks the messaging adapter: "gowa", "twilio" (the Twilio sandbox is
+	// development only) or "devlog" (development only). "cloudapi" is reserved for the WhatsApp
+	// Cloud API adapter, not built yet.
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
 	// DevlogFile, when set, makes the devlog provider also append each message to this file as
 	// one JSON line, so end-to-end tests can read login codes. Development with devlog only.
 	DevlogFile string `env:"DEVLOG_FILE"`
 	GOWA       GOWA   `env:", prefix=GOWA_"`
+	Twilio     Twilio `env:", prefix=TWILIO_"`
 	// OpenAPISpec is the spec file Swagger UI shows at /docs. Only development serves it; the
 	// default works when the API runs from services/api, as `make api-run` does.
 	OpenAPISpec string `env:"OPENAPI_SPEC, default=../../api/openapi.yaml"`
@@ -67,6 +70,38 @@ type GOWA struct {
 	Username string `env:"USERNAME"`  // GOWA_USERNAME, one of the server's APP_BASIC_AUTH users
 	Password string `env:"PASSWORD"`  // GOWA_PASSWORD
 	DeviceID string `env:"DEVICE_ID"` // GOWA_DEVICE_ID, empty uses the server's only device
+}
+
+// Twilio holds the Twilio account and WhatsApp sender. AuthToken is a secret: never log it or
+// the struct that holds it.
+type Twilio struct {
+	AccountSID   string `env:"ACCOUNT_SID"`   // TWILIO_ACCOUNT_SID, AC followed by 32 hex characters
+	AuthToken    string `env:"AUTH_TOKEN"`    // TWILIO_AUTH_TOKEN
+	WhatsAppFrom string `env:"WHATSAPP_FROM"` // TWILIO_WHATSAPP_FROM, the sender in E.164
+}
+
+// TwilioSandboxNumber is the Twilio sandbox for WhatsApp, shared by every Twilio account.
+const TwilioSandboxNumber = "+14155238886"
+
+var (
+	twilioAccountSID = regexp.MustCompile(`^AC[0-9a-fA-F]{32}$`)
+	e164             = regexp.MustCompile(`^\+[0-9]{8,15}$`)
+)
+
+func (t Twilio) validate(env string) error {
+	if t.AccountSID == "" || t.AuthToken == "" || t.WhatsAppFrom == "" {
+		return errors.New("WHATSAPP_PROVIDER=twilio needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM")
+	}
+	if !twilioAccountSID.MatchString(t.AccountSID) {
+		return errors.New("TWILIO_ACCOUNT_SID must be AC followed by 32 hex characters")
+	}
+	if !e164.MatchString(t.WhatsAppFrom) {
+		return fmt.Errorf("TWILIO_WHATSAPP_FROM must be an E.164 number such as +14155238886, got %q", t.WhatsAppFrom)
+	}
+	if t.WhatsAppFrom == TwilioSandboxNumber && env != "development" {
+		return fmt.Errorf("TWILIO_WHATSAPP_FROM is the Twilio sandbox, and the Twilio sandbox is development only; use a verified sender in %s", env)
+	}
+	return nil
 }
 
 // Origins returns AllowedOrigins as a list.
@@ -123,16 +158,20 @@ func (c API) validate() error {
 	switch c.WhatsAppProvider {
 	case "devlog":
 		if c.Env != "development" {
-			return fmt.Errorf("WHATSAPP_PROVIDER=devlog only runs in development; use gowa in %s", c.Env)
+			return fmt.Errorf("WHATSAPP_PROVIDER=devlog only runs in development; use gowa or twilio in %s", c.Env)
 		}
 	case "gowa":
 		if c.GOWA.URL == "" || c.GOWA.Username == "" || c.GOWA.Password == "" {
 			return errors.New("WHATSAPP_PROVIDER=gowa needs GOWA_URL, GOWA_USERNAME and GOWA_PASSWORD")
 		}
+	case "twilio":
+		if err := c.Twilio.validate(c.Env); err != nil {
+			return err
+		}
 	case "cloudapi":
 		return errors.New("WHATSAPP_PROVIDER=cloudapi is not built yet; use gowa")
 	default:
-		return fmt.Errorf("WHATSAPP_PROVIDER must be gowa or devlog, got %q", c.WhatsAppProvider)
+		return fmt.Errorf("WHATSAPP_PROVIDER must be gowa, twilio or devlog, got %q", c.WhatsAppProvider)
 	}
 	// Login codes in a file are only acceptable on a developer's machine.
 	if c.DevlogFile != "" && (c.Env != "development" || c.WhatsAppProvider != "devlog") {

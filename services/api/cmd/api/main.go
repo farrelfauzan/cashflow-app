@@ -23,6 +23,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
@@ -120,8 +121,8 @@ func run() error {
 	return srv.Run(ctx, cfg.HTTPAddr)
 }
 
-// messenger builds the WhatsApp provider chosen in config: GOWA, or in development the log
-// provider, which writes messages (login codes included) to the log instead of sending them.
+// messenger builds the WhatsApp provider chosen in config: GOWA, Twilio, or in development the
+// log provider, which writes messages (login codes included) to the log instead of sending them.
 func messenger(cfg config.API, log *slog.Logger) (messaging.Provider, error) {
 	switch cfg.WhatsAppProvider {
 	case "gowa":
@@ -130,6 +131,12 @@ func messenger(cfg config.API, log *slog.Logger) (messaging.Provider, error) {
 			Username: cfg.GOWA.Username,
 			Password: cfg.GOWA.Password,
 			DeviceID: cfg.GOWA.DeviceID,
+		})
+	case "twilio":
+		return twilio.New(twilio.Config{
+			AccountSID: cfg.Twilio.AccountSID,
+			AuthToken:  cfg.Twilio.AuthToken,
+			From:       cfg.Twilio.WhatsAppFrom,
 		})
 	case "devlog":
 		return devlog.New(log, cfg.DevlogFile), nil

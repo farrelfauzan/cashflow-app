@@ -127,7 +127,7 @@ func TestWhatsAppProviderChoice(t *testing.T) {
 		{"gowa with settings", with(map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "gowa",
 			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p"}), ""},
 		{"cloud api not built", with(map[string]string{"WHATSAPP_PROVIDER": "cloudapi"}), "not built yet"},
-		{"unknown provider", with(map[string]string{"WHATSAPP_PROVIDER": "twilio"}), "gowa or devlog"},
+		{"unknown provider", with(map[string]string{"WHATSAPP_PROVIDER": "messagebird"}), "gowa, twilio or devlog"},
 		{"devlog file in development", with(map[string]string{"DEVLOG_FILE": "/tmp/devlog.jsonl"}), ""},
 		{"devlog file refused in staging", with(map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "gowa",
 			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
@@ -144,6 +144,76 @@ func TestWhatsAppProviderChoice(t *testing.T) {
 				return
 			}
 			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestTwilioSettings(t *testing.T) {
+	// Built at run time so no source line looks like a real Twilio identifier to secret scanning.
+	fakeHex := strings.Repeat("0123456789abcdef", 2)
+	sid := "AC" + fakeHex
+	const token = "test-auth-token" //nolint:gosec // G101: a test placeholder, not a credential
+	env := func(appEnv string, twilio map[string]string) map[string]string {
+		m := map[string]string{
+			"APP_ENV": appEnv, "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+			"PUBLIC_WEB_ORIGIN": "https://app.example.id", "WHATSAPP_PROVIDER": "twilio",
+		}
+		for k, v := range twilio {
+			m[k] = v
+		}
+		return m
+	}
+	sandbox := map[string]string{
+		"TWILIO_ACCOUNT_SID": sid, "TWILIO_AUTH_TOKEN": token, "TWILIO_WHATSAPP_FROM": "+14155238886",
+	}
+	without := func(key string) map[string]string {
+		m := map[string]string{}
+		for k, v := range sandbox {
+			if k != key {
+				m[k] = v
+			}
+		}
+		return m
+	}
+	withValue := func(key, value string) map[string]string {
+		m := without(key)
+		m[key] = value
+		return m
+	}
+	allThree := "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM"
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    Twilio
+		wantErr string
+	}{
+		{name: "sandbox in development", env: env("development", sandbox),
+			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886"}},
+		{name: "verified-looking sender in staging", env: env("staging", withValue("TWILIO_WHATSAPP_FROM", "+6281100001111")),
+			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+6281100001111"}},
+		{name: "nothing set", env: env("development", nil), wantErr: allThree},
+		{name: "missing account sid", env: env("development", without("TWILIO_ACCOUNT_SID")), wantErr: allThree},
+		{name: "missing auth token", env: env("development", without("TWILIO_AUTH_TOKEN")), wantErr: allThree},
+		{name: "missing sender", env: env("development", without("TWILIO_WHATSAPP_FROM")), wantErr: allThree},
+		{name: "account sid with wrong prefix", env: env("development", withValue("TWILIO_ACCOUNT_SID", "SK"+fakeHex)), wantErr: "TWILIO_ACCOUNT_SID must be"},
+		{name: "account sid too short", env: env("development", withValue("TWILIO_ACCOUNT_SID", "AC0123")), wantErr: "TWILIO_ACCOUNT_SID must be"},
+		{name: "sender without plus", env: env("development", withValue("TWILIO_WHATSAPP_FROM", "14155238886")), wantErr: "TWILIO_WHATSAPP_FROM must be an E.164"},
+		{name: "sender with whatsapp prefix", env: env("development", withValue("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")), wantErr: "TWILIO_WHATSAPP_FROM must be an E.164"},
+		{name: "sandbox refused in staging", env: env("staging", sandbox), wantErr: "the Twilio sandbox is development only"},
+		{name: "sandbox refused in production", env: env("production", sandbox), wantErr: "the Twilio sandbox is development only"},
+		{name: "devlog file refused with twilio", env: env("development", withValue("DEVLOG_FILE", "/tmp/devlog.jsonl")), wantErr: "DEVLOG_FILE only works"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := loadAPI(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.NotContains(t, err.Error(), token, "the auth token never appears in an error")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got.Twilio)
 		})
 	}
 }

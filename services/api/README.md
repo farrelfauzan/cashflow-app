@@ -98,7 +98,8 @@ visit.
 
 ### Send real WhatsApp messages with GOWA
 
-The launch provider is GOWA, a self-hosted WhatsApp gateway that runs as its own container.
+GOWA is a self-hosted WhatsApp gateway that runs as its own container. Which provider the pilot
+and launch use is open (decision 35); WhatsApp restricted the number we linked to GOWA.
 Use a spare number for development, never the production one.
 
 1. `make wa-up` starts GOWA on http://localhost:3001 (login `cashflow` / `gowa-dev-password`).
@@ -148,6 +149,40 @@ one (staging has its own number too).
    auth. Keep the `gowadata` volume to stay linked, or delete it with `make dev-reset`
    (which also wipes the database).
 
+### Send WhatsApp through Twilio (Twilio sandbox, development only)
+
+Twilio's sandbox for WhatsApp sends from Twilio's shared number, +14155238886, with no phone of
+our own to link. It is for development only: staging and production refuse the sandbox number.
+
+1. In the Twilio console go to Messaging, Try it out, Send a WhatsApp message. Note the sandbox
+   number (+14155238886) and the join keyword shown there.
+2. From your phone, send `join <keyword>` to the sandbox number on WhatsApp and wait for
+   Twilio's confirmation reply.
+3. In `services/api/.env` set `WHATSAPP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID` and
+   `TWILIO_AUTH_TOKEN` (from the console's Account Info; never commit them), and
+   `TWILIO_WHATSAPP_FROM=+14155238886`. Config refuses to start with any of the three missing,
+   a malformed Account SID or a sender that is not E.164.
+4. Restart `make api-run`.
+5. Request a login code for a member whose phone joined (steps 4 and 5 of the GOWA runbook
+   above). The code arrives as a WhatsApp message from the sandbox number.
+
+What the sandbox can do: send to phones that joined it, as free-form text, within 24 hours of
+the phone's last message to the sandbox number. What it cannot do: reach a phone that has not
+joined, or send outside that 24-hour window. Approved templates, which WhatsApp needs outside
+the window, belong to a verified sender later.
+
+When either rule bites, Twilio still accepts the message and fails it a moment later. The API
+cannot see that yet (status callbacks come with slice 5), so it answers that the code was sent,
+and nothing arrives. Fix it from the phone: send any message to the sandbox number (or
+`join <keyword>` again if the phone left the sandbox), then request a new code.
+
+Wrong credentials or a sender Twilio does not accept fail at once, like an unlinked GOWA phone:
+a code request answers 503 `whatsapp_unavailable` and the log has `whatsapp unavailable` naming
+`the WhatsApp session is not connected`; a member invitation answers 503 "WhatsApp gagal
+mengirim". The log carries only Twilio's HTTP status and error code (for example `code 20003`
+for a wrong Account SID or Auth Token, `code 63007` for a sender without WhatsApp), never the
+phone number or the message.
+
 ## Everyday commands
 
 | Command | What it does |
@@ -172,7 +207,8 @@ one (staging has its own number too).
 - `internal/member` and `internal/org`: members and their roles; creating organizations.
 - `internal/httpapi`: routing, middleware, handlers. `apigen` is generated from the OpenAPI file.
 - `internal/messaging`: the WhatsApp provider interface and the message templates. Adapters:
-  `gowa` (launch), `devlog` (development log) and the test fake in `messagingtest`.
+  `gowa`, `twilio` (the Twilio sandbox, development only), `devlog` (development log)
+  and the test fake in `messagingtest`.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.
