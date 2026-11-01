@@ -102,6 +102,48 @@ func (e InvitationState) Valid() bool {
 	}
 }
 
+// Defines values for InvoiceLineKind.
+const (
+	Charge InvoiceLineKind = "charge"
+	Rent   InvoiceLineKind = "rent"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceLineKind enum.
+func (e InvoiceLineKind) Valid() bool {
+	switch e {
+	case Charge:
+		return true
+	case Rent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InvoiceStatus.
+const (
+	Cancelled InvoiceStatus = "cancelled"
+	Open      InvoiceStatus = "open"
+	Paid      InvoiceStatus = "paid"
+	Partial   InvoiceStatus = "partial"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceStatus enum.
+func (e InvoiceStatus) Valid() bool {
+	switch e {
+	case Cancelled:
+		return true
+	case Open:
+		return true
+	case Paid:
+		return true
+	case Partial:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LeaseStatus.
 const (
 	LeaseStatusActive LeaseStatus = "active"
@@ -132,6 +174,48 @@ func (e MemberStatus) Valid() bool {
 	case MemberStatusActive:
 		return true
 	case MemberStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentInputMethod.
+const (
+	PaymentInputMethodCash     PaymentInputMethod = "cash"
+	PaymentInputMethodTransfer PaymentInputMethod = "transfer"
+)
+
+// Valid indicates whether the value is a known member of the PaymentInputMethod enum.
+func (e PaymentInputMethod) Valid() bool {
+	switch e {
+	case PaymentInputMethodCash:
+		return true
+	case PaymentInputMethodTransfer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentMethod.
+const (
+	PaymentMethodCash     PaymentMethod = "cash"
+	PaymentMethodQris     PaymentMethod = "qris"
+	PaymentMethodTransfer PaymentMethod = "transfer"
+	PaymentMethodVa       PaymentMethod = "va"
+)
+
+// Valid indicates whether the value is a known member of the PaymentMethod enum.
+func (e PaymentMethod) Valid() bool {
+	switch e {
+	case PaymentMethodCash:
+		return true
+	case PaymentMethodQris:
+		return true
+	case PaymentMethodTransfer:
+		return true
+	case PaymentMethodVa:
 		return true
 	default:
 		return false
@@ -309,6 +393,78 @@ func (e ListTenantsParamsSort) Valid() bool {
 	}
 }
 
+// AccountInvoice defines model for AccountInvoice.
+type AccountInvoice struct {
+	// Amount What it billed when made (the sum of its lines).
+	Amount int64 `json:"amount"`
+
+	// Billed amount plus its corrections.
+	Billed int64 `json:"billed"`
+
+	// Corrections Oldest first. Empty when none.
+	Corrections []Correction       `json:"corrections"`
+	DueDate     openapi_types.Date `json:"dueDate"`
+	Id          openapi_types.UUID `json:"id"`
+	LeaseId     openapi_types.UUID `json:"leaseId"`
+	Lines       []InvoiceLine      `json:"lines"`
+
+	// Outstanding billed minus paid.
+	Outstanding int64 `json:"outstanding"`
+
+	// Paid What payments allocated to it.
+	Paid int64 `json:"paid"`
+
+	// Period The period's first day; the invoice belongs to its month (Tagihan November).
+	Period       openapi_types.Date `json:"period"`
+	PeriodEnd    openapi_types.Date `json:"periodEnd"`
+	PropertyName string             `json:"propertyName"`
+
+	// Status open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero. Whether an open or partial invoice is overdue follows from its dueDate (debt from the day after it, Asia/Jakarta).
+	Status    InvoiceStatus `json:"status"`
+	UnitLabel string        `json:"unitLabel"`
+}
+
+// AccountPayment defines model for AccountPayment.
+type AccountPayment struct {
+	// Allocations Oldest invoice first. Empty when it is all credit.
+	Allocations []PaymentAllocation `json:"allocations"`
+
+	// Amount What was received, as recorded.
+	Amount int64 `json:"amount"`
+
+	// Corrections Oldest first. Empty when none.
+	Corrections []Correction       `json:"corrections"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// Method A payment recorded by hand is cash or transfer; qris and va come from slice 3.
+	Method PaymentMethod `json:"method"`
+
+	// Net amount plus its corrections.
+	Net int64 `json:"net"`
+
+	// Note Empty when none.
+	Note string `json:"note"`
+
+	// ReceivedOn The day the money was received, Asia/Jakarta.
+	ReceivedOn openapi_types.Date `json:"receivedOn"`
+
+	// RecordedBy The member who recorded or created a row.
+	RecordedBy *StaffRef `json:"recordedBy,omitempty"`
+}
+
+// AccountTotals defines model for AccountTotals.
+type AccountTotals struct {
+	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
+	Credit int64 `json:"credit"`
+
+	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	Outstanding int64 `json:"outstanding"`
+}
+
 // Capability defines model for Capability.
 type Capability struct {
 	Access CapabilityAccess `json:"access"`
@@ -366,6 +522,59 @@ type CollectorCandidate struct {
 // CollectorCandidateList defines model for CollectorCandidateList.
 type CollectorCandidateList struct {
 	Candidates []CollectorCandidate `json:"candidates"`
+}
+
+// Correction defines model for Correction.
+type Correction struct {
+	// AmountDelta Signed rupiah, never 0.
+	//
+	// Example: -700000
+	AmountDelta int64     `json:"amountDelta"`
+	CreatedAt   time.Time `json:"createdAt"`
+
+	// CreatedBy The member who recorded or created a row.
+	CreatedBy StaffRef           `json:"createdBy"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// InvoiceId Set when it corrects an invoice.
+	InvoiceId *openapi_types.UUID `json:"invoiceId,omitempty"`
+
+	// PaymentId Set when it corrects a payment.
+	PaymentId *openapi_types.UUID `json:"paymentId,omitempty"`
+
+	// Reason Example: sewa tidak diperpanjang
+	Reason string `json:"reason"`
+}
+
+// CorrectionInput Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise).
+type CorrectionInput struct {
+	// AmountDelta Signed rupiah, not 0. Negative bills or counts less, positive more.
+	//
+	// Example: -200000
+	AmountDelta int64               `json:"amountDelta"`
+	InvoiceId   *openapi_types.UUID `json:"invoiceId,omitempty"`
+	PaymentId   *openapi_types.UUID `json:"paymentId,omitempty"`
+
+	// Reason Required; blank is a 400.
+	Reason string `json:"reason"`
+
+	// RequestId As in PaymentInput.
+	RequestId openapi_types.UUID `json:"requestId"`
+}
+
+// CorrectionResult defines model for CorrectionResult.
+type CorrectionResult struct {
+	Correction Correction `json:"correction"`
+
+	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
+	Credit int64 `json:"credit"`
+
+	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	Outstanding int64              `json:"outstanding"`
+	TenantId    openapi_types.UUID `json:"tenantId"`
 }
 
 // Error defines model for Error.
@@ -499,6 +708,23 @@ type InviteMember struct {
 	Phone string      `json:"phone"`
 	Roles []RoleGrant `json:"roles"`
 }
+
+// InvoiceLine defines model for InvoiceLine.
+type InvoiceLine struct {
+	// Amount Rupiah, as snapshotted when the invoice was made.
+	Amount int64              `json:"amount"`
+	Id     openapi_types.UUID `json:"id"`
+	Kind   InvoiceLineKind    `json:"kind"`
+
+	// Label Example: Sewa 15 Okt 2026 – 14 Nov 2026
+	Label string `json:"label"`
+}
+
+// InvoiceLineKind defines model for InvoiceLine.Kind.
+type InvoiceLineKind string
+
+// InvoiceStatus open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero. Whether an open or partial invoice is overdue follows from its dueDate (debt from the day after it, Asia/Jakarta).
+type InvoiceStatus string
 
 // Lease defines model for Lease.
 type Lease struct {
@@ -722,6 +948,66 @@ type PageInfo struct {
 	Total int `json:"total"`
 }
 
+// PaidInvoice One invoice a payment paid, and what that invoice still owes now.
+type PaidInvoice struct {
+	// Amount What this payment paid on it.
+	Amount    int64              `json:"amount"`
+	DueDate   openapi_types.Date `json:"dueDate"`
+	InvoiceId openapi_types.UUID `json:"invoiceId"`
+
+	// Outstanding What the invoice still owes, 0 when paid in full.
+	Outstanding int64              `json:"outstanding"`
+	Period      openapi_types.Date `json:"period"`
+	PeriodEnd   openapi_types.Date `json:"periodEnd"`
+}
+
+// PaymentAllocation What a payment pays on one invoice now, after any reversal. Only non-zero ones are listed.
+type PaymentAllocation struct {
+	Amount    int64              `json:"amount"`
+	InvoiceId openapi_types.UUID `json:"invoiceId"`
+}
+
+// PaymentInput defines model for PaymentInput.
+type PaymentInput struct {
+	// Amount Example: 700000
+	Amount int64              `json:"amount"`
+	Method PaymentInputMethod `json:"method"`
+
+	// Note Optional, for example "BCA atas nama suami".
+	Note *string `json:"note,omitempty"`
+
+	// ReceivedOn Today or earlier in Asia/Jakarta; a later day is a 400 with field receivedOn.
+	//
+	// Example: 2026-11-02
+	ReceivedOn openapi_types.Date `json:"receivedOn"`
+
+	// RequestId Made by the client once per payment form it opens, and sent again unchanged on a retry. Errors use field requestId.
+	RequestId openapi_types.UUID `json:"requestId"`
+	TenantId  openapi_types.UUID `json:"tenantId"`
+}
+
+// PaymentInputMethod defines model for PaymentInput.Method.
+type PaymentInputMethod string
+
+// PaymentMethod A payment recorded by hand is cash or transfer; qris and va come from slice 3.
+type PaymentMethod string
+
+// PaymentResult defines model for PaymentResult.
+type PaymentResult struct {
+	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
+	Credit int64 `json:"credit"`
+
+	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	Outstanding int64 `json:"outstanding"`
+
+	// Paid The invoices the payment paid, oldest period first. Empty when it all went to credit.
+	Paid    []PaidInvoice  `json:"paid"`
+	Payment AccountPayment `json:"payment"`
+}
+
 // Property defines model for Property.
 type Property struct {
 	Address   string             `json:"address"`
@@ -810,6 +1096,12 @@ type SetRoles struct {
 	Roles []RoleGrant `json:"roles"`
 }
 
+// StaffRef The member who recorded or created a row.
+type StaffRef struct {
+	MemberId openapi_types.UUID `json:"memberId"`
+	Name     string             `json:"name"`
+}
+
 // StatusResponse defines model for StatusResponse.
 type StatusResponse struct {
 	// Status Example: sent
@@ -829,6 +1121,25 @@ type Tenant struct {
 	// Phone E.164
 	Phone     string    `json:"phone"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// TenantAccount defines model for TenantAccount.
+type TenantAccount struct {
+	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
+	Credit int64 `json:"credit"`
+
+	// Invoices Oldest period first, cancelled ones included.
+	Invoices []AccountInvoice `json:"invoices"`
+
+	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	Outstanding int64 `json:"outstanding"`
+
+	// Payments Oldest received first.
+	Payments []AccountPayment   `json:"payments"`
+	TenantId openapi_types.UUID `json:"tenantId"`
 }
 
 // TenantInput defines model for TenantInput.
@@ -1003,6 +1314,9 @@ type PropertyId = openapi_types.UUID
 // Search defines model for Search.
 type Search = string
 
+// TenantId defines model for TenantId.
+type TenantId = openapi_types.UUID
+
 // ImportTenantsParams defines parameters for ImportTenants.
 type ImportTenantsParams struct {
 	DryRun *bool `form:"dryRun,omitempty" json:"dryRun,omitempty"`
@@ -1096,6 +1410,9 @@ type VerifyLoginCodeJSONRequestBody = LoginCodeVerify
 // CreateChargeTypeJSONRequestBody defines body for CreateChargeType for application/json ContentType.
 type CreateChargeTypeJSONRequestBody = ChargeTypeInput
 
+// CreateCorrectionJSONRequestBody defines body for CreateCorrection for application/json ContentType.
+type CreateCorrectionJSONRequestBody = CorrectionInput
+
 // CreateLeaseJSONRequestBody defines body for CreateLease for application/json ContentType.
 type CreateLeaseJSONRequestBody = LeaseInput
 
@@ -1119,6 +1436,9 @@ type SetMemberRolesJSONRequestBody = SetRoles
 
 // SetMemberStatusJSONRequestBody defines body for SetMemberStatus for application/json ContentType.
 type SetMemberStatusJSONRequestBody = SetMemberStatus
+
+// RecordPaymentJSONRequestBody defines body for RecordPayment for application/json ContentType.
+type RecordPaymentJSONRequestBody = PaymentInput
 
 // CreatePropertyJSONRequestBody defines body for CreateProperty for application/json ContentType.
 type CreatePropertyJSONRequestBody = PropertyInput
