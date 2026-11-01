@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 // CorrectionResult is a correction and its tenant's totals after allocation reran.
@@ -56,7 +58,7 @@ func (s *Service) CreateCorrection(ctx context.Context, p authz.Principal, in Co
 				return err
 			}
 		}
-		if out, err = correctionResult(ctx, q, org, tenantID, row); err != nil {
+		if out, err = correctionResult(ctx, q, org, tenantID, row, tenant.Today(s.clock)); err != nil {
 			return err
 		}
 		out.Created = created
@@ -165,12 +167,12 @@ func correctionByRequestID(ctx context.Context, q *dbgen.Queries, org uuid.UUID,
 	return row, true, nil
 }
 
-func correctionResult(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, row dbgen.Correction) (CorrectionResult, error) {
+func correctionResult(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, row dbgen.Correction, today time.Time) (CorrectionResult, error) {
 	ref, err := q.GetStaffRef(ctx, dbgen.GetStaffRefParams{OrganizationID: org, StaffUserID: row.CreatedByStaffUserID})
 	if err != nil {
 		return CorrectionResult{}, fmt.Errorf("loading the member who made a correction: %w", err)
 	}
-	totals, err := tenantTotals(ctx, q, org, tenantID)
+	totals, err := tenantTotals(ctx, q, org, tenantID, today)
 	if err != nil {
 		return CorrectionResult{}, err
 	}

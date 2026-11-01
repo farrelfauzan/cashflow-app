@@ -6,8 +6,10 @@
  */
 
 export interface AccountTotals {
-  /** What the tenant still owes over all their invoices, due or not yet due. */
+  /** What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar"). */
   outstanding: number;
+  /** The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose due date is before today in Asia/Jakarta (debt from the day after the due date). */
+  overdue: number;
   /** The due date of the oldest invoice not fully paid. Missing when nothing is owed. */
   oldestUnpaidDueDate?: string;
   /** Money paid and not yet used by any invoice; it pays the next invoice when made. */

@@ -30,7 +30,7 @@ func (s *Server) getTenantAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	totals := toAPITotals(acct.Totals)
 	out := apigen.TenantAccount{
-		TenantId: acct.TenantID, Outstanding: totals.Outstanding, OldestUnpaidDueDate: totals.OldestUnpaidDueDate,
+		TenantId: acct.TenantID, Outstanding: totals.Outstanding, Overdue: totals.Overdue, OldestUnpaidDueDate: totals.OldestUnpaidDueDate,
 		Credit:   totals.Credit,
 		Invoices: make([]apigen.AccountInvoice, len(acct.Invoices)),
 		Payments: make([]apigen.AccountPayment, len(acct.Payments)),
@@ -69,7 +69,7 @@ func (s *Server) recordPayment(w http.ResponseWriter, r *http.Request) {
 	totals := toAPITotals(res.Totals)
 	out := apigen.PaymentResult{
 		Payment: toAPIAccountPayment(res.Payment), Paid: make([]apigen.PaidInvoice, len(res.Paid)),
-		Outstanding: totals.Outstanding, OldestUnpaidDueDate: totals.OldestUnpaidDueDate, Credit: totals.Credit,
+		Outstanding: totals.Outstanding, Overdue: totals.Overdue, OldestUnpaidDueDate: totals.OldestUnpaidDueDate, Credit: totals.Credit,
 	}
 	for i, inv := range res.Paid {
 		out.Paid[i] = apigen.PaidInvoice{
@@ -105,7 +105,7 @@ func (s *Server) createCorrection(w http.ResponseWriter, r *http.Request) {
 	totals := toAPITotals(res.Totals)
 	s.writeJSON(w, createdStatus(res.Created), apigen.CorrectionResult{
 		Correction: toAPICorrection(res.Correction), TenantId: res.TenantID,
-		Outstanding: totals.Outstanding, OldestUnpaidDueDate: totals.OldestUnpaidDueDate, Credit: totals.Credit,
+		Outstanding: totals.Outstanding, Overdue: totals.Overdue, OldestUnpaidDueDate: totals.OldestUnpaidDueDate, Credit: totals.Credit,
 	})
 }
 
@@ -118,7 +118,7 @@ func createdStatus(created bool) int {
 }
 
 func toAPITotals(t billing.Totals) apigen.AccountTotals {
-	out := apigen.AccountTotals{Outstanding: t.Outstanding, Credit: t.Credit}
+	out := apigen.AccountTotals{Outstanding: t.Outstanding, Overdue: t.Overdue, Credit: t.Credit}
 	if t.OldestUnpaidDueDate != nil {
 		d := date(*t.OldestUnpaidDueDate)
 		out.OldestUnpaidDueDate = &d

@@ -116,6 +116,31 @@ func TestRecordPayment(t *testing.T) {
 		require.EqualValues(t, 400_000, bal.Outstanding)
 	})
 
+	t.Run("overdue counts only what is owed after its due date, in Jakarta", func(t *testing.T) {
+		// The user's example: rent Rp700.000 from 28 Oct, Rp350.000 paid that day.
+		setNow(env, 2026, 10, 28, 10, 0)
+		w := newWorld(t, env, "0812909")
+		r := w.rent(t, "Yanti Kusuma", day(2026, 10, 28), rentOpts{})
+		w.generate(t)
+		res := w.record(t, cash(r.renter, 350_000, day(2026, 10, 28)))
+		require.EqualValues(t, 350_000, res.Outstanding)
+		require.Zero(t, res.Overdue, "due today is not debt yet")
+
+		setNow(env, 2026, 11, 21, 5, 0)
+		w.generate(t)
+		setNow(env, 2026, 11, 28, 23, 59)
+		acct, err := env.Billing.Account(ctx, w.admin, r.tenantID)
+		require.NoError(t, err)
+		require.EqualValues(t, 1_050_000, acct.Outstanding)
+		require.EqualValues(t, 350_000, acct.Overdue, "October's rest is debt, November is due today")
+
+		setNow(env, 2026, 11, 29, 0, 1)
+		acct, err = env.Billing.Account(ctx, w.admin, r.tenantID)
+		require.NoError(t, err)
+		require.EqualValues(t, 1_050_000, acct.Overdue, "from H+1 November is debt too")
+		require.Equal(t, day(2026, 10, 28), *acct.OldestUnpaidDueDate)
+	})
+
 	t.Run("a payment pays the oldest period first across two leases", func(t *testing.T) {
 		setNow(env, 2026, 11, 2, 9, 0)
 		w := newWorld(t, env, "0812902")

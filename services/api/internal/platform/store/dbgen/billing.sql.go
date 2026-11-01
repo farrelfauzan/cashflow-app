@@ -424,6 +424,28 @@ func (q *Queries) GetTenantBalance(ctx context.Context, arg GetTenantBalancePara
 	return i, err
 }
 
+const getTenantOverdue = `-- name: GetTenantOverdue :one
+SELECT coalesce(sum(outstanding), 0)::bigint AS overdue
+FROM invoice_balance
+WHERE organization_id = $1 AND tenant_id = $2
+  AND outstanding > 0 AND due_date < $3::date
+`
+
+type GetTenantOverdueParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	Today          time.Time
+}
+
+// What a tenant still owes on invoices due before today (Asia/Jakarta, from the injected clock):
+// debt from the day after the due date.
+func (q *Queries) GetTenantOverdue(ctx context.Context, arg GetTenantOverdueParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getTenantOverdue, arg.OrganizationID, arg.TenantID, arg.Today)
+	var overdue int64
+	err := row.Scan(&overdue)
+	return overdue, err
+}
+
 const insertCorrectionIfNew = `-- name: InsertCorrectionIfNew :one
 INSERT INTO correction (id, organization_id, invoice_id, payment_id, amount_delta, reason,
                         created_by_staff_user_id, request_id)

@@ -461,8 +461,11 @@ type AccountTotals struct {
 	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
 	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
 
-	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
 	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose due date is before today in Asia/Jakarta (debt from the day after the due date).
+	Overdue int64 `json:"overdue"`
 }
 
 // Capability defines model for Capability.
@@ -572,9 +575,12 @@ type CorrectionResult struct {
 	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
 	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
 
-	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
-	Outstanding int64              `json:"outstanding"`
-	TenantId    openapi_types.UUID `json:"tenantId"`
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
+	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose due date is before today in Asia/Jakarta (debt from the day after the due date).
+	Overdue  int64              `json:"overdue"`
+	TenantId openapi_types.UUID `json:"tenantId"`
 }
 
 // Error defines model for Error.
@@ -1000,8 +1006,11 @@ type PaymentResult struct {
 	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
 	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
 
-	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
 	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose due date is before today in Asia/Jakarta (debt from the day after the due date).
+	Overdue int64 `json:"overdue"`
 
 	// Paid The invoices the payment paid, oldest period first. Empty when it all went to credit.
 	Paid    []PaidInvoice  `json:"paid"`
@@ -1134,8 +1143,11 @@ type TenantAccount struct {
 	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
 	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
 
-	// Outstanding What the tenant still owes over all their invoices, due or not yet due.
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
 	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose due date is before today in Asia/Jakarta (debt from the day after the due date).
+	Overdue int64 `json:"overdue"`
 
 	// Payments Oldest received first.
 	Payments []AccountPayment   `json:"payments"`

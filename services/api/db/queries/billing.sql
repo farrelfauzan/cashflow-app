@@ -72,6 +72,14 @@ ORDER BY period, seq;
 SELECT * FROM tenant_balance
 WHERE organization_id = @organization_id AND tenant_id = @tenant_id;
 
+-- name: GetTenantOverdue :one
+-- What a tenant still owes on invoices due before today (Asia/Jakarta, from the injected clock):
+-- debt from the day after the due date.
+SELECT coalesce(sum(outstanding), 0)::bigint AS overdue
+FROM invoice_balance
+WHERE organization_id = @organization_id AND tenant_id = @tenant_id
+  AND outstanding > 0 AND due_date < @today::date;
+
 -- name: ListInvoiceLines :many
 SELECT * FROM invoice_line
 WHERE organization_id = @organization_id AND invoice_id = @invoice_id

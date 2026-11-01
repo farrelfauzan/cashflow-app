@@ -76,7 +76,7 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 				return err
 			}
 		}
-		acct, err := loadAccount(ctx, q, org, in.TenantID)
+		acct, err := loadAccount(ctx, q, org, in.TenantID, tenant.Today(s.clock))
 		if err != nil {
 			return err
 		}

@@ -233,6 +233,7 @@ func TestMoneyOverHTTP(t *testing.T) {
 		require.Contains(t, string(body), `"invoices":[]`)
 		require.Contains(t, string(body), `"payments":[]`)
 		require.NotContains(t, string(body), "oldestUnpaidDueDate")
+		require.Contains(t, string(body), `"overdue":0`)
 	})
 
 	t.Run("getTenantAccount: 404 for an unknown tenant, 403 for a karyawan", func(t *testing.T) {

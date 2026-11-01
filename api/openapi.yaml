@@ -2055,12 +2055,18 @@ components:
 
     AccountTotals:
       type: object
-      required: [outstanding, credit]
+      required: [outstanding, overdue, credit]
       properties:
         outstanding:
           type: integer
           format: int64
-          description: What the tenant still owes over all their invoices, due or not yet due.
+          description: What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
+        overdue:
+          type: integer
+          format: int64
+          description: >
+            The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose
+            due date is before today in Asia/Jakarta (debt from the day after the due date).
         oldestUnpaidDueDate:
           type: string
           format: date

@@ -11,6 +11,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 // StaffRef is the member who recorded or created a row.
@@ -34,6 +35,7 @@ type CorrectionRecord struct {
 // fully paid (nil when nothing is owed), and their credit.
 type Totals struct {
 	Outstanding         int64
+	Overdue             int64 // the part of Outstanding due before today (debt from H+1)
 	OldestUnpaidDueDate *time.Time
 	Credit              int64
 }
@@ -109,7 +111,7 @@ func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.
 				return err
 			}
 		}
-		out, err = loadAccount(ctx, q, p.OrganizationID, tenantID)
+		out, err = loadAccount(ctx, q, p.OrganizationID, tenantID, tenant.Today(s.clock))
 		return err
 	})
 	return out, err
@@ -160,20 +162,25 @@ func (s *Service) authorizeThroughLeases(ctx context.Context, tx pgx.Tx, p authz
 	return nil
 }
 
-// tenantTotals reads a tenant's balance.
-func tenantTotals(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID) (Totals, error) {
+// tenantTotals reads a tenant's balance; today is the current day in Asia/Jakarta
+// (tenant.Today), which decides what is overdue.
+func tenantTotals(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, today time.Time) (Totals, error) {
 	b, err := q.GetTenantBalance(ctx, dbgen.GetTenantBalanceParams{OrganizationID: org, TenantID: tenantID})
 	if err != nil {
 		return Totals{}, fmt.Errorf("loading the tenant's balance: %w", err)
 	}
-	return Totals{Outstanding: b.Outstanding, OldestUnpaidDueDate: b.OldestUnpaidDueDate, Credit: b.Credit}, nil
+	overdue, err := q.GetTenantOverdue(ctx, dbgen.GetTenantOverdueParams{OrganizationID: org, TenantID: tenantID, Today: today})
+	if err != nil {
+		return Totals{}, fmt.Errorf("loading the tenant's overdue amount: %w", err)
+	}
+	return Totals{Outstanding: b.Outstanding, Overdue: overdue, OldestUnpaidDueDate: b.OldestUnpaidDueDate, Credit: b.Credit}, nil
 }
 
 // loadAccount reads a tenant's account with one query per kind of row. It checks no permission.
-func loadAccount(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID) (Account, error) {
+func loadAccount(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, today time.Time) (Account, error) {
 	out := Account{TenantID: tenantID, Invoices: []AccountInvoice{}, Payments: []AccountPayment{}}
 	var err error
-	if out.Totals, err = tenantTotals(ctx, q, org, tenantID); err != nil {
+	if out.Totals, err = tenantTotals(ctx, q, org, tenantID, today); err != nil {
 		return Account{}, err
 	}
 	invRows, err := q.ListAccountInvoices(ctx, dbgen.ListAccountInvoicesParams{OrganizationID: org, TenantID: tenantID})
