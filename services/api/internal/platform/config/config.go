@@ -90,11 +90,21 @@ func (t Twilio) ContentSIDMap() (map[string]string, error) {
 	if strings.TrimSpace(t.ContentSIDs) == "" {
 		return out, nil
 	}
+	// Errors name the pair by position and say what is missing, without echoing the value, in
+	// case a secret was pasted into the wrong setting.
+	const want = "TWILIO_CONTENT_SIDS must be template=ContentSid pairs separated by commas, such as login_code=HX followed by 32 hex characters"
+	i := 0
 	for pair := range strings.SplitSeq(t.ContentSIDs, ",") {
+		i++
 		name, sid, ok := strings.Cut(strings.TrimSpace(pair), "=")
 		name, sid = strings.TrimSpace(name), strings.TrimSpace(sid)
-		if !ok || name == "" || sid == "" {
-			return nil, errors.New("TWILIO_CONTENT_SIDS must be template=ContentSid pairs separated by commas, such as login_code=HX followed by 32 hex characters")
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("%s; pair %d has no '='", want, i)
+		case name == "":
+			return nil, fmt.Errorf("%s; pair %d has no template name before '='", want, i)
+		case sid == "":
+			return nil, fmt.Errorf("%s; pair %d has no Content SID after '='", want, i)
 		}
 		if _, dup := out[name]; dup {
 			return nil, fmt.Errorf("TWILIO_CONTENT_SIDS names %s twice", name)
