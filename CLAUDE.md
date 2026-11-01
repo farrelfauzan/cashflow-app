@@ -8,15 +8,16 @@ summarizes, reminds and reports.
 
 ## Project status (read first)
 
-- **Phase A (slices 0 and 1) is built, backend and web, and closed (2026-11-01).** `services/api` has slice 0
-  (scaffold, RLS, CI) and slice 1: WhatsApp OTP login, sessions, the policy engine, built-in
+- **Phase A (slices 0 and 1) is built, backend and web, and closed (2026-11-01).**
+  `services/api` has slice 0 (scaffold, RLS, CI) and slice 1: WhatsApp OTP login, sessions, the policy engine, built-in
   roles, members, `cmd/admin` to create organizations, properties, units with their billing
   terms and append-only price history (decisions 32 and 33), roles limited to one property,
   tenants, leases with planned end and move-out, charge types and fixed extra charges on the
   lease, and the tenant CSV import with its template. Its README says how to run it. Not built
   yet: invoices and everything after them (phase B onward), including metered amounts. The
-  pilot organization is Suhwendi Corp (decision 34). The VPS provider and staging are planned for the last phase (F, slice 12, decision 31); until then
-  checkpoints are shown on a local machine.
+  pilot organization is Suhwendi Corp (decision 34). The VPS provider and staging are planned
+  for the last phase (F, slice 12, decision 31); until then checkpoints are shown on a local
+  machine.
 - **Web:** `apps/web` has every phase A screen (W1 to W9): login, organization picker, members
   and roles, properties and units with terms and prices, tenants and leases, and the import.
   Forms use react-hook-form with a zod resolver through one shared hook.
