@@ -1,9 +1,14 @@
+import type { z } from "zod";
+
 import type {
   LeaseChargesInput,
   LeaseInput,
   LeaseTerms,
   TermMonths,
+  Unit,
 } from "@/lib/api/generated/model";
+
+import type { leaseFormFieldsSchema, leaseTermsFieldsSchema } from "./utils";
 
 // When the lease starts, against today in Jakarta: a lease entered late, one that starts today,
 // or a booking.
@@ -39,6 +44,20 @@ export type LeaseFormValues = LeaseTermsValues & {
   unitId: string;
   // "Masa sewa": a priced term of the chosen unit; null when no unit is chosen or none is priced.
   termMonths: TermMonths | null;
+};
+
+// "Sewakan unit" and "Ubah sewa" as react-hook-form holds them, under the API's field names.
+export type LeaseFormFields = z.input<typeof leaseFormFieldsSchema>;
+export type LeaseTermsFields = z.input<typeof leaseTermsFieldsSchema>;
+
+// What "Sewakan unit"'s schema needs besides the fields: the tenant, today in Jakarta, and the
+// property and free unit the form shows (the only property is chosen already; a unit taken since
+// is not shown).
+export type LeaseFormContext = {
+  tenantId: string;
+  today: string;
+  propertyId: string;
+  unit: Pick<Unit, "id" | "terms"> | undefined;
 };
 
 // The hint under "Masa sewa", and whether it needs the member's attention.

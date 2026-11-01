@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import type { ChargeType, Lease, Unit } from "@/lib/api/generated/model";
 
@@ -43,12 +44,14 @@ import {
   billedFromOptions,
   billingExplanation,
   checkLeaseForm,
+  LEASE_FORM_DEFAULTS,
+  leaseFormSchema,
+  leaseTermsDefaults,
+  leaseTermsSchema,
   defaultBilledFrom,
-  firstLeaseError,
   freeUnits,
   isPeriodStart,
   isCalendarDate,
-  isLeaseFormField,
   leaseFormSubtitle,
   nextPeriodStart,
   noBilledFromMessage,
@@ -1354,25 +1357,164 @@ describe("checkLeaseForm", () => {
   });
 });
 
-describe("form fields", () => {
-  it("focuses the first bad field in the form's order", () => {
-    expect(
-      firstLeaseError({
-        depositAmount: "x",
-        startDate: "y",
-        collectorMemberId: "z",
-      }),
-    ).toBe("startDate");
-    expect(firstLeaseError({})).toBeNull();
+// What a lease form shows for these fields: the input it sends, or the first message under each
+// field (as zodResolver puts them).
+function checkSchema(schema: z.ZodType, fields: unknown) {
+  const result = schema.safeParse(fields);
+  if (result.success) return { ok: true, input: result.data };
+  const { fieldErrors } = z.flattenError(result.error);
+  return {
+    ok: false,
+    errors: Object.fromEntries(
+      Object.entries(fieldErrors).map(([field, messages]) => [
+        field,
+        (messages as string[] | undefined)?.[0],
+      ]),
+    ),
+  };
+}
+
+describe("leaseFormSchema", () => {
+  const monthly = {
+    id: "u",
+    terms: [{ months: 1 as const, price: 1_500_000 }],
+  };
+  const context = {
+    tenantId: "t",
+    today: TODAY,
+    propertyId: "p",
+    unit: monthly as Pick<Unit, "id" | "terms"> | undefined,
+  };
+  const fields = (over: Partial<typeof LEASE_FORM_DEFAULTS> = {}) => ({
+    ...LEASE_FORM_DEFAULTS,
+    propertyId: "p",
+    unitId: "u",
+    startDate: "2026-11-01",
+    ...over,
   });
 
-  it.each([
-    { field: "unitId", want: true },
-    { field: "billedFrom", want: true },
-    { field: "tenantId", want: false },
-    { field: null, want: false },
-  ])("$field is a field of the form: $want", ({ field, want }) => {
-    expect(isLeaseFormField(field)).toBe(want);
+  it("sends integers, the unit's term, and leaves out what is not given", () => {
+    expect(checkSchema(leaseFormSchema(context), fields())).toEqual({
+      ok: true,
+      input: {
+        tenantId: "t",
+        unitId: "u",
+        startDate: "2026-11-01",
+        termMonths: 1,
+      },
+    });
+  });
+
+  it("sends the deposit and the collector under the API's names", () => {
+    expect(
+      checkSchema(
+        leaseFormSchema(context),
+        fields({ depositAmount: "2.500.000", collectorMemberId: "member-1" }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      input: { depositAmount: 2_500_000, collectorMemberId: "member-1" },
+    });
+  });
+
+  it("takes the only property as chosen", () => {
+    expect(
+      checkSchema(leaseFormSchema(context), fields({ propertyId: "" })),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("finds every missing field under its own name", () => {
+    expect(
+      checkSchema(
+        leaseFormSchema({ ...context, propertyId: "", unit: undefined }),
+        fields({ propertyId: "", unitId: "", startDate: "" }),
+      ),
+    ).toEqual({
+      ok: false,
+      errors: {
+        propertyId: NO_PROPERTY_MESSAGE,
+        unitId: NO_UNIT_MESSAGE,
+        startDate: NO_START_MESSAGE,
+      },
+    });
+  });
+
+  it("refuses a unit that is no longer free, as the select shows none", () => {
+    expect(
+      checkSchema(leaseFormSchema({ ...context, unit: undefined }), fields()),
+    ).toEqual({ ok: false, errors: { unitId: NO_UNIT_MESSAGE } });
+  });
+
+  it("refuses a unit with no priced term under Masa sewa", () => {
+    expect(
+      checkSchema(
+        leaseFormSchema({
+          ...context,
+          unit: { id: "u", terms: [{ months: 1 }] },
+        }),
+        fields(),
+      ),
+    ).toEqual({ ok: false, errors: { termMonths: NO_PRICE_MESSAGE } });
+  });
+
+  it("sends the chosen term while the unit offers it with a price", () => {
+    const both = {
+      id: "u",
+      terms: [
+        { months: 1 as const, price: 1_500_000 },
+        { months: 12 as const, price: 15_000_000 },
+      ],
+    };
+    const send = (termMonths: number | null) =>
+      checkSchema(
+        leaseFormSchema({ ...context, unit: both }),
+        fields({ termMonths }),
+      );
+    expect(send(12)).toMatchObject({ ok: true, input: { termMonths: 12 } });
+    expect(send(6)).toMatchObject({ ok: true, input: { termMonths: 1 } });
+  });
+
+  it("sends the period start picked in Mulai tagih dari", () => {
+    expect(
+      checkSchema(
+        leaseFormSchema(context),
+        fields({
+          startDate: "2026-09-15",
+          billing: "pick",
+          billedFrom: "2026-10-15",
+        }),
+      ),
+    ).toMatchObject({ ok: true, input: { billedFrom: "2026-10-15" } });
+  });
+
+  it("sends the date the select shows when nothing offered is picked", () => {
+    expect(
+      checkSchema(
+        leaseFormSchema(context),
+        fields({
+          startDate: "2026-08-15",
+          billing: "pick",
+          billedFrom: "2026-12-15",
+        }),
+      ),
+    ).toMatchObject({ ok: true, input: { billedFrom: "2026-10-15" } });
+  });
+
+  it("sends no billedFrom with the first choice", () => {
+    const checked = checkSchema(
+      leaseFormSchema(context),
+      fields({ startDate: "2026-09-15", billedFrom: "2026-10-15" }),
+    );
+    expect(checked.ok && "billedFrom" in (checked.input as object)).toBe(false);
+  });
+
+  it("refuses a deposit that is not a whole amount", () => {
+    expect(
+      checkSchema(leaseFormSchema(context), fields({ depositAmount: "1,5" })),
+    ).toEqual({
+      ok: false,
+      errors: { depositAmount: BAD_DEPOSIT_MESSAGE },
+    });
   });
 });
 
@@ -1679,6 +1821,65 @@ describe("checkLeaseTerms", () => {
   it("finds every bad field", () => {
     expect(
       checkLeaseTerms(values({ startDate: "", deposit: "1,5" }), onTime),
+    ).toEqual({
+      ok: false,
+      errors: {
+        startDate: NO_START_MESSAGE,
+        depositAmount: BAD_DEPOSIT_MESSAGE,
+      },
+    });
+  });
+});
+
+describe("leaseTermsSchema", () => {
+  const onTime = leaseOf({ startDate: "2026-09-15", enteredOn: "2026-09-15" });
+  const late = leaseOf({ startDate: "2026-09-15", enteredOn: TODAY });
+
+  it("sends the lease's own terms unchanged from its defaults", () => {
+    expect(
+      checkSchema(leaseTermsSchema(onTime), leaseTermsDefaults(onTime)),
+    ).toEqual({
+      ok: true,
+      input: { startDate: "2026-09-15", depositAmount: 3_000_000 },
+    });
+  });
+
+  it("sends the collector and the period start picked", () => {
+    expect(
+      checkSchema(leaseTermsSchema(late), {
+        ...leaseTermsDefaults(late),
+        billing: "pick",
+        billedFrom: "2026-10-15",
+        collectorMemberId: "m-1",
+      }),
+    ).toEqual({
+      ok: true,
+      input: {
+        startDate: "2026-09-15",
+        depositAmount: 3_000_000,
+        collectorMemberId: "m-1",
+        billedFrom: "2026-10-15",
+      },
+    });
+  });
+
+  it("sends the date the select shows when nothing offered is picked", () => {
+    expect(
+      checkSchema(leaseTermsSchema(late), {
+        ...leaseTermsDefaults(late),
+        billing: "pick",
+        billedFrom: "2026-12-15",
+      }),
+    ).toMatchObject({ ok: true, input: { billedFrom: "2026-10-15" } });
+  });
+
+  it("finds every bad field under its own name", () => {
+    expect(
+      checkSchema(leaseTermsSchema(onTime), {
+        ...leaseTermsDefaults(onTime),
+        startDate: "",
+        depositAmount: "1,5",
+      }),
     ).toEqual({
       ok: false,
       errors: {
