@@ -185,11 +185,12 @@ the login link). Any template not listed is sent as plain text, which Twilio may
 `code 21654`. The Content template's text should match `internal/messaging/templates.go`.
 
 A Twilio trial account cannot create Content templates (the console asks to upgrade first), so
-step 3 needs an upgraded account. On a trial, Twilio's own sample template from the Try it out
-page can be delivered, but its text is Twilio's, not ours. `TWILIO_CONTENT_SIDS` accepts it
-like any other HX value; mapping `login_code` to it only proves that a message reaches the
-phone, and the code lands in whatever its `{{1}}` says. It is not a login message. On a trial,
-stay on `WHATSAPP_PROVIDER=devlog` for everyday development.
+step 3 needs an upgraded account. Twilio's sample template on the Try it out page is no
+substitute: it is fixed text with no `{{1}}` ("Reminder: Your event starts tonight at 7 PM ...
+Test message from Twilio."), so mapping `login_code` to it delivers that text and the login code
+never appears (tried 2026-11-01). On a trial, use `WHATSAPP_PROVIDER=devlog` (the code is in the
+API log); to get real login codes over WhatsApp, upgrade Twilio and create `login_code` as in
+step 3.
 
 What the sandbox can do: send to phones that joined it, within 24 hours of the phone's last
 message to the sandbox number. What it cannot do: reach a phone that has not joined, or send
