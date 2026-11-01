@@ -69,6 +69,17 @@ the tenant list show "1 penyewa belum punya penagih". That needs a database seed
 GOWA WhatsApp link): a rerun leaves an existing lease as it is, so on a database seeded before
 Agus was added, Eko's lease keeps no collector and the flag does not show.
 
+Seeded leases are entered 40 days before today and bill from the period that ran 70 days ago,
+so they have only a few invoices, some overdue. `seed-demo` creates no invoice; run
+`APP_ENV=development go run ./cmd/admin generate-invoices` right after it (same development-only
+rule). It generates the invoices of the three demo organizations only, never of any other
+organization, and records two payments in each: one demo tenant pays everything they owe
+(transfer), one pays about half of their oldest invoice (cash), and a third pays nothing and stays
+overdue. It is safe to run again: the payments carry fixed request ids, so a repeat records
+nothing new, and a later day only bills the periods that have come due since. Like the seed, it
+needs a database seeded from empty: a lease seeded earlier keeps its old dates and would bill
+every period since its start.
+
 Kos Bulanan Sejahtera is the volume organization, for trying pagination: 27 members (4 of them
 disabled, 2 still collecting on running leases), 25 properties, 95 units (30 in Kos Sejahtera
 Utama) and 45 tenants, some with a booked lease (starting in June or July 2027), some moved out

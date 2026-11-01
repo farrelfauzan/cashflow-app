@@ -12,8 +12,13 @@
 //
 //	APP_ENV=development admin seed-demo
 //
-// seed-demo refuses to run unless APP_ENV is explicitly "development", and it checks that
-// before it connects to the database.
+// and bills the seeded leases and records a few demo payments (the invoices and payments of the
+// demo organizations only, never of any other organization):
+//
+//	APP_ENV=development admin generate-invoices
+//
+// Both refuse to run unless APP_ENV is explicitly "development", and check that before they
+// connect to the database.
 package main
 
 import (
@@ -44,10 +49,11 @@ import (
 
 const usage = `usage:
   admin create-org -name NAME -display-name NAME -member "phone|name|roles" [-member ...]
-  admin seed-demo   (development only: APP_ENV=development)`
+  admin seed-demo   (development only: APP_ENV=development)
+  admin generate-invoices   (development only: invoices and payments of the demo organizations)`
 
-// errNotDevelopment stops seed-demo anywhere but an explicit development environment.
-var errNotDevelopment = errors.New("seed-demo only runs with APP_ENV=development")
+// errNotDevelopment stops the demo commands anywhere but an explicit development environment.
+var errNotDevelopment = errors.New("demo commands only run with APP_ENV=development")
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -77,6 +83,8 @@ func run(ctx context.Context, args []string, e env) error {
 		return createOrg(ctx, args[1:], e)
 	case "seed-demo":
 		return seedDemo(ctx, args[1:], e)
+	case "generate-invoices":
+		return generateInvoices(ctx, args[1:], e)
 	}
 	return errors.New(usage)
 }
@@ -154,14 +162,21 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 	az := authz.NewService(st, c, log)
 	// The demo seed sends no WhatsApp: its invited members show the invitation not_sent.
 	members := member.NewService(st, az, member.Invitations{Clock: c, Log: log})
+	// The services that create units and leases read a clock 40 days back, so the leases are
+	// entered then; the rest read the real one.
+	past := demoseed.Behind(c, demoseed.EntryDays)
+	money := billing.NewService(st, az, c, log)
 	res, err := demoseed.Run(ctx, demoseed.Deps{
-		Store:      st,
-		Authz:      az,
-		Orgs:       org.NewService(st, az),
-		Members:    members,
-		Properties: property.NewService(st, az, c),
-		// No queue: the demo seed's leases are invoiced by the worker's daily run.
-		Tenants: tenant.NewService(st, az, c, billing.NewService(st, az, c, log), nil),
+		Store:          st,
+		Authz:          az,
+		Orgs:           org.NewService(st, az),
+		Members:        members,
+		Properties:     property.NewService(st, az, c),
+		PastProperties: property.NewService(st, az, past),
+		// No queue: the demo seed's leases are invoiced by generate-invoices, or the worker's
+		// daily run.
+		Tenants:     tenant.NewService(st, az, c, money, nil),
+		PastTenants: tenant.NewService(st, az, past, money, nil),
 	}, c)
 	if err != nil {
 		return err
@@ -170,6 +185,40 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 		fmt.Fprintln(e.stderr, "admin: note:", n)
 	}
 	return writeLogins(e.stdout, res.Logins)
+}
+
+// generateInvoices bills the demo organizations and records their demo payments, in
+// development only. It runs the generation synchronously on the system clock.
+func generateInvoices(ctx context.Context, args []string, e env) error {
+	if len(args) > 0 {
+		return fmt.Errorf("generate-invoices takes no arguments\n%s", usage)
+	}
+	if err := requireDevelopment(e.lookup); err != nil {
+		return err
+	}
+
+	st, log, err := e.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	c := clock.System()
+	az := authz.NewService(st, c, log)
+	sums, err := demoseed.GenerateInvoices(ctx, demoseed.GenerateDeps{
+		Store: st, Authz: az, Orgs: org.NewService(st, az), Billing: billing.NewService(st, az, c, log),
+	}, c)
+	if err != nil {
+		return err
+	}
+	for _, s := range sums {
+		fmt.Fprintf(e.stdout, "%s: %d invoices created, %d payments recorded (%d leases", s.Organization, s.Invoices, s.Payments, s.Leases)
+		if s.Skipped > 0 {
+			fmt.Fprintf(e.stdout, ", %d without a price", s.Skipped)
+		}
+		fmt.Fprintln(e.stdout, ")")
+	}
+	return nil
 }
 
 // writeLogins prints the demo logins as a plain table.
