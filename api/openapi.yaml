@@ -15,6 +15,7 @@ tags:
   - name: members
   - name: properties
   - name: tenants
+  - name: money
 
 paths:
   /auth/otp/request:
@@ -1018,6 +1019,129 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/tenants/{tenantId}/account:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [money]
+      operationId: getTenantAccount
+      summary: A tenant's money, invoices, payments and corrections (needs invoice:read and payment:read)
+      description: >
+        Everything the tenant was billed and paid, across all their leases, with the totals the
+        Detail penyewa page shows: what they still owe, the due date of the oldest unpaid
+        invoice and their credit. Every figure comes from the server; the page computes none.
+        A member limited to some properties needs both reads through every lease the tenant has
+        or had, since the totals span all of them; otherwise 403. Invoices and payments are
+        bounded per tenant (about one invoice per term), so they are plain arrays, oldest first.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantAccount" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/payments:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      tags: [money]
+      operationId: recordPayment
+      summary: Record a cash or transfer payment from a tenant (needs payment:record; audited)
+      description: >
+        The payment pays the tenant's open invoices oldest period first, across all their
+        leases (FIFO), whatever its received date; what is left is credit, which pays the next
+        invoice the moment it is made. The answer says what it paid, the tenant's remaining
+        total and credit (the W12 result panel).
+        requestId makes a retry or a double submit harmless: the same requestId with the same
+        body answers 200 with the payment already recorded, nothing is recorded twice; the same
+        requestId with any other body is 409 request_id_reused.
+        A member limited to some properties may record a payment only for a tenant whose every
+        lease, current or ended, is in their properties, since FIFO may pay any of them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentInput" }
+      responses:
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentResult" }
+        "200":
+          description: Already recorded under this requestId; nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such tenant in the organization (code not_found, field tenantId)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "The requestId was used for a different payment (code request_id_reused)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/corrections:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      tags: [money]
+      operationId: createCorrection
+      summary: Correct what an invoice bills or what a payment received, with a reason (needs correction:create; audited)
+      description: >
+        "Koreksi nominal". Nothing is edited: the correction is a new row with a signed amount,
+        and the invoice's billed amount or the payment's net amount is its original amount plus
+        all its corrections. A correction may bring either to zero (an invoice at zero is
+        cancelled), never below (409 correction_below_zero). Allocation reruns at once: money
+        paid on an invoice corrected down goes back through FIFO and the rest is credit; a
+        payment corrected below what it already paid takes that back from its newest invoices.
+        Corrections are listed on the Supervisor's dashboard and report.
+        requestId works as for recordPayment (200 for a repeat, 409 request_id_reused).
+        A member limited to some properties may correct an invoice of a lease in their
+        properties, and a payment of a tenant whose every lease is in their properties.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CorrectionResult" }
+        "200":
+          description: Already created under this requestId; nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CorrectionResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such invoice or payment in the organization (code not_found, field invoiceId or paymentId)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            The correction would take the invoice's billed amount or the payment's net amount
+            below zero (code correction_below_zero, field amountDelta), or the requestId was used
+            for a different correction (code request_id_reused).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   parameters:
     OrgId:
@@ -1032,6 +1156,11 @@ components:
       schema: { type: string, format: uuid }
     LeaseId:
       name: leaseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TenantId:
+      name: tenantId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1826,3 +1955,214 @@ components:
         rows:
           type: array
           items: { $ref: "#/components/schemas/ImportRow" }
+
+    StaffRef:
+      type: object
+      required: [memberId, name]
+      description: The member who recorded or created a row.
+      properties:
+        memberId: { type: string, format: uuid }
+        name: { type: string }
+
+    InvoiceStatus:
+      type: string
+      enum: [open, partial, paid, cancelled]
+      description: >
+        open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero.
+        Whether an open or partial invoice is overdue follows from its dueDate (debt from the
+        day after it, Asia/Jakarta).
+
+    InvoiceLine:
+      type: object
+      required: [id, kind, label, amount]
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [rent, charge]
+        label: { type: string, example: "Sewa 15 Okt 2026 – 14 Nov 2026" }
+        amount: { type: integer, format: int64, description: "Rupiah, as snapshotted when the invoice was made." }
+
+    Correction:
+      type: object
+      required: [id, amountDelta, reason, createdBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        invoiceId: { type: string, format: uuid, description: Set when it corrects an invoice. }
+        paymentId: { type: string, format: uuid, description: Set when it corrects a payment. }
+        amountDelta: { type: integer, format: int64, description: "Signed rupiah, never 0.", example: -700000 }
+        reason: { type: string, example: sewa tidak diperpanjang }
+        createdBy: { $ref: "#/components/schemas/StaffRef" }
+        createdAt: { type: string, format: date-time }
+
+    AccountInvoice:
+      type: object
+      required: [id, leaseId, unitLabel, propertyName, period, periodEnd, dueDate, amount, billed, paid, outstanding, status, lines, corrections]
+      properties:
+        id: { type: string, format: uuid }
+        leaseId: { type: string, format: uuid }
+        unitLabel: { type: string }
+        propertyName: { type: string }
+        period: { type: string, format: date, description: "The period's first day; the invoice belongs to its month (Tagihan November)." }
+        periodEnd: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        amount: { type: integer, format: int64, description: What it billed when made (the sum of its lines). }
+        billed: { type: integer, format: int64, description: amount plus its corrections. }
+        paid: { type: integer, format: int64, description: What payments allocated to it. }
+        outstanding: { type: integer, format: int64, description: billed minus paid. }
+        status: { $ref: "#/components/schemas/InvoiceStatus" }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/InvoiceLine" }
+        corrections:
+          type: array
+          description: Oldest first. Empty when none.
+          items: { $ref: "#/components/schemas/Correction" }
+
+    PaymentMethod:
+      type: string
+      enum: [cash, transfer, qris, va]
+      description: A payment recorded by hand is cash or transfer; qris and va come from slice 3.
+
+    PaymentAllocation:
+      type: object
+      required: [invoiceId, amount]
+      description: What a payment pays on one invoice now, after any reversal. Only non-zero ones are listed.
+      properties:
+        invoiceId: { type: string, format: uuid }
+        amount: { type: integer, format: int64 }
+
+    AccountPayment:
+      type: object
+      required: [id, amount, net, method, receivedOn, note, allocations, corrections, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { type: integer, format: int64, description: "What was received, as recorded." }
+        net: { type: integer, format: int64, description: amount plus its corrections. }
+        method: { $ref: "#/components/schemas/PaymentMethod" }
+        receivedOn: { type: string, format: date, description: "The day the money was received, Asia/Jakarta." }
+        note: { type: string, description: Empty when none. }
+        recordedBy: { $ref: "#/components/schemas/StaffRef" }
+        allocations:
+          type: array
+          description: Oldest invoice first. Empty when it is all credit.
+          items: { $ref: "#/components/schemas/PaymentAllocation" }
+        corrections:
+          type: array
+          description: Oldest first. Empty when none.
+          items: { $ref: "#/components/schemas/Correction" }
+        createdAt: { type: string, format: date-time }
+
+    AccountTotals:
+      type: object
+      required: [outstanding, overdue, credit]
+      properties:
+        outstanding:
+          type: integer
+          format: int64
+          description: What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
+        overdue:
+          type: integer
+          format: int64
+          description: >
+            The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose
+            due date is before today in Asia/Jakarta (debt from the day after the due date).
+        oldestUnpaidDueDate:
+          type: string
+          format: date
+          description: The due date of the oldest invoice not fully paid. Missing when nothing is owed.
+        credit:
+          type: integer
+          format: int64
+          description: Money paid and not yet used by any invoice; it pays the next invoice when made.
+
+    TenantAccount:
+      allOf:
+        - $ref: "#/components/schemas/AccountTotals"
+        - type: object
+          required: [tenantId, invoices, payments]
+          properties:
+            tenantId: { type: string, format: uuid }
+            invoices:
+              type: array
+              description: Oldest period first, cancelled ones included.
+              items: { $ref: "#/components/schemas/AccountInvoice" }
+            payments:
+              type: array
+              description: Oldest received first.
+              items: { $ref: "#/components/schemas/AccountPayment" }
+
+    PaymentInput:
+      type: object
+      required: [requestId, tenantId, amount, method, receivedOn]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: >
+            Made by the client once per payment form it opens, and sent again unchanged on a
+            retry. Errors use field requestId.
+        tenantId: { type: string, format: uuid }
+        amount: { type: integer, format: int64, minimum: 1, maximum: 1000000000000, example: 700000 }
+        method:
+          type: string
+          enum: [cash, transfer]
+        receivedOn:
+          type: string
+          format: date
+          description: Today or earlier in Asia/Jakarta; a later day is a 400 with field receivedOn.
+          example: "2026-11-02"
+        note: { type: string, maxLength: 500, description: "Optional, for example \"BCA atas nama suami\"." }
+
+    PaidInvoice:
+      type: object
+      required: [invoiceId, period, periodEnd, dueDate, amount, outstanding]
+      description: One invoice a payment paid, and what that invoice still owes now.
+      properties:
+        invoiceId: { type: string, format: uuid }
+        period: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        amount: { type: integer, format: int64, description: What this payment paid on it. }
+        outstanding: { type: integer, format: int64, description: "What the invoice still owes, 0 when paid in full." }
+
+    PaymentResult:
+      allOf:
+        - $ref: "#/components/schemas/AccountTotals"
+        - type: object
+          required: [payment, paid]
+          properties:
+            payment: { $ref: "#/components/schemas/AccountPayment" }
+            paid:
+              type: array
+              description: The invoices the payment paid, oldest period first. Empty when it all went to credit.
+              items: { $ref: "#/components/schemas/PaidInvoice" }
+
+    CorrectionInput:
+      type: object
+      required: [requestId, amountDelta, reason]
+      description: Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise).
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: As in PaymentInput.
+        invoiceId: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        amountDelta:
+          type: integer
+          format: int64
+          minimum: -1000000000000
+          maximum: 1000000000000
+          description: Signed rupiah, not 0. Negative bills or counts less, positive more.
+          example: -200000
+        reason: { type: string, minLength: 1, maxLength: 500, description: Required; blank is a 400. }
+
+    CorrectionResult:
+      allOf:
+        - $ref: "#/components/schemas/AccountTotals"
+        - type: object
+          required: [correction, tenantId]
+          properties:
+            correction: { $ref: "#/components/schemas/Correction" }
+            tenantId: { type: string, format: uuid }

@@ -24,6 +24,9 @@ const (
 	// ActionInvoiceCreate is recorded, as a system action with no actor, for each invoice the
 	// generate task makes. No member is checked for it: generation is the platform's own work.
 	ActionInvoiceCreate    = "invoice:create"
+	ActionInvoiceRead      = "invoice:read"
+	ActionPaymentRead      = "payment:read"
+	ActionPaymentRecord    = "payment:record"
 	ActionCorrectionCreate = "correction:create"
 )
 
