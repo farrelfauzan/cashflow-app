@@ -41,7 +41,7 @@ func (q *Queries) ActiveOrganizationIDs(ctx context.Context) ([]uuid.UUID, error
 const createCorrection = `-- name: CreateCorrection :one
 INSERT INTO correction (id, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at
+RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id
 `
 
 type CreateCorrectionParams struct {
@@ -77,6 +77,7 @@ func (q *Queries) CreateCorrection(ctx context.Context, arg CreateCorrectionPara
 		&i.Reason,
 		&i.CreatedByStaffUserID,
 		&i.CreatedAt,
+		&i.RequestID,
 	)
 	return i, err
 }
@@ -250,6 +251,156 @@ func (q *Queries) CreatePaymentAllocation(ctx context.Context, arg CreatePayment
 	return err
 }
 
+const getCorrectionByRequestID = `-- name: GetCorrectionByRequestID :one
+SELECT id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id FROM correction
+WHERE organization_id = $1 AND request_id = $2
+`
+
+type GetCorrectionByRequestIDParams struct {
+	OrganizationID uuid.UUID
+	RequestID      uuid.NullUUID
+}
+
+func (q *Queries) GetCorrectionByRequestID(ctx context.Context, arg GetCorrectionByRequestIDParams) (Correction, error) {
+	row := q.db.QueryRow(ctx, getCorrectionByRequestID, arg.OrganizationID, arg.RequestID)
+	var i Correction
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.OrganizationID,
+		&i.InvoiceID,
+		&i.PaymentID,
+		&i.AmountDelta,
+		&i.Reason,
+		&i.CreatedByStaffUserID,
+		&i.CreatedAt,
+		&i.RequestID,
+	)
+	return i, err
+}
+
+const getInvoiceScope = `-- name: GetInvoiceScope :one
+SELECT i.id, i.tenant_id, i.lease_id, u.property_id, l.collector_staff_user_id
+FROM invoice i
+JOIN lease l ON l.organization_id = i.organization_id AND l.id = i.lease_id
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE i.organization_id = $1 AND i.id = $2
+`
+
+type GetInvoiceScopeParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetInvoiceScopeRow struct {
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	LeaseID              uuid.UUID
+	PropertyID           uuid.UUID
+	CollectorStaffUserID uuid.NullUUID
+}
+
+// An invoice with what authorizing a change to it needs: its tenant, its lease's property and
+// collector.
+func (q *Queries) GetInvoiceScope(ctx context.Context, arg GetInvoiceScopeParams) (GetInvoiceScopeRow, error) {
+	row := q.db.QueryRow(ctx, getInvoiceScope, arg.OrganizationID, arg.ID)
+	var i GetInvoiceScopeRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.LeaseID,
+		&i.PropertyID,
+		&i.CollectorStaffUserID,
+	)
+	return i, err
+}
+
+const getPayment = `-- name: GetPayment :one
+SELECT id, seq, organization_id, tenant_id, amount, method, received_at, source, source_ref, recorded_by_staff_user_id, note, created_at FROM payment
+WHERE organization_id = $1 AND id = $2
+`
+
+type GetPaymentParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+func (q *Queries) GetPayment(ctx context.Context, arg GetPaymentParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPayment, arg.OrganizationID, arg.ID)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.Amount,
+		&i.Method,
+		&i.ReceivedAt,
+		&i.Source,
+		&i.SourceRef,
+		&i.RecordedByStaffUserID,
+		&i.Note,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPaymentBySourceRef = `-- name: GetPaymentBySourceRef :one
+SELECT id, seq, organization_id, tenant_id, amount, method, received_at, source, source_ref, recorded_by_staff_user_id, note, created_at FROM payment
+WHERE organization_id = $1 AND source = $2 AND source_ref = $3
+`
+
+type GetPaymentBySourceRefParams struct {
+	OrganizationID uuid.UUID
+	Source         string
+	SourceRef      *string
+}
+
+func (q *Queries) GetPaymentBySourceRef(ctx context.Context, arg GetPaymentBySourceRefParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentBySourceRef, arg.OrganizationID, arg.Source, arg.SourceRef)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.Amount,
+		&i.Method,
+		&i.ReceivedAt,
+		&i.Source,
+		&i.SourceRef,
+		&i.RecordedByStaffUserID,
+		&i.Note,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getStaffRef = `-- name: GetStaffRef :one
+SELECT m.id AS member_id, su.name
+FROM membership m
+JOIN staff_user su ON su.id = m.staff_user_id
+WHERE m.organization_id = $1 AND m.staff_user_id = $2
+`
+
+type GetStaffRefParams struct {
+	OrganizationID uuid.UUID
+	StaffUserID    uuid.UUID
+}
+
+type GetStaffRefRow struct {
+	MemberID uuid.UUID
+	Name     string
+}
+
+// The member id and name of a staff user in the organization.
+func (q *Queries) GetStaffRef(ctx context.Context, arg GetStaffRefParams) (GetStaffRefRow, error) {
+	row := q.db.QueryRow(ctx, getStaffRef, arg.OrganizationID, arg.StaffUserID)
+	var i GetStaffRefRow
+	err := row.Scan(&i.MemberID, &i.Name)
+	return i, err
+}
+
 const getTenantBalance = `-- name: GetTenantBalance :one
 SELECT tenant_id, organization_id, outstanding, oldest_unpaid_due_date, credit FROM tenant_balance
 WHERE organization_id = $1 AND tenant_id = $2
@@ -269,6 +420,56 @@ func (q *Queries) GetTenantBalance(ctx context.Context, arg GetTenantBalancePara
 		&i.Outstanding,
 		&i.OldestUnpaidDueDate,
 		&i.Credit,
+	)
+	return i, err
+}
+
+const insertCorrectionIfNew = `-- name: InsertCorrectionIfNew :one
+INSERT INTO correction (id, organization_id, invoice_id, payment_id, amount_delta, reason,
+                        created_by_staff_user_id, request_id)
+VALUES ($1, $2, $3, $4, $5, $6,
+        $7, $8)
+ON CONFLICT (organization_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
+RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id
+`
+
+type InsertCorrectionIfNewParams struct {
+	ID                   uuid.UUID
+	OrganizationID       uuid.UUID
+	InvoiceID            uuid.NullUUID
+	PaymentID            uuid.NullUUID
+	AmountDelta          int64
+	Reason               string
+	CreatedByStaffUserID uuid.UUID
+	RequestID            uuid.NullUUID
+}
+
+// A correction made from the API, keyed by the client's requestId: one already recorded in the
+// organization under it inserts nothing and returns no row. The not-negative trigger runs before
+// the conflict check, so the caller looks the requestId up first (GetCorrectionByRequestID).
+func (q *Queries) InsertCorrectionIfNew(ctx context.Context, arg InsertCorrectionIfNewParams) (Correction, error) {
+	row := q.db.QueryRow(ctx, insertCorrectionIfNew,
+		arg.ID,
+		arg.OrganizationID,
+		arg.InvoiceID,
+		arg.PaymentID,
+		arg.AmountDelta,
+		arg.Reason,
+		arg.CreatedByStaffUserID,
+		arg.RequestID,
+	)
+	var i Correction
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.OrganizationID,
+		&i.InvoiceID,
+		&i.PaymentID,
+		&i.AmountDelta,
+		&i.Reason,
+		&i.CreatedByStaffUserID,
+		&i.CreatedAt,
+		&i.RequestID,
 	)
 	return i, err
 }
@@ -314,6 +515,64 @@ func (q *Queries) InsertInvoiceIfMissing(ctx context.Context, arg InsertInvoiceI
 	return id, err
 }
 
+const insertPaymentIfNew = `-- name: InsertPaymentIfNew :one
+
+INSERT INTO payment (id, organization_id, tenant_id, amount, method, received_at, source, source_ref,
+                     recorded_by_staff_user_id, note)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10)
+ON CONFLICT (organization_id, source, source_ref) WHERE source_ref IS NOT NULL DO NOTHING
+RETURNING id, seq, organization_id, tenant_id, amount, method, received_at, source, source_ref, recorded_by_staff_user_id, note, created_at
+`
+
+type InsertPaymentIfNewParams struct {
+	ID                    uuid.UUID
+	OrganizationID        uuid.UUID
+	TenantID              uuid.UUID
+	Amount                int64
+	Method                string
+	ReceivedAt            time.Time
+	Source                string
+	SourceRef             *string
+	RecordedByStaffUserID uuid.NullUUID
+	Note                  *string
+}
+
+// Manual payments and corrections (T-052) -----------------------------------------------------
+// A payment with a source_ref already recorded in the organization for the same source inserts
+// nothing and returns no row; the caller then loads it with GetPaymentBySourceRef. A manual
+// payment's source_ref is the client's requestId.
+func (q *Queries) InsertPaymentIfNew(ctx context.Context, arg InsertPaymentIfNewParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, insertPaymentIfNew,
+		arg.ID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.Amount,
+		arg.Method,
+		arg.ReceivedAt,
+		arg.Source,
+		arg.SourceRef,
+		arg.RecordedByStaffUserID,
+		arg.Note,
+	)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.Amount,
+		&i.Method,
+		&i.ReceivedAt,
+		&i.Source,
+		&i.SourceRef,
+		&i.RecordedByStaffUserID,
+		&i.Note,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const leaseHasInvoices = `-- name: LeaseHasInvoices :one
 SELECT EXISTS (
     SELECT 1 FROM invoice WHERE organization_id = $1 AND lease_id = $2
@@ -330,6 +589,282 @@ func (q *Queries) LeaseHasInvoices(ctx context.Context, arg LeaseHasInvoicesPara
 	var has_invoices bool
 	err := row.Scan(&has_invoices)
 	return has_invoices, err
+}
+
+const listAccountAllocations = `-- name: ListAccountAllocations :many
+SELECT a.payment_id, a.invoice_id, sum(a.amount)::bigint AS amount
+FROM payment_allocation a
+JOIN invoice i ON i.organization_id = a.organization_id AND i.id = a.invoice_id
+WHERE a.organization_id = $1 AND a.tenant_id = $2
+GROUP BY a.payment_id, a.invoice_id, i.period, i.seq
+HAVING sum(a.amount) <> 0
+ORDER BY i.period, i.seq, a.payment_id
+`
+
+type ListAccountAllocationsParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListAccountAllocationsRow struct {
+	PaymentID uuid.UUID
+	InvoiceID uuid.UUID
+	Amount    int64
+}
+
+// What each payment of a tenant holds on each invoice now (the sum of its allocation rows),
+// non-zero only, oldest invoice first.
+func (q *Queries) ListAccountAllocations(ctx context.Context, arg ListAccountAllocationsParams) ([]ListAccountAllocationsRow, error) {
+	rows, err := q.db.Query(ctx, listAccountAllocations, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountAllocationsRow
+	for rows.Next() {
+		var i ListAccountAllocationsRow
+		if err := rows.Scan(&i.PaymentID, &i.InvoiceID, &i.Amount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAccountCorrections = `-- name: ListAccountCorrections :many
+SELECT c.id, c.invoice_id, c.payment_id, c.amount_delta, c.reason, c.created_at,
+       m.id AS created_by_member_id, su.name AS created_by_name
+FROM correction c
+JOIN membership m ON m.organization_id = c.organization_id AND m.staff_user_id = c.created_by_staff_user_id
+JOIN staff_user su ON su.id = c.created_by_staff_user_id
+LEFT JOIN invoice i ON i.organization_id = c.organization_id AND i.id = c.invoice_id
+LEFT JOIN payment p ON p.organization_id = c.organization_id AND p.id = c.payment_id
+WHERE c.organization_id = $1 AND (i.tenant_id = $2 OR p.tenant_id = $2)
+ORDER BY c.seq
+`
+
+type ListAccountCorrectionsParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListAccountCorrectionsRow struct {
+	ID                uuid.UUID
+	InvoiceID         uuid.NullUUID
+	PaymentID         uuid.NullUUID
+	AmountDelta       int64
+	Reason            string
+	CreatedAt         time.Time
+	CreatedByMemberID uuid.UUID
+	CreatedByName     string
+}
+
+// Every correction of a tenant's invoices and payments, oldest first, with the member who made
+// it.
+func (q *Queries) ListAccountCorrections(ctx context.Context, arg ListAccountCorrectionsParams) ([]ListAccountCorrectionsRow, error) {
+	rows, err := q.db.Query(ctx, listAccountCorrections, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountCorrectionsRow
+	for rows.Next() {
+		var i ListAccountCorrectionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvoiceID,
+			&i.PaymentID,
+			&i.AmountDelta,
+			&i.Reason,
+			&i.CreatedAt,
+			&i.CreatedByMemberID,
+			&i.CreatedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAccountInvoiceLines = `-- name: ListAccountInvoiceLines :many
+SELECT il.id, il.invoice_id, il.kind, il.label, il.amount
+FROM invoice_line il
+JOIN invoice i ON i.organization_id = il.organization_id AND i.id = il.invoice_id
+WHERE il.organization_id = $1 AND i.tenant_id = $2
+ORDER BY il.seq
+`
+
+type ListAccountInvoiceLinesParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListAccountInvoiceLinesRow struct {
+	ID        uuid.UUID
+	InvoiceID uuid.UUID
+	Kind      string
+	Label     string
+	Amount    int64
+}
+
+// The lines of every invoice of a tenant, in the order they were written.
+func (q *Queries) ListAccountInvoiceLines(ctx context.Context, arg ListAccountInvoiceLinesParams) ([]ListAccountInvoiceLinesRow, error) {
+	rows, err := q.db.Query(ctx, listAccountInvoiceLines, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountInvoiceLinesRow
+	for rows.Next() {
+		var i ListAccountInvoiceLinesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvoiceID,
+			&i.Kind,
+			&i.Label,
+			&i.Amount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAccountInvoices = `-- name: ListAccountInvoices :many
+SELECT b.invoice_id, b.lease_id, u.label AS unit_label, p.name AS property_name,
+       b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status
+FROM invoice_balance b
+JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
+WHERE b.organization_id = $1 AND b.tenant_id = $2
+ORDER BY b.period, b.seq
+`
+
+type ListAccountInvoicesParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListAccountInvoicesRow struct {
+	InvoiceID    uuid.UUID
+	LeaseID      uuid.UUID
+	UnitLabel    string
+	PropertyName string
+	Period       time.Time
+	PeriodEnd    time.Time
+	DueDate      time.Time
+	Amount       int64
+	Billed       int64
+	Paid         int64
+	Outstanding  int64
+	Status       string
+}
+
+// A tenant's invoices with their balances and where they are, oldest period first.
+func (q *Queries) ListAccountInvoices(ctx context.Context, arg ListAccountInvoicesParams) ([]ListAccountInvoicesRow, error) {
+	rows, err := q.db.Query(ctx, listAccountInvoices, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountInvoicesRow
+	for rows.Next() {
+		var i ListAccountInvoicesRow
+		if err := rows.Scan(
+			&i.InvoiceID,
+			&i.LeaseID,
+			&i.UnitLabel,
+			&i.PropertyName,
+			&i.Period,
+			&i.PeriodEnd,
+			&i.DueDate,
+			&i.Amount,
+			&i.Billed,
+			&i.Paid,
+			&i.Outstanding,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAccountPayments = `-- name: ListAccountPayments :many
+SELECT p.id, p.amount,
+       (p.amount + coalesce((SELECT sum(c.amount_delta) FROM correction c WHERE c.payment_id = p.id), 0))::bigint AS net,
+       p.method, p.received_at, p.note, p.created_at,
+       m.id AS recorded_by_member_id, su.name AS recorded_by_name
+FROM payment p
+LEFT JOIN membership m ON m.organization_id = p.organization_id AND m.staff_user_id = p.recorded_by_staff_user_id
+LEFT JOIN staff_user su ON su.id = p.recorded_by_staff_user_id
+WHERE p.organization_id = $1 AND p.tenant_id = $2
+ORDER BY p.received_at, p.seq
+`
+
+type ListAccountPaymentsParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListAccountPaymentsRow struct {
+	ID                 uuid.UUID
+	Amount             int64
+	Net                int64
+	Method             string
+	ReceivedAt         time.Time
+	Note               *string
+	CreatedAt          time.Time
+	RecordedByMemberID uuid.NullUUID
+	RecordedByName     *string
+}
+
+// A tenant's payments with their net amount and the member who recorded each (none for a
+// gateway payment), oldest received first.
+func (q *Queries) ListAccountPayments(ctx context.Context, arg ListAccountPaymentsParams) ([]ListAccountPaymentsRow, error) {
+	rows, err := q.db.Query(ctx, listAccountPayments, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountPaymentsRow
+	for rows.Next() {
+		var i ListAccountPaymentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Amount,
+			&i.Net,
+			&i.Method,
+			&i.ReceivedAt,
+			&i.Note,
+			&i.CreatedAt,
+			&i.RecordedByMemberID,
+			&i.RecordedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveLeaseIDs = `-- name: ListActiveLeaseIDs :many
@@ -664,6 +1199,47 @@ func (q *Queries) ListTenantAllocations(ctx context.Context, arg ListTenantAlloc
 			&i.InvoiceID,
 			&i.Amount,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantLeaseScopes = `-- name: ListTenantLeaseScopes :many
+SELECT l.id, u.property_id, l.collector_staff_user_id
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE l.organization_id = $1 AND l.tenant_id = $2
+ORDER BY l.id
+`
+
+type ListTenantLeaseScopesParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListTenantLeaseScopesRow struct {
+	ID                   uuid.UUID
+	PropertyID           uuid.UUID
+	CollectorStaffUserID uuid.NullUUID
+}
+
+// Every lease of a tenant, active or ended, with its property and collector, for authorizing
+// an action on the tenant's money through each of them.
+func (q *Queries) ListTenantLeaseScopes(ctx context.Context, arg ListTenantLeaseScopesParams) ([]ListTenantLeaseScopesRow, error) {
+	rows, err := q.db.Query(ctx, listTenantLeaseScopes, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTenantLeaseScopesRow
+	for rows.Next() {
+		var i ListTenantLeaseScopesRow
+		if err := rows.Scan(&i.ID, &i.PropertyID, &i.CollectorStaffUserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

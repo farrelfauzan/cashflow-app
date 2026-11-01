@@ -292,6 +292,41 @@ func TestMoneyConstraints(t *testing.T) {
 			code: "23505", constraint: "payment_source_ref_unique",
 		},
 		{
+			name: "a manual payment that names no recorder is refused",
+			build: func(ctx context.Context, q *dbgen.Queries, _ int) error {
+				_, err := q.CreatePayment(ctx, dbgen.CreatePaymentParams{
+					ID: uuid.New(), OrganizationID: w.org.ID, TenantID: r.tenantID, Amount: 700_000, Method: "cash",
+					ReceivedAt: at(2026, 10, 28, 11), Source: "manual",
+				})
+				return err
+			},
+			code: "23514", constraint: "payment_manual_recorded_by",
+		},
+		{
+			name: "a manual payment cannot claim to be QRIS",
+			build: func(ctx context.Context, q *dbgen.Queries, _ int) error {
+				_, err := q.CreatePayment(ctx, dbgen.CreatePaymentParams{
+					ID: uuid.New(), OrganizationID: w.org.ID, TenantID: r.tenantID, Amount: 700_000, Method: "qris",
+					ReceivedAt: at(2026, 10, 28, 11), Source: "manual",
+					RecordedByStaffUserID: uuid.NullUUID{UUID: w.org.Admin.UserID, Valid: true},
+				})
+				return err
+			},
+			code: "23514", constraint: "payment_method_matches_source",
+		},
+		{
+			name: "a QRIS payment cannot be cash",
+			build: func(ctx context.Context, q *dbgen.Queries, _ int) error {
+				ref := "TRX-20261028-0002"
+				_, err := q.CreatePayment(ctx, dbgen.CreatePaymentParams{
+					ID: uuid.New(), OrganizationID: w.org.ID, TenantID: r.tenantID, Amount: 700_000, Method: "cash",
+					ReceivedAt: at(2026, 10, 28, 11), Source: "qris", SourceRef: &ref,
+				})
+				return err
+			},
+			code: "23514", constraint: "payment_method_matches_source",
+		},
+		{
 			name:  "an allocation of a payment to another tenant's invoice is refused",
 			build: allocation(pay, otherInv, r.tenantID),
 			code:  "23503", constraint: "payment_allocation_invoice_id_tenant_id_organization_id_fkey",

@@ -103,7 +103,8 @@ func run() error {
 	az := authz.NewService(st, clk, log)
 	props := property.NewService(st, az, clk)
 	leaseQueue := invoicetask.NewLeaseQueue(invoicetask.NewClient(queueClient), log)
-	tenants := tenant.NewService(st, az, clk, billing.NewService(st, az, clk, log), leaseQueue)
+	billingSvc := billing.NewService(st, az, clk, log)
+	tenants := tenant.NewService(st, az, clk, billingSvc, leaseQueue)
 	imports := tenantimport.NewService(st, az, props, tenants, clk)
 	cookieSecure := cfg.CookieSecure()
 	allowedOrigins := cfg.Origins()
@@ -122,6 +123,7 @@ func run() error {
 		Properties:     props,
 		Tenants:        tenants,
 		Imports:        imports,
+		Billing:        billingSvc,
 		CookieSecure:   cookieSecure,
 		AllowedOrigins: allowedOrigins,
 		DocsSpecPath:   docsSpecPath,

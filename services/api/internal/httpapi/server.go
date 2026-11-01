@@ -17,6 +17,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -44,6 +45,8 @@ type Deps struct {
 	Properties *property.Service
 	Tenants    *tenant.Service
 	Imports    *tenantimport.Service
+	// Billing records payments and corrections and reads a tenant's money account.
+	Billing *billing.Service
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
 	CookieSecure bool
 	// AllowedOrigins are the browser origins allowed to send state-changing requests.
@@ -110,6 +113,9 @@ func New(d Deps) *Server {
 				r.Post("/tenants", s.createTenant)
 				r.Get("/tenants/{tenantID}", s.getTenant)
 				r.Put("/tenants/{tenantID}", s.updateTenant)
+				r.Get("/tenants/{tenantID}/account", s.getTenantAccount)
+				r.Post("/payments", s.recordPayment)
+				r.Post("/corrections", s.createCorrection)
 				r.Post("/leases", s.createLease)
 				r.Put("/leases/{leaseID}", s.updateLease)
 				r.Put("/leases/{leaseID}/planned-end", s.setLeasePlannedEnd)

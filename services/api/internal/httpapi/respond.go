@@ -10,6 +10,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
@@ -28,6 +29,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var termErr *tenant.TermError
 	var invoiced *tenant.InvoicedError
 	var invoicedPrice *property.InvoicedPriceError
+	var billingInput *billing.InputError
+	var billingMissing *billing.NotFoundError
 	switch {
 	case errors.As(err, &input):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", input.Message, input.Field)
@@ -35,6 +38,16 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", propertyInput.Message, propertyInput.Field)
 	case errors.As(err, &tenantInput):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", tenantInput.Message, tenantInput.Field)
+	case errors.As(err, &billingInput):
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", billingInput.Message, billingInput.Field)
+	case errors.As(err, &billingMissing):
+		s.writeErrorField(w, http.StatusNotFound, "not_found", "Tidak ditemukan.", billingMissing.Field)
+	case errors.Is(err, billing.ErrRequestIDReused):
+		s.writeErrorField(w, http.StatusConflict, "request_id_reused",
+			"Permintaan ini sudah dipakai untuk data lain. Muat ulang halaman lalu coba lagi.", "requestId")
+	case errors.Is(err, billing.ErrCorrectionBelowZero):
+		s.writeErrorField(w, http.StatusConflict, "correction_below_zero",
+			"Koreksi ini membuat nominal di bawah nol.", "amountDelta")
 	case errors.As(err, &fileErr):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", fileErr.Message, "file")
 	case errors.Is(err, auth.ErrInvalidPhone):

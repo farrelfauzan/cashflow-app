@@ -42,6 +42,7 @@ type Correction struct {
 	Reason               string
 	CreatedByStaffUserID uuid.UUID
 	CreatedAt            time.Time
+	RequestID            uuid.NullUUID
 }
 
 type Invoice struct {
