@@ -8,11 +8,11 @@
 //
 // WhatsApp lets a business send free-form text only inside the 24-hour session that starts
 // when the person last wrote to the sender; outside it, only approved templates (Twilio's
-// Content API) get through, and this adapter does not send those yet. Twilio does not refuse a
-// free-form message outside the window, or to a phone that has not joined the sandbox: it
-// answers 201 queued and the message fails later (error 63016 or 63015), reported only through
-// status callbacks, which arrive with slice 5. Until then a send can look successful and never
-// arrive.
+// Content API) get through, and this adapter does not send those yet. Twilio may refuse such a
+// message at once (error 21654, "ContentSid Required"), which maps to ErrNotConnected, or answer
+// 201 queued and fail it later (error 63016, or 63015 for a phone that has not joined the
+// sandbox), reported only through status callbacks, which arrive with slice 5. Until then such a
+// send looks successful and never arrives.
 //
 // There are no native buttons here, so messages are rendered to plain text with links
 // (messaging.Render), exactly as GOWA sends them.
@@ -165,11 +165,18 @@ func sendError(status, code int) error {
 	// 20003: wrong Account SID or Auth Token. 63007: no WhatsApp channel for the From address
 	// (sender not enabled, or not the sandbox number). 21606: From is not valid for this
 	// account. An operator must fix the credentials or the sender.
-	case code == 20003 || code == 63007 || code == 21606:
+	// 21654: Twilio refused the free-form Body and wants a Content template (ContentSid),
+	// which WhatsApp requires outside the recipient's 24-hour window. 63016: the same rule
+	// when Twilio reports it at once. We send no templates yet, so only an operator (or, in the
+	// sandbox, the person writing to the sandbox number first) can fix it.
+	case code == 20003 || code == 63007 || code == 21606 || code == 21654 || code == 63016:
 		return fmt.Errorf("%w (%s)", messaging.ErrNotConnected, detail)
 	case status == http.StatusTooManyRequests:
 		return fmt.Errorf("%w (%s)", messaging.ErrRateLimited, detail)
-	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+	// Any other refusal, or Twilio failing on its side: retrying the same request will not
+	// help soon and someone has to look at the logged code, so callers treat it like a
+	// provider that is not usable (a 503, logged as an error) instead of an unexplained 500.
+	case status >= 400:
 		return fmt.Errorf("%w (%s)", messaging.ErrNotConnected, detail)
 	default:
 		return fmt.Errorf("twilio: send failed (%s)", detail)

@@ -171,17 +171,22 @@ the phone's last message to the sandbox number. What it cannot do: reach a phone
 joined, or send outside that 24-hour window. Approved templates, which WhatsApp needs outside
 the window, belong to a verified sender later.
 
-When either rule bites, Twilio still accepts the message and fails it a moment later. The API
-cannot see that yet (status callbacks come with slice 5), so it answers that the code was sent,
-and nothing arrives. Fix it from the phone: send any message to the sandbox number (or
-`join <keyword>` again if the phone left the sandbox), then request a new code.
+When either rule bites, Twilio does one of two things. It may refuse the message at once with
+`code 21654` ("ContentSid Required": WhatsApp wants an approved template, and we send plain
+text); the code request then answers 503 `whatsapp_unavailable` and the log names the code. Or
+it accepts the message and fails it a moment later; the API cannot see that yet (status
+callbacks come with slice 5), so it answers that the code was sent, and nothing arrives. Either
+way, fix it from the phone: send any message to the sandbox number (or `join <keyword>` again
+if the phone left the sandbox), then request a new code within 24 hours.
 
 Wrong credentials or a sender Twilio does not accept fail at once, like an unlinked GOWA phone:
 a code request answers 503 `whatsapp_unavailable` and the log has `whatsapp unavailable` naming
 `the WhatsApp session is not connected`; a member invitation answers 503 "WhatsApp gagal
-mengirim". The log carries only Twilio's HTTP status and error code (for example `code 20003`
-for a wrong Account SID or Auth Token, `code 63007` for a sender without WhatsApp), never the
-phone number or the message.
+mengirim". Any other refusal from Twilio, and Twilio failing on its side, answer the same 503
+instead of a 500. The log carries only Twilio's HTTP status and error code (for example
+`code 20003` for a wrong Account SID or Auth Token, `code 63007` for a sender without
+WhatsApp), never the phone number or the message; look the code up at
+https://www.twilio.com/docs/api/errors.
 
 ## Everyday commands
 
