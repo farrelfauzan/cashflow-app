@@ -1,10 +1,12 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useState } from "react";
+import { Controller } from "react-hook-form";
 
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,10 +15,14 @@ import {
   useRequestLoginCode,
   useVerifyLoginCode,
 } from "@/lib/api/generated/auth/auth";
-import { isCompleteLoginCode, loginCodeDigits } from "@/lib/auth/login-code";
+import { loginCodeDigits } from "@/lib/auth/login-code";
 import { clearQueryCache } from "@/lib/query/query-client";
 
-import { CODE_FORMAT_MESSAGE, CODE_RESENT_MESSAGE } from "./utils";
+import {
+  CODE_RESENT_MESSAGE,
+  LOGIN_CODE_API_FIELDS,
+  loginCodeSchema,
+} from "./utils";
 
 type LoginCodeStepProps = {
   // As the user typed it; the API normalizes it.
@@ -37,10 +43,13 @@ export function LoginCodeStep({
   const inputId = `${id}-code`;
   const helpId = `${id}-code-help`;
   const errorId = `${id}-code-error`;
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [code, setCode] = useState("");
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const { form, showApiError, alert } = useApiForm({
+    schema: loginCodeSchema,
+    defaultValues: { code: "" },
+    apiFields: LOGIN_CODE_API_FIELDS,
+  });
+  const { clearErrors, setError, setFocus, setValue } = form;
+  const fieldError = form.formState.errors.code?.message;
   const [status, setStatus] = useState("");
   const verify = useVerifyLoginCode();
   const resend = useRequestLoginCode();
@@ -51,65 +60,59 @@ export function LoginCodeStep({
   const typedPhone = phone.trim();
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    setFocus("code");
+  }, [setFocus]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (busy) return;
-
-    setFormError(null);
-    setStatus("");
-    if (!isCompleteLoginCode(code)) {
-      setFieldError(CODE_FORMAT_MESSAGE);
-      inputRef.current?.focus();
-      return;
-    }
-    setFieldError(null);
-
-    verify.mutate(
-      { data: { phone: typedPhone, code } },
-      {
-        onSuccess: () => {
-          clearQueryCache();
-          window.location.assign(redirectTo);
+  // Any submit, checked or not, clears "Kode baru sudah dikirim.".
+  const submit = form.handleSubmit(
+    (input) => {
+      if (busy) return;
+      setStatus("");
+      verify.mutate(
+        { data: { phone: typedPhone, code: input.code } },
+        {
+          onSuccess: () => {
+            clearQueryCache();
+            window.location.assign(redirectTo);
+          },
+          onError: (error) => {
+            showApiError(error);
+            // A wrong code is selected, so typing the next one replaces it.
+            if (form.getFieldState("code").error !== undefined) {
+              setFocus("code", { shouldSelect: true });
+            }
+          },
         },
-        onError: (error) => {
-          const { field, message } = toFormError(error, ["code"]);
-          if (field === "code") {
-            setFieldError(message);
-            inputRef.current?.focus();
-            inputRef.current?.select();
-          } else {
-            setFormError(message);
-          }
-        },
-      },
-    );
-  }
+      );
+    },
+    () => setStatus(""),
+  );
 
   function handleResend() {
     if (busy) return;
 
-    setFormError(null);
-    setFieldError(null);
+    clearErrors();
     setStatus("");
     resend.mutate(
       { data: { phone: typedPhone } },
       {
         onSuccess: () => {
-          setCode("");
+          setValue("code", "");
           setStatus(CODE_RESENT_MESSAGE);
-          inputRef.current?.focus();
+          setFocus("code");
         },
         // This step has no phone field, so every error goes to the alert.
-        onError: (error) => setFormError(toFormError(error, []).message),
+        onError: (error) =>
+          setError("root.server", {
+            type: "server",
+            message: toFormError(error, []).message,
+          }),
       },
     );
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-6">
+    <form noValidate onSubmit={submit} className="flex flex-col gap-6">
       <Button
         type="button"
         variant="link"
@@ -135,7 +138,7 @@ export function LoginCodeStep({
         </p>
       </div>
 
-      {formError !== null && <FormAlert message={formError} />}
+      {alert !== undefined && <FormAlert message={alert} />}
 
       <div className="flex flex-col gap-2">
         <Label
@@ -144,26 +147,34 @@ export function LoginCodeStep({
         >
           Kode dari WhatsApp
         </Label>
-        <Input
-          ref={inputRef}
-          id={inputId}
+        {/* Controlled, so the field keeps digits only, whatever is typed or pasted. */}
+        <Controller
+          control={form.control}
           name="code"
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="6 angka"
-          value={code}
-          onChange={(event) => {
-            setCode(loginCodeDigits(event.target.value));
-            setFieldError(null);
-          }}
-          aria-invalid={fieldError !== null}
-          aria-describedby={
-            fieldError !== null ? `${errorId} ${helpId}` : helpId
-          }
-          className="h-16 rounded-xl border-[1.5px] bg-card px-4 text-center text-[28px] font-semibold tracking-[0.35em] placeholder:tracking-normal aria-invalid:border-2 md:h-[68px] md:px-[18px] md:text-[30px]"
+          render={({ field }) => (
+            <Input
+              ref={field.ref}
+              id={inputId}
+              name={field.name}
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="6 angka"
+              value={field.value}
+              onChange={(event) => {
+                field.onChange(loginCodeDigits(event.target.value));
+                clearErrors("code");
+              }}
+              onBlur={field.onBlur}
+              aria-invalid={fieldError !== undefined}
+              aria-describedby={
+                fieldError !== undefined ? `${errorId} ${helpId}` : helpId
+              }
+              className="h-16 rounded-xl border-[1.5px] bg-card px-4 text-center text-[28px] font-semibold tracking-[0.35em] placeholder:tracking-normal aria-invalid:border-2 md:h-[68px] md:px-[18px] md:text-[30px]"
+            />
+          )}
         />
-        {fieldError !== null && (
+        {fieldError !== undefined && (
           <FieldError id={errorId} message={fieldError} />
         )}
         <p

@@ -26,9 +26,11 @@ export function LoginFlow({ redirectTo, tenantNote }: LoginFlowProps) {
         {step === "phone" ? (
           <LoginPhoneStep
             phone={phone}
-            onPhoneChange={setPhone}
             focusOnMount={returnedToPhone}
-            onSent={() => setStep("code")}
+            onSent={(sent) => {
+              setPhone(sent);
+              setStep("code");
+            }}
           />
         ) : (
           <LoginCodeStep
