@@ -65,7 +65,7 @@ const LATE_REPORT_MS = 1_000;
 
 // Waits for the screen's own requests to finish, then for Next.js's late report, before the
 // errors are read. A request still open after SETTLE_MAX_MS does not fail the test (this spec
-// checks for errors, not speed); it is recorded on the report so a slow request is visible.
+// checks for errors, not speed); it is recorded on the report and as a warning in the CI log, so a slow request stays visible.
 async function settle(page: Page) {
   const inFlight = inFlightByPage.get(page);
   if (inFlight === undefined) throw new Error("requests are not tracked");
@@ -73,10 +73,16 @@ async function settle(page: Page) {
   let quietSince = Date.now();
   while (Date.now() - quietSince < QUIET_MS) {
     if (Date.now() > deadline) {
+      const urls = [...inFlight].map((r) => r.url()).join(", ");
       test.info().annotations.push({
         type: "still loading after 30 s",
-        description: [...inFlight].map((r) => r.url()).join(", "),
+        description: urls,
       });
+      // A workflow command, so a green CI run shows it too (the report is uploaded only on a
+      // failure). Playwright passes a test's stdout through, the github reporter included.
+      console.log(
+        `::warning title=dev-smoke::${test.info().title}: still loading after 30 s: ${urls}`,
+      );
       break;
     }
     if (inFlight.size > 0) quietSince = Date.now();
