@@ -3,6 +3,7 @@
 //
 // Adapters live in subpackages:
 //   - gowa: the launch provider, a self-hosted GOWA server linked to the platform number.
+//   - twilio: Twilio's Messages API; today the Twilio sandbox, in development only.
 //   - devlog: local development, writes messages to the log.
 //   - messagingtest: an in-memory fake for tests.
 //

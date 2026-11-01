@@ -1,0 +1,185 @@
+// Package twilio sends WhatsApp messages through Twilio's Programmable Messaging API
+// (POST /2010-04-01/Accounts/{AccountSid}/Messages.json) as free-form text.
+//
+// Today it sends from the Twilio sandbox for WhatsApp (+14155238886), in development only. The
+// sandbox reaches only phones that sent "join <keyword>" to the sandbox number, and Twilio
+// shares that number with every sandbox user. A verified Twilio WhatsApp sender of our own would
+// lift the join step but not the next rule.
+//
+// WhatsApp lets a business send free-form text only inside the 24-hour session that starts
+// when the person last wrote to the sender; outside it, only approved templates (Twilio's
+// Content API) get through, and this adapter does not send those yet. Twilio does not refuse a
+// free-form message outside the window, or to a phone that has not joined the sandbox: it
+// answers 201 queued and the message fails later (error 63016 or 63015), reported only through
+// status callbacks, which arrive with slice 5. Until then a send can look successful and never
+// arrive.
+//
+// There are no native buttons here, so messages are rendered to plain text with links
+// (messaging.Render), exactly as GOWA sends them.
+package twilio
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
+)
+
+const (
+	defaultBaseURL   = "https://api.twilio.com"
+	defaultTimeout   = 15 * time.Second
+	maxResponseBytes = 1 << 20
+)
+
+var accountSIDPattern = regexp.MustCompile(`^AC[0-9a-fA-F]{32}$`)
+
+// Config holds the Twilio account and the WhatsApp sender.
+type Config struct {
+	AccountSID string // AC followed by 32 hex characters
+	AuthToken  string
+	From       string // the sender in E.164, for example +14155238886 (the sandbox)
+	// BaseURL overrides https://api.twilio.com. Tests only.
+	BaseURL string
+	Timeout time.Duration
+}
+
+// Client is a messaging.Provider backed by Twilio.
+type Client struct {
+	endpoint   string
+	accountSID string
+	authToken  string
+	from       string
+	http       *http.Client
+}
+
+var _ messaging.Provider = (*Client)(nil)
+
+// New returns a client for the Twilio account in cfg.
+func New(cfg Config) (*Client, error) {
+	if !accountSIDPattern.MatchString(cfg.AccountSID) {
+		return nil, errors.New("twilio: account SID must be AC followed by 32 hex characters")
+	}
+	if cfg.AuthToken == "" {
+		return nil, errors.New("twilio: auth token is required")
+	}
+	if !isE164(cfg.From) {
+		return nil, fmt.Errorf("twilio: sender must be an E.164 number such as +14155238886, got %q", cfg.From)
+	}
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = defaultBaseURL
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+		return nil, fmt.Errorf("twilio: base URL must be an absolute http(s) URL, got %q", baseURL)
+	}
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+	return &Client{
+		endpoint:   base.JoinPath("2010-04-01", "Accounts", cfg.AccountSID, "Messages.json").String(),
+		accountSID: cfg.AccountSID,
+		authToken:  cfg.AuthToken,
+		from:       cfg.From,
+		http:       &http.Client{Timeout: timeout},
+	}, nil
+}
+
+// apiResponse holds the fields we read from both a created message and an error body.
+type apiResponse struct {
+	SID  string `json:"sid"`
+	Code int    `json:"code"`
+}
+
+// SendTemplate renders the message to text and creates a Twilio message with it.
+func (c *Client) SendTemplate(ctx context.Context, m messaging.Message) (messaging.Receipt, error) {
+	text, err := messaging.Render(m)
+	if err != nil {
+		return messaging.Receipt{}, err
+	}
+	if !isE164(m.To) {
+		// The number stays out of the error: callers log it.
+		return messaging.Receipt{}, errors.New("twilio: recipient must be an E.164 number")
+	}
+	form := url.Values{
+		"To":   {"whatsapp:" + m.To},
+		"From": {"whatsapp:" + c.from},
+		"Body": {text},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return messaging.Receipt{}, fmt.Errorf("twilio: building request: %w", err)
+	}
+	req.SetBasicAuth(c.accountSID, c.authToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return messaging.Receipt{}, fmt.Errorf("twilio: calling API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return messaging.Receipt{}, fmt.Errorf("twilio: reading response: %w", err)
+	}
+	var res apiResponse
+	// A failed decode leaves res empty; the status code still decides below. Errors from a
+	// proxy or load balancer in front of Twilio are not JSON.
+	_ = json.Unmarshal(data, &res)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if res.SID == "" {
+			return messaging.Receipt{}, fmt.Errorf("twilio: success response without a message sid (status %d)", resp.StatusCode)
+		}
+		return messaging.Receipt{ProviderMessageID: res.SID}, nil
+	}
+	return messaging.Receipt{}, sendError(resp.StatusCode, res.Code)
+}
+
+// sendError maps a failed response to the shared messaging errors. It reports only the HTTP
+// status and Twilio's numeric error code: never Twilio's message or detail text, which can quote
+// the recipient's number, and never our message text, which can hold a login code.
+func sendError(status, code int) error {
+	detail := fmt.Sprintf("status %d, code %d", status, code)
+	switch {
+	// 20429: too many requests. 63018: the sender's WhatsApp rate limit.
+	case code == 20429 || code == 63018:
+		return fmt.Errorf("%w (%s)", messaging.ErrRateLimited, detail)
+	// 21211: invalid To. 21614: not a mobile number. 63003: invalid destination.
+	// 21610: the recipient replied STOP. 63015: a sandbox recipient that has not joined; in
+	// practice Twilio usually reports this later, asynchronously, after answering 201.
+	case code == 21211 || code == 21614 || code == 63003 || code == 21610 || code == 63015:
+		return fmt.Errorf("%w (%s)", messaging.ErrUndeliverable, detail)
+	// 20003: wrong Account SID or Auth Token. 63007: no WhatsApp channel for the From address
+	// (sender not enabled, or not the sandbox number). 21606: From is not valid for this
+	// account. An operator must fix the credentials or the sender.
+	case code == 20003 || code == 63007 || code == 21606:
+		return fmt.Errorf("%w (%s)", messaging.ErrNotConnected, detail)
+	case status == http.StatusTooManyRequests:
+		return fmt.Errorf("%w (%s)", messaging.ErrRateLimited, detail)
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return fmt.Errorf("%w (%s)", messaging.ErrNotConnected, detail)
+	default:
+		return fmt.Errorf("twilio: send failed (%s)", detail)
+	}
+}
+
+// isE164 reports whether s is a + followed by 8 to 15 digits, the same rule GOWA applies to
+// recipients plus E.164's length limit.
+func isE164(s string) bool {
+	digits, ok := strings.CutPrefix(s, "+")
+	return ok && len(digits) >= 8 && len(digits) <= 15 &&
+		strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) == -1
+}
