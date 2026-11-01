@@ -481,7 +481,8 @@ func TestMoneyIsolation(t *testing.T) {
 			t.Run(table, func(t *testing.T) {
 				// Organization A's scope, writing rows that name organization B.
 				err := a.inTx(func(ctx context.Context, _ pgx.Tx, q *dbgen.Queries) error { return inserts[table](ctx, q) })
-				requireCode(t, err, "42501")
+				pgErr := requireCode(t, err, "42501")
+				require.Contains(t, pgErr.Message, "row-level security")
 			})
 		}
 	})
