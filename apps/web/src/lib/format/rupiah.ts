@@ -20,6 +20,20 @@ export function formatRupiah(amount: number): string {
   return amount < 0 ? `-Rp${grouped}` : `Rp${grouped}`;
 }
 
+/**
+ * Formats a signed change of integer rupiah, such as a correction, always with its sign:
+ * `+Rp100.000` and `−Rp100.000` (a true minus sign, U+2212, which screen readers read as
+ * "minus"). Zero has no sign: `Rp0`.
+ *
+ * @throws RangeError when `amount` is not a safe integer.
+ */
+export function formatSignedRupiah(amount: number): string {
+  const unsigned = formatRupiah(Math.abs(amount));
+  if (amount > 0) return `+${unsigned}`;
+  if (amount < 0) return `\u2212${unsigned}`;
+  return unsigned;
+}
+
 // The same rule as the API's CSV import (internal/tenantimport/parse.go): an explicit "no cents"
 // tail is dropped, and what remains is plain digits or digits with a dot between every group of
 // three.

@@ -4,6 +4,8 @@ import {
   formatDate,
   formatDateTime,
   formatDayMonth,
+  formatMonth,
+  formatMonthYear,
   formatTimestampDate,
   jakartaToday,
 } from "./date";
@@ -178,5 +180,43 @@ describe("jakartaToday", () => {
 
   it("throws on an invalid Date", () => {
     expect(() => jakartaToday(new Date(Number.NaN))).toThrow(RangeError);
+  });
+});
+
+describe("formatMonthYear", () => {
+  it.each([
+    { input: "2026-11-10", want: "November 2026" },
+    { input: "2026-01-01", want: "Januari 2026" },
+    { input: "2026-12-31", want: "Desember 2026" },
+    { input: "2027-05-15", want: "Mei 2027" },
+    { input: "2026-08-01", want: "Agustus 2026" },
+  ])(
+    "formats $input as $want without shifting the month",
+    ({ input, want }) => {
+      expect(formatMonthYear(input)).toBe(want);
+    },
+  );
+
+  it.each([
+    { name: "an empty string", input: "" },
+    { name: "a timestamp", input: "2026-10-25T00:00:00Z" },
+    { name: "a date that does not exist", input: "2026-02-30" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatMonthYear(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatMonth", () => {
+  it.each([
+    { input: "2026-10-10", want: "Oktober" },
+    { input: "2026-02-28", want: "Februari" },
+    { input: "2026-03-01", want: "Maret" },
+    { input: "2026-12-31", want: "Desember" },
+  ])("formats $input as $want", ({ input, want }) => {
+    expect(formatMonth(input)).toBe(want);
+  });
+
+  it("throws on a date that is not YYYY-MM-DD", () => {
+    expect(() => formatMonth("10-2026")).toThrow(RangeError);
   });
 });

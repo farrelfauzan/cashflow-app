@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatRupiah, parseRupiahInput } from "./rupiah";
+import { formatRupiah, formatSignedRupiah, parseRupiahInput } from "./rupiah";
 
 describe("formatRupiah", () => {
   it.each([
@@ -31,6 +31,30 @@ describe("formatRupiah", () => {
     { name: "an unsafe integer", amount: Number.MAX_SAFE_INTEGER + 1 },
   ])("throws on $name", ({ amount }) => {
     expect(() => formatRupiah(amount)).toThrow(RangeError);
+  });
+});
+
+describe("formatSignedRupiah", () => {
+  it.each([
+    { name: "a decrease", amount: -100_000, want: "\u2212Rp100.000" },
+    { name: "an increase", amount: 50_000, want: "+Rp50.000" },
+    { name: "zero", amount: 0, want: "Rp0" },
+    { name: "negative zero", amount: -0, want: "Rp0" },
+    { name: "a large decrease", amount: -1_250_000, want: "\u2212Rp1.250.000" },
+  ])("formats $name", ({ amount, want }) => {
+    expect(formatSignedRupiah(amount)).toBe(want);
+  });
+
+  it("uses the minus sign, not a hyphen", () => {
+    expect(formatSignedRupiah(-1)).toBe("\u2212Rp1");
+    expect(formatSignedRupiah(-1)).not.toContain("-");
+  });
+
+  it.each([
+    { name: "a fraction", amount: -1250.5 },
+    { name: "NaN", amount: Number.NaN },
+  ])("throws on $name", ({ amount }) => {
+    expect(() => formatSignedRupiah(amount)).toThrow(RangeError);
   });
 });
 
