@@ -1,21 +1,23 @@
 // Package twilio sends WhatsApp messages through Twilio's Programmable Messaging API
-// (POST /2010-04-01/Accounts/{AccountSid}/Messages.json) as free-form text.
+// (POST /2010-04-01/Accounts/{AccountSid}/Messages.json).
 //
-// Today it sends from the Twilio sandbox for WhatsApp (+14155238886), in development only. The
-// sandbox reaches only phones that sent "join <keyword>" to the sandbox number, and Twilio
-// shares that number with every sandbox user. A verified Twilio WhatsApp sender of our own would
+// Today it sends from a Twilio sandbox for WhatsApp, in development only. The sandbox number is
+// shown on the console's sandbox page and can differ per account. The sandbox reaches only
+// phones that sent "join <keyword>" to it. A verified Twilio WhatsApp sender of our own would
 // lift the join step but not the next rule.
 //
 // WhatsApp lets a business send free-form text only inside the 24-hour session that starts
-// when the person last wrote to the sender; outside it, only approved templates (Twilio's
-// Content API) get through, and this adapter does not send those yet. Twilio may refuse such a
-// message at once (error 21654, "ContentSid Required"), which maps to ErrNotConnected, or answer
-// 201 queued and fail it later (error 63016, or 63015 for a phone that has not joined the
-// sandbox), reported only through status callbacks, which arrive with slice 5. Until then such a
-// send looks successful and never arrives.
+// when the person last wrote to the sender; outside it, only approved templates get through.
+// Twilio may also insist on a Content template (error 21654, "ContentSid Required"). So a
+// message template can be mapped to a Twilio Content template (Config.ContentSIDs): it is then
+// sent as ContentSid with ContentVariables numbered in the template's parameter order, then its
+// button links. Any other template is sent as text rendered by messaging.Render, links included,
+// exactly as GOWA sends it.
 //
-// There are no native buttons here, so messages are rendered to plain text with links
-// (messaging.Render), exactly as GOWA sends them.
+// Twilio refuses some sends at once (21654 maps to ErrNotConnected) and fails others later
+// (63016 outside the window, 63015 for a phone that has not joined the sandbox), reported only
+// through status callbacks, which arrive with slice 5. Until then such a send looks successful
+// and never arrives.
 package twilio
 
 import (
@@ -24,9 +26,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,13 +43,20 @@ const (
 	maxResponseBytes = 1 << 20
 )
 
-var accountSIDPattern = regexp.MustCompile(`^AC[0-9a-fA-F]{32}$`)
+var (
+	accountSIDPattern = regexp.MustCompile(`^AC[0-9a-fA-F]{32}$`)
+	contentSIDPattern = regexp.MustCompile(`^HX[0-9a-fA-F]{32}$`)
+)
 
 // Config holds the Twilio account and the WhatsApp sender.
 type Config struct {
 	AccountSID string // AC followed by 32 hex characters
 	AuthToken  string
-	From       string // the sender in E.164, for example +14155238886 (the sandbox)
+	From       string // the sender in E.164, as the Twilio console shows it
+	// ContentSIDs maps a template name (messaging.TemplateLoginCode, ...) to the Content
+	// template Twilio sends for it (HX followed by 32 hex characters). A template listed here
+	// is sent as ContentSid and ContentVariables; any other template is sent as rendered text.
+	ContentSIDs map[string]string
 	// BaseURL overrides https://api.twilio.com. Tests only.
 	BaseURL string
 	Timeout time.Duration
@@ -53,11 +64,12 @@ type Config struct {
 
 // Client is a messaging.Provider backed by Twilio.
 type Client struct {
-	endpoint   string
-	accountSID string
-	authToken  string
-	from       string
-	http       *http.Client
+	endpoint    string
+	accountSID  string
+	authToken   string
+	from        string
+	contentSIDs map[string]string
+	http        *http.Client
 }
 
 var _ messaging.Provider = (*Client)(nil)
@@ -73,6 +85,14 @@ func New(cfg Config) (*Client, error) {
 	if !isE164(cfg.From) {
 		return nil, fmt.Errorf("twilio: sender must be an E.164 number such as +14155238886, got %q", cfg.From)
 	}
+	for name, sid := range cfg.ContentSIDs {
+		if _, ok := messaging.Lookup(name); !ok {
+			return nil, fmt.Errorf("twilio: content template for unknown message template %q", name)
+		}
+		if !contentSIDPattern.MatchString(sid) {
+			return nil, fmt.Errorf("twilio: content SID for %s must be HX followed by 32 hex characters", name)
+		}
+	}
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = defaultBaseURL
@@ -86,11 +106,12 @@ func New(cfg Config) (*Client, error) {
 		timeout = defaultTimeout
 	}
 	return &Client{
-		endpoint:   base.JoinPath("2010-04-01", "Accounts", cfg.AccountSID, "Messages.json").String(),
-		accountSID: cfg.AccountSID,
-		authToken:  cfg.AuthToken,
-		from:       cfg.From,
-		http:       &http.Client{Timeout: timeout},
+		endpoint:    base.JoinPath("2010-04-01", "Accounts", cfg.AccountSID, "Messages.json").String(),
+		accountSID:  cfg.AccountSID,
+		authToken:   cfg.AuthToken,
+		from:        cfg.From,
+		contentSIDs: maps.Clone(cfg.ContentSIDs),
+		http:        &http.Client{Timeout: timeout},
 	}, nil
 }
 
@@ -100,8 +121,11 @@ type apiResponse struct {
 	Code int    `json:"code"`
 }
 
-// SendTemplate renders the message to text and creates a Twilio message with it.
+// SendTemplate creates a Twilio message: the Content template configured for m.Template, or
+// else the rendered text.
 func (c *Client) SendTemplate(ctx context.Context, m messaging.Message) (messaging.Receipt, error) {
+	// Render also checks the parameters and buttons, so a template sent by ContentSid obeys the
+	// same rules as one sent as text.
 	text, err := messaging.Render(m)
 	if err != nil {
 		return messaging.Receipt{}, err
@@ -113,7 +137,18 @@ func (c *Client) SendTemplate(ctx context.Context, m messaging.Message) (messagi
 	form := url.Values{
 		"To":   {"whatsapp:" + m.To},
 		"From": {"whatsapp:" + c.from},
-		"Body": {text},
+	}
+	if sid, ok := c.contentSIDs[m.Template]; ok {
+		vars, err := contentVariables(m)
+		if err != nil {
+			return messaging.Receipt{}, err
+		}
+		form.Set("ContentSid", sid)
+		if vars != "" {
+			form.Set("ContentVariables", vars)
+		}
+	} else {
+		form.Set("Body", text)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, strings.NewReader(form.Encode()))
@@ -146,6 +181,35 @@ func (c *Client) SendTemplate(ctx context.Context, m messaging.Message) (messagi
 		return messaging.Receipt{ProviderMessageID: res.SID}, nil
 	}
 	return messaging.Receipt{}, sendError(resp.StatusCode, res.Code)
+}
+
+// contentVariables numbers a message's values the way a Content template reads them: the
+// template's parameters in their registered order ({{1}}, {{2}}, ...), then each button's link.
+// It returns "" when there is nothing to fill.
+func contentVariables(m messaging.Message) (string, error) {
+	t, ok := messaging.Lookup(m.Template)
+	if !ok {
+		return "", fmt.Errorf("twilio: unknown template %q", m.Template)
+	}
+	values := make([]string, 0, len(t.Params)+len(m.Buttons))
+	for _, p := range t.Params {
+		values = append(values, m.Params[p])
+	}
+	for _, b := range m.Buttons {
+		values = append(values, b.URL)
+	}
+	if len(values) == 0 {
+		return "", nil
+	}
+	vars := make(map[string]string, len(values))
+	for i, v := range values {
+		vars[strconv.Itoa(i+1)] = v
+	}
+	data, err := json.Marshal(vars)
+	if err != nil {
+		return "", fmt.Errorf("twilio: encoding content variables for %s: %w", m.Template, err)
+	}
+	return string(data), nil
 }
 
 // sendError maps a failed response to the shared messaging errors. It reports only the HTTP

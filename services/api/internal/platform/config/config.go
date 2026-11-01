@@ -78,10 +78,35 @@ type Twilio struct {
 	AccountSID   string `env:"ACCOUNT_SID"`   // TWILIO_ACCOUNT_SID, AC followed by 32 hex characters
 	AuthToken    string `env:"AUTH_TOKEN"`    // TWILIO_AUTH_TOKEN
 	WhatsAppFrom string `env:"WHATSAPP_FROM"` // TWILIO_WHATSAPP_FROM, the sender in E.164
+	// ContentSIDs is TWILIO_CONTENT_SIDS: optional comma-separated template=ContentSid pairs,
+	// for example "login_code=HX...". The Twilio adapter checks the names and SIDs.
+	ContentSIDs string `env:"CONTENT_SIDS"`
 }
 
-// TwilioSandboxNumber is the Twilio sandbox for WhatsApp, shared by every Twilio account.
+// TwilioSandboxNumber is Twilio's long-standing shared sandbox number for WhatsApp. A console
+// can show a different sandbox number for an account; only this one is recognised and refused
+// outside development.
 const TwilioSandboxNumber = "+14155238886"
+
+// ContentSIDMap parses ContentSIDs into template name -> Content SID.
+func (t Twilio) ContentSIDMap() (map[string]string, error) {
+	out := map[string]string{}
+	if strings.TrimSpace(t.ContentSIDs) == "" {
+		return out, nil
+	}
+	for pair := range strings.SplitSeq(t.ContentSIDs, ",") {
+		name, sid, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		name, sid = strings.TrimSpace(name), strings.TrimSpace(sid)
+		if !ok || name == "" || sid == "" {
+			return nil, errors.New("TWILIO_CONTENT_SIDS must be template=ContentSid pairs separated by commas, such as login_code=HX followed by 32 hex characters")
+		}
+		if _, dup := out[name]; dup {
+			return nil, fmt.Errorf("TWILIO_CONTENT_SIDS names %s twice", name)
+		}
+		out[name] = sid
+	}
+	return out, nil
+}
 
 var (
 	twilioAccountSID = regexp.MustCompile(`^AC[0-9a-fA-F]{32}$`)
@@ -100,6 +125,9 @@ func (t Twilio) validate(env string) error {
 	}
 	if t.WhatsAppFrom == TwilioSandboxNumber && env != "development" {
 		return fmt.Errorf("TWILIO_WHATSAPP_FROM is the Twilio sandbox, and the Twilio sandbox is development only; use a verified sender in %s", env)
+	}
+	if _, err := t.ContentSIDMap(); err != nil {
+		return err
 	}
 	return nil
 }

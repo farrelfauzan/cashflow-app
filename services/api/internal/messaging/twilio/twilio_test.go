@@ -27,6 +27,8 @@ var (
 	accountSID = "AC" + fakeHex
 	messageSID = "SM" + fakeHex
 	mediaSID   = "MM" + fakeHex
+	loginHX    = "HX" + fakeHex
+	inviteHX   = "HX" + strings.Repeat("fedcba9876543210", 2)
 )
 
 // Placeholder credentials and numbers: none of them is a real account or phone.
@@ -120,6 +122,100 @@ func TestSendMemberInviteSendsTheLoginLinkAsText(t *testing.T) {
 	require.Contains(t, body, "*Griya Sejahtera*")
 	require.Contains(t, body, "Masuk:\nhttps://app.example.id/login", "no native buttons, so the link is in the text")
 	require.Equal(t, 1, strings.Count(body, "https://"), "the link appears once")
+}
+
+// formRecorder is a Twilio stand-in that keeps the last form it was sent.
+func formRecorder(t *testing.T, cfg twilio.Config) (*twilio.Client, func() url.Values) {
+	t.Helper()
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+		got = r.PostForm
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, createdBody)
+	}))
+	t.Cleanup(srv.Close)
+	cfg.AccountSID, cfg.AuthToken, cfg.From, cfg.BaseURL = accountSID, authToken, sandbox, srv.URL
+	c, err := twilio.New(cfg)
+	require.NoError(t, err)
+	return c, func() url.Values { return got }
+}
+
+func TestContentTemplateReplacesTheBody(t *testing.T) {
+	t.Parallel()
+	c, form := formRecorder(t, twilio.Config{ContentSIDs: map[string]string{messaging.TemplateLoginCode: loginHX}})
+
+	receipt, err := c.SendTemplate(t.Context(), loginMessage)
+	require.NoError(t, err)
+	require.Equal(t, messageSID, receipt.ProviderMessageID)
+	got := form()
+	require.Equal(t, "whatsapp:"+recipient, got.Get("To"))
+	require.Equal(t, "whatsapp:"+sandbox, got.Get("From"))
+	require.Equal(t, loginHX, got.Get("ContentSid"))
+	require.JSONEq(t, `{"1":"`+loginCode+`"}`, got.Get("ContentVariables"))
+	require.False(t, got.Has("Body"), "Twilio refuses Body together with ContentSid")
+	require.Len(t, got, 4, "only To, From, ContentSid and ContentVariables are sent")
+}
+
+func TestContentVariablesFollowTheParameterOrderThenTheButtons(t *testing.T) {
+	t.Parallel()
+	c, form := formRecorder(t, twilio.Config{ContentSIDs: map[string]string{messaging.TemplateMemberInvite: inviteHX}})
+
+	_, err := c.SendTemplate(t.Context(), messaging.Message{
+		To:       "+6281213139999",
+		Template: messaging.TemplateMemberInvite,
+		Params: map[string]string{
+			"inviter": "Pak Budi", "organization": "Griya Sejahtera", "role": "Karyawan", "name": "Mbak Sari",
+		},
+		Buttons: []messaging.Button{{Title: "Masuk", Payload: "member_invite", URL: "https://app.example.id/login"}},
+	})
+	require.NoError(t, err)
+	got := form()
+	require.Equal(t, inviteHX, got.Get("ContentSid"))
+	require.JSONEq(t, `{"1":"Mbak Sari","2":"Karyawan","3":"Griya Sejahtera","4":"Pak Budi","5":"https://app.example.id/login"}`,
+		got.Get("ContentVariables"))
+	require.False(t, got.Has("Body"))
+}
+
+func TestTemplatesWithoutAContentSidStaySentAsText(t *testing.T) {
+	t.Parallel()
+	c, form := formRecorder(t, twilio.Config{ContentSIDs: map[string]string{messaging.TemplateMemberInvite: inviteHX}})
+
+	_, err := c.SendTemplate(t.Context(), loginMessage)
+	require.NoError(t, err)
+	want, err := messaging.Render(loginMessage)
+	require.NoError(t, err)
+	got := form()
+	require.Equal(t, want, got.Get("Body"))
+	require.False(t, got.Has("ContentSid"))
+	require.False(t, got.Has("ContentVariables"))
+}
+
+func TestContentTemplateMessagesStillFollowTheTemplateRules(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := twilio.New(twilio.Config{AccountSID: accountSID, AuthToken: authToken, From: sandbox, BaseURL: srv.URL,
+		ContentSIDs: map[string]string{messaging.TemplateLoginCode: loginHX}})
+	require.NoError(t, err)
+
+	for name, msg := range map[string]messaging.Message{
+		"missing parameter": {To: recipient, Template: messaging.TemplateLoginCode},
+		"extra parameter":   {To: recipient, Template: messaging.TemplateLoginCode, Params: map[string]string{"code": loginCode, "x": "y"}},
+		"button without url": {To: recipient, Template: messaging.TemplateLoginCode, Params: map[string]string{"code": loginCode},
+			Buttons: []messaging.Button{{Title: "Bayar"}}},
+	} {
+		_, err := c.SendTemplate(t.Context(), msg)
+		require.Error(t, err, name)
+	}
+	require.Zero(t, calls.Load(), "a bad message never reaches Twilio")
 }
 
 func TestErrorsMapToMessagingErrors(t *testing.T) {
@@ -259,6 +355,18 @@ func TestNewValidatesConfig(t *testing.T) {
 		{"sender with whatsapp prefix", func(c *twilio.Config) { c.From = "whatsapp:+14155238886" }, "E.164"},
 		{"relative base url", func(c *twilio.Config) { c.BaseURL = "api.twilio.com" }, "base URL"},
 		{"other scheme", func(c *twilio.Config) { c.BaseURL = "ftp://api.twilio.com" }, "base URL"},
+		{"content template", func(c *twilio.Config) {
+			c.ContentSIDs = map[string]string{messaging.TemplateLoginCode: loginHX}
+		}, ""},
+		{"content template for an unknown message template", func(c *twilio.Config) {
+			c.ContentSIDs = map[string]string{"login": loginHX}
+		}, `unknown message template "login"`},
+		{"content sid with the wrong prefix", func(c *twilio.Config) {
+			c.ContentSIDs = map[string]string{messaging.TemplateLoginCode: "MG" + fakeHex}
+		}, "content SID for login_code"},
+		{"content sid too short", func(c *twilio.Config) {
+			c.ContentSIDs = map[string]string{messaging.TemplateLoginCode: "HX0123"}
+		}, "content SID for login_code"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
