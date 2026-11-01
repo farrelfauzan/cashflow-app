@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
@@ -75,6 +76,10 @@ func TestImport(t *testing.T) {
 		require.False(t, res.Committed)
 		require.Equal(t, tenantimport.Summary{
 			Rows: 5, PropertiesCreated: 3, UnitsCreated: 5, TenantsCreated: 4, LeasesCreated: 5,
+			// Entered on 2 Nov: Kamar 1 from 1 Sep (3 x 850.000), Kamar 2 from 1 Oct (2 x 900.000),
+			// Kamar 11 from 15 Oct (850.000), Rumah A from 1 Jul (5 x 15.000.000), and the ruko's
+			// yearly period from 1 Jan (54.000.000).
+			InvoiceCount: 12, InvoiceTotal: 134_200_000,
 		}, res.Summary, "Rina rents two units but is one tenant")
 		for _, row := range res.Rows {
 			require.True(t, row.OK(), "line %d: %v", row.Line, row.Errors)
@@ -624,5 +629,102 @@ func TestImportTerms(t *testing.T) {
 		require.Equal(t, tenantimport.Matched, res.Rows[0].Lease)
 		require.Equal(t, 1, res.Rows[0].Values.TermMonths, "an empty cell is 1 month, which the unit offers")
 		require.Equal(t, []string{"Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya."}, res.Rows[0].Notes)
+	})
+}
+
+// leaseInvoices is how many invoices each tenant's lease has and what they bill, by tenant name.
+type leaseInvoices struct {
+	count int
+	total int64
+}
+
+func invoicesByTenant(t *testing.T, env *testenv.Env, admin authz.Principal) map[string]leaseInvoices {
+	t.Helper()
+	ctx := context.Background()
+	tenants, err := env.AllTenants(ctx, admin)
+	require.NoError(t, err)
+	out := map[string]leaseInvoices{}
+	err = env.Store.WithOrgTx(ctx, admin.OrganizationID, func(tx pgx.Tx) error {
+		for _, tn := range tenants {
+			for _, l := range tn.Leases {
+				var li leaseInvoices
+				if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(sum(amount), 0) FROM invoice WHERE lease_id = $1`, l.ID).
+					Scan(&li.count, &li.total); err != nil {
+					return err
+				}
+				out[tn.Name] = li
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	return out
+}
+
+func TestImportInvoicePreview(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // 2 November 2026, 09:00 in Jakarta
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812861")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+
+	const header = "properti;jenis_properti;kamar;nama_penyewa;no_wa;sewa;jangka_bulan;tanggal_mulai;mulai_tagih\n"
+	csv := []byte(header +
+		// Entered late with no mulai_tagih: 15 Sep due today, 15 Oct due 9 Nov.
+		"Kos Melati;kos;Kamar 1;Rina Wulandari;0812-8610-5001;850.000;1;15/09/2026;\n" +
+		// The same, with mulai_tagih skipping September.
+		"Kos Melati;kos;Kamar 2;Budi Santoso;0812-8610-5002;850.000;1;15/09/2026;15/10/2026\n" +
+		// A 3-month term: one period, 1 Oct to 31 Dec, at the term's price.
+		"Ruko Godean;ruko;Ruko 1;Toko Sumber Rejeki;0812-8610-5003;2.400.000;3;01/10/2026;\n" +
+		// A booking: nothing is due within the lead time yet.
+		"Kos Melati;kos;Kamar 3;Citra Lestari;0812-8610-5004;850.000;1;01/12/2026;\n" +
+		// Running since January 2024 with no mulai_tagih: 35 periods of debt, which the dry run
+		// must make visible.
+		"Kos Melati;kos;Kamar 4;Dewi Anggraini;0812-8610-5005;850.000;1;01/01/2024;\n")
+	want := map[string]leaseInvoices{
+		"Rina Wulandari":     {count: 2, total: 1_700_000},
+		"Budi Santoso":       {count: 1, total: 850_000},
+		"Toko Sumber Rejeki": {count: 1, total: 2_400_000},
+		"Citra Lestari":      {count: 0, total: 0},
+		"Dewi Anggraini":     {count: 35, total: 29_750_000},
+	}
+	previewed := func(res tenantimport.Result) map[string]leaseInvoices {
+		out := map[string]leaseInvoices{}
+		for _, row := range res.Rows {
+			require.True(t, row.OK(), "line %d: %v", row.Line, row.Errors)
+			out[row.TenantName] = leaseInvoices{count: row.InvoiceCount, total: row.InvoiceTotal}
+		}
+		return out
+	}
+
+	t.Run("a dry run shows each row's invoices and the file's total, and writes nothing", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, csv, true)
+		require.NoError(t, err)
+		require.Equal(t, want, previewed(res))
+		require.Equal(t, 39, res.Summary.InvoiceCount)
+		require.EqualValues(t, 34_700_000, res.Summary.InvoiceTotal)
+		require.Equal(t, counts{}, countAll(t, env, admin))
+		var invoices int
+		require.NoError(t, env.Store.WithOrgTx(ctx, o.ID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM invoice`).Scan(&invoices)
+		}))
+		require.Zero(t, invoices, "the preview's invoices are rolled back with the dry run")
+	})
+
+	t.Run("the commit answers the same, and generation creates exactly what was shown", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, csv, false)
+		require.NoError(t, err)
+		require.True(t, res.Committed)
+		require.Equal(t, want, previewed(res))
+
+		_, err = env.Billing.GenerateOrg(ctx, o.ID)
+		require.NoError(t, err)
+		require.Equal(t, want, invoicesByTenant(t, env, admin))
+	})
+
+	t.Run("running the file again matches every lease and previews nothing", func(t *testing.T) {
+		res, err := env.Imports.Run(ctx, admin, csv, true)
+		require.NoError(t, err)
+		require.Zero(t, res.Summary.InvoiceCount)
+		require.Zero(t, res.Summary.InvoiceTotal)
 	})
 }

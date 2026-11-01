@@ -49,6 +49,8 @@ const row = (over: Partial<ImportRow> = {}): ImportRow => ({
   propertyName: "Kos Melati",
   unitLabel: "Kamar 11",
   tenantName: "Mas Wahyu Hidayat",
+  invoiceCount: 1,
+  invoiceTotal: 1_300_000,
   ...over,
 });
 
@@ -60,6 +62,8 @@ const summary = (over: Partial<ImportSummary> = {}): ImportSummary => ({
   tenantsCreated: 40,
   leasesCreated: 43,
   leasesMatched: 2,
+  invoiceCount: 43,
+  invoiceTotal: 55_900_000,
   ...over,
 });
 

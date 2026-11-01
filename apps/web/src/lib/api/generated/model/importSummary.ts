@@ -13,4 +13,8 @@ export interface ImportSummary {
   tenantsCreated: number;
   leasesCreated: number;
   leasesMatched: number;
+  /** The rows' invoiceCount added up: the invoices the whole file creates. */
+  invoiceCount: number;
+  /** The rows' invoiceTotal added up, in rupiah. */
+  invoiceTotal: number;
 }

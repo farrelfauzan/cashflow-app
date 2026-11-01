@@ -400,7 +400,13 @@ type ImportResult struct {
 // ImportRow defines model for ImportRow.
 type ImportRow struct {
 	Errors []ImportRowError `json:"errors"`
-	Lease  *ImportAction    `json:"lease,omitempty"`
+
+	// InvoiceCount How many invoices the lease this row creates gets once the import is saved, as invoice generation makes them today: every period from mulai_tagih (the start date when empty) whose due date is within 7 days. A lease entered late gets all its past periods, so a large number here usually means mulai_tagih is missing. 0 when the row creates no lease (an existing lease is matched, or the row has errors) or a booking starts later.
+	InvoiceCount int `json:"invoiceCount"`
+
+	// InvoiceTotal What those invoices bill in total, in rupiah (rent plus fixed charges). 0 with invoiceCount 0.
+	InvoiceTotal int64         `json:"invoiceTotal"`
+	Lease        *ImportAction `json:"lease,omitempty"`
 
 	// Line Line number in the file, counting the header as line 1.
 	Line int `json:"line"`
@@ -460,13 +466,18 @@ type ImportRowValues struct {
 
 // ImportSummary defines model for ImportSummary.
 type ImportSummary struct {
-	LeasesCreated     int `json:"leasesCreated"`
-	LeasesMatched     int `json:"leasesMatched"`
-	PropertiesCreated int `json:"propertiesCreated"`
-	Rows              int `json:"rows"`
-	RowsWithErrors    int `json:"rowsWithErrors"`
-	TenantsCreated    int `json:"tenantsCreated"`
-	UnitsCreated      int `json:"unitsCreated"`
+	// InvoiceCount The rows' invoiceCount added up: the invoices the whole file creates.
+	InvoiceCount int `json:"invoiceCount"`
+
+	// InvoiceTotal The rows' invoiceTotal added up, in rupiah.
+	InvoiceTotal      int64 `json:"invoiceTotal"`
+	LeasesCreated     int   `json:"leasesCreated"`
+	LeasesMatched     int   `json:"leasesMatched"`
+	PropertiesCreated int   `json:"propertiesCreated"`
+	Rows              int   `json:"rows"`
+	RowsWithErrors    int   `json:"rowsWithErrors"`
+	TenantsCreated    int   `json:"tenantsCreated"`
+	UnitsCreated      int   `json:"unitsCreated"`
 }
 
 // ImportWarning defines model for ImportWarning.
