@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
@@ -24,6 +26,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var tenantInput *tenant.InputError
 	var fileErr *tenantimport.FileError
 	var termErr *tenant.TermError
+	var invoiced *tenant.InvoicedError
+	var invoicedPrice *property.InvoicedPriceError
 	switch {
 	case errors.As(err, &input):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", input.Message, input.Field)
@@ -61,10 +65,22 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &termErr) && errors.Is(err, tenant.ErrNoPrice):
 		s.writeErrorField(w, http.StatusConflict, "no_price",
 			fmt.Sprintf("Harga sewa %d bulan untuk unit ini belum diisi.", termErr.Months), termErr.Field)
+	case errors.As(err, &invoicedPrice):
+		s.writeErrorField(w, http.StatusConflict, "price_too_early", fmt.Sprintf(
+			"Unit ini sudah ditagih pada %s, jadi harga baru paling cepat berlaku %s.",
+			invoicedPrice.InvoicedOn.Format("02/01/2006"), invoicedPrice.InvoicedOn.AddDate(0, 0, 1).Format("02/01/2006")),
+			invoicedPrice.Field)
 	case errors.Is(err, property.ErrPriceTooEarly):
 		s.writeErrorField(w, http.StatusConflict, "price_too_early", "Harga baru paling cepat berlaku hari ini.", "effectiveFrom")
 	case errors.Is(err, tenant.ErrUnitOccupied):
 		s.writeErrorField(w, http.StatusConflict, "unit_occupied", "Unit ini masih disewa. Akhiri sewa yang lama dulu.", "unitId")
+	case errors.As(err, &invoiced) && invoiced.Field == "billedFrom":
+		s.writeErrorField(w, http.StatusConflict, "lease_has_invoices",
+			"Sewa ini sudah punya tagihan, jadi mulai tagih tidak bisa diubah lagi.", invoiced.Field)
+	case errors.As(err, &invoiced):
+		s.writeErrorField(w, http.StatusConflict, "lease_has_invoices",
+			"Sewa ini sudah punya tagihan, jadi tanggal mulai tidak bisa diubah lagi. Akhiri sewa ini dan buat sewa baru dengan tanggal yang benar.",
+			invoiced.Field)
 	case errors.Is(err, tenant.ErrLeaseEnded):
 		s.writeError(w, http.StatusConflict, "lease_ended", "Sewa ini sudah berakhir dan tidak bisa diubah.")
 	case errors.Is(err, member.ErrLastAdmin):
@@ -105,7 +121,35 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 // decode reads a single JSON object into dst and rejects unknown fields. It answers the request
 // itself and returns false when the body is not acceptable.
 func (s *Server) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(r.Body)
+	return s.decodeFrom(w, r.Body, dst)
+}
+
+// decodeKeys is decode that also returns the top-level keys the body named, so a handler can
+// tell a key sent as null from a key left out.
+func (s *Server) decodeKeys(w http.ResponseWriter, r *http.Request, dst any) (map[string]json.RawMessage, bool) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			s.writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Permintaan terlalu besar.")
+			return nil, false
+		}
+		s.writeError(w, http.StatusBadRequest, "invalid_json", "Format permintaan tidak valid.")
+		return nil, false
+	}
+	if !s.decodeFrom(w, bytes.NewReader(body), dst) {
+		return nil, false
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(body, &keys); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid_json", "Format permintaan tidak valid.")
+		return nil, false
+	}
+	return keys, true
+}
+
+func (s *Server) decodeFrom(w http.ResponseWriter, body io.Reader, dst any) bool {
+	dec := json.NewDecoder(body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil || dec.More() {
 		var tooLarge *http.MaxBytesError

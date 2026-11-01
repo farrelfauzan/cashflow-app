@@ -26,7 +26,19 @@ var (
 	ErrUnitOccupied = errors.New("tenant: unit already has an active lease")
 	// ErrLeaseEnded means the lease has ended and can no longer change.
 	ErrLeaseEnded = errors.New("tenant: lease has ended")
+	// ErrLeaseHasInvoices means a term that fixes the lease's periods (the start date, "Mulai
+	// tagih dari") cannot change any more, because the lease already has an invoice.
+	ErrLeaseHasInvoices = errors.New("tenant: lease already has invoices")
 )
+
+// InvoicedError is ErrLeaseHasInvoices for the input field that tried to change.
+type InvoicedError struct {
+	Field string // startDate or billedFrom
+}
+
+func (e *InvoicedError) Error() string { return fmt.Sprintf("%v: %s", ErrLeaseHasInvoices, e.Field) }
+
+func (e *InvoicedError) Unwrap() error { return ErrLeaseHasInvoices }
 
 // Lease is a tenant renting a unit. Dates are calendar days (midnight UTC, no time zone
 // meaning); amounts are rupiah.
@@ -91,7 +103,9 @@ type NewLease struct {
 
 // CreateLease rents a unit to a tenant. It needs lease:manage on the unit's property, the unit
 // must not have an active lease, and it must offer the term with a price in force today
-// (otherwise a *TermError on termMonths with ErrTermNotOffered or ErrNoPrice).
+// (otherwise a *TermError on termMonths with ErrTermNotOffered or ErrNoPrice). Once the lease is
+// committed it asks for the organization's invoices to be generated (decision 24), so a lease
+// starting today, or entered late, is invoiced within seconds.
 func (s *Service) CreateLease(ctx context.Context, p authz.Principal, in NewLease) (Lease, error) {
 	var out Lease
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
@@ -99,10 +113,23 @@ func (s *Service) CreateLease(ctx context.Context, p authz.Principal, in NewLeas
 		out, err = s.CreateLeaseTx(ctx, tx, p, in)
 		return err
 	})
-	return out, err
+	if err != nil {
+		return Lease{}, err
+	}
+	s.LeaseSaved(ctx, p.OrganizationID, out.ID)
+	return out, nil
 }
 
-// CreateLeaseTx is CreateLease inside the caller's organization transaction.
+// LeaseSaved asks for the organization's invoices to be generated, if the service has a queue.
+// Call it only after the transaction that saved the lease has committed; CreateLease does.
+func (s *Service) LeaseSaved(ctx context.Context, org, lease uuid.UUID) {
+	if s.queue != nil {
+		s.queue.LeaseSaved(ctx, org, lease)
+	}
+}
+
+// CreateLeaseTx is CreateLease inside the caller's organization transaction. It enqueues
+// nothing: the caller calls LeaseSaved once its transaction has committed.
 func (s *Service) CreateLeaseTx(ctx context.Context, tx pgx.Tx, p authz.Principal, in NewLease) (Lease, error) {
 	if !ValidTerm(in.TermMonths) {
 		return Lease{}, &InputError{Field: "termMonths", Message: termMessage}
@@ -180,14 +207,16 @@ func ActiveLeaseForUnit(ctx context.Context, tx pgx.Tx, org, unitID uuid.UUID, d
 // term never undoes a skipped billing start; when the start date changes and the kept value no
 // longer fits it, the update is refused on billedFrom. Terms that name the lease's current
 // collector keep them even when they have been disabled, so the lease stays editable until an
-// admin picks another; any other collector must be active. Slice 2 adds the rule that the start
-// date and BilledFrom lock once the lease has an invoice.
+// admin picks another; any other collector must be active. Once the lease has an invoice, the
+// start date and BilledFrom fix its periods and can no longer change (an *InvoicedError,
+// ErrLeaseHasInvoices); a wrong start date is then fixed by ending the lease and starting another.
 func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UUID, t Terms) (Lease, error) {
 	terms, err := ValidTerms(t, 0) // the term is the lease's own, checked once it is loaded
 	if err != nil {
 		return Lease{}, err
 	}
 	var out Lease
+	datesChanged := false
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		current, err := s.loadActiveForChange(ctx, tx, q, p, id)
@@ -196,6 +225,10 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		}
 		if terms.BilledFrom.IsZero() {
 			terms.BilledFrom = current.BilledFrom
+		}
+		datesChanged = !terms.StartDate.Equal(current.StartDate) || !terms.BilledFrom.Equal(current.BilledFrom)
+		if err := checkPeriodsUnbilled(ctx, q, p.OrganizationID, current, terms); err != nil {
+			return err
 		}
 		if err := checkBilledFrom(terms, current.TermMonths, current.EnteredOn); err != nil {
 			return err
@@ -223,13 +256,22 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
 		return err
 	})
-	return out, err
+	if err != nil {
+		return Lease{}, err
+	}
+	if datesChanged && s.queue != nil {
+		// A new start may be due within the lead time, so it is invoiced at once, like a new lease.
+		s.queue.LeaseDatesChanged(ctx, p.OrganizationID, out.ID, out.StartDate, out.BilledFrom)
+	}
+	return out, nil
 }
 
 // SetPlannedEnd sets, changes or clears (nil) an active lease's planned end date ("Rencana
 // keluar", decision 25): the tenant's last day, on or after today in Asia/Jakarta and not before
-// the start date. It needs lease:manage, which is audited. Slice 2 adds what the date triggers:
-// cancelling invoices for periods that start after it, which also needs correction:create.
+// the start date. It needs lease:manage, which is audited. In the same transaction it cancels the
+// invoices for periods that start after the date and restores the ones an earlier date had
+// cancelled that are back in range (LeaseMoney.PlannedEndChanged); each of those corrections
+// also needs correction:create on its invoice, and a denial changes nothing.
 func (s *Service) SetPlannedEnd(ctx context.Context, p authz.Principal, id uuid.UUID, date *time.Time) (Lease, error) {
 	if date != nil {
 		d := calendarDay(*date)
@@ -254,8 +296,10 @@ func (s *Service) SetPlannedEnd(ctx context.Context, p authz.Principal, id uuid.
 		if n == 0 {
 			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
-		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
-		return err
+		if out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock)); err != nil {
+			return err
+		}
+		return s.money.PlannedEndChanged(ctx, tx, p, out)
 	})
 	return out, err
 }
@@ -291,8 +335,10 @@ func checkBilledFrom(t Terms, term int, enteredOn time.Time) error {
 // MoveOut ends an active lease. endDate is the last day: not before the start and not after
 // today in Asia/Jakarta. A lease that has not started (a booking) is cancelled by ending it on
 // its start date. The unit is free for a new lease right away, and the planned end date is
-// cleared. What happens to arrears is an organization setting applied in slice 2, when invoices
-// exist.
+// cleared. In the same transaction the lease's money is settled (LeaseMoney.MovedOut): invoices
+// for periods after the end date are cancelled, all of them for a cancelled booking, and what the
+// lease still owes is paid from its deposit (decision 36), each correction authorized as
+// correction:create.
 func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, endDate time.Time) (Lease, error) {
 	endDate = calendarDay(endDate)
 	var out Lease
@@ -312,10 +358,35 @@ func (s *Service) MoveOut(ctx context.Context, p authz.Principal, id uuid.UUID, 
 		if n == 0 {
 			return ErrLeaseEnded // the row lock makes this unreachable; kept as a guard
 		}
-		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
-		return err
+		if out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock)); err != nil {
+			return err
+		}
+		return s.money.MovedOut(ctx, tx, p, out)
 	})
 	return out, err
+}
+
+// checkPeriodsUnbilled refuses a change of the start date or BilledFrom once the lease has an
+// invoice: either one moves every period against the ones already billed. The caller holds the
+// lease row lock, which generation takes too, so no invoice can appear while it checks.
+func checkPeriodsUnbilled(ctx context.Context, q *dbgen.Queries, org uuid.UUID, current Lease, t Terms) error {
+	field := ""
+	switch {
+	case !t.StartDate.Equal(current.StartDate):
+		field = "startDate"
+	case !t.BilledFrom.Equal(current.BilledFrom):
+		field = "billedFrom"
+	default:
+		return nil
+	}
+	has, err := q.LeaseHasInvoices(ctx, dbgen.LeaseHasInvoicesParams{OrganizationID: org, LeaseID: current.ID})
+	if err != nil {
+		return fmt.Errorf("checking the lease's invoices: %w", err)
+	}
+	if has {
+		return &InvoicedError{Field: field}
+	}
+	return nil
 }
 
 // checkEndDate applies the move-out date rules. A booking that has not started can only be
@@ -337,8 +408,10 @@ func checkEndDate(start, end, now time.Time) error {
 }
 
 // loadActiveForChange locks a lease row for the rest of the transaction, loads it, authorizes
-// lease:manage on it and checks that it is still active. The lock makes a concurrent change or
-// move-out wait, so it sees the committed status rather than the one before.
+// lease:manage on it and checks that it is still active. The lock makes a concurrent change,
+// move-out or invoice generation of the lease wait, so it sees the committed rows rather than the
+// ones before. It is the first lock the transaction takes: the billing package's lock order is
+// lease, then unit, then tenant, and the corrections and allocation that follow lock the tenant.
 func (s *Service) loadActiveForChange(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, p authz.Principal, id uuid.UUID) (Lease, error) {
 	_, err := q.LockLease(ctx, dbgen.LockLeaseParams{OrganizationID: p.OrganizationID, ID: id})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -478,5 +551,10 @@ func calendarDay(t time.Time) time.Time {
 
 // Today is the current calendar day in Asia/Jakarta, as midnight UTC like a date column.
 func Today(c clock.Clock) time.Time {
-	return calendarDay(c.Now().In(clock.Jakarta))
+	return DayOf(c.Now())
+}
+
+// DayOf is the Asia/Jakarta calendar day of the moment t, as midnight UTC like a date column.
+func DayOf(t time.Time) time.Time {
+	return calendarDay(t.In(clock.Jakarta))
 }

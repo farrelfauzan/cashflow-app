@@ -324,11 +324,45 @@ func TestDocsOnlyInDevelopment(t *testing.T) {
 	require.Empty(t, c.DocsSpecPath())
 }
 
-func TestLoadWorkerDefaults(t *testing.T) {
-	got, err := loadWorker(context.Background(), envconfig.MapLookuper(map[string]string{}))
-	require.NoError(t, err)
-	require.Equal(t, "localhost:6379", got.RedisAddr)
-	require.Equal(t, "development", got.Env)
+func TestLoadWorker(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    Worker
+		wantErr string
+	}{
+		{
+			name: "defaults apply when only the database url is set",
+			env:  map[string]string{"DATABASE_URL": "postgres://app@db/cashflow"},
+			want: Worker{
+				Common:      Common{Env: "development", LogLevel: "info"},
+				DatabaseURL: "postgres://app@db/cashflow",
+				RedisAddr:   "localhost:6379",
+			},
+		},
+		{
+			name:    "missing database url is rejected",
+			env:     map[string]string{},
+			wantErr: "DATABASE_URL",
+		},
+		{
+			name:    "an unknown environment is rejected",
+			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "APP_ENV": "prod"},
+			wantErr: "APP_ENV",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := loadWorker(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestLoadMigrateRequiresOwnerURL(t *testing.T) {

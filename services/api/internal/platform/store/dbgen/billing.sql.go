@@ -273,6 +273,92 @@ func (q *Queries) GetTenantBalance(ctx context.Context, arg GetTenantBalancePara
 	return i, err
 }
 
+const insertInvoiceIfMissing = `-- name: InsertInvoiceIfMissing :one
+
+INSERT INTO invoice (id, organization_id, lease_id, tenant_id, period, period_end, due_date, amount, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (lease_id, period) DO NOTHING
+RETURNING id
+`
+
+type InsertInvoiceIfMissingParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+	TenantID       uuid.UUID
+	Period         time.Time
+	PeriodEnd      time.Time
+	DueDate        time.Time
+	Amount         int64
+	CreatedAt      time.Time
+}
+
+// Invoice generation (slice 2) ----------------------------------------------------------------
+// Generation's insert: a period the lease already has an invoice for inserts nothing and
+// returns no row, so a rerun creates nothing. created_at comes from the injected clock: the day
+// an invoice was made decides which unit prices may still be recorded (CreateUnitPrice).
+func (q *Queries) InsertInvoiceIfMissing(ctx context.Context, arg InsertInvoiceIfMissingParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertInvoiceIfMissing,
+		arg.ID,
+		arg.OrganizationID,
+		arg.LeaseID,
+		arg.TenantID,
+		arg.Period,
+		arg.PeriodEnd,
+		arg.DueDate,
+		arg.Amount,
+		arg.CreatedAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const leaseHasInvoices = `-- name: LeaseHasInvoices :one
+SELECT EXISTS (
+    SELECT 1 FROM invoice WHERE organization_id = $1 AND lease_id = $2
+)::boolean AS has_invoices
+`
+
+type LeaseHasInvoicesParams struct {
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+}
+
+func (q *Queries) LeaseHasInvoices(ctx context.Context, arg LeaseHasInvoicesParams) (bool, error) {
+	row := q.db.QueryRow(ctx, leaseHasInvoices, arg.OrganizationID, arg.LeaseID)
+	var has_invoices bool
+	err := row.Scan(&has_invoices)
+	return has_invoices, err
+}
+
+const listActiveLeaseIDs = `-- name: ListActiveLeaseIDs :many
+SELECT id FROM lease
+WHERE organization_id = $1 AND status = 'active'
+ORDER BY id
+`
+
+// The leases the generate task looks at, in a fixed order.
+func (q *Queries) ListActiveLeaseIDs(ctx context.Context, organizationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveLeaseIDs, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllocationInvoices = `-- name: ListAllocationInvoices :many
 SELECT invoice_id, seq, period, billed
 FROM invoice_balance
@@ -452,6 +538,97 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, arg ListInvoiceLinesPara
 	return items, nil
 }
 
+const listLeaseInvoicePeriods = `-- name: ListLeaseInvoicePeriods :many
+SELECT period FROM invoice
+WHERE organization_id = $1 AND lease_id = $2
+ORDER BY period
+`
+
+type ListLeaseInvoicePeriodsParams struct {
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+}
+
+func (q *Queries) ListLeaseInvoicePeriods(ctx context.Context, arg ListLeaseInvoicePeriodsParams) ([]time.Time, error) {
+	rows, err := q.db.Query(ctx, listLeaseInvoicePeriods, arg.OrganizationID, arg.LeaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []time.Time
+	for rows.Next() {
+		var period time.Time
+		if err := rows.Scan(&period); err != nil {
+			return nil, err
+		}
+		items = append(items, period)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLeaseInvoicesForChange = `-- name: ListLeaseInvoicesForChange :many
+SELECT b.invoice_id, b.period, b.amount, b.billed, b.outstanding,
+       coalesce(lc.reason, '')::text AS last_reason, coalesce(lc.amount_delta, 0)::bigint AS last_delta
+FROM invoice_balance b
+LEFT JOIN LATERAL (
+    SELECT c.reason, c.amount_delta FROM correction c
+    WHERE c.invoice_id = b.invoice_id
+    ORDER BY c.seq DESC
+    LIMIT 1
+) lc ON true
+WHERE b.organization_id = $1 AND b.lease_id = $2
+ORDER BY b.period, b.seq
+`
+
+type ListLeaseInvoicesForChangeParams struct {
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+}
+
+type ListLeaseInvoicesForChangeRow struct {
+	InvoiceID   uuid.UUID
+	Period      time.Time
+	Amount      int64
+	Billed      int64
+	Outstanding int64
+	LastReason  string
+	LastDelta   int64
+}
+
+// A lease's invoices, oldest period first, with what each bills and owes and its latest
+// correction (an empty reason and 0 when it has none), for cancelling and restoring invoices
+// when the lease's end changes.
+func (q *Queries) ListLeaseInvoicesForChange(ctx context.Context, arg ListLeaseInvoicesForChangeParams) ([]ListLeaseInvoicesForChangeRow, error) {
+	rows, err := q.db.Query(ctx, listLeaseInvoicesForChange, arg.OrganizationID, arg.LeaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLeaseInvoicesForChangeRow
+	for rows.Next() {
+		var i ListLeaseInvoicesForChangeRow
+		if err := rows.Scan(
+			&i.InvoiceID,
+			&i.Period,
+			&i.Amount,
+			&i.Billed,
+			&i.Outstanding,
+			&i.LastReason,
+			&i.LastDelta,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTenantAllocations = `-- name: ListTenantAllocations :many
 SELECT seq, payment_id, invoice_id, amount
 FROM payment_allocation
@@ -497,6 +674,57 @@ func (q *Queries) ListTenantAllocations(ctx context.Context, arg ListTenantAlloc
 	return items, nil
 }
 
+const lockLeaseForBilling = `-- name: LockLeaseForBilling :one
+SELECT l.id, l.tenant_id, l.unit_id, u.property_id, l.start_date, l.entered_on, l.billed_from,
+       l.term_months, l.planned_end_date, l.end_date, l.status
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE l.organization_id = $1 AND l.id = $2
+FOR NO KEY UPDATE OF l
+`
+
+type LockLeaseForBillingParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type LockLeaseForBillingRow struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	UnitID         uuid.UUID
+	PropertyID     uuid.UUID
+	StartDate      time.Time
+	EnteredOn      time.Time
+	BilledFrom     time.Time
+	TermMonths     int16
+	PlannedEndDate *time.Time
+	EndDate        *time.Time
+	Status         string
+}
+
+// Locks one lease for generation and returns what generation needs. FOR NO KEY UPDATE OF the
+// lease only, the same lock the lease service takes (LockLease), so generation and a change of
+// the lease's dates run one after the other and each sees the other's committed rows. It does not
+// conflict with the FOR KEY SHARE that inserting an invoice takes on the lease.
+func (q *Queries) LockLeaseForBilling(ctx context.Context, arg LockLeaseForBillingParams) (LockLeaseForBillingRow, error) {
+	row := q.db.QueryRow(ctx, lockLeaseForBilling, arg.OrganizationID, arg.ID)
+	var i LockLeaseForBillingRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UnitID,
+		&i.PropertyID,
+		&i.StartDate,
+		&i.EnteredOn,
+		&i.BilledFrom,
+		&i.TermMonths,
+		&i.PlannedEndDate,
+		&i.EndDate,
+		&i.Status,
+	)
+	return i, err
+}
+
 const lockTenantForAllocation = `-- name: LockTenantForAllocation :one
 SELECT id FROM tenant
 WHERE organization_id = $1 AND id = $2
@@ -516,4 +744,46 @@ func (q *Queries) LockTenantForAllocation(ctx context.Context, arg LockTenantFor
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const lockUnitForBilling = `-- name: LockUnitForBilling :one
+SELECT id FROM unit
+WHERE organization_id = $1 AND id = $2
+FOR SHARE
+`
+
+type LockUnitForBillingParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Taken by generation before it reads the unit's price, so a price recorded at the same moment
+// (CreateUnitPrice locks the unit FOR NO KEY UPDATE) waits and then sees the new invoice.
+func (q *Queries) LockUnitForBilling(ctx context.Context, arg LockUnitForBillingParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockUnitForBilling, arg.OrganizationID, arg.ID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const newestInvoiceCreatedAtForUnit = `-- name: NewestInvoiceCreatedAtForUnit :one
+SELECT i.created_at
+FROM invoice i
+JOIN lease l ON l.organization_id = i.organization_id AND l.id = i.lease_id
+WHERE i.organization_id = $1 AND l.unit_id = $2
+ORDER BY i.created_at DESC
+LIMIT 1
+`
+
+type NewestInvoiceCreatedAtForUnitParams struct {
+	OrganizationID uuid.UUID
+	UnitID         uuid.UUID
+}
+
+// When the newest invoice of any lease of the unit was made; no row when it has none.
+func (q *Queries) NewestInvoiceCreatedAtForUnit(ctx context.Context, arg NewestInvoiceCreatedAtForUnitParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, newestInvoiceCreatedAtForUnit, arg.OrganizationID, arg.UnitID)
+	var created_at time.Time
+	err := row.Scan(&created_at)
+	return created_at, err
 }

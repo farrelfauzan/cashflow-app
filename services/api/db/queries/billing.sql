@@ -81,3 +81,74 @@ ORDER BY seq;
 -- Every organization's id, for scheduled jobs that then run one task per organization. Callable
 -- without an organization scope; the only cross-organization read.
 SELECT id::uuid AS id FROM active_organization_ids() AS id;
+
+-- Invoice generation (slice 2) ----------------------------------------------------------------
+
+-- name: InsertInvoiceIfMissing :one
+-- Generation's insert: a period the lease already has an invoice for inserts nothing and
+-- returns no row, so a rerun creates nothing. created_at comes from the injected clock: the day
+-- an invoice was made decides which unit prices may still be recorded (CreateUnitPrice).
+INSERT INTO invoice (id, organization_id, lease_id, tenant_id, period, period_end, due_date, amount, created_at)
+VALUES (@id, @organization_id, @lease_id, @tenant_id, @period, @period_end, @due_date, @amount, @created_at)
+ON CONFLICT (lease_id, period) DO NOTHING
+RETURNING id;
+
+-- name: ListActiveLeaseIDs :many
+-- The leases the generate task looks at, in a fixed order.
+SELECT id FROM lease
+WHERE organization_id = @organization_id AND status = 'active'
+ORDER BY id;
+
+-- name: LockLeaseForBilling :one
+-- Locks one lease for generation and returns what generation needs. FOR NO KEY UPDATE OF the
+-- lease only, the same lock the lease service takes (LockLease), so generation and a change of
+-- the lease's dates run one after the other and each sees the other's committed rows. It does not
+-- conflict with the FOR KEY SHARE that inserting an invoice takes on the lease.
+SELECT l.id, l.tenant_id, l.unit_id, u.property_id, l.start_date, l.entered_on, l.billed_from,
+       l.term_months, l.planned_end_date, l.end_date, l.status
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE l.organization_id = @organization_id AND l.id = @id
+FOR NO KEY UPDATE OF l;
+
+-- name: LockUnitForBilling :one
+-- Taken by generation before it reads the unit's price, so a price recorded at the same moment
+-- (CreateUnitPrice locks the unit FOR NO KEY UPDATE) waits and then sees the new invoice.
+SELECT id FROM unit
+WHERE organization_id = @organization_id AND id = @id
+FOR SHARE;
+
+-- name: ListLeaseInvoicePeriods :many
+SELECT period FROM invoice
+WHERE organization_id = @organization_id AND lease_id = @lease_id
+ORDER BY period;
+
+-- name: ListLeaseInvoicesForChange :many
+-- A lease's invoices, oldest period first, with what each bills and owes and its latest
+-- correction (an empty reason and 0 when it has none), for cancelling and restoring invoices
+-- when the lease's end changes.
+SELECT b.invoice_id, b.period, b.amount, b.billed, b.outstanding,
+       coalesce(lc.reason, '')::text AS last_reason, coalesce(lc.amount_delta, 0)::bigint AS last_delta
+FROM invoice_balance b
+LEFT JOIN LATERAL (
+    SELECT c.reason, c.amount_delta FROM correction c
+    WHERE c.invoice_id = b.invoice_id
+    ORDER BY c.seq DESC
+    LIMIT 1
+) lc ON true
+WHERE b.organization_id = @organization_id AND b.lease_id = @lease_id
+ORDER BY b.period, b.seq;
+
+-- name: LeaseHasInvoices :one
+SELECT EXISTS (
+    SELECT 1 FROM invoice WHERE organization_id = @organization_id AND lease_id = @lease_id
+)::boolean AS has_invoices;
+
+-- name: NewestInvoiceCreatedAtForUnit :one
+-- When the newest invoice of any lease of the unit was made; no row when it has none.
+SELECT i.created_at
+FROM invoice i
+JOIN lease l ON l.organization_id = i.organization_id AND l.id = i.lease_id
+WHERE i.organization_id = @organization_id AND l.unit_id = @unit_id
+ORDER BY i.created_at DESC
+LIMIT 1;

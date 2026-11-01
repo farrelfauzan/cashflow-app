@@ -63,16 +63,45 @@ type Input struct {
 	Note  string
 }
 
+// LeaseMoney is the money side of ending a lease, which the billing package implements (wired
+// in main, so tenant never imports billing). Both methods run inside the lease service's
+// transaction, after the lease row is locked, lease:manage is authorized and the lease row is
+// changed; they authorize and audit the corrections they make themselves. l is the lease as it
+// is now stored.
+type LeaseMoney interface {
+	// PlannedEndChanged cancels the lease's invoices for periods that start after its planned
+	// end date and restores the ones it had cancelled that are back in range (all of them when
+	// the date is cleared).
+	PlannedEndChanged(ctx context.Context, tx pgx.Tx, p authz.Principal, l Lease) error
+	// MovedOut settles an ended lease: invoices for periods after its end date are cancelled
+	// (all of them for a cancelled booking), then what it still owes is paid from its deposit.
+	MovedOut(ctx context.Context, tx pgx.Tx, p authz.Principal, l Lease) error
+}
+
+// InvoiceQueue asks for an organization's invoices to be generated soon, once a lease is saved,
+// so an invoice due today exists within seconds. The implementation logs a failure itself: the
+// daily run at 05:00 is the safety net, so a lost enqueue never fails the request.
+type InvoiceQueue interface {
+	LeaseSaved(ctx context.Context, org, lease uuid.UUID)
+	// LeaseDatesChanged is LeaseSaved after an update moved the start date or the billing start,
+	// under its own task id: the task enqueued when the lease was created may still be running
+	// with the old dates.
+	LeaseDatesChanged(ctx context.Context, org, lease uuid.UUID, start, billedFrom time.Time)
+}
+
 // Service manages tenants and leases.
 type Service struct {
 	store *store.Store
 	authz *authz.Service
 	clock clock.Clock
+	money LeaseMoney
+	queue InvoiceQueue
 }
 
-// NewService returns a Service.
-func NewService(st *store.Store, az *authz.Service, c clock.Clock) *Service {
-	return &Service{store: st, authz: az, clock: c}
+// NewService returns a Service. money is required. queue may be nil for tools that rely on the
+// daily generation run (the demo seed); then saving a lease enqueues nothing.
+func NewService(st *store.Store, az *authz.Service, c clock.Clock, money LeaseMoney, queue InvoiceQueue) *Service {
+	return &Service{store: st, authz: az, clock: c, money: money, queue: queue}
 }
 
 // The tenant statuses List filters on: the status of the tenant's first lease among the leases

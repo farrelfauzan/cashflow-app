@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 )
 
 // ErrNoOrganization is returned when WithOrgTx is called without an organization. It fails
@@ -53,6 +55,18 @@ func (s *Store) Ping(ctx context.Context) error {
 		return fmt.Errorf("pinging database: %w", err)
 	}
 	return nil
+}
+
+// ActiveOrganizationIDs returns every active organization's id, for a scheduled job that then
+// runs one task per organization inside WithOrgTx. It is the one read outside an organization or
+// auth scope, and it goes through active_organization_ids(), a database function that returns
+// ids only (phase B, slice 2).
+func (s *Store) ActiveOrganizationIDs(ctx context.Context) ([]uuid.UUID, error) {
+	ids, err := dbgen.New(s.pool).ActiveOrganizationIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing organization ids: %w", err)
+	}
+	return ids, nil
 }
 
 // WithOrgTx runs fn in a transaction that is scoped to one organization. The transaction

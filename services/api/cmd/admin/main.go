@@ -30,6 +30,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
@@ -159,7 +160,8 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 		Orgs:       org.NewService(st, az),
 		Members:    members,
 		Properties: property.NewService(st, az, c),
-		Tenants:    tenant.NewService(st, az, c),
+		// No queue: the demo seed's leases are invoiced by the worker's daily run.
+		Tenants: tenant.NewService(st, az, c, billing.NewService(st, az, c, log), nil),
 	}, c)
 	if err != nil {
 		return err

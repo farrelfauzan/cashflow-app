@@ -652,7 +652,7 @@ func (q *Queries) ListTenantPage(ctx context.Context, arg ListTenantPageParams) 
 const lockLease = `-- name: LockLease :one
 SELECT id, status FROM lease
 WHERE organization_id = $1 AND id = $2
-FOR UPDATE
+FOR NO KEY UPDATE
 `
 
 type LockLeaseParams struct {
@@ -665,8 +665,12 @@ type LockLeaseRow struct {
 	Status string
 }
 
-// Locks the lease row for the rest of the transaction, so a concurrent change or move-out
-// waits and then sees the committed status.
+// Locks the lease row for the rest of the transaction, so a concurrent change, move-out or
+// invoice generation (LockLeaseForBilling, the same lock) waits and then sees the committed
+// rows. FOR NO KEY UPDATE, not FOR UPDATE: the lease's keys never change, and FOR UPDATE would
+// also wait on the FOR KEY SHARE that inserting an invoice or a lease charge takes on the lease
+// through its foreign key, which can deadlock. Lock order is lease, then unit, then tenant (see
+// the billing package).
 func (q *Queries) LockLease(ctx context.Context, arg LockLeaseParams) (LockLeaseRow, error) {
 	row := q.db.QueryRow(ctx, lockLease, arg.OrganizationID, arg.ID)
 	var i LockLeaseRow

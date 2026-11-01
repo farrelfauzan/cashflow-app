@@ -152,6 +152,26 @@ func TestLeaseBillingFieldsOverHTTP(t *testing.T) {
 		requireError(t, resp, body, http.StatusBadRequest, "invalid_json", "")
 	})
 
+	t.Run("leaving plannedEndDate out is refused, so an empty body never clears the date", func(t *testing.T) {
+		resp, body := admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": "2026-11-30"})
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+
+		resp, body = admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{})
+		requireError(t, resp, body, http.StatusBadRequest, "invalid_input", "plannedEndDate")
+		require.Contains(t, decode[apigen.Error](t, body).Error.Message, "null")
+
+		resp, body = admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": "2026-11-30", "other": 1})
+		requireError(t, resp, body, http.StatusBadRequest, "invalid_json", "")
+
+		resp, body = admin.do(http.MethodGet, orgPath+"/tenants/"+rina.Id.String(), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Contains(t, string(body), `"plannedEndDate":"2026-11-30"`, "still set")
+
+		resp, body = admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": nil})
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Nil(t, decode[apigen.Lease](t, body).PlannedEndDate, "explicit null clears")
+	})
+
 	t.Run("a start date after the planned end answers 400 with the field", func(t *testing.T) {
 		resp, body := admin.do(http.MethodPut, leasePath(lease, "/planned-end"), map[string]any{"plannedEndDate": "2026-11-14"})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))

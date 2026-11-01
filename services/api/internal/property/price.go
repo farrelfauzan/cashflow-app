@@ -44,7 +44,8 @@ func (s *Service) ListUnitPrices(ctx context.Context, p authz.Principal, unitID 
 }
 
 // CreateUnitPrice records a unit's new price for one of its terms from a day on: today in
-// Asia/Jakarta or later (else ErrPriceTooEarly). The unit must offer the term (else a
+// Asia/Jakarta or later (else ErrPriceTooEarly), and after the day the unit's newest invoice was
+// made (else an *InvoicedPriceError on effectiveFrom). The unit must offer the term (else a
 // *tenant.TermError on months with tenant.ErrTermNotOffered). It needs unit:manage on the
 // unit's property, which is audited. Rows are never changed: a later price is a new row.
 func (s *Service) CreateUnitPrice(ctx context.Context, p authz.Principal, unitID uuid.UUID, in PriceInput) (UnitPrice, error) {
@@ -76,6 +77,14 @@ func (s *Service) CreateUnitPriceTx(ctx context.Context, tx pgx.Tx, p authz.Prin
 	}
 	if in.EffectiveFrom.Before(tenant.Today(s.clock)) {
 		return UnitPrice{}, ErrPriceTooEarly
+	}
+	// The lock makes invoice generation for the unit's lease wait (or this wait for it), so the
+	// check below sees every invoice that took a price from this history.
+	if _, err := q.LockUnit(ctx, dbgen.LockUnitParams{OrganizationID: p.OrganizationID, ID: unitID}); err != nil {
+		return UnitPrice{}, fmt.Errorf("locking unit: %w", err)
+	}
+	if err := checkAfterNewestInvoice(ctx, q, p.OrganizationID, unitID, in.EffectiveFrom, "effectiveFrom"); err != nil {
+		return UnitPrice{}, err
 	}
 	id, err := insertPrice(ctx, q, p, unitID, in)
 	if err != nil {
@@ -111,7 +120,10 @@ func ValidPrice(in PriceInput) (PriceInput, error) {
 }
 
 // recordPrices adds a price effective today for each term whose given price differs from the
-// one in force today, or has none. Terms without a price are left alone.
+// one in force today, or has none. Terms without a price are left alone. When the unit was
+// invoiced today, a changed price is refused with an *InvoicedPriceError on terms: it can take
+// effect tomorrow at the earliest, through CreateUnitPrice. The caller holds the unit row lock
+// (UpdateUnit has just updated the row; CreateUnit has just inserted it).
 func recordPrices(ctx context.Context, q *dbgen.Queries, p authz.Principal, unitID uuid.UUID, terms []TermInput, today time.Time) error {
 	if !slices.ContainsFunc(terms, func(t TermInput) bool { return t.Price != nil }) {
 		return nil
@@ -133,9 +145,28 @@ func recordPrices(ctx context.Context, q *dbgen.Queries, p authz.Principal, unit
 		if current, ok := inForce[t.Months]; ok && current == *t.Price {
 			continue
 		}
+		if err := checkAfterNewestInvoice(ctx, q, p.OrganizationID, unitID, today, "terms"); err != nil {
+			return err
+		}
 		if _, err := insertPrice(ctx, q, p, unitID, PriceInput{Months: t.Months, Amount: *t.Price, EffectiveFrom: today}); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// checkAfterNewestInvoice refuses a price effective on or before the Asia/Jakarta day the unit's
+// newest invoice was made, with an *InvoicedPriceError on field.
+func checkAfterNewestInvoice(ctx context.Context, q *dbgen.Queries, org, unitID uuid.UUID, effective time.Time, field string) error {
+	made, err := q.NewestInvoiceCreatedAtForUnit(ctx, dbgen.NewestInvoiceCreatedAtForUnitParams{OrganizationID: org, UnitID: unitID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("loading the unit's newest invoice: %w", err)
+	}
+	if day := tenant.DayOf(made); !effective.After(day) {
+		return &InvoicedPriceError{Field: field, InvoicedOn: day}
 	}
 	return nil
 }

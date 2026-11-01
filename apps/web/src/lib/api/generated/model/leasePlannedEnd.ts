@@ -7,8 +7,8 @@
 
 export interface LeasePlannedEnd {
   /**
-     * The tenant's last day. To stop before a new month, pick the day before the next anniversary. null (or leaving it out) clears it. Errors use field plannedEndDate.
+     * The tenant's last day. To stop before a new month, pick the day before the next anniversary. null clears it; the key is required, so an empty body never clears it by mistake. Errors use field plannedEndDate.
      * @nullable
      */
-  plannedEndDate?: string | null;
+  plannedEndDate: string | null;
 }

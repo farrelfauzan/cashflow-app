@@ -603,11 +603,11 @@ type LeaseInput struct {
 
 // LeasePlannedEnd defines model for LeasePlannedEnd.
 type LeasePlannedEnd struct {
-	// PlannedEndDate The tenant's last day. To stop before a new month, pick the day before the next anniversary. null (or leaving it out) clears it. Errors use field plannedEndDate.
+	// PlannedEndDate The tenant's last day. To stop before a new month, pick the day before the next anniversary. null clears it; the key is required, so an empty body never clears it by mistake. Errors use field plannedEndDate.
 	//
 	//
 	// Example: 2026-11-14
-	PlannedEndDate *openapi_types.Date `json:"plannedEndDate,omitempty"`
+	PlannedEndDate *openapi_types.Date `json:"plannedEndDate"`
 }
 
 // LeaseStatus defines model for LeaseStatus.

@@ -43,11 +43,15 @@ INSERT INTO lease (id, organization_id, unit_id, tenant_id, start_date, term_mon
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: LockLease :one
--- Locks the lease row for the rest of the transaction, so a concurrent change or move-out
--- waits and then sees the committed status.
+-- Locks the lease row for the rest of the transaction, so a concurrent change, move-out or
+-- invoice generation (LockLeaseForBilling, the same lock) waits and then sees the committed
+-- rows. FOR NO KEY UPDATE, not FOR UPDATE: the lease's keys never change, and FOR UPDATE would
+-- also wait on the FOR KEY SHARE that inserting an invoice or a lease charge takes on the lease
+-- through its foreign key, which can deadlock. Lock order is lease, then unit, then tenant (see
+-- the billing package).
 SELECT id, status FROM lease
 WHERE organization_id = $1 AND id = $2
-FOR UPDATE;
+FOR NO KEY UPDATE;
 
 -- name: UpdateLeaseTerms :execrows
 -- Only an active lease changes. Unit, tenant and term never change: end the lease and start

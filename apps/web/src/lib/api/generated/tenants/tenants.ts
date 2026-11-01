@@ -469,7 +469,7 @@ export const useCreateLease = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCreateLeaseMutationOptions(options), queryClient);
     }
     /**
- * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice. A start date after the lease's planned end date is refused (field startDate); change the planned end date first. Sending the lease's current collector keeps them even when they have been disabled; any other collector must be an active member.
+ * Unit and tenant never change; end the lease and start a new one instead. A rent change applies from the next invoice. A start date after the lease's planned end date is refused (field startDate); change the planned end date first. Sending the lease's current collector keeps them even when they have been disabled; any other collector must be an active member. Once the lease has an invoice, its start date and billedFrom can no longer change (409 lease_has_invoices); the other terms stay editable.
  * @summary Change the terms of an active lease (needs lease:manage; audited)
  */
 export const updateLease = (
@@ -539,7 +539,7 @@ export const useUpdateLease = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getUpdateLeaseMutationOptions(options), queryClient);
     }
     /**
- * The planned end date ("Rencana keluar") is the tenant's last day, set when they say they will not continue. It must be on or after today in Asia/Jakarta and not before the start date; null clears it. It can change until the move-out, which clears it. From slice 2, no invoice is generated for a period that starts after it, and setting it cancels an invoice already generated for such a period (that also needs correction:create); today it is only stored.
+ * The planned end date ("Rencana keluar") is the tenant's last day, set when they say they will not continue. It must be on or after today in Asia/Jakarta and not before the start date; null clears it, and leaving the key out is refused (400, field plannedEndDate). It can change until the move-out, which clears it. No invoice is generated for a period that starts after it. In the same transaction, setting it (or moving it earlier) cancels each invoice already generated for such a period with a correction of minus its billed amount, reason "sewa tidak diperpanjang"; moving it later or clearing it restores each invoice it had cancelled that is back in range, reason "rencana keluar diubah". Money paid on a cancelled invoice is reallocated (FIFO) and the rest is credit. Each correction also needs correction:create on its invoice and is audited; a denial answers 403 and changes nothing.
  * @summary Set, change or clear an active lease's planned end date (needs lease:manage; audited)
  */
 export const setLeasePlannedEnd = (
@@ -609,7 +609,7 @@ export const useSetLeasePlannedEnd = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getSetLeasePlannedEndMutationOptions(options), queryClient);
     }
     /**
- * The end date is the last day of the lease: not before the start date and not after today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same way, with the end date equal to its start date; it will never be invoiced. The unit is free for a new lease right away, and any planned end date is cleared. What happens to arrears is settled in slice 2.
+ * The end date is the last day of the lease: not before the start date and not after today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same way, with the end date equal to its start date; it will never be invoiced. The unit is free for a new lease right away, and any planned end date is cleared. In the same transaction: a period the tenant started that has no invoice yet gets one; every invoice for a period that starts after the end date is cancelled (reason "sewa tidak diperpanjang"), every invoice of a cancelled booking too (reason "sewa dibatalkan"); then what the lease's invoices still owe is paid from its deposit, oldest period first (reason "potong deposit"). Each correction also needs correction:create and is audited.
  * @summary End a lease on a date (needs lease:manage; audited)
  */
 export const moveOut = (

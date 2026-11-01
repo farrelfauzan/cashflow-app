@@ -161,7 +161,15 @@ func (s *Server) setLeasePlannedEnd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body apigen.LeasePlannedEnd
-	if !s.decode(w, r, &body) {
+	keys, ok := s.decodeKeys(w, r, &body)
+	if !ok {
+		return
+	}
+	// Clearing the date restores cancelled invoices with money corrections, so an empty body
+	// (a client bug) must not mean "clear": the key is required, and only null clears.
+	if _, sent := keys["plannedEndDate"]; !sent {
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input",
+			"Rencana keluar wajib dikirim. Kirim null untuk menghapusnya.", "plannedEndDate")
 		return
 	}
 	var date *time.Time

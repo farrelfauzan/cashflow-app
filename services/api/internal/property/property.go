@@ -45,9 +45,24 @@ var (
 	ErrNameTaken = errors.New("property: name already used")
 	// ErrLabelTaken means another unit in the same property already has the label.
 	ErrLabelTaken = errors.New("property: unit label already used")
-	// ErrPriceTooEarly means a new price would take effect before today in Asia/Jakarta.
+	// ErrPriceTooEarly means a new price would take effect before today in Asia/Jakarta, or on or
+	// before the day the unit's newest invoice was made (then as an *InvoicedPriceError).
 	ErrPriceTooEarly = errors.New("property: price takes effect too early")
 )
+
+// InvoicedPriceError is ErrPriceTooEarly for a price that would take effect on or before
+// InvoicedOn, the Asia/Jakarta day the unit's newest invoice was made: that invoice took the
+// price in force that day, and the history must never contradict it (decision 32).
+type InvoicedPriceError struct {
+	Field      string    // effectiveFrom on createUnitPrice, terms on updateUnit
+	InvoicedOn time.Time // a calendar day; the earliest allowed effective date is the day after
+}
+
+func (e *InvoicedPriceError) Error() string {
+	return fmt.Sprintf("%v: the unit was invoiced on %s", ErrPriceTooEarly, e.InvoicedOn.Format(time.DateOnly))
+}
+
+func (e *InvoicedPriceError) Unwrap() error { return ErrPriceTooEarly }
 
 // InputError names the field that is wrong. Message is safe to show to the user.
 type InputError struct {

@@ -20,6 +20,11 @@ const (
 	ActionTenantRead   = "tenant:read"
 	ActionTenantManage = "tenant:manage"
 	ActionLeaseManage  = "lease:manage"
+
+	// ActionInvoiceCreate is recorded, as a system action with no actor, for each invoice the
+	// generate task makes. No member is checked for it: generation is the platform's own work.
+	ActionInvoiceCreate    = "invoice:create"
+	ActionCorrectionCreate = "correction:create"
 )
 
 // catalog lists every action the app knows, by resource. A policy may only name these, or
