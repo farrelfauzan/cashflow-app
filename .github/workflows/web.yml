@@ -118,6 +118,19 @@ jobs:
           done
           echo "The API did not become ready; see the api-log artifact."
           exit 1
+      # Invoices are made by the worker: a lease entered late is queued when it is saved and
+      # invoiced within seconds (e2e/tenant-account.spec.ts waits for that). Same environment
+      # as the API; it has no HTTP port, so its start line in the log is the ready signal.
+      - name: Start the worker
+        working-directory: services/api
+        run: |
+          nohup ./bin/worker > "$E2E_DIR/worker.log" 2>&1 &
+          for i in $(seq 1 30); do
+            grep -q '"msg":"worker started"' "$E2E_DIR/worker.log" && exit 0
+            sleep 1
+          done
+          echo "The worker did not start; see the api-log artifact."
+          exit 1
       - name: Install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
@@ -143,10 +156,13 @@ jobs:
           path: apps/web/playwright-report/
           retention-days: 7
       # Holds the devlog lines, login codes included: throwaway codes for this job's database.
+      # The worker's log goes in the same artifact.
       - name: Upload the API log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: api-log
-          path: /tmp/cashflow-e2e/api.log
+          path: |
+            /tmp/cashflow-e2e/api.log
+            /tmp/cashflow-e2e/worker.log
           retention-days: 7
