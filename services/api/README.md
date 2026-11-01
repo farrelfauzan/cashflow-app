@@ -152,10 +152,9 @@ one (staging has its own number too).
 ### Send WhatsApp through Twilio (Twilio sandbox, development only)
 
 A Twilio sandbox for WhatsApp sends from a number Twilio owns, with no phone of our own to link.
-It is for development only. The sandbox number is on the console's sandbox page and can differ
-per account, so copy it from there. Staging and production refuse Twilio's long-standing shared
-sandbox number, +14155238886; they cannot recognise another sandbox number, so never put one in
-their settings.
+It is for development only: staging and production refuse `WHATSAPP_PROVIDER=twilio` until a
+verified sender with approved templates exists. The sandbox number is on the console's sandbox
+page and can differ per account, so copy it from there.
 
 1. In the Twilio console go to Messaging, Try it out, Send a WhatsApp message. Note the sandbox
    number and the join keyword shown there.

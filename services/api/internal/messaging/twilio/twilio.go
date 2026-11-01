@@ -231,8 +231,8 @@ func sendError(status, code int) error {
 	// account. An operator must fix the credentials or the sender.
 	// 21654: Twilio refused the free-form Body and wants a Content template (ContentSid),
 	// which WhatsApp requires outside the recipient's 24-hour window. 63016: the same rule
-	// when Twilio reports it at once. We send no templates yet, so only an operator (or, in the
-	// sandbox, the person writing to the sandbox number first) can fix it.
+	// when Twilio reports it at once. A template without a Content SID, or a window that lapsed,
+	// needs an operator (or, in the sandbox, the person writing to the sandbox number first).
 	case code == 20003 || code == 63007 || code == 21606 || code == 21654 || code == 63016:
 		return fmt.Errorf("%w (%s)", messaging.ErrNotConnected, detail)
 	case status == http.StatusTooManyRequests:
