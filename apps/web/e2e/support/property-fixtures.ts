@@ -16,9 +16,8 @@ import { openListPageOf } from "./list-pages";
 //   "Wisma Uji <base> <run id> Satu|Dua"    made by a test that needs a fresh property of its
 //                                           own (the spec builds the name)
 //
-// "Wisma Tetap" sorts before "Wisma Uji", so the reused set always stays inside the first 100
-// properties, which is all the lease form's property picker loads, however many per-run ones pile
-// up after it. A reused property collects one unit per run, so units made in it need a name no
+// "Wisma Tetap" sorts before "Wisma Uji", so the reused set stays ahead of the per-run ones.
+// A reused property collects one unit per run, so units made in it need a name no
 // other run uses.
 
 // One reused property per project, so the two sizes, which run in parallel, never share one.

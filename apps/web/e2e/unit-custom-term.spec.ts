@@ -19,6 +19,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { chooseProperty } from "./support/property-picker";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
@@ -316,7 +317,7 @@ test.describe("Admin of the whole organization", () => {
       .getByRole("button", { name: "Sewakan unit" })
       .click();
     const lease = page.getByRole("dialog", { name: "Sewakan unit" });
-    await choose(page, lease, "Properti", property.name);
+    await chooseProperty(page, lease, property.name);
     await choose(page, lease, "Unit", unit.label);
 
     const term = lease.getByRole("combobox", { name: "Masa sewa" });

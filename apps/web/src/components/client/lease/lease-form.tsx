@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { useController } from "react-hook-form";
 import { z } from "zod";
 
@@ -9,8 +9,10 @@ import { DateField } from "@/components/client/form/date-field";
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { RupiahField } from "@/components/client/form/rupiah-field";
+import { SearchSelectField } from "@/components/client/form/search-select-field";
 import { SelectField } from "@/components/client/form/select-field";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { useDebouncedValue } from "@/components/client/form/use-debounced-value";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError } from "@/lib/api/form-error";
 import {
@@ -40,13 +42,18 @@ import {
   LEASE_FORM_DEFAULTS,
   NO_COLLECTOR_LABEL,
   NO_FREE_UNIT_TEXT,
+  NO_PROPERTY_FOUND_TEXT,
   NO_PROPERTY_TEXT,
+  PROPERTIES_LOADING_TEXT,
+  PROPERTY_LIST_LABEL,
+  PROPERTY_SEARCH_PLACEHOLDER,
   collectorOptions,
   freeUnits,
   isCalendarDate,
   leaseFormSchema,
   leaseFormValues,
   newLeaseBilledFromOptions,
+  propertyListNote,
   startDateHint,
   startTiming,
   TERM_NO_UNIT_PLACEHOLDER,
@@ -119,15 +126,33 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
   // unit taken) since the list screen cached them shows as it is now.
   const fresh = { query: { refetchOnMount: "always" as const } };
 
-  // The properties the member may see; with only one, it is chosen already.
-  const properties = useListProperties(orgId, { pageSize: 100 }, fresh);
+  // The properties the member may see, a page of them; with only one in all, it is chosen
+  // already. A property past that page is found by name: the search is the server's, one request
+  // per pause in typing, and an empty search shows the page again.
+  const properties = useListProperties(orgId, { pageSize: 20 }, fresh);
   const propertyItems = properties.data?.items ?? [];
+  const [propertySearch, setPropertySearch] = useState("");
+  const typedSearch = propertySearch.trim();
+  const settledSearch = useDebouncedValue(typedSearch);
+  const searchedName = typedSearch === "" ? "" : settledSearch;
+  const foundProperties = useListProperties(
+    orgId,
+    { pageSize: 20, q: searchedName },
+    { query: { ...fresh.query, enabled: searchedName !== "" } },
+  );
+  const propertyChoices =
+    searchedName === "" ? propertyItems : (foundProperties.data?.items ?? []);
+  const searching =
+    typedSearch !== "" &&
+    (settledSearch !== typedSearch || foundProperties.isLoading);
+  // The name of the property picked, kept for the trigger when a search moves it out of the list.
+  const [pickedName, setPickedName] = useState<string | undefined>(undefined);
+  const onlyProperty =
+    properties.data?.total === 1 ? propertyItems[0] : undefined;
   const propertyId =
     chosenProperty.value !== ""
       ? chosenProperty.value
-      : propertyItems.length === 1
-        ? (propertyItems[0]?.id ?? "")
-        : "";
+      : (onlyProperty?.id ?? "");
 
   const units = useListUnits(
     orgId,
@@ -222,23 +247,43 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
         )}
 
         <div className="flex flex-col gap-[18px] md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-[auto_auto_auto_auto_auto_1fr] md:items-start md:gap-x-4 md:[grid-template-areas:'prop_unit_billed'_'term_term_billed'_'deposit_deposit_billed'_'start_start_billed'_'collector_collector_billed'_'._._billed']">
-          <SelectField
+          <SearchSelectField
             triggerRef={chosenProperty.ref}
             label="Properti"
             value={propertyId}
+            selectedLabel={
+              chosenProperty.value !== "" ? pickedName : onlyProperty?.name
+            }
             placeholder="Pilih properti"
-            options={propertyItems.map((p) => ({ value: p.id, label: p.name }))}
+            options={propertyChoices.map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
             onValueChange={(next) => {
+              setPickedName(propertyChoices.find((p) => p.id === next)?.name);
               chosenProperty.onChange(next);
               setValue("unitId", "");
               setValue("termMonths", null);
               clearErrors(["propertyId", "unitId", "termMonths"]);
             }}
-            hint={
-              properties.data !== undefined && propertyItems.length === 0
-                ? NO_PROPERTY_TEXT
+            search={propertySearch}
+            onSearchChange={setPropertySearch}
+            searchPlaceholder={PROPERTY_SEARCH_PLACEHOLDER}
+            loading={searching}
+            loadingText={PROPERTIES_LOADING_TEXT}
+            listLabel={PROPERTY_LIST_LABEL}
+            // A failed search says why in the list, not "no property with that name".
+            emptyText={
+              foundProperties.isError
+                ? toFormError(foundProperties.error, []).message
+                : NO_PROPERTY_FOUND_TEXT
+            }
+            listNote={
+              searchedName === "" && properties.data !== undefined
+                ? propertyListNote(propertyItems.length, properties.data.total)
                 : null
             }
+            hint={properties.data?.total === 0 ? NO_PROPERTY_TEXT : null}
             error={errors.propertyId?.message}
             disabled={saving}
             className="md:[grid-area:prop]"

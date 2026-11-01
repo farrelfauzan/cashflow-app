@@ -24,6 +24,7 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { findOrCreateProperty } from "./support/property-fixtures";
+import { chooseProperty } from "./support/property-picker";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
@@ -176,7 +177,7 @@ async function openLeaseForm(
     .getByRole("button", { name: "Sewakan unit" })
     .click();
   const lease = page.getByRole("dialog", { name: "Sewakan unit" });
-  await choose(page, lease, "Properti", fixtures.property.name);
+  await chooseProperty(page, lease, fixtures.property.name);
   // No unit yet: nothing to choose.
   const term = lease.getByRole("combobox", { name: "Masa sewa" });
   await expect(term).toBeDisabled();

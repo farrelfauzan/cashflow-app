@@ -10,17 +10,21 @@ import {
 import type {
   Lease,
   Property,
+  PropertyList,
   Tenant,
+  TenantList,
   Unit,
 } from "../src/lib/api/generated/model";
 import { formatDate, jakartaToday } from "../src/lib/format/date";
 import {
   attachFullPageScreenshot,
+  attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
 import { findOrCreateProperty } from "./support/property-fixtures";
+import { chooseProperty } from "./support/property-picker";
 import { ORG_HOME_URL } from "./support/shell";
-import { HENDRA, SARI, type SeededStaff } from "./support/staff";
+import { DIMAS, HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Tambah penyewa", "Ubah penyewa" and "Sewakan unit", against the real API (seed-demo data). Pak
 // Hendra is Admin of the whole of Griya Sejahtera and Supervisor in Kost Putri Anggrek; Mbak Sari
@@ -249,7 +253,7 @@ test.describe("Admin of the whole organization", () => {
     await added.getByRole("button", { name: "Sewakan unit" }).click();
     const lease = page.getByRole("dialog", { name: "Sewakan unit" });
     await expect(lease).toContainText(`${name} · ${phone}`);
-    await choose(page, lease, "Properti", property.name);
+    await chooseProperty(page, lease, property.name);
     await choose(page, lease, "Unit", unit.label);
     // An amount takes digits only and shows them grouped; the API gets an integer.
     const deposit = lease.getByLabel("Uang jaminan");
@@ -380,7 +384,7 @@ test.describe("Admin of the whole organization", () => {
       lease.getByRole("combobox", { name: "Properti" }),
     ).toBeFocused();
     // Choosing the property clears its own message, not the start date's.
-    await choose(page, lease, "Properti", property.name);
+    await chooseProperty(page, lease, property.name);
     await expect(lease.getByText("Pilih properti.")).toHaveCount(0);
     await expect(lease.getByText("Isi tanggal mulai sewa.")).toBeVisible();
     await choose(page, lease, "Unit", unit.label);
@@ -489,6 +493,154 @@ test.describe("Admin limited to one property", () => {
       page.getByRole("button", { name: "Sewakan unit" }),
     ).toHaveCount(0);
 
+    expect(outsideRequests).toEqual([]);
+  });
+});
+
+// Kos Bulanan Sejahtera is seeded with 25 properties, more than the 20 the property picker of
+// "Sewakan unit" lists: a property past the first page is found by name. The test only opens the
+// panel; it changes nothing.
+test.describe("Admin of an organization with many properties", () => {
+  test.use({ storageState: DIMAS.storageState });
+
+  test("finds a property past the first page by name in the lease form", async ({
+    page,
+  }, testInfo) => {
+    const outsideRequests = trackOutsideRequests(page);
+    await openTenants(page, DIMAS, "Kos Bulanan Sejahtera");
+    const orgId = orgIdOf(page);
+
+    // The names of every property in name order, as the picker's list is ordered.
+    const propertiesResponse = await page.request.get(
+      `/api/orgs/${orgId}/properties`,
+      { params: { pageSize: 100 } },
+    );
+    expect(propertiesResponse.status()).toBe(200);
+    const properties = (await propertiesResponse.json()) as PropertyList;
+    expect(properties.total).toBeGreaterThan(20);
+    const firstPage = properties.items.slice(0, 20).map((p) => p.name);
+    const last = properties.items[properties.items.length - 1];
+    if (last === undefined) throw new Error("no property in the organization");
+    expect(firstPage).not.toContain(last.name);
+
+    // A tenant the form can open for: one without a lease.
+    const tenantsResponse = await page.request.get(
+      `/api/orgs/${orgId}/tenants`,
+      { params: { status: "none", pageSize: 1 } },
+    );
+    expect(tenantsResponse.status()).toBe(200);
+    const tenant = ((await tenantsResponse.json()) as TenantList).items[0];
+    if (tenant === undefined) throw new Error("no tenant without a lease");
+
+    await openTenantPage(page, orgId, tenant);
+    await page.getByRole("button", { name: "Sewakan unit" }).first().click();
+    const lease = page.getByRole("dialog", { name: "Sewakan unit" });
+    const picker = lease.getByRole("combobox", { name: "Properti" });
+    await expect(picker).toContainText("Pilih properti");
+    await expect(lease.getByRole("combobox", { name: "Unit" })).toBeDisabled();
+
+    await picker.click();
+    await expect(picker).toHaveAttribute("aria-expanded", "true");
+    // The search box and the list carry their own names, and the trigger controls the popup.
+    const search = page.getByRole("combobox", { name: "Cari nama properti" });
+    await expect(
+      page.getByRole("listbox", { name: "Daftar properti" }),
+    ).toBeVisible();
+    const popupId = await picker.getAttribute("aria-controls");
+    expect(popupId).not.toBeNull();
+    await expect(
+      page
+        .locator(`[id="${popupId}"]`)
+        .getByRole("listbox", { name: "Daftar properti" }),
+    ).toBeVisible();
+    await expect(search).toBeFocused();
+    await expectTouchTarget(search);
+    await expect(page.getByRole("option")).toHaveCount(20);
+    await expect(page.getByRole("option").first()).toHaveText(
+      firstPage[0] ?? "",
+    );
+    await expect(
+      page.getByText(
+        `Menampilkan 20 dari ${properties.total} properti. Ketik nama untuk mencari yang lain.`,
+      ),
+    ).toBeVisible();
+    await expectTouchTarget(page.getByRole("option").first());
+    // The list scrolls with the wheel inside the side panel.
+    const list = page.getByRole("listbox");
+    await list.hover();
+    await page.mouse.wheel(0, 400);
+    await expect
+      .poll(() => list.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0);
+    await list.evaluate((el) => el.scrollTo(0, 0));
+    await expect(page.getByRole("option", { name: last.name })).toHaveCount(0);
+    await attachViewportScreenshot(page, testInfo, "property-picker");
+
+    // Typing sends one search to the API and shows the property that was past the page.
+    const searched = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        url.pathname === `/api/orgs/${orgId}/properties` &&
+        url.searchParams.get("q") === last.name
+      );
+    });
+    await search.fill(last.name);
+    await searched;
+    await expect(page.getByRole("option", { name: last.name })).toBeVisible();
+    await expect(
+      page.getByText(`Menampilkan 20 dari ${properties.total}`),
+    ).toHaveCount(0);
+    // One match is not picked for the member: the auto-choice is for an organization with one
+    // property, not for a search with one result.
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await expect(picker).toContainText("Pilih properti");
+    await expect(lease.getByRole("combobox", { name: "Unit" })).toBeDisabled();
+
+    // A name nobody has says so.
+    await search.fill("Properti yang tidak ada");
+    await expect(
+      page.getByText("Tidak ada properti dengan nama itu."),
+    ).toBeVisible();
+    // A failed search says why in the list, not that no property has the name.
+    const unavailable = "Layanan sedang tidak tersedia. Coba lagi sebentar.";
+    await page.route(`**/api/orgs/${orgId}/properties?*q=*`, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "unavailable", message: unavailable },
+        }),
+      }),
+    );
+    await search.fill("Kos yang gagal dicari");
+    await expect(
+      page.getByRole("listbox", { name: "Daftar properti" }),
+    ).toContainText(unavailable);
+    await expect(
+      page.getByText("Tidak ada properti dengan nama itu."),
+    ).toHaveCount(0);
+    await page.unrouteAll();
+    await search.fill(last.name);
+
+    // Picking it closes the list, keeps its name on the trigger and opens the units.
+    await page.getByRole("option", { name: last.name, exact: true }).click();
+    await expect(search).toHaveCount(0);
+    await expect(picker).toBeFocused();
+    await expect(picker).toHaveText(last.name);
+    await expect(lease.getByRole("combobox", { name: "Unit" })).toBeEnabled();
+
+    // Opening it again starts from the full page, with the pick checked.
+    await picker.click();
+    await expect(search).toHaveValue("");
+    await expect(page.getByRole("option")).toHaveCount(20);
+    // Escape closes only the list, not the panel.
+    await page.keyboard.press("Escape");
+    await expect(search).toHaveCount(0);
+    await expect(lease).toBeVisible();
+    await expect(picker).toHaveText(last.name);
+
+    await lease.getByRole("button", { name: "Batal" }).click();
+    await expect(lease).toHaveCount(0);
     expect(outsideRequests).toEqual([]);
   });
 });
