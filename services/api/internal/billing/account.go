@@ -143,12 +143,14 @@ func tenantLeases(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID
 	return out, nil
 }
 
-// authorizeThroughLeases allows req as it is (for the whole organization) or, when that is not
-// allowed, through every one of leases: the same request in the lease's property, assigned to
-// its collector. With no lease only the organization-wide grant can allow it. Authorize audits
-// each allowed sensitive check in tx and records a denial in its own transaction.
+// authorizeThroughLeases allows req through every one of leases: the same request in the
+// lease's property, assigned to its collector. It never stops at an organization-wide Allow on
+// the bare record, which carries no property, so a Deny that names a property still matches
+// (an organization-wide Allow grants every lease anyway). With no lease only the
+// organization-wide grant can allow it. Authorize audits each allowed sensitive check in tx and
+// records a denial in its own transaction.
 func (s *Service) authorizeThroughLeases(ctx context.Context, tx pgx.Tx, p authz.Principal, req authz.Request, leases []leaseScope) error {
-	if authz.Allowed(p, req) || len(leases) == 0 {
+	if len(leases) == 0 {
 		return s.authz.Authorize(ctx, tx, p, req)
 	}
 	for _, l := range leases {

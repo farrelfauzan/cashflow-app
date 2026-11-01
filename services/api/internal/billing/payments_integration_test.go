@@ -427,20 +427,54 @@ func TestMoneyAuthorization(t *testing.T) {
 	})
 
 	t.Run("the admin's allowed payment and correction are audited with the change", func(t *testing.T) {
+		// Checked through each of the tenant's two leases, so each property's check is audited.
 		before := w.audited(t, authz.ActionPaymentRecord, "allow")
 		res := w.record(t, cash(both.renter, 2_200_000, day(2026, 11, 2)))
-		require.Equal(t, before+1, w.audited(t, authz.ActionPaymentRecord, "allow"))
-		var found bool
+		require.Equal(t, before+2, w.audited(t, authz.ActionPaymentRecord, "allow"))
+		want := map[string]bool{
+			"property/" + w.kos.ID.String() + "/tenant/" + both.tenantID.String(): true,
+			"property/" + mawar.ID.String() + "/tenant/" + both.tenantID.String(): true,
+		}
 		for _, row := range env.AuditLog(t, w.org.ID) {
-			if row.Action == authz.ActionPaymentRecord && row.Resource == "tenant/"+both.tenantID.String() {
-				found = true
+			if row.Action == authz.ActionPaymentRecord {
+				delete(want, row.Resource)
 			}
 		}
-		require.True(t, found, "the audit row names the tenant")
+		require.Empty(t, want, "an audit row names the tenant in each property")
 
 		before = w.audited(t, authz.ActionCorrectionCreate, "allow")
 		w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: res.Payment.ID, AmountDelta: 10_000, Reason: "salah ketik"})
-		require.Equal(t, before+1, w.audited(t, authz.ActionCorrectionCreate, "allow"))
+		require.Equal(t, before+2, w.audited(t, authz.ActionCorrectionCreate, "allow"))
+	})
+
+	t.Run("an explicit Deny on one property wins over an organization-wide Allow", func(t *testing.T) {
+		// A custom role may allow payments everywhere but deny them in one property; the
+		// tenant's lease there must meet the Deny, which a check on the bare tenant never would.
+		dina, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-9210-0098", Name: "Dina Kasir",
+			Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
+		require.NoError(t, err)
+		env.GrantCustomRole(t, w.org.ID, dina.ID, "Kasir kecuali Melati", `{"Version":"2026-10-25","Statement":[`+
+			`{"Effect":"Allow","Action":["payment:record","correction:create","invoice:read","payment:read"],"Resource":["*"]},`+
+			`{"Effect":"Deny","Action":["payment:record","correction:create","invoice:read","payment:read"],"Resource":["property/`+w.kos.ID.String()+`/*"]}]}`)
+		kasir := env.Principal(t, w.org.ID, dina.UserID)
+
+		payments := w.count(t, "payment")
+		_, err = env.Billing.RecordPayment(ctx, kasir, cash(onlyKos.renter, 100_000, day(2026, 11, 2)))
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		_, err = env.Billing.RecordPayment(ctx, kasir, cash(both.renter, 100_000, day(2026, 11, 2)))
+		require.ErrorIs(t, err, authz.ErrForbidden, "one lease in the denied property is enough to deny")
+		require.Equal(t, payments, w.count(t, "payment"))
+		_, err = env.Billing.Account(ctx, kasir, onlyKos.tenantID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+
+		rumahC, err := env.Properties.CreateUnit(ctx, w.admin, mawar.ID, property.UnitInput{Label: "Rumah C", Terms: testenv.Monthly(1_500_000)})
+		require.NoError(t, err)
+		hadi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Hadi Wijaya", Phone: "0812-9210-5099"})
+		require.NoError(t, err)
+		_, err = env.Tenants.CreateLease(ctx, w.admin, newLeaseIn(hadi.ID, rumahC.ID, day(2026, 11, 1)))
+		require.NoError(t, err)
+		_, err = env.Billing.RecordPayment(ctx, kasir, cash(renter{tenantID: hadi.ID}, 100_000, day(2026, 11, 2)))
+		require.NoError(t, err, "outside the denied property the Allow still grants")
 	})
 
 	t.Run("the Supervisor reads the account; the karyawan may not; neither records", func(t *testing.T) {
