@@ -17,6 +17,8 @@ export interface AccountInvoice {
   period: string;
   periodEnd: string;
   dueDate: string;
+  /** The day the invoice was made, Asia/Jakarta (terbit). */
+  issuedOn: string;
   /** What it billed when made (the sum of its lines). */
   amount: number;
   /** amount plus its corrections. */

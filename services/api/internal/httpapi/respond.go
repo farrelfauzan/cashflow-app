@@ -45,6 +45,9 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, billing.ErrRequestIDReused):
 		s.writeErrorField(w, http.StatusConflict, "request_id_reused",
 			"Permintaan ini sudah dipakai untuk data lain. Muat ulang halaman lalu coba lagi.", "requestId")
+	case errors.Is(err, billing.ErrCorrectionNoChange):
+		s.writeErrorField(w, http.StatusConflict, "correction_no_change",
+			"Nominal baru sama dengan nominal sekarang. Tidak ada yang dikoreksi.", "newAmount")
 	case errors.Is(err, billing.ErrCorrectionBelowZero):
 		s.writeErrorField(w, http.StatusConflict, "correction_below_zero",
 			"Koreksi ini membuat nominal di bawah nol.", "amountDelta")

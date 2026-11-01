@@ -41,7 +41,7 @@ func (q *Queries) ActiveOrganizationIDs(ctx context.Context) ([]uuid.UUID, error
 const createCorrection = `-- name: CreateCorrection :one
 INSERT INTO correction (id, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id
+RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id, new_amount
 `
 
 type CreateCorrectionParams struct {
@@ -78,6 +78,7 @@ func (q *Queries) CreateCorrection(ctx context.Context, arg CreateCorrectionPara
 		&i.CreatedByStaffUserID,
 		&i.CreatedAt,
 		&i.RequestID,
+		&i.NewAmount,
 	)
 	return i, err
 }
@@ -252,7 +253,7 @@ func (q *Queries) CreatePaymentAllocation(ctx context.Context, arg CreatePayment
 }
 
 const getCorrectionByRequestID = `-- name: GetCorrectionByRequestID :one
-SELECT id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id FROM correction
+SELECT id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id, new_amount FROM correction
 WHERE organization_id = $1 AND request_id = $2
 `
 
@@ -275,8 +276,28 @@ func (q *Queries) GetCorrectionByRequestID(ctx context.Context, arg GetCorrectio
 		&i.CreatedByStaffUserID,
 		&i.CreatedAt,
 		&i.RequestID,
+		&i.NewAmount,
 	)
 	return i, err
+}
+
+const getInvoiceBilled = `-- name: GetInvoiceBilled :one
+SELECT billed FROM invoice_balance
+WHERE organization_id = $1 AND invoice_id = $2
+`
+
+type GetInvoiceBilledParams struct {
+	OrganizationID uuid.UUID
+	InvoiceID      uuid.UUID
+}
+
+// What an invoice bills now: its amount plus its corrections. The caller holds the tenant lock,
+// so no other correction or allocation can change it before the caller's own insert.
+func (q *Queries) GetInvoiceBilled(ctx context.Context, arg GetInvoiceBilledParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getInvoiceBilled, arg.OrganizationID, arg.InvoiceID)
+	var billed int64
+	err := row.Scan(&billed)
+	return billed, err
 }
 
 const getInvoiceScope = `-- name: GetInvoiceScope :one
@@ -376,6 +397,25 @@ func (q *Queries) GetPaymentBySourceRef(ctx context.Context, arg GetPaymentBySou
 	return i, err
 }
 
+const getPaymentNet = `-- name: GetPaymentNet :one
+SELECT (p.amount + coalesce((SELECT sum(c.amount_delta) FROM correction c WHERE c.payment_id = p.id), 0))::bigint AS net
+FROM payment p
+WHERE p.organization_id = $1 AND p.id = $2
+`
+
+type GetPaymentNetParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// What a payment counts now: its amount plus its corrections. Read under the tenant lock.
+func (q *Queries) GetPaymentNet(ctx context.Context, arg GetPaymentNetParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getPaymentNet, arg.OrganizationID, arg.ID)
+	var net int64
+	err := row.Scan(&net)
+	return net, err
+}
+
 const getStaffRef = `-- name: GetStaffRef :one
 SELECT m.id AS member_id, su.name
 FROM membership m
@@ -448,11 +488,11 @@ func (q *Queries) GetTenantOverdue(ctx context.Context, arg GetTenantOverduePara
 
 const insertCorrectionIfNew = `-- name: InsertCorrectionIfNew :one
 INSERT INTO correction (id, organization_id, invoice_id, payment_id, amount_delta, reason,
-                        created_by_staff_user_id, request_id)
+                        created_by_staff_user_id, request_id, new_amount)
 VALUES ($1, $2, $3, $4, $5, $6,
-        $7, $8)
+        $7, $8, $9)
 ON CONFLICT (organization_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
-RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id
+RETURNING id, seq, organization_id, invoice_id, payment_id, amount_delta, reason, created_by_staff_user_id, created_at, request_id, new_amount
 `
 
 type InsertCorrectionIfNewParams struct {
@@ -464,11 +504,13 @@ type InsertCorrectionIfNewParams struct {
 	Reason               string
 	CreatedByStaffUserID uuid.UUID
 	RequestID            uuid.NullUUID
+	NewAmount            *int64
 }
 
 // A correction made from the API, keyed by the client's requestId: one already recorded in the
 // organization under it inserts nothing and returns no row. The not-negative trigger runs before
 // the conflict check, so the caller looks the requestId up first (GetCorrectionByRequestID).
+// new_amount is the amount the request named, when it named one instead of a difference.
 func (q *Queries) InsertCorrectionIfNew(ctx context.Context, arg InsertCorrectionIfNewParams) (Correction, error) {
 	row := q.db.QueryRow(ctx, insertCorrectionIfNew,
 		arg.ID,
@@ -479,6 +521,7 @@ func (q *Queries) InsertCorrectionIfNew(ctx context.Context, arg InsertCorrectio
 		arg.Reason,
 		arg.CreatedByStaffUserID,
 		arg.RequestID,
+		arg.NewAmount,
 	)
 	var i Correction
 	err := row.Scan(
@@ -492,6 +535,7 @@ func (q *Queries) InsertCorrectionIfNew(ctx context.Context, arg InsertCorrectio
 		&i.CreatedByStaffUserID,
 		&i.CreatedAt,
 		&i.RequestID,
+		&i.NewAmount,
 	)
 	return i, err
 }
@@ -765,8 +809,10 @@ func (q *Queries) ListAccountInvoiceLines(ctx context.Context, arg ListAccountIn
 
 const listAccountInvoices = `-- name: ListAccountInvoices :many
 SELECT b.invoice_id, b.lease_id, u.label AS unit_label, p.name AS property_name,
-       b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status
+       b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status,
+       i.created_at
 FROM invoice_balance b
+JOIN invoice i ON i.organization_id = b.organization_id AND i.id = b.invoice_id
 JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id
@@ -792,6 +838,7 @@ type ListAccountInvoicesRow struct {
 	Paid         int64
 	Outstanding  int64
 	Status       string
+	CreatedAt    time.Time
 }
 
 // A tenant's invoices with their balances and where they are, oldest period first.
@@ -817,6 +864,7 @@ func (q *Queries) ListAccountInvoices(ctx context.Context, arg ListAccountInvoic
 			&i.Paid,
 			&i.Outstanding,
 			&i.Status,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

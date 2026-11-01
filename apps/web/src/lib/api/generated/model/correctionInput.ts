@@ -6,19 +6,25 @@
  */
 
 /**
- * Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise).
+ * Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise), and exactly one of newAmount and amountDelta (400 with field newAmount otherwise).
  */
 export interface CorrectionInput {
-  /** As in PaymentInput. */
+  /** As in PaymentInput. A repeat compares what was sent (newAmount or amountDelta), so a repeated newAmount answers the stored correction even though the amount now equals it. */
   requestId: string;
   invoiceId?: string;
   paymentId?: string;
+  /**
+     * What the invoice should bill or the payment should count, in rupiah ("Nominal baru"); 0 cancels an invoice. The server takes the difference from the current amount inside the transaction, so a correction or payment saved meanwhile is never overwritten by a stale figure. Equal to the current amount is a 409 correction_no_change.
+     * @minimum 0
+     * @maximum 1000000000000
+     */
+  newAmount?: number;
   /**
      * Signed rupiah, not 0. Negative bills or counts less, positive more.
      * @minimum -1000000000000
      * @maximum 1000000000000
      */
-  amountDelta: number;
+  amountDelta?: number;
   /**
      * Required; blank is a 400.
      * @minLength 1

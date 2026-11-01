@@ -186,12 +186,25 @@ WHERE organization_id = @organization_id AND id = @id;
 -- A correction made from the API, keyed by the client's requestId: one already recorded in the
 -- organization under it inserts nothing and returns no row. The not-negative trigger runs before
 -- the conflict check, so the caller looks the requestId up first (GetCorrectionByRequestID).
+-- new_amount is the amount the request named, when it named one instead of a difference.
 INSERT INTO correction (id, organization_id, invoice_id, payment_id, amount_delta, reason,
-                        created_by_staff_user_id, request_id)
+                        created_by_staff_user_id, request_id, new_amount)
 VALUES (@id, @organization_id, @invoice_id, @payment_id, @amount_delta, @reason,
-        @created_by_staff_user_id, @request_id)
+        @created_by_staff_user_id, @request_id, sqlc.narg('new_amount'))
 ON CONFLICT (organization_id, request_id) WHERE request_id IS NOT NULL DO NOTHING
 RETURNING *;
+
+-- name: GetInvoiceBilled :one
+-- What an invoice bills now: its amount plus its corrections. The caller holds the tenant lock,
+-- so no other correction or allocation can change it before the caller's own insert.
+SELECT billed FROM invoice_balance
+WHERE organization_id = @organization_id AND invoice_id = @invoice_id;
+
+-- name: GetPaymentNet :one
+-- What a payment counts now: its amount plus its corrections. Read under the tenant lock.
+SELECT (p.amount + coalesce((SELECT sum(c.amount_delta) FROM correction c WHERE c.payment_id = p.id), 0))::bigint AS net
+FROM payment p
+WHERE p.organization_id = @organization_id AND p.id = @id;
 
 -- name: GetCorrectionByRequestID :one
 SELECT * FROM correction
@@ -225,8 +238,10 @@ WHERE m.organization_id = @organization_id AND m.staff_user_id = @staff_user_id;
 -- name: ListAccountInvoices :many
 -- A tenant's invoices with their balances and where they are, oldest period first.
 SELECT b.invoice_id, b.lease_id, u.label AS unit_label, p.name AS property_name,
-       b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status
+       b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status,
+       i.created_at
 FROM invoice_balance b
+JOIN invoice i ON i.organization_id = b.organization_id AND i.id = b.invoice_id
 JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 JOIN property p ON p.organization_id = u.organization_id AND p.id = u.property_id

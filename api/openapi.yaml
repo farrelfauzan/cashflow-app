@@ -1136,7 +1136,8 @@ paths:
         "409":
           description: >
             The correction would take the invoice's billed amount or the payment's net amount
-            below zero (code correction_below_zero, field amountDelta), or the requestId was used
+            below zero (code correction_below_zero, field amountDelta), newAmount equals the
+            current amount (code correction_no_change, field newAmount), or the requestId was used
             for a different correction (code request_id_reused).
           content:
             application/json:
@@ -2011,7 +2012,7 @@ components:
 
     AccountInvoice:
       type: object
-      required: [id, leaseId, unitLabel, propertyName, period, periodEnd, dueDate, amount, billed, paid, outstanding, status, lines, corrections]
+      required: [id, leaseId, unitLabel, propertyName, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, lines, corrections]
       properties:
         id: { type: string, format: uuid }
         leaseId: { type: string, format: uuid }
@@ -2020,6 +2021,7 @@ components:
         period: { type: string, format: date, description: "The period's first day; the invoice belongs to its month (Tagihan November)." }
         periodEnd: { type: string, format: date }
         dueDate: { type: string, format: date }
+        issuedOn: { type: string, format: date, description: "The day the invoice was made, Asia/Jakarta (terbit)." }
         amount: { type: integer, format: int64, description: What it billed when made (the sum of its lines). }
         billed: { type: integer, format: int64, description: amount plus its corrections. }
         paid: { type: integer, format: int64, description: What payments allocated to it. }
@@ -2154,15 +2156,30 @@ components:
 
     CorrectionInput:
       type: object
-      required: [requestId, amountDelta, reason]
-      description: Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise).
+      required: [requestId, reason]
+      description: >
+        Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise), and exactly
+        one of newAmount and amountDelta (400 with field newAmount otherwise).
       properties:
         requestId:
           type: string
           format: uuid
-          description: As in PaymentInput.
+          description: >
+            As in PaymentInput. A repeat compares what was sent (newAmount or amountDelta), so a
+            repeated newAmount answers the stored correction even though the amount now equals it.
         invoiceId: { type: string, format: uuid }
         paymentId: { type: string, format: uuid }
+        newAmount:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 1000000000000
+          description: >
+            What the invoice should bill or the payment should count, in rupiah ("Nominal baru");
+            0 cancels an invoice. The server takes the difference from the current amount inside
+            the transaction, so a correction or payment saved meanwhile is never overwritten by a
+            stale figure. Equal to the current amount is a 409 correction_no_change.
+          example: 1400000
         amountDelta:
           type: integer
           format: int64

@@ -43,6 +43,7 @@ type Correction struct {
 	CreatedByStaffUserID uuid.UUID
 	CreatedAt            time.Time
 	RequestID            uuid.NullUUID
+	NewAmount            *int64
 }
 
 type Invoice struct {
