@@ -42,8 +42,9 @@ type API struct {
 	// example https://app.example.id. Required outside development, where it must be https;
 	// development defaults to the Next.js dev server.
 	PublicWebOrigin string `env:"PUBLIC_WEB_ORIGIN"`
-	// WhatsAppProvider picks the messaging adapter: "gowa", "twilio" (the Twilio sandbox is
-	// development only) or "devlog" (development only). "cloudapi" is reserved for the WhatsApp
+	// WhatsAppProvider picks the messaging adapter: "gowa", "twilio" (development only: only
+	// a Twilio sandbox is supported until a verified sender with approved templates exists) or
+	// "devlog" (development only). "cloudapi" is reserved for the WhatsApp
 	// Cloud API adapter, not built yet.
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
 	// DevlogFile, when set, makes the devlog provider also append each message to this file as
@@ -78,17 +79,37 @@ type Twilio struct {
 	AccountSID   string `env:"ACCOUNT_SID"`   // TWILIO_ACCOUNT_SID, AC followed by 32 hex characters
 	AuthToken    string `env:"AUTH_TOKEN"`    // TWILIO_AUTH_TOKEN
 	WhatsAppFrom string `env:"WHATSAPP_FROM"` // TWILIO_WHATSAPP_FROM, the sender in E.164
+	// ContentSIDs is TWILIO_CONTENT_SIDS: optional comma-separated template=ContentSid pairs,
+	// for example "login_code=HX...". The Twilio adapter checks the names and SIDs.
+	ContentSIDs string `env:"CONTENT_SIDS"`
 }
 
-// TwilioSandboxNumber is the Twilio sandbox for WhatsApp, shared by every Twilio account.
-const TwilioSandboxNumber = "+14155238886"
+// ContentSIDMap parses ContentSIDs into template name -> Content SID.
+func (t Twilio) ContentSIDMap() (map[string]string, error) {
+	out := map[string]string{}
+	if strings.TrimSpace(t.ContentSIDs) == "" {
+		return out, nil
+	}
+	for pair := range strings.SplitSeq(t.ContentSIDs, ",") {
+		name, sid, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		name, sid = strings.TrimSpace(name), strings.TrimSpace(sid)
+		if !ok || name == "" || sid == "" {
+			return nil, errors.New("TWILIO_CONTENT_SIDS must be template=ContentSid pairs separated by commas, such as login_code=HX followed by 32 hex characters")
+		}
+		if _, dup := out[name]; dup {
+			return nil, fmt.Errorf("TWILIO_CONTENT_SIDS names %s twice", name)
+		}
+		out[name] = sid
+	}
+	return out, nil
+}
 
 var (
 	twilioAccountSID = regexp.MustCompile(`^AC[0-9a-fA-F]{32}$`)
 	e164             = regexp.MustCompile(`^\+[0-9]{8,15}$`)
 )
 
-func (t Twilio) validate(env string) error {
+func (t Twilio) validate() error {
 	if t.AccountSID == "" || t.AuthToken == "" || t.WhatsAppFrom == "" {
 		return errors.New("WHATSAPP_PROVIDER=twilio needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM")
 	}
@@ -98,8 +119,8 @@ func (t Twilio) validate(env string) error {
 	if !e164.MatchString(t.WhatsAppFrom) {
 		return fmt.Errorf("TWILIO_WHATSAPP_FROM must be an E.164 number such as +14155238886, got %q", t.WhatsAppFrom)
 	}
-	if t.WhatsAppFrom == TwilioSandboxNumber && env != "development" {
-		return fmt.Errorf("TWILIO_WHATSAPP_FROM is the Twilio sandbox, and the Twilio sandbox is development only; use a verified sender in %s", env)
+	if _, err := t.ContentSIDMap(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -165,7 +186,12 @@ func (c API) validate() error {
 			return errors.New("WHATSAPP_PROVIDER=gowa needs GOWA_URL, GOWA_USERNAME and GOWA_PASSWORD")
 		}
 	case "twilio":
-		if err := c.Twilio.validate(c.Env); err != nil {
+		// Only a Twilio sandbox is supported, and sandbox numbers differ per account, so the
+		// provider itself stays in development until a verified sender exists.
+		if c.Env != "development" {
+			return fmt.Errorf("WHATSAPP_PROVIDER=twilio only runs in development (a Twilio sandbox); use gowa in %s", c.Env)
+		}
+		if err := c.Twilio.validate(); err != nil {
 			return err
 		}
 	case "cloudapi":

@@ -151,37 +151,67 @@ one (staging has its own number too).
 
 ### Send WhatsApp through Twilio (Twilio sandbox, development only)
 
-Twilio's sandbox for WhatsApp sends from Twilio's shared number, +14155238886, with no phone of
-our own to link. It is for development only: staging and production refuse the sandbox number.
+A Twilio sandbox for WhatsApp sends from a number Twilio owns, with no phone of our own to link.
+It is for development only: staging and production refuse `WHATSAPP_PROVIDER=twilio` until a
+verified sender with approved templates exists. The sandbox number is on the console's sandbox
+page and can differ per account, so copy it from there.
 
 1. In the Twilio console go to Messaging, Try it out, Send a WhatsApp message. Note the sandbox
-   number (+14155238886) and the join keyword shown there.
+   number and the join keyword shown there.
 2. From your phone, send `join <keyword>` to the sandbox number on WhatsApp and wait for
    Twilio's confirmation reply.
-3. In `services/api/.env` set `WHATSAPP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID` and
-   `TWILIO_AUTH_TOKEN` (from the console's Account Info; never commit them), and
-   `TWILIO_WHATSAPP_FROM=+14155238886`. Config refuses to start with any of the three missing,
-   a malformed Account SID or a sender that is not E.164.
-4. Restart `make api-run`.
-5. Request a login code for a member whose phone joined (steps 4 and 5 of the GOWA runbook
-   above). The code arrives as a WhatsApp message from the sandbox number.
+3. Create the login code template (Twilio wants one, see below): Messaging, Content Template
+   Builder, Create new. Name it `login_code`, language Indonesian, content type Text. Body:
+   `Kode masuk Anda: *{{1}}*`, a blank line, then `Berlaku 5 menit. Jangan berikan kode ini
+   kepada siapa pun, termasuk orang yang mengaku petugas.` Give `123456` as the sample for
+   `{{1}}`. Save it; there is no need to submit it for WhatsApp approval. Copy its Content SID,
+   which starts with HX.
+4. In `services/api/.env` set `WHATSAPP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID` and
+   `TWILIO_AUTH_TOKEN` (from the console's Account Info; never commit them),
+   `TWILIO_WHATSAPP_FROM` (the sandbox number from step 1, as `+` and digits), and
+   `TWILIO_CONTENT_SIDS=login_code=<the HX value from step 3>`. Config refuses to start with
+   any of the first three missing, a malformed Account SID, a sender that is not E.164, a
+   template name it does not know or a Content SID that is not HX and 32 hex characters.
+5. Restart `make api-run`.
+6. From your phone, send any message to the sandbox number (this opens the 24-hour window, see
+   below), then request a login code for a member whose phone joined (steps 4 and 5 of the GOWA
+   runbook above). The code arrives as a WhatsApp message from the sandbox number.
 
-What the sandbox can do: send to phones that joined it, as free-form text, within 24 hours of
-the phone's last message to the sandbox number. What it cannot do: reach a phone that has not
-joined, or send outside that 24-hour window. Approved templates, which WhatsApp needs outside
-the window, belong to a verified sender later.
+Content templates: `TWILIO_CONTENT_SIDS` maps our template names to Twilio Content templates,
+as `name=HX...` pairs separated by commas. A template listed there is sent as its Content SID,
+with the values numbered as the template lists its parameters (`login_code`: `{{1}}` is the
+code; `member_invite`: `{{1}}` name, `{{2}}` role, `{{3}}` organization, `{{4}}` inviter, `{{5}}`
+the login link). Any template not listed is sent as plain text, which Twilio may refuse with
+`code 21654`. The Content template's text should match `internal/messaging/templates.go`.
 
-When either rule bites, Twilio still accepts the message and fails it a moment later. The API
-cannot see that yet (status callbacks come with slice 5), so it answers that the code was sent,
-and nothing arrives. Fix it from the phone: send any message to the sandbox number (or
-`join <keyword>` again if the phone left the sandbox), then request a new code.
+A Twilio trial account cannot create Content templates (the console asks to upgrade first), so
+step 3 needs an upgraded account. On a trial, Twilio's own sample template from the Try it out
+page can be delivered, but its text is Twilio's, not ours. `TWILIO_CONTENT_SIDS` accepts it
+like any other HX value; mapping `login_code` to it only proves that a message reaches the
+phone, and the code lands in whatever its `{{1}}` says. It is not a login message. On a trial,
+stay on `WHATSAPP_PROVIDER=devlog` for everyday development.
+
+What the sandbox can do: send to phones that joined it, within 24 hours of the phone's last
+message to the sandbox number. What it cannot do: reach a phone that has not joined, or send
+outside that 24-hour window. An unapproved Content template does not lift the window; only a
+WhatsApp-approved template on a verified sender of our own does, which is not set up.
+
+When a rule bites, Twilio does one of two things. It may refuse the message at once (for
+example `code 21654`, "ContentSid Required", for plain text); the code request then answers 503
+`whatsapp_unavailable` and the log names the code. Or it accepts the message and fails it a
+moment later; the API cannot see that yet (status callbacks come with slice 5), so it answers
+that the code was sent, and nothing arrives. Either way, check `TWILIO_CONTENT_SIDS`, then fix
+it from the phone: send any message to the sandbox number (or `join <keyword>` again if the
+phone left the sandbox), then request a new code within 24 hours.
 
 Wrong credentials or a sender Twilio does not accept fail at once, like an unlinked GOWA phone:
 a code request answers 503 `whatsapp_unavailable` and the log has `whatsapp unavailable` naming
 `the WhatsApp session is not connected`; a member invitation answers 503 "WhatsApp gagal
-mengirim". The log carries only Twilio's HTTP status and error code (for example `code 20003`
-for a wrong Account SID or Auth Token, `code 63007` for a sender without WhatsApp), never the
-phone number or the message.
+mengirim". Any other refusal from Twilio, and Twilio failing on its side, answer the same 503
+instead of a 500. The log carries only Twilio's HTTP status and error code (for example
+`code 20003` for a wrong Account SID or Auth Token, `code 63007` for a sender without
+WhatsApp), never the phone number or the message; look the code up at
+https://www.twilio.com/docs/api/errors.
 
 ## Everyday commands
 

@@ -189,8 +189,8 @@ func TestTwilioSettings(t *testing.T) {
 	}{
 		{name: "sandbox in development", env: env("development", sandbox),
 			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886"}},
-		{name: "verified-looking sender in staging", env: env("staging", withValue("TWILIO_WHATSAPP_FROM", "+6281100001111")),
-			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+6281100001111"}},
+		{name: "another account's sandbox number in development", env: env("development", withValue("TWILIO_WHATSAPP_FROM", "+17372508034")),
+			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+17372508034"}},
 		{name: "nothing set", env: env("development", nil), wantErr: allThree},
 		{name: "missing account sid", env: env("development", without("TWILIO_ACCOUNT_SID")), wantErr: allThree},
 		{name: "missing auth token", env: env("development", without("TWILIO_AUTH_TOKEN")), wantErr: allThree},
@@ -199,9 +199,15 @@ func TestTwilioSettings(t *testing.T) {
 		{name: "account sid too short", env: env("development", withValue("TWILIO_ACCOUNT_SID", "AC0123")), wantErr: "TWILIO_ACCOUNT_SID must be"},
 		{name: "sender without plus", env: env("development", withValue("TWILIO_WHATSAPP_FROM", "14155238886")), wantErr: "TWILIO_WHATSAPP_FROM must be an E.164"},
 		{name: "sender with whatsapp prefix", env: env("development", withValue("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")), wantErr: "TWILIO_WHATSAPP_FROM must be an E.164"},
-		{name: "sandbox refused in staging", env: env("staging", sandbox), wantErr: "the Twilio sandbox is development only"},
-		{name: "sandbox refused in production", env: env("production", sandbox), wantErr: "the Twilio sandbox is development only"},
+		{name: "twilio refused in staging", env: env("staging", sandbox), wantErr: "WHATSAPP_PROVIDER=twilio only runs in development"},
+		{name: "twilio refused in production", env: env("production", sandbox), wantErr: "WHATSAPP_PROVIDER=twilio only runs in development"},
+		{name: "twilio refused in staging whatever the sender", env: env("staging", withValue("TWILIO_WHATSAPP_FROM", "+17372508034")),
+			wantErr: "WHATSAPP_PROVIDER=twilio only runs in development"},
 		{name: "devlog file refused with twilio", env: env("development", withValue("DEVLOG_FILE", "/tmp/devlog.jsonl")), wantErr: "DEVLOG_FILE only works"},
+		{name: "content sids are kept", env: env("development", withValue("TWILIO_CONTENT_SIDS", "login_code=HX"+fakeHex)),
+			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886", ContentSIDs: "login_code=HX" + fakeHex}},
+		{name: "content sids without a template name", env: env("development", withValue("TWILIO_CONTENT_SIDS", "HX"+fakeHex)), wantErr: "template=ContentSid pairs"},
+		{name: "content sids with a template named twice", env: env("development", withValue("TWILIO_CONTENT_SIDS", "login_code=HX"+fakeHex+",login_code=HX"+fakeHex)), wantErr: "names login_code twice"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,6 +220,39 @@ func TestTwilioSettings(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got.Twilio)
+		})
+	}
+}
+
+func TestTwilioContentSIDMap(t *testing.T) {
+	t.Parallel()
+	hx := "HX" + strings.Repeat("0123456789abcdef", 2)
+	tests := []struct {
+		name    string
+		value   string
+		want    map[string]string
+		wantErr string
+	}{
+		{name: "unset", value: "", want: map[string]string{}},
+		{name: "only spaces", value: "  ", want: map[string]string{}},
+		{name: "one pair", value: "login_code=" + hx, want: map[string]string{"login_code": hx}},
+		{name: "two pairs with spaces", value: " login_code = " + hx + " , member_invite=" + hx + " ",
+			want: map[string]string{"login_code": hx, "member_invite": hx}},
+		{name: "missing sid", value: "login_code=", wantErr: "template=ContentSid pairs"},
+		{name: "missing name", value: "=" + hx, wantErr: "template=ContentSid pairs"},
+		{name: "trailing comma", value: "login_code=" + hx + ",", wantErr: "template=ContentSid pairs"},
+		{name: "duplicate name", value: "login_code=" + hx + ",login_code=" + hx, wantErr: "names login_code twice"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := Twilio{ContentSIDs: tc.value}.ContentSIDMap()
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }

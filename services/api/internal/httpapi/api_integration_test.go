@@ -5,6 +5,7 @@ package httpapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 )
 
@@ -118,6 +120,17 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 		resp, body := admin.do(http.MethodPost, "/api/auth/otp/verify", apigen.LoginCodeVerify{Phone: o.Admin.Phone, Code: wrong})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		require.Contains(t, string(body), `"code":"invalid_code"`)
+	})
+
+	t.Run("when WhatsApp cannot send, a code request answers 503 without the provider's text", func(t *testing.T) {
+		env.Messenger.FailWith(fmt.Errorf("%w (status 400, code 21654)", messaging.ErrNotConnected))
+		t.Cleanup(func() { env.Messenger.FailWith(nil) })
+
+		resp, data := newClient(t, srv.URL).do(http.MethodPost, "/api/auth/otp/request",
+			apigen.LoginCodeRequest{Phone: other.Admin.Phone})
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, string(data))
+		require.Equal(t, "whatsapp_unavailable", decode[apigen.Error](t, data).Error.Code)
+		require.NotContains(t, string(data), "21654")
 	})
 
 	t.Run("the admin signs in and gets a safe session cookie", func(t *testing.T) {

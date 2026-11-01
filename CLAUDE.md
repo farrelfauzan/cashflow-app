@@ -447,11 +447,15 @@ Every message goes to `message_log` with its status and `organization_id`.
   `ErrUndeliverable` and `ErrNotConnected`; the last one means an operator must re-link the
   phone, so it is logged as an error and shown to users as a 503.
 - `twilio` (decision 35): Twilio's Messages API with basic auth (`TWILIO_ACCOUNT_SID`,
-  `TWILIO_AUTH_TOKEN`) from `TWILIO_WHATSAPP_FROM`, sending the rendered text. Twilio's error
-  codes map to the same three errors. Today it is the Twilio sandbox, development only (the
-  sandbox number is refused elsewhere): it reaches only phones that joined it, and free-form text
-  only within 24 hours of the phone's last message. Outside that window Twilio accepts the message
-  and fails it later, which the app cannot see before status callbacks (slice 5).
+  `TWILIO_AUTH_TOKEN`) from `TWILIO_WHATSAPP_FROM`. A template named in `TWILIO_CONTENT_SIDS`
+  (`login_code=HX...`) is sent as that Twilio Content template, its parameters numbered in the
+  template's order and then its button links; any other template as rendered text, which Twilio
+  refuses with 21654 on the user's sandbox. Twilio's error codes map to the same three errors,
+  and any other refusal to `ErrNotConnected`. Today it is a Twilio sandbox, so config refuses
+  `twilio` outside development until a verified sender exists. The sandbox reaches only phones
+  that joined it, only within 24 hours of the phone's last message (an unapproved Content
+  template does not lift that). Twilio refuses some sends at once and fails
+  others later, which the app cannot see before status callbacks (slice 5).
 - `devlog` (development only): renders the message and writes it to the log.
 - Cloud API (later, once a PT exists): templates registered with Meta under the same names,
   parameters in the same order, native reply buttons using the payload.

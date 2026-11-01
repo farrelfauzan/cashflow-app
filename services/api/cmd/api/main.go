@@ -133,10 +133,15 @@ func messenger(cfg config.API, log *slog.Logger) (messaging.Provider, error) {
 			DeviceID: cfg.GOWA.DeviceID,
 		})
 	case "twilio":
+		contentSIDs, err := cfg.Twilio.ContentSIDMap()
+		if err != nil {
+			return nil, err
+		}
 		return twilio.New(twilio.Config{
-			AccountSID: cfg.Twilio.AccountSID,
-			AuthToken:  cfg.Twilio.AuthToken,
-			From:       cfg.Twilio.WhatsAppFrom,
+			AccountSID:  cfg.Twilio.AccountSID,
+			AuthToken:   cfg.Twilio.AuthToken,
+			From:        cfg.Twilio.WhatsAppFrom,
+			ContentSIDs: contentSIDs,
 		})
 	case "devlog":
 		return devlog.New(log, cfg.DevlogFile), nil
