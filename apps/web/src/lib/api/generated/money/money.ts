@@ -26,8 +26,12 @@ import type {
 import type {
   CorrectionInput,
   CorrectionResult,
+  Dashboard,
   Error,
   ErrorResponse,
+  GetDashboardParams,
+  InvoiceList,
+  ListInvoicesParams,
   PaymentInput,
   PaymentResult,
   TenantAccount
@@ -143,6 +147,202 @@ export function useGetTenantAccount<TData = Awaited<ReturnType<typeof getTenantA
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = useGetTenantAccountQueryOptions(orgId,tenantId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * The month's money and who is in arrears now. The month's figures cover the invoices of that month: an invoice belongs to the month of its period (Tagihan November), which for a regular invoice is the month of its due date. Arrears are not tied to the month: every invoice still owed after its due date (debt from the day after it, Asia/Jakarta). A member limited to some properties sees, and every figure counts, only the invoices of leases in their properties.
+ * @summary The Supervisor's home, Beranda (needs report:read)
+ */
+export const getDashboard = (
+    orgId: string,
+    params?: GetDashboardParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<Dashboard>(
+      {url: `/orgs/${orgId}/dashboard`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetDashboardQueryKey = (orgId: string,
+    params?: GetDashboardParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/dashboard` });
+
+
+export const useGetDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/dashboard`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDashboard>>> = ({ signal }) => getDashboard(orgId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getDashboard>>>
+export type GetDashboardQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params: undefined |  GetDashboardParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDashboard>>,
+          TError,
+          Awaited<ReturnType<typeof getDashboard>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDashboard>>,
+          TError,
+          Awaited<ReturnType<typeof getDashboard>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The Supervisor's home, Beranda (needs report:read)
+ */
+
+export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: GetDashboardParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboard>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetDashboardQueryOptions(orgId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * One page of the month's invoices (an invoice belongs to the month of its period), with each invoice's lines. summary covers the whole month in the chosen property, whatever status, q and page are, so the tiles stay the same while the table is filtered; total counts the rows matching every filter. A member limited to some properties sees, and every figure counts, only the invoices of leases in their properties.
+ * @summary Penagihan, the invoices of a month (needs invoice:read)
+ */
+export const listInvoices = (
+    orgId: string,
+    params?: ListInvoicesParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<InvoiceList>(
+      {url: `/orgs/${orgId}/invoices`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListInvoicesQueryKey = (orgId: string,
+    params?: ListInvoicesParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/invoices` });
+
+
+export const useListInvoicesQueryOptions = <TData = Awaited<ReturnType<typeof listInvoices>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListInvoicesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/invoices`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInvoices>>> = ({ signal }) => listInvoices(orgId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInvoices>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListInvoicesQueryResult = NonNullable<Awaited<ReturnType<typeof listInvoices>>>
+export type ListInvoicesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListInvoices<TData = Awaited<ReturnType<typeof listInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params: undefined |  ListInvoicesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoices>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInvoices>>,
+          TError,
+          Awaited<ReturnType<typeof listInvoices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInvoices<TData = Awaited<ReturnType<typeof listInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListInvoicesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoices>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInvoices>>,
+          TError,
+          Awaited<ReturnType<typeof listInvoices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInvoices<TData = Awaited<ReturnType<typeof listInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListInvoicesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Penagihan, the invoices of a month (needs invoice:read)
+ */
+
+export function useListInvoices<TData = Awaited<ReturnType<typeof listInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListInvoicesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListInvoicesQueryOptions(orgId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
