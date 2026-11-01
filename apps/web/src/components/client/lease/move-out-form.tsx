@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useId } from "react";
+import { Controller } from "react-hook-form";
 
 import { DateField } from "@/components/client/form/date-field";
 import { FormAlert } from "@/components/client/form/form-alert";
-import { toFormError } from "@/lib/api/form-error";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import type { Lease } from "@/lib/api/generated/model";
 import { useMoveOut } from "@/lib/api/generated/tenants/tenants";
 import {
   MOVE_OUT_API_FIELDS,
   moveOutEffects,
-  checkMoveOut,
+  moveOutFormSchema,
   moveOutHint,
 } from "./utils";
 
@@ -38,71 +39,52 @@ export function MoveOutForm({
   const id = useId();
   const formId = `${id}-form`;
   const refresh = useRefreshLease(orgId);
-  const dateRef = useRef<HTMLInputElement>(null);
-  const [date, setDate] = useState(today);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [alert, setAlert] = useState<string | null>(null);
+  const { form, showApiError, alert } = useApiForm({
+    schema: moveOutFormSchema(lease.startDate, today),
+    defaultValues: { endDate: today },
+    apiFields: MOVE_OUT_API_FIELDS,
+  });
 
   const moveOut = useMoveOut({
     mutation: { onSuccess: (ended) => refresh(ended, true) },
   });
   const saving = moveOut.isPending;
 
-  // Focus the date after a refused save, once the field is enabled again.
-  const [focusDate, setFocusDate] = useState<object | null>(null);
-  useEffect(() => {
-    if (focusDate !== null && !saving) dateRef.current?.focus();
-  }, [focusDate, saving]);
-
-  function showError(message: string) {
-    setError(message);
-    setFocusDate({});
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit((input) => {
     if (saving) return;
-    setAlert(null);
-    const checked = checkMoveOut(date, lease.startDate, today);
-    if (!checked.ok) {
-      showError(checked.error);
-      return;
-    }
-    setError(undefined);
     moveOut.mutate(
-      { orgId, leaseId: lease.id, data: { endDate: checked.date } },
-      {
-        onSuccess: onSaved,
-        onError: (failure) => {
-          const failed = toFormError(failure, MOVE_OUT_API_FIELDS);
-          if (failed.field !== null) showError(failed.message);
-          else setAlert(failed.message);
-        },
-      },
+      { orgId, leaseId: lease.id, data: input },
+      { onSuccess: onSaved, onError: showApiError },
     );
-  }
+  });
 
   return (
     <>
       <form
         id={formId}
         noValidate
-        onSubmit={handleSubmit}
+        onSubmit={submit}
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
-        {alert !== null && <FormAlert message={alert} />}
-        <DateField
-          inputRef={dateRef}
-          label="Hari terakhir menyewa"
+        {alert !== undefined && <FormAlert message={alert} />}
+        <Controller
+          control={form.control}
           name="endDate"
-          value={date}
-          onChange={(next) => {
-            setDate(next);
-            setError(undefined);
-          }}
-          hint={moveOutHint(lease.startDate)}
-          error={error}
-          disabled={saving}
+          render={({ field, fieldState }) => (
+            <DateField
+              inputRef={field.ref}
+              label="Hari terakhir menyewa"
+              name="endDate"
+              value={field.value}
+              onChange={(date) => {
+                field.onChange(date);
+                form.clearErrors("endDate");
+              }}
+              hint={moveOutHint(lease.startDate)}
+              error={fieldState.error?.message}
+              disabled={saving}
+            />
+          )}
         />
         <LeaseEffectsBox items={moveOutEffects(lease.termMonths)} />
       </form>
