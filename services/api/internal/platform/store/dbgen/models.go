@@ -32,6 +32,60 @@ type ChargeType struct {
 	UpdatedAt      time.Time
 }
 
+type Correction struct {
+	ID                   uuid.UUID
+	Seq                  int64
+	OrganizationID       uuid.UUID
+	InvoiceID            uuid.NullUUID
+	PaymentID            uuid.NullUUID
+	AmountDelta          int64
+	Reason               string
+	CreatedByStaffUserID uuid.UUID
+	CreatedAt            time.Time
+}
+
+type Invoice struct {
+	ID             uuid.UUID
+	Seq            int64
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+	TenantID       uuid.UUID
+	Period         time.Time
+	PeriodEnd      time.Time
+	DueDate        time.Time
+	Amount         int64
+	CreatedAt      time.Time
+}
+
+type InvoiceBalance struct {
+	InvoiceID      uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	LeaseID        uuid.UUID
+	Period         time.Time
+	PeriodEnd      time.Time
+	DueDate        time.Time
+	Seq            int64
+	Amount         int64
+	Corrected      int64
+	Billed         int64
+	Paid           int64
+	Outstanding    int64
+	Status         string
+}
+
+type InvoiceLine struct {
+	ID             uuid.UUID
+	Seq            int64
+	OrganizationID uuid.UUID
+	InvoiceID      uuid.UUID
+	Kind           string
+	ChargeTypeID   uuid.NullUUID
+	Label          string
+	Amount         int64
+	CreatedAt      time.Time
+}
+
 type Lease struct {
 	ID                   uuid.UUID
 	OrganizationID       uuid.UUID
@@ -88,6 +142,32 @@ type OtpChallenge struct {
 	CreatedAt  time.Time
 }
 
+type Payment struct {
+	ID                    uuid.UUID
+	Seq                   int64
+	OrganizationID        uuid.UUID
+	TenantID              uuid.UUID
+	Amount                int64
+	Method                string
+	ReceivedAt            time.Time
+	Source                string
+	SourceRef             *string
+	RecordedByStaffUserID uuid.NullUUID
+	Note                  *string
+	CreatedAt             time.Time
+}
+
+type PaymentAllocation struct {
+	ID             uuid.UUID
+	Seq            int64
+	OrganizationID uuid.UUID
+	PaymentID      uuid.UUID
+	InvoiceID      uuid.UUID
+	TenantID       uuid.UUID
+	Amount         int64
+	CreatedAt      time.Time
+}
+
 type Property struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID
@@ -141,6 +221,14 @@ type Tenant struct {
 	Note           string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type TenantBalance struct {
+	TenantID            uuid.UUID
+	OrganizationID      uuid.UUID
+	Outstanding         int64
+	OldestUnpaidDueDate *time.Time
+	Credit              int64
 }
 
 type Unit struct {

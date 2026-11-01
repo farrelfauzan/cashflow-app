@@ -33,3 +33,9 @@ sql:
             go_type:
               type: "time.Time"
               pointer: true
+          # sqlc cannot tell that a view column is nullable: the oldest unpaid due date is NULL
+          # for a tenant who owes nothing.
+          - column: "tenant_balance.oldest_unpaid_due_date"
+            go_type:
+              type: "time.Time"
+              pointer: true
