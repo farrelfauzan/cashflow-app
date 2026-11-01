@@ -211,3 +211,29 @@ func TestPropertyAndUnitLists(t *testing.T) {
 }
 
 func grantKaryawan() []member.RoleGrant { return []member.RoleGrant{{Role: authz.RoleKaryawan}} }
+
+// TestPropertyListHonoursAPropertyDeny: a custom role that may read every property but is denied
+// one must not list it, nor count it in the total. The list's check names no property, so it
+// must not stop at an organization-wide Allow (T-058).
+func TestPropertyListHonoursAPropertyDeny(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812783")
+	admin := env.Principal(t, o.ID, o.Admin.UserID)
+	melati, err := env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
+	require.NoError(t, err)
+	_, err = env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kontrakan Mawar", Kind: property.KindKontrakan})
+	require.NoError(t, err)
+
+	dina, err := env.Members.Invite(ctx, admin, member.Invite{Phone: "0812-7830-0099", Name: "Dina", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
+	require.NoError(t, err)
+	env.GrantCustomRole(t, o.ID, dina.ID, "Semua kecuali Melati", `{"Version":"2026-10-25","Statement":[`+
+		`{"Effect":"Allow","Action":["property:read"],"Resource":["*"]},`+
+		`{"Effect":"Deny","Action":["property:read"],"Resource":["property/`+melati.ID.String()+`","property/`+melati.ID.String()+`/*"]}]}`)
+	dinaP := env.Principal(t, o.ID, dina.UserID)
+
+	res, err := env.Properties.List(ctx, dinaP, property.ListQuery{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"Kontrakan Mawar"}, names(res.Items))
+	require.EqualValues(t, 1, res.Total)
+}

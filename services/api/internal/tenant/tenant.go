@@ -156,7 +156,9 @@ func (s *Service) List(ctx context.Context, p authz.Principal, lq ListQuery) (li
 		q := dbgen.New(tx)
 		args := dbgen.ListTenantPageParams{
 			OrganizationID: p.OrganizationID, OrgWide: all, LeaseIds: []uuid.UUID{}, Today: Today(s.clock),
-			Q: lq.Search.Text, PhoneNational: lq.Search.PhoneNational, PhoneDigits: lq.Search.PhoneDigits,
+			// A tenant with no lease belongs to no property, so the bare check decides it.
+			LeaseLessVisible: authz.Allowed(p, readRequest(uuid.Nil)),
+			Q:                lq.Search.Text, PhoneNational: lq.Search.PhoneNational, PhoneDigits: lq.Search.PhoneDigits,
 			PropertyID:        uuid.NullUUID{UUID: lq.PropertyID, Valid: lq.PropertyID != uuid.Nil},
 			CollectorDisabled: lq.CollectorDisabled,
 			Sort:              lq.Sort, PageLimit: lq.Page.Limit(), PageOffset: lq.Page.Offset(),
@@ -228,6 +230,7 @@ func countTenantArgs(a dbgen.ListTenantPageParams) dbgen.CountTenantPageParams {
 		OrganizationID: a.OrganizationID, OrgWide: a.OrgWide, LeaseIds: a.LeaseIds, Today: a.Today,
 		Q: a.Q, PhoneNational: a.PhoneNational, PhoneDigits: a.PhoneDigits,
 		PropertyID: a.PropertyID, LeaseStatus: a.LeaseStatus, CollectorDisabled: a.CollectorDisabled,
+		LeaseLessVisible: a.LeaseLessVisible,
 	}
 }
 
@@ -246,8 +249,15 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Ten
 		}
 		visible, ok := visibleLeases(p, all, leases)
 		if !ok {
-			// Records the denial and returns ErrForbidden.
-			return s.authz.Authorize(ctx, tx, p, readRequest(id))
+			if len(leases) > 0 {
+				// None of the tenant's leases is visible. The bare tenant names no property, so a
+				// check on it could allow what a Deny on the leases' property refuses.
+				return s.authz.Deny(ctx, p, readRequest(id))
+			}
+			// A tenant with no lease belongs to no property: the bare check decides.
+			if err := s.authz.Authorize(ctx, tx, p, readRequest(id)); err != nil {
+				return err
+			}
 		}
 		out = toTenant(row, visible)
 		return nil
@@ -335,8 +345,10 @@ func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, i
 	return out, err
 }
 
-// authorizeTenantChange allows tenant:manage for the whole organization, or through every
-// active lease of the tenant. Each allowed check is audited.
+// authorizeTenantChange allows tenant:manage through every active lease of the tenant, or, for a
+// tenant with no active lease, for the whole organization. It never stops at an
+// organization-wide Allow on the bare tenant, which names no property, so a Deny on one
+// property still matches its leases there. Each allowed check is audited.
 func (s *Service) authorizeTenantChange(ctx context.Context, tx pgx.Tx, p authz.Principal, id uuid.UUID, leases []Lease) error {
 	whole := authz.Request{Action: authz.ActionTenantManage, Resource: authz.Resource{Type: "tenant", ID: id.String()}}
 	var active []Lease
@@ -345,7 +357,7 @@ func (s *Service) authorizeTenantChange(ctx context.Context, tx pgx.Tx, p authz.
 			active = append(active, l)
 		}
 	}
-	if authz.Allowed(p, whole) || len(active) == 0 {
+	if len(active) == 0 {
 		return s.authz.Authorize(ctx, tx, p, whole)
 	}
 	for _, l := range active {

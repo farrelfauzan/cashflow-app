@@ -394,6 +394,88 @@ func TestAdminLimitedToOnePropertyAndTenants(t *testing.T) {
 	})
 }
 
+// TestPropertyDenyWinsOverOrganizationWideAllow: a custom role that allows tenants everywhere
+// but denies them in one property must stop there. The tenant record has no property, so a check
+// on it alone (the shortcut T-058 removed) never meets the Deny.
+func TestPropertyDenyWinsOverOrganizationWideAllow(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	w := newWorld(t, env, "0812732")
+
+	dina, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-7320-0099", Name: "Dina", Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
+	require.NoError(t, err)
+	env.GrantCustomRole(t, w.org.ID, dina.ID, "Pengelola kecuali Melati", `{"Version":"2026-10-25","Statement":[`+
+		`{"Effect":"Allow","Action":["tenant:read","tenant:manage"],"Resource":["*"]},`+
+		`{"Effect":"Deny","Action":["tenant:read","tenant:manage"],"Resource":["property/`+w.melati.ID.String()+`/*"]}]}`)
+	kasir := env.Principal(t, w.org.ID, dina.UserID)
+
+	terms := tenant.Terms{StartDate: day(2026, 10, 1)}
+	lease := func(tn tenant.Tenant, u property.Unit) {
+		_, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: tn.ID, UnitID: u.ID, TermMonths: 1, Terms: terms})
+		require.NoError(t, err)
+	}
+	rina, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Rina", Phone: "0812-7320-5001"})
+	require.NoError(t, err)
+	lease(rina, w.kamar1) // Kos Melati only
+	dewi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Dewi", Phone: "0812-7320-5002"})
+	require.NoError(t, err)
+	lease(dewi, w.kamar2) // Kos Melati and Kontrakan Mawar
+	lease(dewi, w.rumahA)
+
+	t.Run("the list hides the denied property's leases and the tenants who rent only there", func(t *testing.T) {
+		tenants, err := env.AllTenants(ctx, kasir)
+		require.NoError(t, err)
+		require.Equal(t, []string{"Dewi"}, tenantNames(tenants))
+		require.Len(t, tenants[0].Leases, 1)
+		require.Equal(t, w.rumahA.ID, tenants[0].Leases[0].UnitID, "Dewi's Kos Melati lease stays hidden")
+	})
+
+	t.Run("reading a tenant shows only the allowed leases, and one only in the denied property is refused", func(t *testing.T) {
+		got, err := env.Tenants.Get(ctx, kasir, dewi.ID)
+		require.NoError(t, err)
+		require.Len(t, got.Leases, 1)
+		before := len(env.AuditLog(t, w.org.ID))
+		_, err = env.Tenants.Get(ctx, kasir, rina.ID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		log := env.AuditLog(t, w.org.ID)
+		require.Len(t, log, before+1, "the refusal is audited")
+		require.Equal(t, authz.ActionTenantRead, log[0].Action)
+		require.Equal(t, "deny", log[0].Decision)
+	})
+
+	t.Run("changing a tenant with an active lease in the denied property is refused and audited", func(t *testing.T) {
+		before := len(env.AuditLog(t, w.org.ID))
+		_, err := env.Tenants.Update(ctx, kasir, dewi.ID, tenant.Input{Name: "Dewi A.", Phone: "0812-7320-5002"})
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		log := env.AuditLog(t, w.org.ID)
+		require.Greater(t, len(log), before)
+		require.Equal(t, authz.ActionTenantManage, log[0].Action)
+		require.Equal(t, "deny", log[0].Decision)
+	})
+
+	t.Run("a tenant with no lease at all is listed and readable, as the bare check allows", func(t *testing.T) {
+		eko, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Eko", Phone: "0812-7320-5004"})
+		require.NoError(t, err)
+		tenants, err := env.AllTenants(ctx, kasir)
+		require.NoError(t, err)
+		require.Equal(t, []string{"Dewi", "Eko"}, tenantNames(tenants))
+		got, err := env.Tenants.Get(ctx, kasir, eko.ID)
+		require.NoError(t, err)
+		require.Equal(t, "Eko", got.Name)
+		require.Empty(t, got.Leases)
+	})
+
+	t.Run("a tenant with no lease in the denied property stays editable", func(t *testing.T) {
+		budi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Budi", Phone: "0812-7320-5003"})
+		require.NoError(t, err)
+		rumahB, err := env.Properties.CreateUnit(ctx, w.admin, w.mawar.ID, property.UnitInput{Label: "Rumah B", Terms: testenv.Monthly(850_000)})
+		require.NoError(t, err)
+		lease(budi, rumahB)
+		_, err = env.Tenants.Update(ctx, kasir, budi.ID, tenant.Input{Name: "Budi S.", Phone: "0812-7320-5003"})
+		require.NoError(t, err)
+	})
+}
+
 func TestTenantsStayInsideTheirOrganization(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.New(t)

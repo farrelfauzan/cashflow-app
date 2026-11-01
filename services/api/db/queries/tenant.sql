@@ -87,7 +87,8 @@ WHERE l.organization_id = $1;
 
 -- name: ListTenantPage :many
 -- One page of the tenants matching the filters. With org_wide every tenant and lease is
--- visible; otherwise only the leases in lease_ids and the tenants with one of them. Filters
+-- visible; otherwise only the leases in lease_ids and the tenants with one of them, plus, with
+-- lease_less_visible, the tenants who have no lease at all. Filters
 -- look only at visible leases. CountTenantPage has the same WHERE: change both together.
 WITH vl AS (
     SELECT l.tenant_id, l.status, l.start_date, u.property_id, u.label,
@@ -108,7 +109,9 @@ WITH vl AS (
            CASE WHEN t.phone LIKE '+62%' THEN '0' || substr(t.phone, 4) ELSE t.phone END AS national_phone
     FROM tenant t
     WHERE t.organization_id = @organization_id
-      AND (@org_wide::boolean OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id))
+      AND (@org_wide::boolean OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id)
+           OR (@lease_less_visible::boolean
+               AND NOT EXISTS (SELECT 1 FROM lease l2 WHERE l2.organization_id = t.organization_id AND l2.tenant_id = t.id)))
 )
 SELECT vt.id, vt.organization_id, vt.name, vt.phone, vt.note, vt.created_at, vt.updated_at
 FROM vt
@@ -150,7 +153,9 @@ WITH vl AS (
            CASE WHEN t.phone LIKE '+62%' THEN '0' || substr(t.phone, 4) ELSE t.phone END AS national_phone
     FROM tenant t
     WHERE t.organization_id = @organization_id
-      AND (@org_wide::boolean OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id))
+      AND (@org_wide::boolean OR EXISTS (SELECT 1 FROM vl WHERE vl.tenant_id = t.id)
+           OR (@lease_less_visible::boolean
+               AND NOT EXISTS (SELECT 1 FROM lease l2 WHERE l2.organization_id = t.organization_id AND l2.tenant_id = t.id)))
 )
 SELECT count(*)
 FROM vt

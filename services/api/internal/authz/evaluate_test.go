@@ -331,5 +331,37 @@ func TestDenyInLimitedRole(t *testing.T) {
 			require.Equal(t, tc.want, d.Allowed)
 		})
 	}
-	require.Equal(t, AccessAllow, AccessTo(p, "unit:manage"), "a limited deny does not block the whole action")
+	require.Equal(t, AccessConditional, AccessTo(p, "unit:manage"),
+		"a limited deny does not block the whole action, but the action is allowed only outside it")
+}
+
+// TestScopedDenyMakesAccessConditional: an organization-wide Allow with a Deny that names one
+// property's records allows the action only on the others, so the capability is conditional and
+// a list must check each record (AuthorizeList). A Deny with a condition (a guardrail) and a
+// Deny on an organization-wide resource keep the capability as it was.
+func TestScopedDenyMakesAccessConditional(t *testing.T) {
+	melati, mawar := uuid.New(), uuid.New()
+	role := customRole(t, `{"Version":"2026-10-25","Statement":[
+		{"Effect":"Allow","Action":["tenant:read","tenant:manage","member:read","property:read"],"Resource":["*"]},
+		{"Effect":"Deny","Action":["tenant:read","tenant:manage","member:read"],"Resource":["property/`+melati.String()+`/*"]},
+		{"Effect":"Deny","Action":["property:read"],"Resource":["property/`+melati.String()+`"]}]}`)
+	p := Principal{UserID: uuid.New(), Roles: []Role{role}}
+
+	require.Equal(t, AccessConditional, AccessTo(p, ActionTenantRead))
+	require.Equal(t, AccessConditional, AccessTo(p, ActionTenantManage))
+	require.Equal(t, AccessConditional, AccessTo(p, ActionPropertyRead))
+	require.Equal(t, AccessAllow, AccessTo(p, ActionMemberRead), "members have no property, so the Deny never matches")
+
+	tenantIn := func(property uuid.UUID) Request {
+		return Request{Action: ActionTenantRead, Resource: Resource{Type: "tenant", ID: "t1", PropertyID: property}}
+	}
+	require.False(t, Evaluate(p, tenantIn(melati)).Allowed)
+	require.True(t, Evaluate(p, tenantIn(mawar)).Allowed)
+	require.True(t, Evaluate(p, Request{Action: ActionTenantRead, Resource: Resource{Type: "tenant"}}).Allowed,
+		"the bare tenant names no property, which is why lists must not stop at it")
+
+	admin, ok := BuiltinRole(RoleAdmin)
+	require.True(t, ok)
+	require.Equal(t, AccessAllow, AccessTo(Principal{UserID: uuid.New(), Roles: []Role{admin}}, ActionMemberManage),
+		"the no-self-grant guardrail is a conditional Deny and keeps member:manage allowed")
 }

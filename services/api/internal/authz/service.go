@@ -120,11 +120,16 @@ func (s *Service) Authorize(ctx context.Context, tx pgx.Tx, p Principal, req Req
 //
 // It returns all = true when the principal may act on every record, with the same auditing as
 // Authorize. It returns all = false when the principal may act only on some records, for
-// example a role limited to one property: the caller then keeps the records for which Allowed
-// is true. When no record can be allowed, the denial is recorded and the error wraps
-// ErrForbidden.
+// example a role limited to one property, or an organization-wide Allow with a Deny on one
+// property: the caller then keeps the records for which Allowed is true. req names no
+// property, so a Deny that names one never matches it; AccessTo, which sees such a Deny, must
+// also say allow before all is true. When no record can be allowed, the denial is recorded and
+// the error wraps ErrForbidden.
 func (s *Service) AuthorizeList(ctx context.Context, tx pgx.Tx, p Principal, req Request) (all bool, err error) {
 	if Evaluate(p, req).Allowed {
+		if AccessTo(p, req.Action) == AccessConditional {
+			return false, nil
+		}
 		return true, s.Authorize(ctx, tx, p, req)
 	}
 	if AccessTo(p, req.Action) == AccessConditional {
@@ -146,6 +151,15 @@ func (s *Service) Check(ctx context.Context, p Principal, req Request) error {
 		return fmt.Errorf("%w: %s on %s (%s)", ErrForbidden, req.Action, req.Resource.Path(), d.Reason)
 	}
 	return nil
+}
+
+// Deny records req as denied and returns an error wrapping ErrForbidden. It is for a caller
+// whose own rule refuses a record that req alone would allow: a tenant none of whose leases the
+// member may see, under a role that allows tenants everywhere but denies one property.
+func (s *Service) Deny(ctx context.Context, p Principal, req Request) error {
+	d := Decision{Reason: ReasonImplicitDeny}
+	s.recordDenial(ctx, p, req, d)
+	return fmt.Errorf("%w: %s on %s (%s)", ErrForbidden, req.Action, req.Resource.Path(), d.Reason)
 }
 
 // RecordSystemAction writes an audit row for a change made by the platform itself, such as
