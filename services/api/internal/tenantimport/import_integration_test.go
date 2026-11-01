@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -86,6 +87,7 @@ func TestImport(t *testing.T) {
 			"monthly as a new kos unit, no deposit")
 		require.Equal(t, counts{}, countAll(t, env, admin))
 		require.Len(t, env.AuditLog(t, o.ID), auditBefore, "the audit rows of a dry run roll back with it")
+		require.Empty(t, env.Queue.Tasks(), "a dry run asks for no invoices")
 	})
 
 	t.Run("a dry run lists every bad row and why", func(t *testing.T) {
@@ -109,6 +111,7 @@ func TestImport(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, res.Committed)
 		require.Equal(t, counts{}, countAll(t, env, admin))
+		require.Empty(t, env.Queue.Tasks(), "an import that wrote nothing asks for no invoices")
 	})
 
 	t.Run("a clean commit saves every row", func(t *testing.T) {
@@ -149,6 +152,17 @@ func TestImport(t *testing.T) {
 			actions = append(actions, a.Action)
 		}
 		require.Contains(t, actions, "lease:manage", "the import's changes are audited like any other")
+
+		tasks := env.Queue.Tasks()
+		require.Len(t, tasks, 1, "one generate task covers the whole organization after the commit")
+		require.Equal(t, o.ID, tasks[0].OrganizationID)
+		var leaseIDs []string
+		for _, tn := range tenants {
+			for _, l := range tn.Leases {
+				leaseIDs = append(leaseIDs, invoicetask.LeaseTaskID(o.ID, l.ID))
+			}
+		}
+		require.Contains(t, leaseIDs, tasks[0].ID, "the task is named after a lease the import created")
 	})
 
 	t.Run("running the same file again changes nothing", func(t *testing.T) {
@@ -157,6 +171,7 @@ func TestImport(t *testing.T) {
 		require.True(t, res.Committed)
 		require.Equal(t, tenantimport.Summary{Rows: 5, LeasesMatched: 5}, res.Summary)
 		require.Equal(t, counts{properties: 3, units: 5, tenants: 4, leases: 5}, countAll(t, env, admin))
+		require.Len(t, env.Queue.Tasks(), 1, "no lease created, nothing more to ask for")
 	})
 
 	t.Run("a known phone under another name is an error, not a merge", func(t *testing.T) {

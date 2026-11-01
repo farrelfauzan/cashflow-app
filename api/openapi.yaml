@@ -516,7 +516,10 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409":
-          description: "The property already has a unit with this label (code label_taken, field label)"
+          description: >
+            The property already has a unit with this label (code label_taken, field label), or a
+            price changes while the unit was invoiced today (code price_too_early, field terms):
+            a new price then takes effect tomorrow at the earliest, through createUnitPrice.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -567,8 +570,8 @@ paths:
         "409":
           description: >
             The unit does not offer this term (code term_not_offered, field months), or the
-            effective date is before today, in Asia/Jakarta, or (from slice 2) on or before the day
-            the unit's newest invoice was made (code price_too_early, field effectiveFrom).
+            effective date is before today, in Asia/Jakarta, or on or before the day the unit's
+            newest invoice was made (code price_too_early, field effectiveFrom).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -742,7 +745,8 @@ paths:
         applies from the next invoice. A start date after the lease's planned end date is refused
         (field startDate); change the planned end date first. Sending the lease's current
         collector keeps them even when they have been disabled; any other collector must be an
-        active member.
+        active member. Once the lease has an invoice, its start date and billedFrom can no longer
+        change (409 lease_has_invoices); the other terms stay editable.
       requestBody:
         required: true
         content:
@@ -759,7 +763,11 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409":
-          description: "The lease has already ended (code lease_ended)"
+          description: >
+            The lease has already ended (code lease_ended), or it already has an invoice and the
+            request changes its start date or billedFrom (code lease_has_invoices, field startDate
+            or billedFrom; a wrong start date is then fixed by ending the lease and starting a new
+            one).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -775,10 +783,15 @@ paths:
       description: >
         The planned end date ("Rencana keluar") is the tenant's last day, set when they say they
         will not continue. It must be on or after today in Asia/Jakarta and not before the start
-        date; null clears it. It can change until the move-out, which clears it. From slice 2, no
-        invoice is generated for a period that starts after it, and setting it cancels an invoice
-        already generated for such a period (that also needs correction:create); today it is
-        only stored.
+        date; null clears it, and leaving the key out is refused (400, field plannedEndDate). It
+        can change until the move-out, which clears it. No invoice is generated for a period that
+        starts after it. In the same transaction, setting it (or moving it earlier) cancels each
+        invoice already generated for such a period with a correction of minus its billed
+        amount, reason "sewa tidak diperpanjang"; moving it later or clearing it restores each
+        invoice it had cancelled that is back in range, reason "rencana keluar diubah". Money
+        paid on a cancelled invoice is reallocated (FIFO) and the rest is credit. Each correction
+        also needs correction:create on its invoice and is audited; a denial answers 403 and
+        changes nothing.
       requestBody:
         required: true
         content:
@@ -812,8 +825,12 @@ paths:
         The end date is the last day of the lease: not before the start date and not after
         today in Asia/Jakarta. A lease that has not started yet (a booking) is cancelled the same
         way, with the end date equal to its start date; it will never be invoiced. The unit is
-        free for a new lease right away, and any planned end date is cleared. What happens to
-        arrears is settled in slice 2.
+        free for a new lease right away, and any planned end date is cleared. In the same
+        transaction: a period the tenant started that has no invoice yet gets one; every invoice
+        for a period that starts after the end date is cancelled (reason "sewa tidak
+        diperpanjang"), every invoice of a cancelled booking too (reason "sewa dibatalkan"); then
+        what the lease's invoices still owe is paid from its deposit, oldest period first (reason
+        "potong deposit"). Each correction also needs correction:create and is audited.
       requestBody:
         required: true
         content:
@@ -1675,6 +1692,7 @@ components:
 
     LeasePlannedEnd:
       type: object
+      required: [plannedEndDate]
       properties:
         plannedEndDate:
           type: string
@@ -1683,7 +1701,8 @@ components:
           example: "2026-11-14"
           description: >
             The tenant's last day. To stop before a new month, pick the day before the next
-            anniversary. null (or leaving it out) clears it. Errors use field plannedEndDate.
+            anniversary. null clears it; the key is required, so an empty body never clears it by
+            mistake. Errors use field plannedEndDate.
 
     LeaseInput:
       allOf:

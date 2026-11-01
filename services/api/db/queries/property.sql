@@ -100,3 +100,12 @@ WHERE organization_id = $1 AND lower(name) = lower(sqlc.arg(name));
 -- Labels are unique per property, ignoring case.
 SELECT * FROM unit
 WHERE organization_id = $1 AND property_id = $2 AND lower(label) = lower(sqlc.arg(label));
+
+-- name: LockUnit :one
+-- Serializes recording a unit's price with invoice generation for its lease (which takes FOR
+-- SHARE on the unit before it reads the price), so a price checked against the unit's newest
+-- invoice cannot slip in beside an invoice being made. FOR NO KEY UPDATE, not FOR UPDATE: it
+-- does not block the FOR KEY SHARE that inserting a lease or price takes on the unit.
+SELECT id FROM unit
+WHERE organization_id = $1 AND id = $2
+FOR NO KEY UPDATE;

@@ -11,10 +11,14 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/queue"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 )
 
 func main() {
@@ -38,14 +42,40 @@ func run() error {
 	}
 	log = log.With("service", "worker", "env", cfg.Env)
 
+	st, err := store.Open(ctx, cfg.DatabaseURL, log)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	client := queue.NewClient(cfg.RedisAddr)
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Error("closing queue client", "error", err)
+		}
+	}()
+
+	clk := clock.System()
+	az := authz.NewService(st, clk, log)
+
 	// Handlers and cron entries are registered here as each slice adds jobs.
 	mux := asynq.NewServeMux()
+	sched := queue.NewScheduler(cfg.RedisAddr, clock.Jakarta, log)
+	invoices := invoicetask.Worker{
+		Generator: billing.NewService(st, az, clk, log),
+		Orgs:      st,
+		Enqueuer:  invoicetask.NewClient(client),
+		Clock:     clk,
+		Log:       log,
+	}
+	if err := invoices.Register(mux, sched); err != nil {
+		return err
+	}
+
 	srv := queue.NewServer(cfg.RedisAddr, log)
 	if err := srv.Start(mux); err != nil {
 		return fmt.Errorf("starting job server: %w", err)
 	}
-
-	sched := queue.NewScheduler(cfg.RedisAddr, clock.Jakarta, log)
 	if err := sched.Start(); err != nil {
 		srv.Shutdown()
 		return fmt.Errorf("starting scheduler: %w", err)

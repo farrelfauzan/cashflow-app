@@ -470,6 +470,28 @@ func (q *Queries) ListUnits(ctx context.Context, arg ListUnitsParams) ([]ListUni
 	return items, nil
 }
 
+const lockUnit = `-- name: LockUnit :one
+SELECT id FROM unit
+WHERE organization_id = $1 AND id = $2
+FOR NO KEY UPDATE
+`
+
+type LockUnitParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Serializes recording a unit's price with invoice generation for its lease (which takes FOR
+// SHARE on the unit before it reads the price), so a price checked against the unit's newest
+// invoice cannot slip in beside an invoice being made. FOR NO KEY UPDATE, not FOR UPDATE: it
+// does not block the FOR KEY SHARE that inserting a lease or price takes on the unit.
+func (q *Queries) LockUnit(ctx context.Context, arg LockUnitParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockUnit, arg.OrganizationID, arg.ID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const updateProperty = `-- name: UpdateProperty :one
 UPDATE property SET name = $3, kind = $4, address = $5, updated_at = now()
 WHERE organization_id = $1 AND id = $2

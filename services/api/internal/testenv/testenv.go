@@ -17,6 +17,9 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask/invoicetasktest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/messagingtest"
@@ -50,8 +53,12 @@ type Env struct {
 	Members    *member.Service
 	Orgs       *org.Service
 	Properties *property.Service
+	Billing    *billing.Service
 	Tenants    *tenant.Service
 	Imports    *tenantimport.Service
+	// Queue records the invoices:generate tasks enqueued after a lease is saved; nothing runs
+	// them. Tests call Billing.GenerateOrg to run one.
+	Queue *invoicetasktest.Fake
 }
 
 // New starts PostgreSQL, applies the migrations and wires the services.
@@ -82,7 +89,9 @@ func New(t *testing.T) *Env {
 	})
 	e.Orgs = org.NewService(st, e.Authz)
 	e.Properties = property.NewService(st, e.Authz, e.Clock)
-	e.Tenants = tenant.NewService(st, e.Authz, e.Clock)
+	e.Billing = billing.NewService(st, e.Authz, e.Clock, log)
+	e.Queue = &invoicetasktest.Fake{}
+	e.Tenants = tenant.NewService(st, e.Authz, e.Clock, e.Billing, invoicetask.NewLeaseQueue(e.Queue, log))
 	e.Imports = tenantimport.NewService(st, e.Authz, e.Properties, e.Tenants, e.Clock)
 	return e
 }

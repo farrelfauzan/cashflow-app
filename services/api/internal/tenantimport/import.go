@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
@@ -100,7 +101,8 @@ type Service struct {
 }
 
 // NewService returns a Service. c decides the import day, in Asia/Jakarta: the day unit prices
-// are checked on and new ones take effect.
+// are checked on and new ones take effect. Once an import that created leases commits, it asks
+// for the organization's invoices through the tenant service's queue (tenant.Service.LeaseSaved).
 func NewService(st *store.Store, az *authz.Service, props *property.Service, tenants *tenant.Service, c clock.Clock) *Service {
 	return &Service{store: st, authz: az, properties: props, tenants: tenants, clock: c}
 }
@@ -116,6 +118,7 @@ func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRu
 		warnings = []Warning{}
 	}
 	res := Result{DryRun: dryRun, Warnings: warnings, Rows: make([]Row, len(records))}
+	var firstLease uuid.UUID // the first lease the import created, which names its generate task
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		for _, req := range importRequests() {
 			if err := s.authz.Authorize(ctx, tx, p, req); err != nil {
@@ -123,9 +126,12 @@ func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRu
 			}
 		}
 		for i, rec := range records {
-			row, err := s.importRow(ctx, tx, p, rec)
+			row, leaseID, err := s.importRow(ctx, tx, p, rec)
 			if err != nil {
 				return fmt.Errorf("line %d: %w", rec.Line, err)
+			}
+			if firstLease == uuid.Nil {
+				firstLease = leaseID
 			}
 			if row.Values != nil && row.Values.TermMonths == 0 {
 				row.Values = nil // the term comes from the unit, which the row never reached
@@ -145,6 +151,10 @@ func (s *Service) Run(ctx context.Context, p authz.Principal, data []byte, dryRu
 		return Result{}, err
 	}
 	res.Committed = true
+	// One generate task covers the whole organization, so one is enough for the whole file.
+	if firstLease != uuid.Nil {
+		s.tenants.LeaseSaved(ctx, p.OrganizationID, firstLease)
+	}
 	return res, nil
 }
 
@@ -160,34 +170,36 @@ func importRequests() []authz.Request {
 
 // importRow checks one record and, when it is valid, finds or creates its property, unit, tenant
 // and lease inside a savepoint. Row problems come back in the row; only unexpected failures and
-// permission denials are returned as errors, and they stop the whole import.
-func (s *Service) importRow(ctx context.Context, tx pgx.Tx, p authz.Principal, rec record) (Row, error) {
+// permission denials are returned as errors, and they stop the whole import. It also returns the
+// id of the lease it created, uuid.Nil when it created none.
+func (s *Service) importRow(ctx context.Context, tx pgx.Tx, p authz.Principal, rec record) (Row, uuid.UUID, error) {
 	row := Row{
 		Line: rec.Line, PropertyName: rec.get(colProperty), UnitLabel: rec.get(colUnit), TenantName: rec.get(colTenantName),
 	}
 	in := check(rec, &row)
 	if !row.OK() {
-		return row, nil
+		return row, uuid.Nil, nil
 	}
 	sp, err := tx.Begin(ctx) // a savepoint: a failed row leaves the rest of the import usable
 	if err != nil {
-		return row, fmt.Errorf("opening savepoint: %w", err)
+		return row, uuid.Nil, fmt.Errorf("opening savepoint: %w", err)
 	}
-	if err := s.write(ctx, sp, p, in, &row); err != nil {
+	leaseID, err := s.write(ctx, sp, p, in, &row)
+	if err != nil {
 		if rbErr := sp.Rollback(ctx); rbErr != nil {
-			return row, fmt.Errorf("rolling back savepoint: %w", rbErr)
+			return row, uuid.Nil, fmt.Errorf("rolling back savepoint: %w", rbErr)
 		}
 		if rowErr, ok := asRowError(err); ok {
 			row.Errors = append(row.Errors, rowErr)
 			row.Property, row.Unit, row.Tenant, row.Lease = "", "", "", ""
-			return row, nil
+			return row, uuid.Nil, nil
 		}
-		return row, err
+		return row, uuid.Nil, err
 	}
 	if err := sp.Commit(ctx); err != nil {
-		return row, fmt.Errorf("releasing savepoint: %w", err)
+		return row, uuid.Nil, fmt.Errorf("releasing savepoint: %w", err)
 	}
-	return row, nil
+	return row, leaseID, nil
 }
 
 // input is a record turned into the services' inputs, already validated by them.
@@ -271,8 +283,9 @@ func check(rec record, row *Row) input {
 	return in
 }
 
-// write finds or creates the row's records through the services, inside the savepoint tx.
-func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in input, row *Row) error {
+// write finds or creates the row's records through the services, inside the savepoint tx. It
+// returns the id of the lease it created, uuid.Nil when the row matched an existing one.
+func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in input, row *Row) (uuid.UUID, error) {
 	org := p.OrganizationID
 
 	prop, err := property.FindByName(ctx, tx, org, in.property.Name)
@@ -282,7 +295,7 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 		row.Property = Created
 	}
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	day := tenant.Today(s.clock)
@@ -295,7 +308,7 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 		err = s.checkUnitPrice(ctx, tx, p, unit, in, row, day)
 	}
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	term := row.Values.TermMonths
 
@@ -306,13 +319,13 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 		row.Tenant = Created
 	}
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 	// One phone is one tenant. A different name usually means two people share a number (a
 	// parent's phone for two children), which the app cannot hold, so the admin must decide.
 	if row.Tenant == Matched && !strings.EqualFold(tn.Name, in.tenant.Name) {
 		msg := fmt.Sprintf("Nomor ini sudah dipakai %s. Samakan nama atau pakai nomor lain.", tn.Name)
-		return &rowError{RowError{Column: colPhone, Message: msg}}
+		return uuid.Nil, &rowError{RowError{Column: colPhone, Message: msg}}
 	}
 
 	current, err := tenant.ActiveLeaseForUnit(ctx, tx, org, unit.ID, day)
@@ -327,15 +340,15 @@ func (s *Service) write(ctx context.Context, tx pgx.Tx, p authz.Principal, in in
 			!current.StartDate.Equal(in.terms.StartDate) || !current.BilledFrom.Equal(billedFrom) {
 			row.Notes = append(row.Notes, "Sewa ini sudah ada dengan isian lain; isian baris ini tidak mengubahnya.")
 		}
-		return nil
+		return uuid.Nil, nil
 	case err == nil:
-		return &rowError{RowError{Column: colUnit, Message: "Unit ini masih disewa penyewa lain."}}
+		return uuid.Nil, &rowError{RowError{Column: colUnit, Message: "Unit ini masih disewa penyewa lain."}}
 	case !errors.Is(err, tenant.ErrNotFound):
-		return err
+		return uuid.Nil, err
 	}
-	_, err = s.tenants.CreateLeaseTx(ctx, tx, p, tenant.NewLease{TenantID: tn.ID, UnitID: unit.ID, TermMonths: term, Terms: in.terms})
+	l, err := s.tenants.CreateLeaseTx(ctx, tx, p, tenant.NewLease{TenantID: tn.ID, UnitID: unit.ID, TermMonths: term, Terms: in.terms})
 	row.Lease = Created
-	return err
+	return l.ID, err
 }
 
 // createUnit creates the row's unit offering exactly the row's term (its property kind's
@@ -396,6 +409,11 @@ func (s *Service) checkUnitPrice(ctx context.Context, tx pgx.Tx, p authz.Princip
 
 const termMessage = "Jangka sewa harus 1 sampai 60 bulan."
 
+func invoicedPriceMessage(invoicedOn time.Time) string {
+	return fmt.Sprintf("Unit ini sudah ditagih pada %s, jadi harga barunya paling cepat berlaku %s. Impor baris ini lagi mulai tanggal itu.",
+		invoicedOn.Format("02/01/2006"), invoicedOn.AddDate(0, 0, 1).Format("02/01/2006"))
+}
+
 func noPriceMessage(term int) string {
 	return fmt.Sprintf("Harga sewa wajib diisi: unit ini belum punya harga untuk %d bulan.", term)
 }
@@ -415,9 +433,12 @@ func asRowError(err error) (RowError, bool) {
 	var propertyInput *property.InputError
 	var tenantInput *tenant.InputError
 	var termErr *tenant.TermError
+	var invoicedPrice *property.InvoicedPriceError
 	switch {
 	case errors.As(err, &re):
 		return re.RowError, true
+	case errors.As(err, &invoicedPrice):
+		return RowError{Column: colRent, Message: invoicedPriceMessage(invoicedPrice.InvoicedOn)}, true
 	case errors.As(err, &propertyInput):
 		return RowError{Column: propertyColumns[propertyInput.Field], Message: propertyInput.Message}, true
 	case errors.As(err, &tenantInput):

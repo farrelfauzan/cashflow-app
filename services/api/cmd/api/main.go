@@ -18,6 +18,8 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
@@ -27,6 +29,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/queue"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
@@ -83,6 +86,14 @@ func run() error {
 		return fmt.Errorf("pinging redis: %w", err)
 	}
 
+	// The queue client enqueues invoice generation once a lease is saved; the worker runs it.
+	queueClient := queue.NewClient(cfg.RedisAddr)
+	defer func() {
+		if err := queueClient.Close(); err != nil {
+			log.Error("closing queue client", "error", err)
+		}
+	}()
+
 	clk := clock.System()
 	limiter := ratelimit.NewRedis(rdb)
 	authSvc, err := auth.NewService(st, msg, limiter, clk, log, []byte(cfg.AuthSecret))
@@ -91,7 +102,8 @@ func run() error {
 	}
 	az := authz.NewService(st, clk, log)
 	props := property.NewService(st, az, clk)
-	tenants := tenant.NewService(st, az, clk)
+	leaseQueue := invoicetask.NewLeaseQueue(invoicetask.NewClient(queueClient), log)
+	tenants := tenant.NewService(st, az, clk, billing.NewService(st, az, clk, log), leaseQueue)
 	imports := tenantimport.NewService(st, az, props, tenants, clk)
 	cookieSecure := cfg.CookieSecure()
 	allowedOrigins := cfg.Origins()

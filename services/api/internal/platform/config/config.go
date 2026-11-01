@@ -234,10 +234,12 @@ func LoadAdmin(ctx context.Context) (Admin, error) {
 	return c, nil
 }
 
-// Worker is the configuration of cmd/worker.
+// Worker is the configuration of cmd/worker. It connects to the database as the app role, like
+// the API, and every job runs inside one organization's scope.
 type Worker struct {
 	Common
-	RedisAddr string `env:"REDIS_ADDR, default=localhost:6379"`
+	DatabaseURL string `env:"DATABASE_URL, required"`
+	RedisAddr   string `env:"REDIS_ADDR, default=localhost:6379"`
 }
 
 // Migrate is the configuration of cmd/migrate. It connects as the owner role, never as the
