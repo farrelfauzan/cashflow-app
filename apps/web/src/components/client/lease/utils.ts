@@ -447,6 +447,17 @@ export const FREE_UNITS_HINT = "Hanya unit yang masih kosong.";
 export const NO_FREE_UNIT_TEXT = "Semua unit di properti ini sudah terisi.";
 export const NO_PROPERTY_TEXT =
   "Belum ada properti. Tambahkan properti dan unitnya dulu.";
+export const PROPERTY_SEARCH_PLACEHOLDER = "Cari nama properti";
+export const NO_PROPERTY_FOUND_TEXT = "Tidak ada properti dengan nama itu.";
+export const PROPERTIES_LOADING_TEXT = "Memuat properti…";
+
+// Under the property list while it shows the first page of a longer list; null when it shows
+// them all.
+export function propertyListNote(shown: number, total: number): string | null {
+  if (total <= shown) return null;
+  return `Menampilkan ${shown} dari ${total} properti. Ketik nama untuk mencari yang lain.`;
+}
+
 export const DEPOSIT_HINT = "Isi 0 kalau tidak ada.";
 
 export const NO_PROPERTY_MESSAGE = "Pilih properti.";

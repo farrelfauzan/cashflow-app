@@ -57,6 +57,7 @@ import {
   noBilledFromMessage,
   NO_COLLECTOR,
   NO_PROPERTY_MESSAGE,
+  propertyListNote,
   NO_START_MESSAGE,
   NO_UNIT_MESSAGE,
   periodStartOn,
@@ -2336,5 +2337,25 @@ describe("lease charges", () => {
     expect(LONG_CHARGE_TYPE_NAME_MESSAGE).toBe(
       "Nama biaya paling panjang 50 huruf.",
     );
+  });
+});
+
+describe("propertyListNote", () => {
+  it.each([
+    {
+      shown: 20,
+      total: 25,
+      want: "Menampilkan 20 dari 25 properti. Ketik nama untuk mencari yang lain.",
+    },
+    {
+      shown: 20,
+      total: 101,
+      want: "Menampilkan 20 dari 101 properti. Ketik nama untuk mencari yang lain.",
+    },
+    { shown: 20, total: 20, want: null },
+    { shown: 3, total: 3, want: null },
+    { shown: 0, total: 0, want: null },
+  ])("words $shown of $total", ({ shown, total, want }) => {
+    expect(propertyListNote(shown, total)).toBe(want);
   });
 });
