@@ -67,7 +67,7 @@ summarizes, reminds and reports.
 | Web / API / data / infra | **Decided** | Next.js 16 App Router PWA (React 19, TypeScript strict) + Tailwind 4 (one responsive app), TanStack Query, shadcn/ui, Go API and worker (one module, two binaries), PostgreSQL, Redis for the queue, Docker Compose on a VPS. |
 | Data layer | **Decided** | sqlc over pgx v5 with goose SQL migrations, no ORM. ent was compared and rejected: money rules are easier to review and safer as plain SQL, and the team is new to Go. |
 | Libraries and tooling | Tentative | chi, pgx v5, goose, asynq on Redis (replaces BullMQ), OpenAPI contract with oapi-codegen for Go and Orval for the web (TypeScript types, request functions and TanStack Query hooks through one axios mutator; replaces `packages/shared`), react-hook-form with a zod resolver for forms (zod only for friendly early messages, decision 20), S3-compatible storage (R2), Caddy, GitHub Actions with GHCR. Queue library is revisited after slice 3 (River, Postgres-backed, is the alternative). |
-| WhatsApp account | **Decided** | ONE platform-owned number sends for every organization. No per-org WA numbers or tokens. At launch it is a WhatsApp Business app number linked to GOWA; later it can move to a WhatsApp Business Account on the Cloud API. |
+| WhatsApp account | **Decided** | ONE platform-owned number sends for every organization. No per-org WA numbers or tokens. Which provider drives it is open ("WhatsApp provider" below, decision 35). |
 | WhatsApp provider | Open | Built: GOWA (self-hosted `aldinokemal/go-whatsapp-web-multidevice`, pinned image), chosen for launch because the Cloud API needs a registered company (PT) and there is none yet; WhatsApp restricted its number on 2026-11-01. Twilio (decision 35, the user's choice of 2026-11-01): the sandbox in development now; a verified Twilio sender would need approved templates. Later: WhatsApp Cloud API, integrated directly, once a PT and a verified Meta business exist. The pilot and launch provider is decided once the company and Meta verification question is answered. All sit behind `MessagingProvider`; templates have names and ordered parameters and buttons carry both a payload and a link, so a switch is a new adapter, not a rewrite. |
 | Disbursement | Deferred | No `DisbursementProvider` for now: payroll is paid by hand and recorded in the app, as in the design. Revisit (Flip for Business or Xendit) only if the owner wants the app to send money. Confirm by week 14 of the project plan. |
 | Bank transfer | Open | Default: static open-amount VA per tenant. Second adapter: bank-mutation polling (e.g. Moota). Chosen per organization. |
@@ -441,7 +441,7 @@ parameters and optional buttons; the adapter turns that into what its provider a
 Every message goes to `message_log` with its status and `organization_id`.
 
 **Adapters**
-- `gowa` (launch): a self-hosted GOWA server drives the platform number, linked like WhatsApp
+- `gowa`: a self-hosted GOWA server drives the platform number, linked like WhatsApp
   Web. The API calls `POST /send/message` with basic auth (`GOWA_URL`, `GOWA_USERNAME`,
   `GOWA_PASSWORD`, optional `GOWA_DEVICE_ID`). GOWA's error codes map to `ErrRateLimited`,
   `ErrUndeliverable` and `ErrNotConnected`; the last one means an operator must re-link the

@@ -2,8 +2,9 @@
 // (github.com/aldinokemal/go-whatsapp-web-multidevice). GOWA runs as its own container and
 // drives a WhatsApp account that is linked to it like WhatsApp Web, by scanning a QR code.
 //
-// It is the launch provider because the WhatsApp Cloud API needs a registered business behind
-// the account. GOWA uses the unofficial WhatsApp Web protocol, so the number can be restricted
+// It was chosen for launch because the WhatsApp Cloud API needs a registered business behind
+// the account; after WhatsApp restricted its number, the launch provider is open again
+// (decision 35). GOWA uses the unofficial WhatsApp Web protocol, so the number can be restricted
 // or banned for bulk or unsolicited messages: senders must throttle, and only message people who
 // expect to hear from us. There are no approved templates and no native buttons, so messages
 // are rendered to plain text with links (messaging.Render).

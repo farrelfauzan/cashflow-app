@@ -98,7 +98,8 @@ visit.
 
 ### Send real WhatsApp messages with GOWA
 
-The launch provider is GOWA, a self-hosted WhatsApp gateway that runs as its own container.
+GOWA is a self-hosted WhatsApp gateway that runs as its own container. Which provider the pilot
+and launch use is open (decision 35); WhatsApp restricted the number we linked to GOWA.
 Use a spare number for development, never the production one.
 
 1. `make wa-up` starts GOWA on http://localhost:3001 (login `cashflow` / `gowa-dev-password`).
@@ -206,7 +207,7 @@ phone number or the message.
 - `internal/member` and `internal/org`: members and their roles; creating organizations.
 - `internal/httpapi`: routing, middleware, handlers. `apigen` is generated from the OpenAPI file.
 - `internal/messaging`: the WhatsApp provider interface and the message templates. Adapters:
-  `gowa` (launch), `twilio` (the Twilio sandbox, development only), `devlog` (development log)
+  `gowa`, `twilio` (the Twilio sandbox, development only), `devlog` (development log)
   and the test fake in `messagingtest`.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
