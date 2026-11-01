@@ -1,4 +1,10 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type TestInfo,
+} from "@playwright/test";
 
 import { ORG_HOME_URL, openMenu } from "./support/shell";
 import { HENDRA } from "./support/staff";
@@ -27,17 +33,62 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-// Next.js reports a failed check shortly after the screen renders, so wait for the page to
-// settle before reading the errors.
+// `next dev` compiles a route the first time it is asked for, which on a CI runner can take far
+// longer than a page load, so the tests and the first sight of a heading get room for it.
+test.describe.configure({ timeout: 180_000 });
+const COLD_COMPILE_MS = 60_000;
+
+// The requests each page is still waiting for: data, RSC payloads and JS chunks. The dev server's
+// own traffic (HMR, the dev overlay) is left out, because it never settles, which is why
+// Playwright's "networkidle" made this spec flaky.
+const DEV_SERVER_PATH = /^\/(?:_next\/webpack-hmr|__nextjs)/;
+const inFlightByPage = new WeakMap<Page, Set<Request>>();
+
+test.beforeEach(({ page }) => {
+  const inFlight = new Set<Request>();
+  inFlightByPage.set(page, inFlight);
+  page.on("request", (request) => {
+    if (!DEV_SERVER_PATH.test(new URL(request.url()).pathname)) {
+      inFlight.add(request);
+    }
+  });
+  const done = (request: Request) => inFlight.delete(request);
+  page.on("requestfinished", done);
+  page.on("requestfailed", done);
+});
+
+// The page is settled once none of its requests has been open for QUIET_MS.
+const QUIET_MS = 500;
+const SETTLE_MAX_MS = 30_000;
+// Next.js reports a failed check shortly after the screen renders.
+const LATE_REPORT_MS = 1_000;
+
+// Waits for the screen's own requests to finish, then for Next.js's late report, before the
+// errors are read. A request still open after SETTLE_MAX_MS does not fail the test (this spec
+// checks for errors, not speed); it is recorded on the report so a slow request is visible.
 async function settle(page: Page) {
-  await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(1_000);
+  const inFlight = inFlightByPage.get(page);
+  if (inFlight === undefined) throw new Error("requests are not tracked");
+  const deadline = Date.now() + SETTLE_MAX_MS;
+  let quietSince = Date.now();
+  while (Date.now() - quietSince < QUIET_MS) {
+    if (Date.now() > deadline) {
+      test.info().annotations.push({
+        type: "still loading after 30 s",
+        description: [...inFlight].map((r) => r.url()).join(", "),
+      });
+      break;
+    }
+    if (inFlight.size > 0) quietSince = Date.now();
+    await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(LATE_REPORT_MS);
 }
 
 async function expectHeading(page: Page, name: string) {
   await expect(
     page.getByRole("heading", { level: 1, name, exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: COLD_COMPILE_MS });
   await settle(page);
 }
 
