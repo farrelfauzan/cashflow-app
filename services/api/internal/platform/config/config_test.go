@@ -207,6 +207,10 @@ func TestTwilioSettings(t *testing.T) {
 		{name: "content sids are kept", env: env("development", withValue("TWILIO_CONTENT_SIDS", "login_code=HX"+fakeHex)),
 			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886", ContentSIDs: "login_code=HX" + fakeHex}},
 		{name: "content sids without a template name", env: env("development", withValue("TWILIO_CONTENT_SIDS", "HX"+fakeHex)), wantErr: "template=ContentSid pairs"},
+		{name: "content sids are ignored with devlog", env: map[string]string{
+			"APP_ENV": "development", "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+			"WHATSAPP_PROVIDER": "devlog", "TWILIO_CONTENT_SIDS": "not a pair",
+		}, want: Twilio{ContentSIDs: "not a pair"}},
 		{name: "content sids with a template named twice", env: env("development", withValue("TWILIO_CONTENT_SIDS", "login_code=HX"+fakeHex+",login_code=HX"+fakeHex)), wantErr: "names login_code twice"},
 	}
 	for _, tc := range tests {
@@ -238,9 +242,10 @@ func TestTwilioContentSIDMap(t *testing.T) {
 		{name: "one pair", value: "login_code=" + hx, want: map[string]string{"login_code": hx}},
 		{name: "two pairs with spaces", value: " login_code = " + hx + " , member_invite=" + hx + " ",
 			want: map[string]string{"login_code": hx, "member_invite": hx}},
-		{name: "missing sid", value: "login_code=", wantErr: "template=ContentSid pairs"},
-		{name: "missing name", value: "=" + hx, wantErr: "template=ContentSid pairs"},
-		{name: "trailing comma", value: "login_code=" + hx + ",", wantErr: "template=ContentSid pairs"},
+		{name: "missing sid", value: "login_code=", wantErr: "pair 1 has no Content SID after '='"},
+		{name: "missing name", value: "=" + hx, wantErr: "pair 1 has no template name before '='"},
+		{name: "only the sid", value: hx, wantErr: "pair 1 has no '='"},
+		{name: "trailing comma", value: "login_code=" + hx + ",", wantErr: "pair 2 has no '='"},
 		{name: "duplicate name", value: "login_code=" + hx + ",login_code=" + hx, wantErr: "names login_code twice"},
 	}
 	for _, tc := range tests {
