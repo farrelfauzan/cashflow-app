@@ -83,6 +83,10 @@ type LeaseMoney interface {
 // daily run at 05:00 is the safety net, so a lost enqueue never fails the request.
 type InvoiceQueue interface {
 	LeaseSaved(ctx context.Context, org, lease uuid.UUID)
+	// LeaseDatesChanged is LeaseSaved after an update moved the start date or the billing start,
+	// under its own task id: the task enqueued when the lease was created may still be running
+	// with the old dates.
+	LeaseDatesChanged(ctx context.Context, org, lease uuid.UUID, start, billedFrom time.Time)
 }
 
 // Service manages tenants and leases.

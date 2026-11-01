@@ -216,6 +216,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		return Lease{}, err
 	}
 	var out Lease
+	datesChanged := false
 	err = s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		current, err := s.loadActiveForChange(ctx, tx, q, p, id)
@@ -225,6 +226,7 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		if terms.BilledFrom.IsZero() {
 			terms.BilledFrom = current.BilledFrom
 		}
+		datesChanged = !terms.StartDate.Equal(current.StartDate) || !terms.BilledFrom.Equal(current.BilledFrom)
 		if err := checkPeriodsUnbilled(ctx, q, p.OrganizationID, current, terms); err != nil {
 			return err
 		}
@@ -254,7 +256,14 @@ func (s *Service) UpdateLease(ctx context.Context, p authz.Principal, id uuid.UU
 		out, err = loadLease(ctx, q, p.OrganizationID, id, Today(s.clock))
 		return err
 	})
-	return out, err
+	if err != nil {
+		return Lease{}, err
+	}
+	if datesChanged && s.queue != nil {
+		// A new start may be due within the lead time, so it is invoiced at once, like a new lease.
+		s.queue.LeaseDatesChanged(ctx, p.OrganizationID, out.ID, out.StartDate, out.BilledFrom)
+	}
+	return out, nil
 }
 
 // SetPlannedEnd sets, changes or clears (nil) an active lease's planned end date ("Rencana

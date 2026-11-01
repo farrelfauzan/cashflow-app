@@ -435,6 +435,27 @@ func TestLeaseRulesOnceInvoiced(t *testing.T) {
 		require.Equal(t, day(2026, 12, 2), l.StartDate)
 	})
 
+	t.Run("moving the start date to today enqueues generation at once, under its own task", func(t *testing.T) {
+		setNow(env, 2026, 10, 28, 9, 0)
+		w := newWorld(t, env, "0812842")
+		r := w.rent(t, "Dewi Lestari", day(2026, 12, 1), rentOpts{})
+		require.Zero(t, w.generate(t).Invoices, "booked further ahead than the lead time")
+
+		l, err := env.Tenants.UpdateLease(ctx, w.admin, r.leaseID, tenant.Terms{StartDate: day(2026, 10, 28), BilledFrom: day(2026, 10, 28)})
+		require.NoError(t, err)
+		datesTask := invoicetask.Task{
+			ID:             invoicetask.LeaseDatesTaskID(w.org.ID, r.leaseID, l.StartDate, l.BilledFrom),
+			OrganizationID: w.org.ID,
+		}
+		require.Contains(t, env.Queue.Tasks(), datesTask)
+		require.Equal(t, 1, w.generate(t).Invoices, "the task the update enqueued makes the invoice due today")
+
+		before := len(env.Queue.Tasks())
+		_, err = env.Tenants.UpdateLease(ctx, w.admin, r.leaseID, tenant.Terms{StartDate: day(2026, 10, 28), DepositAmount: 300_000})
+		require.NoError(t, err)
+		require.Len(t, env.Queue.Tasks(), before, "an update that keeps the dates enqueues nothing")
+	})
+
 	t.Run("planned end, the user's example: the 15 Nov invoice is cancelled, the October debt stays", func(t *testing.T) {
 		setNow(env, 2026, 10, 15, 9, 0)
 		w := newWorld(t, env, "0812822")
@@ -568,6 +589,56 @@ func TestLeaseRulesOnceInvoiced(t *testing.T) {
 
 		setNow(env, 2026, 12, 8, 5, 0)
 		require.Zero(t, w.generate(t).Invoices, "an ended lease is never invoiced again")
+	})
+
+	t.Run("move-out after the planned end restores the started period it had cancelled", func(t *testing.T) {
+		setNow(env, 2026, 10, 15, 9, 0)
+		w := newWorld(t, env, "0812840")
+		r := w.rent(t, "Rina Marlina", day(2026, 10, 15), rentOpts{})
+		w.generate(t)
+		w.payNow(t, r.renter, 700_000)
+		setNow(env, 2026, 11, 8, 5, 0)
+		w.generate(t)
+		setNow(env, 2026, 11, 10, 9, 0)
+		_, err := env.Tenants.SetPlannedEnd(ctx, w.admin, r.leaseID, ptr(day(2026, 11, 14)))
+		require.NoError(t, err)
+		require.Equal(t, "cancelled", w.invoices(t, r.renter)[1].Status)
+
+		// The tenant stays until 20 Nov: the 15 Nov period started, so it is billed in full.
+		setNow(env, 2026, 11, 20, 9, 0)
+		_, err = env.Tenants.MoveOut(ctx, w.admin, r.leaseID, day(2026, 11, 20))
+		require.NoError(t, err)
+		invs := w.invoices(t, r.renter)
+		require.Len(t, invs, 2)
+		require.Equal(t, "open", invs[1].Status)
+		require.EqualValues(t, 700_000, invs[1].Billed)
+		require.Equal(t, []correctionRow{
+			{Delta: -700_000, Reason: billing.ReasonNotRenewed, CreatedBy: w.org.Admin.UserID},
+			{Delta: 700_000, Reason: billing.ReasonPlannedEndChanged, CreatedBy: w.org.Admin.UserID},
+		}, w.corrections(t, invs[1].InvoiceID))
+		require.EqualValues(t, 700_000, w.balance(t, r.renter).Outstanding)
+	})
+
+	t.Run("move-out after the planned end bills a started period that was never invoiced", func(t *testing.T) {
+		setNow(env, 2026, 10, 15, 9, 0)
+		w := newWorld(t, env, "0812841")
+		r := w.rent(t, "Agus Salim", day(2026, 10, 15), rentOpts{})
+		w.generate(t)
+		w.payNow(t, r.renter, 700_000)
+		setNow(env, 2026, 11, 1, 9, 0)
+		_, err := env.Tenants.SetPlannedEnd(ctx, w.admin, r.leaseID, ptr(day(2026, 11, 14)))
+		require.NoError(t, err)
+		setNow(env, 2026, 11, 8, 5, 0)
+		require.Zero(t, w.generate(t).Invoices, "no invoice for a period after the planned end")
+
+		setNow(env, 2026, 11, 20, 9, 0)
+		_, err = env.Tenants.MoveOut(ctx, w.admin, r.leaseID, day(2026, 11, 20))
+		require.NoError(t, err)
+		invs := w.invoices(t, r.renter)
+		require.Len(t, invs, 2)
+		require.Equal(t, day(2026, 11, 15), invs[1].Period)
+		require.Equal(t, "open", invs[1].Status)
+		require.EqualValues(t, 700_000, w.balance(t, r.renter).Outstanding)
 	})
 
 	t.Run("move-out with a deposit smaller than the debt pays part of it", func(t *testing.T) {

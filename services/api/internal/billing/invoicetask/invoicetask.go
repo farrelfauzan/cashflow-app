@@ -55,6 +55,14 @@ func LeaseTaskID(org, lease uuid.UUID) string {
 	return fmt.Sprintf("%s:%s:%s", TypeGenerate, org, lease)
 }
 
+// LeaseDatesTaskID names the task enqueued after a lease's start date or billing start changed:
+// invoices:generate:<org>:<lease>:<start>:<billedFrom>. It differs from LeaseTaskID, so a task
+// still running from the lease's creation does not swallow it, and it names the new dates, so
+// each change gets its own task.
+func LeaseDatesTaskID(org, lease uuid.UUID, start, billedFrom time.Time) string {
+	return fmt.Sprintf("%s:%s:%s:%s:%s", TypeGenerate, org, lease, start.Format(time.DateOnly), billedFrom.Format(time.DateOnly))
+}
+
 // Enqueuer puts an invoices:generate task on the queue. A task whose id is already queued
 // counts as enqueued.
 type Enqueuer interface {
@@ -104,11 +112,20 @@ func NewLeaseQueue(enq Enqueuer, log *slog.Logger) *LeaseQueue {
 // LeaseSaved implements tenant.InvoiceQueue. It does not wait on the request's cancellation:
 // the lease is already committed, so the enqueue is worth finishing.
 func (q *LeaseQueue) LeaseSaved(ctx context.Context, org, lease uuid.UUID) {
+	q.enqueue(ctx, Task{ID: LeaseTaskID(org, lease), OrganizationID: org}, lease)
+}
+
+// LeaseDatesChanged implements tenant.InvoiceQueue, as LeaseSaved under LeaseDatesTaskID.
+func (q *LeaseQueue) LeaseDatesChanged(ctx context.Context, org, lease uuid.UUID, start, billedFrom time.Time) {
+	q.enqueue(ctx, Task{ID: LeaseDatesTaskID(org, lease, start, billedFrom), OrganizationID: org}, lease)
+}
+
+func (q *LeaseQueue) enqueue(ctx context.Context, t Task, lease uuid.UUID) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), enqueueTimeout)
 	defer cancel()
-	if err := q.enq.Enqueue(ctx, Task{ID: LeaseTaskID(org, lease), OrganizationID: org}); err != nil {
+	if err := q.enq.Enqueue(ctx, t); err != nil {
 		q.log.ErrorContext(ctx, "enqueueing invoice generation after a lease was saved; the daily run will make its invoices",
-			"organization", org, "lease", lease, "error", err)
+			"organization", t.OrganizationID, "lease", lease, "error", err)
 	}
 }
 

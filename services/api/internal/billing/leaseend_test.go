@@ -89,6 +89,16 @@ func TestPlanMoveOut(t *testing.T) {
 		t.Parallel()
 		require.Empty(t, billing.PlanMoveOut(invoices, d(2026, 10, 15), d(2026, 11, 15)))
 	})
+	t.Run("a started period a planned end had cancelled is restored", func(t *testing.T) {
+		t.Parallel()
+		cancelled := []billing.LeaseInvoice{
+			{ID: a, Period: d(2026, 10, 15), Billed: 700_000},
+			{ID: b, Period: d(2026, 11, 15), Billed: 0, LastReason: billing.ReasonNotRenewed, LastDelta: -700_000},
+		}
+		require.Equal(t,
+			[]billing.Correction{{InvoiceID: b, Delta: 700_000, Reason: billing.ReasonPlannedEndChanged}},
+			billing.PlanMoveOut(cancelled, d(2026, 10, 15), d(2026, 11, 20)))
+	})
 	t.Run("a cancelled booking cancels everything it billed", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t,

@@ -72,19 +72,21 @@ func PlanPlannedEnd(invoices []LeaseInvoice, plannedEnd *time.Time) []Correction
 	return out
 }
 
-// PlanMoveOut returns the corrections that cancel what an ended lease must not be billed: for a
-// cancelled booking (ended on its start date) every invoice, ReasonBookingCancelled; otherwise
-// every invoice for a period that starts after the end date, ReasonNotRenewed.
+// PlanMoveOut returns the corrections that bring an ended lease's invoices in line with its end
+// date. For a cancelled booking (ended on its start date) every invoice that still bills
+// something is cancelled, ReasonBookingCancelled. Otherwise the end date works as a planned end
+// (see PlanPlannedEnd): every invoice for a period that starts after it is cancelled,
+// ReasonNotRenewed, and one an earlier planned end had cancelled for a period the tenant started
+// after all (planned end 14 Nov, moved out 20 Nov) is restored, ReasonPlannedEndChanged, since a
+// started period is billed in full.
 func PlanMoveOut(invoices []LeaseInvoice, start, end time.Time) []Correction {
-	booking := end.Equal(start)
+	if !end.Equal(start) {
+		return PlanPlannedEnd(invoices, &end)
+	}
 	var out []Correction
 	for _, inv := range invoices {
-		switch {
-		case inv.Billed == 0:
-		case booking:
+		if inv.Billed > 0 {
 			out = append(out, Correction{InvoiceID: inv.ID, Delta: -inv.Billed, Reason: ReasonBookingCancelled})
-		case inv.Period.After(end):
-			out = append(out, Correction{InvoiceID: inv.ID, Delta: -inv.Billed, Reason: ReasonNotRenewed})
 		}
 	}
 	return out
@@ -137,7 +139,8 @@ func (s *Service) PlannedEndChanged(ctx context.Context, tx pgx.Tx, p authz.Prin
 //
 //  1. a period the tenant started that has no invoice yet (the generate task had not run) gets
 //     one, as the task would have made it;
-//  2. invoices it must not bill are cancelled (see PlanMoveOut) and allocation reruns;
+//  2. invoices it must not bill are cancelled, and a started period a planned end had cancelled
+//     is restored (see PlanMoveOut); allocation reruns;
 //  3. what the lease's invoices still owe is paid from its deposit (see PlanDeposit; decision 36,
 //     the only arrears rule until organization settings exist) and allocation reruns.
 //

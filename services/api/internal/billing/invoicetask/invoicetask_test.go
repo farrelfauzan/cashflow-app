@@ -48,6 +48,8 @@ func TestTaskIDs(t *testing.T) {
 		invoicetask.DailyTaskID(org, time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)))
 	require.Equal(t, "invoices:generate:0b6c3c1e-1111-4a4a-8b8b-000000000001:0b6c3c1e-2222-4a4a-8b8b-000000000002",
 		invoicetask.LeaseTaskID(org, lease))
+	require.Equal(t, "invoices:generate:0b6c3c1e-1111-4a4a-8b8b-000000000001:0b6c3c1e-2222-4a4a-8b8b-000000000002:2026-11-02:2026-11-02",
+		invoicetask.LeaseDatesTaskID(org, lease, time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)))
 }
 
 func TestEnqueueDaily(t *testing.T) {
@@ -111,6 +113,16 @@ func TestLeaseQueue(t *testing.T) {
 		fake := &invoicetasktest.Fake{}
 		invoicetask.NewLeaseQueue(fake, discard()).LeaseSaved(context.Background(), org, lease)
 		require.Equal(t, []invoicetask.Task{{ID: invoicetask.LeaseTaskID(org, lease), OrganizationID: org}}, fake.Tasks())
+	})
+
+	t.Run("a change of dates enqueues its own task, named after the lease and the new dates", func(t *testing.T) {
+		t.Parallel()
+		fake := &invoicetasktest.Fake{}
+		start := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+		invoicetask.NewLeaseQueue(fake, discard()).LeaseDatesChanged(context.Background(), org, lease, start, start)
+		want := invoicetask.Task{ID: invoicetask.LeaseDatesTaskID(org, lease, start, start), OrganizationID: org}
+		require.Equal(t, []invoicetask.Task{want}, fake.Tasks())
+		require.NotEqual(t, invoicetask.LeaseTaskID(org, lease), want.ID)
 	})
 
 	t.Run("a failure is logged, not returned", func(t *testing.T) {
