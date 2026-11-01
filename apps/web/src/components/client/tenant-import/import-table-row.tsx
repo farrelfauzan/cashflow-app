@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { ImportRowView } from "./type";
 
 import { ImportRowChip } from "./import-row-chip";
+import { ImportRowInvoices } from "./import-row-invoices";
 import { ImportRowMessages } from "./import-row-messages";
 
 type ImportTableRowProps = {
@@ -31,6 +32,9 @@ export function ImportTableRow({ row }: ImportTableRowProps) {
             <span className="text-base text-muted-foreground">
               {row.datesText}
             </span>
+          )}
+          {row.invoices !== null && (
+            <ImportRowInvoices invoices={row.invoices} />
           )}
         </div>
         <div className="flex flex-col items-start gap-1.5">

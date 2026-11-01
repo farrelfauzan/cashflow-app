@@ -29,7 +29,7 @@ export type ChooseProblem =
 // The action at the bottom of step 1.
 export type ChooseAction = "checkDisabled" | "check" | "chooseOther";
 
-export type RowFilter = "all" | "errors" | "notes";
+export type RowFilter = "all" | "errors" | "notes" | "many";
 
 export type FilterChipView = {
   filter: RowFilter;
@@ -59,8 +59,25 @@ export type ImportRowView = {
   datesText: string | null;
   // What the row will create: "Properti baru", "Unit baru", "Penyewa baru", "Sewa baru".
   createdChips: string[];
+  // "Langsung ditagih: 2 tagihan, Rp2.600.000", from the API's dry run; null when the row creates
+  // no invoice now (an existing lease, an error, a booking that starts later).
+  invoices: RowInvoicesView | null;
   errors: RowMessageView[];
   notes: RowMessageView[];
+};
+
+export type RowInvoicesView = {
+  text: string;
+  // The row bills many periods at once (MANY_INVOICES or more): shown as a warning with a hint.
+  many: boolean;
+};
+
+// The invoices the whole file creates when it is saved, from the API's summary.
+export type InvoiceSummaryView = {
+  total: string;
+  countText: string;
+  // "2 baris menagih banyak periode sekaligus. ..."; null when no row does.
+  warning: string | null;
 };
 
 export type SummaryTileView = {

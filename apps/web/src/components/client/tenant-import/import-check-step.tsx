@@ -60,6 +60,7 @@ export function ImportCheckStep({
         <div className="lg:sticky lg:top-6 lg:w-[300px] lg:shrink-0">
           <ImportCheckSummary
             summary={result.summary}
+            rows={result.rows}
             busy={busy}
             onCommit={onCommit}
           />

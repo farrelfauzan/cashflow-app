@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { ImportRowView } from "./type";
 
 import { ImportRowChip } from "./import-row-chip";
+import { ImportRowInvoices } from "./import-row-invoices";
 import { ImportRowMessages } from "./import-row-messages";
 
 type ImportRowCardProps = {
@@ -30,6 +31,7 @@ export function ImportRowCard({ row }: ImportRowCardProps) {
       {row.datesText !== null && (
         <span className="text-sm text-muted-foreground">{row.datesText}</span>
       )}
+      {row.invoices !== null && <ImportRowInvoices invoices={row.invoices} />}
       {row.createdChips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {row.createdChips.map((chip) => (
