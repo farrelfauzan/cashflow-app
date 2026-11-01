@@ -14,17 +14,17 @@ summarizes, reminds and reports.
   terms and append-only price history (decisions 32 and 33), roles limited to one property,
   tenants, leases with planned end and move-out, charge types and fixed extra charges on the
   lease, and the tenant CSV import with its template. Its README says how to run it. Not built
-  yet: invoices and everything after them (phase B onward), including metered amounts. Phase A
-  closes when the user names the pilot organization. The VPS provider and staging are planned
-  for the last phase (F, slice 12, decision 31); until then checkpoints are shown on a local
-  machine.
+  yet: invoices and everything after them (phase B onward), including metered amounts. The
+  pilot organization is Suhwendi Corp (decision 34); phase A closes when the user says so. The
+  VPS provider and staging are planned for the last phase (F, slice 12, decision 31); until then
+  checkpoints are shown on a local machine.
 - **Web:** `apps/web` has every phase A screen (W1 to W9): login, organization picker, members
   and roles, properties and units with terms and prices, tenants and leases, and the import.
   Forms use react-hook-form with a zod resolver through one shared hook.
 - **WhatsApp sending works through GOWA.** `internal/messaging/gowa` sends login codes today,
   proven on a real linked phone (2026-11-01). In development `WHATSAPP_PROVIDER=devlog` writes
-  messages to the API log instead, and only development may use it. Inbound messages (the GOWA webhook), the message log and send pacing
-  are slice 5.
+  messages to the API log instead, and only development may use it. Inbound messages (the GOWA
+  webhook), the message log and send pacing are slice 5.
 - **Plan and records** live in `docs/` (start at `docs/README.md`): the roadmap, how a slice is
   built, the decision log, the architecture, and one doc per phase. When a slice finishes,
   update its phase doc and the status table; when a decision is made, add it to
