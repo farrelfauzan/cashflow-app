@@ -1,6 +1,7 @@
 import {
   Building2,
   House,
+  ReceiptText,
   Users,
   UserCog,
   type LucideIcon,
@@ -19,6 +20,7 @@ export const ORG_NAV_ICONS: Record<OrgNavItem["key"], LucideIcon> = {
   home: House,
   properties: Building2,
   tenants: Users,
+  billing: ReceiptText,
   members: UserCog,
 };
 
@@ -56,6 +58,12 @@ export const ORG_MENU: readonly OrgMenuItem[] = [
     label: "Penyewa",
     segment: "tenants",
     permission: ["read", "tenant"],
+  },
+  {
+    key: "billing",
+    label: "Penagihan",
+    segment: "billing",
+    permission: ["read", "invoice"],
   },
   {
     key: "members",

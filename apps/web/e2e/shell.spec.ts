@@ -45,6 +45,7 @@ test.describe("Admin of the whole organization", () => {
       "Beranda",
       "Properti",
       "Penyewa",
+      "Penagihan",
       "Anggota tim",
     ]);
     await expect(sections.filter({ hasText: "Beranda" })).toHaveAttribute(
@@ -92,7 +93,11 @@ test.describe("Karyawan", () => {
     await openOrganization(page, RUDI, "Kost Putri Anggrek");
     const menu = await openMenu(page, testInfo);
     await expect(menu.getByText("Karyawan", { exact: true })).toBeVisible();
-    await expect(menuSections(menu)).toHaveText(["Beranda", "Penyewa"]);
+    await expect(menuSections(menu)).toHaveText([
+      "Beranda",
+      "Penyewa",
+      "Penagihan",
+    ]);
     await attachFullPageScreenshot(page, testInfo, "shell-karyawan");
   });
 });

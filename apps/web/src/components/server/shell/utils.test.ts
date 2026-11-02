@@ -19,22 +19,24 @@ describe("visibleOrgMenu", () => {
     const all = capabilities({
       "property:read": "allow",
       "tenant:read": "allow",
+      "invoice:read": "allow",
       "member:read": "allow",
     });
     expect(
       visibleOrgMenu(createAppAbility(all)).map((item) => item.key),
-    ).toEqual(["home", "properties", "tenants", "members"]);
+    ).toEqual(["home", "properties", "tenants", "billing", "members"]);
   });
 
   it("shows an item allowed on some records", () => {
     const limited = capabilities({
       "property:read": "conditional",
       "tenant:read": "conditional",
+      "invoice:read": "conditional",
       "member:read": "deny",
     });
     expect(
       visibleOrgMenu(createAppAbility(limited)).map((item) => item.key),
-    ).toEqual(["home", "properties", "tenants"]);
+    ).toEqual(["home", "properties", "tenants", "billing"]);
   });
 
   it("shows only the home to a member with no matching action", () => {

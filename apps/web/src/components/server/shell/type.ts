@@ -1,5 +1,5 @@
 export type OrgMenuItem = {
-  key: "home" | "properties" | "tenants" | "members";
+  key: "home" | "properties" | "tenants" | "billing" | "members";
   label: string;
   // Below /o/<orgId>; "" is the organization's home.
   segment: string;
