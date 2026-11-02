@@ -13,7 +13,8 @@ type ArrearsRowProps = {
 };
 
 // One tenant in arrears: name and unit, what they owe and since when. The name opens Detail
-// penyewa for a member who may read tenants.
+// penyewa for a member who may read tenants. Its tap box is 44px tall; the negative margin keeps
+// that box from stretching the line, so a place that wraps keeps its normal line spacing.
 export function ArrearsRow({ orgId, row, canOpenTenant }: ArrearsRowProps) {
   return (
     <li className="flex flex-col gap-1 border-t py-3 first:border-t-0">
@@ -21,7 +22,7 @@ export function ArrearsRow({ orgId, row, canOpenTenant }: ArrearsRowProps) {
         {canOpenTenant ? (
           <Link
             href={orgPath(orgId, `tenants/${row.tenantId}`)}
-            className="inline-flex min-h-11 items-center underline-offset-4 hover:underline"
+            className="-my-2.5 inline-flex min-h-11 items-center underline-offset-4 hover:underline"
           >
             {row.name}
           </Link>
