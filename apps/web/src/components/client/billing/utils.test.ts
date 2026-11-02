@@ -46,7 +46,7 @@ const invoice = (over: Partial<AccountInvoice> = {}): AccountInvoice => ({
   period: "2026-10-10",
   periodEnd: "2026-11-09",
   dueDate: "2026-10-10",
-  issuedOn: "2026-10-07",
+  issuedOn: "2026-10-10",
   amount: 1_500_000,
   billed: 1_500_000,
   paid: 0,
