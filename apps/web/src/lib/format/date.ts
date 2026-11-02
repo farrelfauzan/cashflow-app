@@ -19,6 +19,17 @@ const calendarDayMonthParts = new Intl.DateTimeFormat("id-ID", {
   month: "short",
 });
 
+const calendarMonthYearParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "UTC",
+  month: "long",
+  year: "numeric",
+});
+
+const calendarMonthParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "UTC",
+  month: "long",
+});
+
 const jakartaDayParts = new Intl.DateTimeFormat("en-CA", {
   timeZone: JAKARTA,
   year: "numeric",
@@ -107,6 +118,32 @@ export function formatDayMonth(date: string): string {
     calendarDateToUtc(date, "formatDayMonth"),
   );
   return `${part(parts, "day")} ${part(parts, "month")}`;
+}
+
+/**
+ * Formats the month of an API calendar date with its year, for an invoice's period:
+ * `"2026-11-10"` gives `"November 2026"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatMonthYear(date: string): string {
+  const parts = calendarMonthYearParts.formatToParts(
+    calendarDateToUtc(date, "formatMonthYear"),
+  );
+  return `${part(parts, "month")} ${part(parts, "year")}`;
+}
+
+/**
+ * The month name alone of an API calendar date, for short notes: `"2026-10-10"` gives
+ * `"Oktober"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatMonth(date: string): string {
+  const parts = calendarMonthParts.formatToParts(
+    calendarDateToUtc(date, "formatMonth"),
+  );
+  return part(parts, "month");
 }
 
 /**

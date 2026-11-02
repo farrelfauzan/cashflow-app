@@ -4,6 +4,8 @@ import { useAbility } from "@casl/react";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
+import { TenantAccountSection } from "@/components/client/billing/tenant-account-section";
+import { canReadAccount } from "@/components/client/billing/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetTenant } from "@/lib/api/generated/tenants/tenants";
@@ -32,13 +34,16 @@ type TenantDetailViewProps = {
   tenantId: string;
 };
 
-// "Penyewa dan sewanya": one tenant and a card for each lease the member may see, with "Ubah
+// "Penyewa dan sewanya": one tenant, their money (tiles, invoices, payments and corrections,
+// for a member with invoice:read and payment:read) and a card for each lease the member may see, with "Ubah
 // penyewa" and, for a tenant without an active lease, "Sewakan unit", each shown from the
 // member's capabilities (getOrgMe). The API answers 404 for a tenant that does not exist and 403
 // for one the member may not see; both read "Penyewa tidak ditemukan".
 export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const tenant = useGetTenant(orgId, tenantId);
-  const permissions = tenantPermissions(useAbility<AppAbility>());
+  const ability = useAbility<AppAbility>();
+  const permissions = tenantPermissions(ability);
+  const showAccount = canReadAccount(ability);
   const [today] = useState(() => jakartaToday(new Date()));
   const [panel, setPanel] = useState<TenantPanelState>({ kind: "closed" });
   // A short confirmation after a panel closes, announced to screen readers.
@@ -80,6 +85,9 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
       >
         {notice}
       </p>
+      {showAccount && (
+        <TenantAccountSection orgId={orgId} tenantId={tenantId} today={today} />
+      )}
       {data.leases.length === 0 ? (
         <NoLeaseCard
           name={data.name}
