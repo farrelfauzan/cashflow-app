@@ -1,7 +1,16 @@
 "use client";
 
+import Link from "next/link";
+
+import { orgPath } from "@/lib/org-path";
 import type { ArrearsRowView } from "./type";
-import { ARREARS_LIST_LABEL, ARREARS_TITLE, NO_ARREARS_TEXT } from "./utils";
+import {
+  ARREARS_LIST_LABEL,
+  ARREARS_TITLE,
+  BILLING_LINK_TEXT,
+  NO_ARREARS_TEXT,
+  OVERDUE_BILLING_SEGMENT,
+} from "./utils";
 
 import { ArrearsRow } from "./arrears-row";
 
@@ -13,6 +22,8 @@ type ArrearsListProps = {
   // "dan 3 penyewa lain" when the API listed only the first ten.
   more: string | null;
   canOpenTenant: boolean;
+  // "Lihat semua di Penagihan" for a member who may read invoices, while someone is late.
+  canOpenBilling: boolean;
 };
 
 // "Belum bayar": the tenants who owe money after its due date, the oldest debt first.
@@ -22,6 +33,7 @@ export function ArrearsList({
   rows,
   more,
   canOpenTenant,
+  canOpenBilling,
 }: ArrearsListProps) {
   return (
     <section className="flex min-w-0 flex-col gap-1 rounded-[14px] border bg-card p-4 md:rounded-2xl md:px-6 md:py-[22px]">
@@ -49,6 +61,14 @@ export function ArrearsList({
         <p className="border-t pt-3 text-[15px] text-muted-foreground md:text-base">
           {more}
         </p>
+      )}
+      {canOpenBilling && rows.length > 0 && (
+        <Link
+          href={orgPath(orgId, OVERDUE_BILLING_SEGMENT)}
+          className="inline-flex min-h-11 items-center self-start text-[15px] font-semibold text-primary underline-offset-4 hover:underline md:text-base"
+        >
+          {BILLING_LINK_TEXT}
+        </Link>
       )}
     </section>
   );

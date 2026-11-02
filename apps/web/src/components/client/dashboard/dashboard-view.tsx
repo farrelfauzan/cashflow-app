@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { AppAbility } from "@/lib/capabilities";
 import { formatLongDate, jakartaHour, jakartaToday } from "@/lib/format/date";
 import {
+  canOpenBilling,
   canOpenTenant,
   canReadDashboard,
   greeting,
@@ -37,6 +38,7 @@ export function DashboardView({ orgId }: DashboardViewProps) {
         <DashboardContent
           orgId={orgId}
           canOpenTenant={canOpenTenant(ability)}
+          canOpenBilling={canOpenBilling(ability)}
         />
       ) : (
         <p className="text-[15px] text-muted-foreground md:text-[17px]">

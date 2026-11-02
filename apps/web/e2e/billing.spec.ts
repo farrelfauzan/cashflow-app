@@ -261,7 +261,9 @@ test.describe("Admin of the whole organization", () => {
     // URL.
     const month = await openBilling(page, testInfo);
     await expect(page).toHaveURL(/\/billing$/);
-    await expect(page.getByText(monthLabel(thisMonth))).toBeVisible();
+    await expect(
+      page.getByText(monthLabel(thisMonth), { exact: true }),
+    ).toBeVisible();
     await expectTiles(page, month, thisMonth, thisMonth);
     await expect(
       page.getByText(rangeText(month.page, month.pageSize, month.total) ?? ""),
@@ -371,14 +373,18 @@ test.describe("Admin of the whole organization", () => {
     await back.click();
     const earlier = await listOf(earlierAnswer);
     await expect(page).toHaveURL(new RegExp(`[?&]period=${previous}(&|$)`));
-    await expect(page.getByText(monthLabel(previous))).toBeVisible();
+    await expect(
+      page.getByText(monthLabel(previous), { exact: true }),
+    ).toBeVisible();
     await expectTiles(page, earlier, previous, thisMonth);
     await expect(next).toBeEnabled();
     expect((await next.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     await next.click();
     await expect(page).not.toHaveURL(/period=/);
-    await expect(page.getByText(monthLabel(thisMonth))).toBeVisible();
+    await expect(
+      page.getByText(monthLabel(thisMonth), { exact: true }),
+    ).toBeVisible();
     await expect(next).toBeDisabled();
 
     // The name opens Detail penyewa.
@@ -410,7 +416,9 @@ test.describe("Admin of the whole organization", () => {
       page.getByRole("heading", { level: 1, name: "Penagihan" }),
     ).toBeVisible();
     await expect(
-      page.getByText(monthLabel(currentPeriod(jakartaToday(new Date())))),
+      page.getByText(monthLabel(currentPeriod(jakartaToday(new Date()))), {
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
       page.getByRole("group", { name: "Terkumpul", exact: true }),
