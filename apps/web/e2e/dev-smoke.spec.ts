@@ -6,7 +6,7 @@ import {
   type TestInfo,
 } from "@playwright/test";
 
-import { ORG_HOME_URL, openMenu } from "./support/shell";
+import { HOME_HEADING, ORG_HOME_URL, openMenu } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
 // Runs only against `next dev` (E2E_SERVER=dev, see playwright.config.ts). Next.js checks in
@@ -91,7 +91,7 @@ async function settle(page: Page) {
   await page.waitForTimeout(LATE_REPORT_MS);
 }
 
-async function expectHeading(page: Page, name: string) {
+async function expectHeading(page: Page, name: string | RegExp) {
   await expect(
     page.getByRole("heading", { level: 1, name, exact: true }),
   ).toBeVisible({ timeout: COLD_COMPILE_MS });
@@ -128,7 +128,7 @@ async function openGriya(page: Page): Promise<string> {
 test("every staff screen loads with no Next.js error", async ({ page }) => {
   const errors = collectErrors(page);
   const home = await openGriya(page);
-  await expectHeading(page, "Beranda");
+  await expectHeading(page, HOME_HEADING);
 
   // Full page loads: each route rendered from the root.
   const screens: [string, string][] = [
@@ -242,7 +242,7 @@ for (const screen of RACE_SCREENS) {
     page,
   }) => {
     const home = await openGriya(page);
-    await expectHeading(page, "Beranda");
+    await expectHeading(page, HOME_HEADING);
     const url = await screen.url(page, home);
 
     const errors = collectErrors(page);
@@ -260,7 +260,7 @@ test("every client navigation inside an organization shows no Next.js error", as
 }, testInfo) => {
   const errors = collectErrors(page);
   await openGriya(page);
-  await expectHeading(page, "Beranda");
+  await expectHeading(page, HOME_HEADING);
 
   // The shell stays on screen; only the page below it changes.
   await clickMenu(page, testInfo, "Properti");
@@ -282,7 +282,7 @@ test("every client navigation inside an organization shows no Next.js error", as
   await expectHeading(page, "Anggota tim");
 
   await clickMenu(page, testInfo, "Beranda");
-  await expectHeading(page, "Beranda");
+  await expectHeading(page, HOME_HEADING);
 
   expect(errors).toEqual([]);
 });
