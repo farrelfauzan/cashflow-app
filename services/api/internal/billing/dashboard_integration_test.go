@@ -96,9 +96,9 @@ func TestDashboardAndInvoiceList(t *testing.T) {
 	w.generate(t)
 	paidRina := w.record(t, cash(rina.renter, 750_000, day(2026, 11, 1)))
 	w.record(t, cash(bambang.renter, 300_000, day(2026, 11, 1)))
-	w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: paidRina.Payment.ID, AmountDelta: -50_000, Reason: "salah hitung kembalian"})
+	w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: paidRina.Payment.ID, AmountDelta: i64(-50_000), Reason: "salah hitung kembalian"})
 	ekoInv := w.invoices(t, eko.renter)[0]
-	w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: ekoInv.InvoiceID, AmountDelta: -700_000, Reason: "kamar batal disewa"})
+	w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: ekoInv.InvoiceID, AmountDelta: i64(-700_000), Reason: "kamar batal disewa"})
 
 	nov := billing.InvoiceQuery{Period: "2026-11"}
 
@@ -430,7 +430,7 @@ func TestDashboardAndInvoiceList(t *testing.T) {
 		other := newWorld(t, env, "0812962")
 		lina := other.rentIn(t, other.kos, "Kamar 1", "Lina Marlina", day(2026, 11, 2), 800_000)
 		other.generate(t)
-		other.correct(t, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: other.invoices(t, lina.renter)[0].InvoiceID, AmountDelta: -100_000, Reason: "diskon"})
+		other.correct(t, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: other.invoices(t, lina.renter)[0].InvoiceID, AmountDelta: i64(-100_000), Reason: "diskon"})
 
 		items := allInvoices(t, env, w.admin, nov)
 		require.Len(t, items, 5)
@@ -498,7 +498,7 @@ func TestDashboardCorrectionsAndPlannedEnd(t *testing.T) {
 
 	// Ten member corrections of October, then the system's cancellation of November.
 	for i := range 10 {
-		w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: invs[0].InvoiceID, AmountDelta: -1_000, Reason: fmt.Sprintf("potongan %d", i+1)})
+		w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: invs[0].InvoiceID, AmountDelta: i64(-1_000), Reason: fmt.Sprintf("potongan %d", i+1)})
 	}
 	end := day(2026, 11, 27)
 	_, err := env.Tenants.SetPlannedEnd(ctx, w.admin, sri.leaseID, &end)

@@ -10,6 +10,9 @@ import {
 
 export const ORG_HOME_URL = /\/o\/[0-9a-f-]{36}$/;
 
+// Beranda's heading greets by the hour in Jakarta ("Selamat pagi").
+export const HOME_HEADING = /^Selamat (pagi|siang|sore|malam)$/;
+
 export function isPhone(testInfo: TestInfo): boolean {
   return testInfo.project.name === "phone";
 }

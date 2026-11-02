@@ -4,7 +4,13 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { isPhone, menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import {
+  HOME_HEADING,
+  isPhone,
+  menuSections,
+  ORG_HOME_URL,
+  openMenu,
+} from "./support/shell";
 import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 
 // The app shell inside an organization: the menu shows what the member's capabilities from the
@@ -36,7 +42,7 @@ test.describe("Admin of the whole organization", () => {
     await openOrganization(page, HENDRA, "Griya Sejahtera");
     const home = page.url();
     await expect(
-      page.getByRole("heading", { level: 1, name: "Beranda" }),
+      page.getByRole("heading", { level: 1, name: HOME_HEADING }),
     ).toBeVisible();
     await attachFullPageScreenshot(page, testInfo, "shell-home");
 
