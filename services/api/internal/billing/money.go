@@ -33,6 +33,8 @@ var (
 	// ErrRequestIDReused means a requestId already recorded a payment or correction that is
 	// not the one now asked for.
 	ErrRequestIDReused = errors.New("billing: request id used for something else")
+	// ErrCorrectionNoChange means a correction's new amount equals the current amount.
+	ErrCorrectionNoChange = errors.New("billing: correction changes nothing")
 	// ErrCorrectionBelowZero means a correction would take an invoice's billed amount or a
 	// payment's net amount below zero.
 	ErrCorrectionBelowZero = errors.New("billing: correction below zero")
@@ -72,10 +74,14 @@ type PaymentInput struct {
 
 // CorrectionInput corrects exactly one invoice or one payment.
 type CorrectionInput struct {
-	RequestID   uuid.UUID
-	InvoiceID   uuid.UUID // uuid.Nil when it corrects a payment
-	PaymentID   uuid.UUID // uuid.Nil when it corrects an invoice
-	AmountDelta int64     // signed, never 0
+	RequestID uuid.UUID
+	InvoiceID uuid.UUID // uuid.Nil when it corrects a payment
+	PaymentID uuid.UUID // uuid.Nil when it corrects an invoice
+	// Exactly one of AmountDelta and NewAmount. AmountDelta is signed and never 0; NewAmount is
+	// what the invoice should bill or the payment count ("Nominal baru"), and the service takes
+	// the difference from the current amount inside the transaction.
+	AmountDelta *int64
+	NewAmount   *int64
 	Reason      string
 }
 
@@ -110,9 +116,13 @@ func ValidCorrection(in CorrectionInput) (CorrectionInput, error) {
 		return in, &InputError{Field: "requestId", Message: "Permintaan tidak valid. Muat ulang halaman lalu coba lagi."}
 	case (in.InvoiceID == uuid.Nil) == (in.PaymentID == uuid.Nil):
 		return in, &InputError{Field: "invoiceId", Message: "Pilih satu tagihan atau satu pembayaran yang dikoreksi."}
-	case in.AmountDelta == 0:
+	case (in.AmountDelta == nil) == (in.NewAmount == nil):
+		return in, &InputError{Field: "newAmount", Message: "Isi nominal baru."}
+	case in.NewAmount != nil && (*in.NewAmount < 0 || *in.NewAmount > MaxAmount):
+		return in, &InputError{Field: "newAmount", Message: "Nominal baru harus antara Rp0 dan Rp1.000.000.000.000."}
+	case in.AmountDelta != nil && *in.AmountDelta == 0:
 		return in, &InputError{Field: "amountDelta", Message: "Nominal koreksi tidak boleh nol."}
-	case in.AmountDelta < -MaxAmount || in.AmountDelta > MaxAmount:
+	case in.AmountDelta != nil && (*in.AmountDelta < -MaxAmount || *in.AmountDelta > MaxAmount):
 		return in, &InputError{Field: "amountDelta", Message: "Nominal koreksi paling besar Rp1.000.000.000.000."}
 	case in.Reason == "":
 		return in, &InputError{Field: "reason", Message: "Alasan koreksi wajib diisi."}

@@ -57,6 +57,7 @@ type AccountInvoice struct {
 	Period       time.Time
 	PeriodEnd    time.Time
 	DueDate      time.Time
+	IssuedOn     time.Time // the Asia/Jakarta day the invoice was made
 	Amount       int64
 	Billed       int64
 	Paid         int64
@@ -231,7 +232,7 @@ func loadAccount(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID,
 	for _, r := range invRows {
 		out.Invoices = append(out.Invoices, AccountInvoice{
 			ID: r.InvoiceID, LeaseID: r.LeaseID, UnitLabel: r.UnitLabel, PropertyName: r.PropertyName,
-			Period: r.Period, PeriodEnd: r.PeriodEnd, DueDate: r.DueDate,
+			Period: r.Period, PeriodEnd: r.PeriodEnd, DueDate: r.DueDate, IssuedOn: receivedOn(r.CreatedAt),
 			Amount: r.Amount, Billed: r.Billed, Paid: r.Paid, Outstanding: r.Outstanding, Status: r.Status,
 			Lines: orEmpty(lines[r.InvoiceID]), Corrections: orEmpty(byInvoice[r.InvoiceID]),
 		})

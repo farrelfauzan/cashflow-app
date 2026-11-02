@@ -459,8 +459,11 @@ type AccountInvoice struct {
 	Corrections []Correction       `json:"corrections"`
 	DueDate     openapi_types.Date `json:"dueDate"`
 	Id          openapi_types.UUID `json:"id"`
-	LeaseId     openapi_types.UUID `json:"leaseId"`
-	Lines       []InvoiceLine      `json:"lines"`
+
+	// IssuedOn The day the invoice was made, Asia/Jakarta (terbit).
+	IssuedOn openapi_types.Date `json:"issuedOn"`
+	LeaseId  openapi_types.UUID `json:"leaseId"`
+	Lines    []InvoiceLine      `json:"lines"`
 
 	// Outstanding billed minus paid.
 	Outstanding int64 `json:"outstanding"`
@@ -603,19 +606,25 @@ type Correction struct {
 	Reason string `json:"reason"`
 }
 
-// CorrectionInput Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise).
+// CorrectionInput Exactly one of invoiceId and paymentId (400 with field invoiceId otherwise), and exactly one of newAmount and amountDelta (400 with field newAmount otherwise).
 type CorrectionInput struct {
 	// AmountDelta Signed rupiah, not 0. Negative bills or counts less, positive more.
 	//
 	// Example: -200000
-	AmountDelta int64               `json:"amountDelta"`
+	AmountDelta *int64              `json:"amountDelta,omitempty"`
 	InvoiceId   *openapi_types.UUID `json:"invoiceId,omitempty"`
-	PaymentId   *openapi_types.UUID `json:"paymentId,omitempty"`
+
+	// NewAmount What the invoice should bill or the payment should count, in rupiah ("Nominal baru"); 0 cancels an invoice. The server takes the difference from the current amount inside the transaction, so a correction or payment saved meanwhile is never overwritten by a stale figure. Equal to the current amount is a 409 correction_no_change.
+	//
+	//
+	// Example: 1400000
+	NewAmount *int64              `json:"newAmount,omitempty"`
+	PaymentId *openapi_types.UUID `json:"paymentId,omitempty"`
 
 	// Reason Required; blank is a 400.
 	Reason string `json:"reason"`
 
-	// RequestId As in PaymentInput.
+	// RequestId As in PaymentInput. A repeat compares what was sent (newAmount or amountDelta), so a repeated newAmount answers the stored correction even though the amount now equals it.
 	RequestId openapi_types.UUID `json:"requestId"`
 }
 

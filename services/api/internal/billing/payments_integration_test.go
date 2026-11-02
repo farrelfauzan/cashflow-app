@@ -254,7 +254,7 @@ func TestCreateCorrection(t *testing.T) {
 		w.record(t, cash(r.renter, 700_000, day(2026, 11, 2)))
 
 		res := w.correct(t, billing.CorrectionInput{
-			RequestID: uuid.New(), InvoiceID: inv.InvoiceID, AmountDelta: -200_000, Reason: "  AC rusak, diskon disepakati ",
+			RequestID: uuid.New(), InvoiceID: inv.InvoiceID, AmountDelta: i64(-200_000), Reason: "  AC rusak, diskon disepakati ",
 		})
 		require.True(t, res.Created)
 		require.Equal(t, r.tenantID, res.TenantID)
@@ -282,7 +282,7 @@ func TestCreateCorrection(t *testing.T) {
 		require.Len(t, pay.Paid, 2)
 
 		res := w.correct(t, billing.CorrectionInput{
-			RequestID: uuid.New(), PaymentID: pay.Payment.ID, AmountDelta: -500_000, Reason: "uang kurang saat dihitung ulang",
+			RequestID: uuid.New(), PaymentID: pay.Payment.ID, AmountDelta: i64(-500_000), Reason: "uang kurang saat dihitung ulang",
 		})
 		require.EqualValues(t, 900_000, res.Outstanding)
 		got := w.invoices(t, r.renter)
@@ -311,8 +311,8 @@ func TestCreateCorrection(t *testing.T) {
 			name string
 			in   billing.CorrectionInput
 		}{
-			{name: "invoice", in: billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: inv.InvoiceID, AmountDelta: -700_001, Reason: "salah hitung"}},
-			{name: "payment", in: billing.CorrectionInput{RequestID: uuid.New(), PaymentID: pay.Payment.ID, AmountDelta: -300_001, Reason: "salah hitung"}},
+			{name: "invoice", in: billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: inv.InvoiceID, AmountDelta: i64(-700_001), Reason: "salah hitung"}},
+			{name: "payment", in: billing.CorrectionInput{RequestID: uuid.New(), PaymentID: pay.Payment.ID, AmountDelta: i64(-300_001), Reason: "salah hitung"}},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -330,7 +330,7 @@ func TestCreateCorrection(t *testing.T) {
 		r := w.rent(t, "Wahyu Pratama", day(2026, 11, 1), rentOpts{})
 		w.generate(t)
 		inv := w.invoices(t, r.renter)[0]
-		in := billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: inv.InvoiceID, AmountDelta: -700_000, Reason: "sewa dibatalkan pemilik"}
+		in := billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: inv.InvoiceID, AmountDelta: i64(-700_000), Reason: "sewa dibatalkan pemilik"}
 
 		first := w.correct(t, in)
 		require.True(t, first.Created)
@@ -348,9 +348,9 @@ func TestCreateCorrection(t *testing.T) {
 
 	t.Run("a missing invoice or payment is not found on its field", func(t *testing.T) {
 		w := newWorld(t, env, "0812915")
-		_, err := env.Billing.CreateCorrection(ctx, w.admin, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: uuid.New(), AmountDelta: 1, Reason: "x"})
+		_, err := env.Billing.CreateCorrection(ctx, w.admin, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: uuid.New(), AmountDelta: i64(1), Reason: "x"})
 		requireNotFound(t, err, "invoiceId")
-		_, err = env.Billing.CreateCorrection(ctx, w.admin, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: uuid.New(), AmountDelta: 1, Reason: "x"})
+		_, err = env.Billing.CreateCorrection(ctx, w.admin, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: uuid.New(), AmountDelta: i64(1), Reason: "x"})
 		requireNotFound(t, err, "paymentId")
 	})
 }
@@ -382,7 +382,7 @@ func TestMoneyAuthorization(t *testing.T) {
 		res, err := env.Billing.RecordPayment(ctx, limited, cash(onlyKos.renter, 700_000, day(2026, 11, 2)))
 		require.NoError(t, err)
 		_, err = env.Billing.CreateCorrection(ctx, limited, billing.CorrectionInput{
-			RequestID: uuid.New(), PaymentID: res.Payment.ID, AmountDelta: -50_000, Reason: "uang sobek ditolak",
+			RequestID: uuid.New(), PaymentID: res.Payment.ID, AmountDelta: i64(-50_000), Reason: "uang sobek ditolak",
 		})
 		require.NoError(t, err)
 		_, err = env.Billing.Account(ctx, limited, onlyKos.tenantID)
@@ -409,7 +409,7 @@ func TestMoneyAuthorization(t *testing.T) {
 			}
 		}
 		_, err = env.Billing.CreateCorrection(ctx, limited, billing.CorrectionInput{
-			RequestID: uuid.New(), InvoiceID: kosInvoice, AmountDelta: -100_000, Reason: "air mati seminggu",
+			RequestID: uuid.New(), InvoiceID: kosInvoice, AmountDelta: i64(-100_000), Reason: "air mati seminggu",
 		})
 		require.NoError(t, err)
 	})
@@ -443,7 +443,7 @@ func TestMoneyAuthorization(t *testing.T) {
 		require.Empty(t, want, "an audit row names the tenant in each property")
 
 		before = w.audited(t, authz.ActionCorrectionCreate, "allow")
-		w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: res.Payment.ID, AmountDelta: 10_000, Reason: "salah ketik"})
+		w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: res.Payment.ID, AmountDelta: i64(10_000), Reason: "salah ketik"})
 		require.Equal(t, before+2, w.audited(t, authz.ActionCorrectionCreate, "allow"))
 	})
 
@@ -513,9 +513,9 @@ func TestMoneyAcrossOrganizations(t *testing.T) {
 
 	_, err := env.Billing.RecordPayment(ctx, a.admin, cash(rb.renter, 500_000, day(2026, 11, 2)))
 	requireNotFound(t, err, "tenantId")
-	_, err = env.Billing.CreateCorrection(ctx, a.admin, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: invB.InvoiceID, AmountDelta: -1, Reason: "x"})
+	_, err = env.Billing.CreateCorrection(ctx, a.admin, billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: invB.InvoiceID, AmountDelta: i64(-1), Reason: "x"})
 	requireNotFound(t, err, "invoiceId")
-	_, err = env.Billing.CreateCorrection(ctx, a.admin, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: payB.Payment.ID, AmountDelta: -1, Reason: "x"})
+	_, err = env.Billing.CreateCorrection(ctx, a.admin, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: payB.Payment.ID, AmountDelta: i64(-1), Reason: "x"})
 	requireNotFound(t, err, "paymentId")
 	_, err = env.Billing.Account(ctx, a.admin, rb.tenantID)
 	requireNotFound(t, err, "")
@@ -556,4 +556,103 @@ func mustSourceRef(t *testing.T, w *world, paymentID uuid.UUID) *string {
 	})
 	require.NotNil(t, ref)
 	return ref
+}
+
+// TestCorrectionByNewAmount: the admin names the amount an invoice or a payment should have
+// ("Nominal baru"), and the service takes the difference from the current amount inside the
+// transaction (T-059).
+func TestCorrectionByNewAmount(t *testing.T) {
+	env := testenv.New(t)
+	ctx := context.Background()
+	setNow(env, 2026, 11, 2, 9, 0)
+	byAmount := func(invoiceID uuid.UUID, amount int64, reason string) billing.CorrectionInput {
+		return billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: invoiceID, NewAmount: i64(amount), Reason: reason}
+	}
+
+	t.Run("below and above the current amount store the difference", func(t *testing.T) {
+		w := newWorld(t, env, "0812916")
+		r := w.rent(t, "Siti Rahayu", day(2026, 11, 1), rentOpts{})
+		w.generate(t)
+		inv := w.invoices(t, r.renter)[0]
+
+		down := w.correct(t, byAmount(inv.InvoiceID, 500_000, "AC rusak"))
+		require.EqualValues(t, -200_000, down.Correction.AmountDelta)
+		require.EqualValues(t, 500_000, w.invoices(t, r.renter)[0].Billed)
+
+		up := w.correct(t, byAmount(inv.InvoiceID, 650_000, "AC sudah diperbaiki"))
+		require.EqualValues(t, 150_000, up.Correction.AmountDelta)
+		require.EqualValues(t, 650_000, w.invoices(t, r.renter)[0].Billed)
+		require.EqualValues(t, 650_000, up.Outstanding)
+	})
+
+	t.Run("equal to the current amount is refused and writes nothing", func(t *testing.T) {
+		w := newWorld(t, env, "0812917")
+		r := w.rent(t, "Agus Salim", day(2026, 11, 1), rentOpts{})
+		w.generate(t)
+		inv := w.invoices(t, r.renter)[0]
+		_, err := env.Billing.CreateCorrection(ctx, w.admin, byAmount(inv.InvoiceID, 700_000, "cek ulang"))
+		require.ErrorIs(t, err, billing.ErrCorrectionNoChange)
+		require.Zero(t, w.count(t, "correction"))
+	})
+
+	t.Run("a stale figure: a correction saved meanwhile is not overwritten", func(t *testing.T) {
+		w := newWorld(t, env, "0812918")
+		r := w.rent(t, "Dewi Lestari", day(2026, 11, 1), rentOpts{})
+		w.generate(t)
+		inv := w.invoices(t, r.renter)[0]
+		// Two admins open the invoice at Rp700.000. One saves Rp600.000; the other, still
+		// looking at Rp700.000, saves Rp650.000. The invoice ends at what the second one named.
+		w.correct(t, byAmount(inv.InvoiceID, 600_000, "diskon langganan"))
+		second := w.correct(t, byAmount(inv.InvoiceID, 650_000, "diskon disepakati ulang"))
+		require.EqualValues(t, 50_000, second.Correction.AmountDelta, "taken from Rp600.000, not from the Rp700.000 on screen")
+		require.EqualValues(t, 650_000, w.invoices(t, r.renter)[0].Billed)
+	})
+
+	t.Run("a repeated requestId answers the stored correction; another body is refused", func(t *testing.T) {
+		w := newWorld(t, env, "0812919")
+		r := w.rent(t, "Rina Wulandari", day(2026, 11, 1), rentOpts{})
+		w.generate(t)
+		inv := w.invoices(t, r.renter)[0]
+		in := byAmount(inv.InvoiceID, 0, "sewa dibatalkan pemilik")
+
+		first := w.correct(t, in)
+		require.True(t, first.Created)
+		again := w.correct(t, in)
+		require.False(t, again.Created, "the amount now equals 0, yet the repeat is not a no-change error")
+		require.Equal(t, first.Correction.ID, again.Correction.ID)
+		require.Equal(t, 1, w.count(t, "correction"))
+
+		other := in
+		other.NewAmount = i64(100_000)
+		_, err := env.Billing.CreateCorrection(ctx, w.admin, other)
+		require.ErrorIs(t, err, billing.ErrRequestIDReused)
+		asDelta := in
+		asDelta.NewAmount, asDelta.AmountDelta = nil, i64(-700_000)
+		_, err = env.Billing.CreateCorrection(ctx, w.admin, asDelta)
+		require.ErrorIs(t, err, billing.ErrRequestIDReused, "the same change sent as a difference is another request")
+	})
+
+	t.Run("a payment by new amount takes back what it no longer covers", func(t *testing.T) {
+		w := newWorld(t, env, "0812920")
+		r := w.rent(t, "Hendra Wijaya", day(2026, 11, 1), rentOpts{})
+		w.generate(t)
+		pay := w.record(t, cash(r.renter, 700_000, day(2026, 11, 2)))
+		res := w.correct(t, billing.CorrectionInput{
+			RequestID: uuid.New(), PaymentID: pay.Payment.ID, NewAmount: i64(500_000), Reason: "uang kurang saat dihitung ulang",
+		})
+		require.EqualValues(t, -200_000, res.Correction.AmountDelta)
+		require.EqualValues(t, 200_000, res.Outstanding)
+		require.Equal(t, "partial", w.invoices(t, r.renter)[0].Status)
+	})
+
+	t.Run("the account shows the day each invoice was made", func(t *testing.T) {
+		setNow(env, 2026, 11, 2, 23, 30) // 16:30 UTC: still 2 Nov in Jakarta
+		w := newWorld(t, env, "0812922")
+		r := w.rent(t, "Bambang Pamungkas", day(2026, 11, 1), rentOpts{})
+		w.generate(t)
+		acct, err := env.Billing.Account(ctx, w.admin, r.tenantID)
+		require.NoError(t, err)
+		require.Equal(t, day(2026, 11, 2), acct.Invoices[0].IssuedOn)
+		setNow(env, 2026, 11, 2, 9, 0)
+	})
 }

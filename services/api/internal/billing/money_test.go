@@ -61,7 +61,7 @@ func TestValidPayment(t *testing.T) {
 
 func TestValidCorrection(t *testing.T) {
 	t.Parallel()
-	valid := billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: uuid.New(), AmountDelta: -200_000, Reason: " AC rusak sebulan "}
+	valid := billing.CorrectionInput{RequestID: uuid.New(), InvoiceID: uuid.New(), AmountDelta: i64(-200_000), Reason: " AC rusak sebulan "}
 	tests := []struct {
 		name   string
 		change func(in *billing.CorrectionInput)
@@ -69,15 +69,25 @@ func TestValidCorrection(t *testing.T) {
 	}{
 		{name: "an invoice corrected down is valid", change: func(*billing.CorrectionInput) {}},
 		{name: "a payment corrected up is valid", change: func(in *billing.CorrectionInput) {
-			in.InvoiceID, in.PaymentID, in.AmountDelta = uuid.Nil, uuid.New(), 50_000
+			in.InvoiceID, in.PaymentID, in.AmountDelta = uuid.Nil, uuid.New(), i64(50_000)
 		}},
-		{name: "the largest change down is valid", change: func(in *billing.CorrectionInput) { in.AmountDelta = -billing.MaxAmount }},
+		{name: "the largest change down is valid", change: func(in *billing.CorrectionInput) { in.AmountDelta = i64(-billing.MaxAmount) }},
 		{name: "no requestId", change: func(in *billing.CorrectionInput) { in.RequestID = uuid.Nil }, field: "requestId"},
 		{name: "both an invoice and a payment", change: func(in *billing.CorrectionInput) { in.PaymentID = uuid.New() }, field: "invoiceId"},
 		{name: "neither an invoice nor a payment", change: func(in *billing.CorrectionInput) { in.InvoiceID = uuid.Nil }, field: "invoiceId"},
-		{name: "a zero change", change: func(in *billing.CorrectionInput) { in.AmountDelta = 0 }, field: "amountDelta"},
-		{name: "a change over the limit", change: func(in *billing.CorrectionInput) { in.AmountDelta = billing.MaxAmount + 1 }, field: "amountDelta"},
-		{name: "a change under the limit", change: func(in *billing.CorrectionInput) { in.AmountDelta = -billing.MaxAmount - 1 }, field: "amountDelta"},
+		{name: "a zero change", change: func(in *billing.CorrectionInput) { in.AmountDelta = i64(0) }, field: "amountDelta"},
+		{name: "a change over the limit", change: func(in *billing.CorrectionInput) { in.AmountDelta = i64(billing.MaxAmount + 1) }, field: "amountDelta"},
+		{name: "a change under the limit", change: func(in *billing.CorrectionInput) { in.AmountDelta = i64(-billing.MaxAmount - 1) }, field: "amountDelta"},
+		{name: "a new amount instead of a difference is valid", change: func(in *billing.CorrectionInput) {
+			in.AmountDelta, in.NewAmount = nil, i64(1_400_000)
+		}},
+		{name: "a new amount of zero cancels, and is valid", change: func(in *billing.CorrectionInput) { in.AmountDelta, in.NewAmount = nil, i64(0) }},
+		{name: "both a new amount and a difference", change: func(in *billing.CorrectionInput) { in.NewAmount = i64(1_400_000) }, field: "newAmount"},
+		{name: "neither a new amount nor a difference", change: func(in *billing.CorrectionInput) { in.AmountDelta = nil }, field: "newAmount"},
+		{name: "a negative new amount", change: func(in *billing.CorrectionInput) { in.AmountDelta, in.NewAmount = nil, i64(-1) }, field: "newAmount"},
+		{name: "a new amount over the limit", change: func(in *billing.CorrectionInput) {
+			in.AmountDelta, in.NewAmount = nil, i64(billing.MaxAmount+1)
+		}, field: "newAmount"},
 		{name: "a blank reason", change: func(in *billing.CorrectionInput) { in.Reason = "   " }, field: "reason"},
 		{name: "a reason of 501 letters", change: func(in *billing.CorrectionInput) { in.Reason = strings.Repeat("a", 501) }, field: "reason"},
 	}
@@ -98,3 +108,5 @@ func TestValidCorrection(t *testing.T) {
 		})
 	}
 }
+
+func i64(v int64) *int64 { return &v }

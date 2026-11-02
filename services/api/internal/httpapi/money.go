@@ -90,7 +90,7 @@ func (s *Server) createCorrection(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	in := billing.CorrectionInput{RequestID: body.RequestId, AmountDelta: body.AmountDelta, Reason: body.Reason}
+	in := billing.CorrectionInput{RequestID: body.RequestId, AmountDelta: body.AmountDelta, NewAmount: body.NewAmount, Reason: body.Reason}
 	if body.InvoiceId != nil {
 		in.InvoiceID = *body.InvoiceId
 	}
@@ -129,7 +129,7 @@ func toAPITotals(t billing.Totals) apigen.AccountTotals {
 func toAPIAccountInvoice(inv billing.AccountInvoice) apigen.AccountInvoice {
 	out := apigen.AccountInvoice{
 		Id: inv.ID, LeaseId: inv.LeaseID, UnitLabel: inv.UnitLabel, PropertyName: inv.PropertyName,
-		Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate),
+		Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate), IssuedOn: date(inv.IssuedOn),
 		Amount: inv.Amount, Billed: inv.Billed, Paid: inv.Paid, Outstanding: inv.Outstanding,
 		Status:      apigen.InvoiceStatus(inv.Status),
 		Lines:       make([]apigen.InvoiceLine, len(inv.Lines)),

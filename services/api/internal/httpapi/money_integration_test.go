@@ -191,6 +191,11 @@ func TestMoneyOverHTTP(t *testing.T) {
 			{"both an invoice and a payment", admin, fresh(map[string]any{"paymentId": paid.Payment.Id}), http.StatusBadRequest, "invalid_input", "invoiceId"},
 			{"neither", admin, fresh(map[string]any{"invoiceId": nil}), http.StatusBadRequest, "invalid_input", "invoiceId"},
 			{"a zero change", admin, fresh(map[string]any{"amountDelta": 0}), http.StatusBadRequest, "invalid_input", "amountDelta"},
+			{"a new amount equal to the current one", admin, fresh(map[string]any{"amountDelta": nil, "newAmount": 600_000}),
+				http.StatusConflict, "correction_no_change", "newAmount"},
+			{"both a new amount and a difference", admin, fresh(map[string]any{"newAmount": 500_000}), http.StatusBadRequest, "invalid_input", "newAmount"},
+			{"neither a new amount nor a difference", admin, fresh(map[string]any{"amountDelta": nil}), http.StatusBadRequest, "invalid_input", "newAmount"},
+			{"a negative new amount", admin, fresh(map[string]any{"amountDelta": nil, "newAmount": -1}), http.StatusBadRequest, "invalid_input", "newAmount"},
 			{"a blank reason", admin, fresh(map[string]any{"reason": "  "}), http.StatusBadRequest, "invalid_input", "reason"},
 			{"an unknown field", admin, fresh(map[string]any{"note": "x"}), http.StatusBadRequest, "invalid_json", ""},
 			{"an invoice not in the organization", admin, fresh(map[string]any{"invoiceId": uuid.New()}), http.StatusNotFound, "not_found", "invoiceId"},
@@ -218,6 +223,7 @@ func TestMoneyOverHTTP(t *testing.T) {
 		require.Equal(t, "Kos Melati", inv.PropertyName)
 		require.EqualValues(t, 700_000, inv.Amount)
 		require.EqualValues(t, 600_000, inv.Billed)
+		require.False(t, inv.IssuedOn.IsZero(), "issuedOn is the day the invoice was made")
 		require.EqualValues(t, 500_000, inv.Paid)
 		require.Equal(t, apigen.InvoiceStatusPartial, inv.Status)
 		require.Len(t, inv.Lines, 1)
