@@ -8,7 +8,9 @@ import {
   type TestInfo,
 } from "@playwright/test";
 
+import type { ImportResult } from "../src/lib/api/generated/model";
 import { formatDate, jakartaToday } from "../src/lib/format/date";
+import { formatRupiah } from "../src/lib/format/rupiah";
 import {
   attachViewportScreenshot,
   trackOutsideRequests,
@@ -141,6 +143,20 @@ async function openImport(page: Page) {
   await expect(
     page.getByRole("heading", { level: 1, name: "Impor penyewa" }),
   ).toBeVisible();
+}
+
+// The import's answer, the dry run (dryRun=true) or the commit, as the API sent it. The screen's
+// invoice numbers are checked against it, since they depend on today's date.
+function importResponse(page: Page, dryRun: boolean): Promise<ImportResult> {
+  return page
+    .waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname.endsWith(IMPORT_PATH) &&
+        url.searchParams.get("dryRun") === String(dryRun)
+      );
+    })
+    .then((response) => response.json() as Promise<ImportResult>);
 }
 
 async function check(page: Page) {
@@ -339,7 +355,9 @@ test.describe("Admin of the whole organization", () => {
     await expectTouchTarget(page.getByRole("button", { name: "Ganti berkas" }));
     await attachViewportScreenshot(page, testInfo, "import-choose");
 
+    const checked = importResponse(page, true);
     await check(page);
+    const { summary } = await checked;
     const one = importRow(page, 2);
     await expect(one).toContainText("Siap");
     await expect(one).toContainText(first);
@@ -377,10 +395,17 @@ test.describe("Admin of the whole organization", () => {
     ).toHaveCount(0);
     await attachViewportScreenshot(page, testInfo, "import-check-ready");
 
-    const save = page.getByRole("button", { name: "Simpan 2 baris" });
+    // Only the first row bills at once (from mulai_tagih); the second starts next month.
+    await expect(two).not.toContainText("Langsung ditagih");
+    expect(summary.invoiceCount).toBeGreaterThan(0);
+    const save = page.getByRole("button", {
+      name: `Simpan 2 baris, tagihan ${formatRupiah(summary.invoiceTotal)}`,
+    });
     await expect(save).toBeEnabled();
     await expectTouchTarget(save);
+    const committed = importResponse(page, false);
     await save.click();
+    const commit = await committed;
 
     const done = page.getByRole("status").filter({
       hasText: "Impor selesai: 2 baris disimpan",
@@ -394,6 +419,7 @@ test.describe("Admin of the whole organization", () => {
       ["Penyewa baru", "2"],
       ["Sewa baru", "2"],
       ["Sudah ada, tidak diubah", "0"],
+      ["Tagihan baru", String(commit.summary.invoiceCount)],
     ] as const) {
       const term = created.getByText(label, { exact: true });
       await expect(term).toBeVisible();
@@ -424,6 +450,106 @@ test.describe("Admin of the whole organization", () => {
       list.getByRole("listitem").filter({ hasText: second }),
     ).toContainText("Kamar A2");
 
+    expect(outsideRequests).toEqual([]);
+  });
+
+  test("shows the invoices a late-entered row creates and warns before anything is saved", async ({
+    page,
+  }, testInfo) => {
+    const outsideRequests = trackOutsideRequests(page);
+    const importRequests = trackImportRequests(page);
+    await openImport(page);
+
+    // Both started five months ago. The first leaves mulai_tagih empty, so every period since then
+    // is billed at once; the second is billed from last month only.
+    const property = uniqueName(testInfo, "Wisma Uji Impor Tunggakan");
+    const start = dayFirst(tenthOfMonth(-5));
+    await chooseFile(
+      page,
+      "penyewa-lama.csv",
+      csv(HEADER, [
+        [
+          property,
+          "kos",
+          "Kamar B1",
+          uniqueName(testInfo, "Wulan Sari"),
+          tenantNumber(testInfo, 8),
+          "Rp1.100.000",
+          start,
+          "",
+        ],
+        [
+          property,
+          "kos",
+          "Kamar B2",
+          uniqueName(testInfo, "Yanti Kusuma"),
+          tenantNumber(testInfo, 9),
+          "Rp1.100.000",
+          start,
+          dayFirst(tenthOfMonth(-1)),
+        ],
+      ]),
+    );
+    const checked = importResponse(page, true);
+    await check(page);
+    const { rows, summary } = await checked;
+    const [late, billedFrom] = rows;
+    if (late === undefined || billedFrom === undefined) {
+      throw new Error("the dry run answers both rows");
+    }
+    // The numbers on screen are the API's.
+    expect(late.invoiceCount).toBeGreaterThanOrEqual(3);
+    expect(billedFrom.invoiceCount).toBeLessThan(3);
+
+    const lateRow = importRow(page, 2);
+    await expect(lateRow).toContainText(
+      `Langsung ditagih: ${late.invoiceCount} tagihan, ${formatRupiah(late.invoiceTotal)}`,
+    );
+    const hint =
+      "Banyak periode lama ikut ditagih. Kalau sudah dibayar langsung ke pemilik, isi kolom mulai_tagih dengan periode pertama yang belum dibayar.";
+    await expect(lateRow).toContainText(hint);
+    const billedFromRow = importRow(page, 3);
+    await expect(billedFromRow).toContainText(
+      `Langsung ditagih: ${billedFrom.invoiceCount} tagihan, ${formatRupiah(billedFrom.invoiceTotal)}`,
+    );
+    await expect(billedFromRow).not.toContainText(hint);
+
+    const overview = page.getByRole("region", { name: "Ringkasan" });
+    await expect(overview).toContainText("Tagihan yang langsung dibuat");
+    await expect(overview).toContainText(formatRupiah(summary.invoiceTotal));
+    await expect(overview).toContainText(
+      `${summary.invoiceCount} tagihan dibuat begitu berkas disimpan.`,
+    );
+    await expect(overview).toContainText(
+      "1 baris menagih 3 periode atau lebih sekaligus. Periksa kolom mulai_tagih pada baris itu.",
+    );
+    expect(
+      await fontSize(overview.getByText("Tagihan yang langsung dibuat")),
+    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+
+    // The save names what it bills.
+    const save = page.getByRole("button", {
+      name: `Simpan 2 baris, tagihan ${formatRupiah(summary.invoiceTotal)}`,
+    });
+    await expect(save).toBeEnabled();
+    await expect(
+      page.getByText(
+        `Semuanya disimpan sekaligus, termasuk ${summary.invoiceCount} tagihan senilai ${formatRupiah(summary.invoiceTotal)}. Kalau satu gagal, tidak ada yang tersimpan.`,
+      ),
+    ).toBeVisible();
+    await attachViewportScreenshot(page, testInfo, "import-check-invoices");
+
+    const many = page.getByRole("button", { name: "Banyak tagihan 1" });
+    await expectTouchTarget(many);
+    await many.click();
+    await expect(many).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("list", { name: ROW_LIST }).getByRole("listitem"),
+    ).toHaveCount(1);
+    await expect(importRow(page, 2)).toBeVisible();
+
+    // Only the dry run went out; nothing was saved.
+    expect(importRequests).toEqual(["POST"]);
     expect(outsideRequests).toEqual([]);
   });
 

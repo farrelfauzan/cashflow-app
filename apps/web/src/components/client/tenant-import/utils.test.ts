@@ -17,6 +17,8 @@ import {
   filterCounts,
   filterRows,
   importRowView,
+  invoiceSummary,
+  MANY_INVOICES,
   indonesianColumn,
   isTooLarge,
   OPTIONAL_COLUMNS,
@@ -265,10 +267,40 @@ describe("importRowView", () => {
       placeText: "Kamar 11 · Kos Melati · Per bulan · Rp1.300.000",
       datesText: "Mulai 1 Okt 2026",
       createdChips: ["Unit baru", "Penyewa baru", "Sewa baru"],
+      invoices: {
+        text: "Langsung ditagih: 1 tagihan, Rp1.300.000",
+        many: false,
+      },
       errors: [],
       notes: [],
     });
   });
+
+  it.each([
+    { invoiceCount: 0, invoiceTotal: 0, want: null },
+    {
+      invoiceCount: 2,
+      invoiceTotal: 2_600_000,
+      want: { text: "Langsung ditagih: 2 tagihan, Rp2.600.000", many: false },
+    },
+    {
+      invoiceCount: 3,
+      invoiceTotal: 3_900_000,
+      want: { text: "Langsung ditagih: 3 tagihan, Rp3.900.000", many: true },
+    },
+    {
+      invoiceCount: 14,
+      invoiceTotal: 18_200_000,
+      want: { text: "Langsung ditagih: 14 tagihan, Rp18.200.000", many: true },
+    },
+  ])(
+    "shows $invoiceCount invoices from the API",
+    ({ invoiceCount, invoiceTotal, want }) => {
+      expect(
+        importRowView(row({ invoiceCount, invoiceTotal })).invoices,
+      ).toEqual(want);
+    },
+  );
 
   it("leaves the rent out when the sewa cell is empty", () => {
     const view = importRowView(
@@ -458,7 +490,40 @@ describe("summary texts", () => {
       { label: "Penyewa baru", value: 40 },
       { label: "Sewa baru", value: 43 },
       { label: "Sudah ada, tidak diubah", value: 2 },
+      { label: "Tagihan baru", value: 43 },
     ]);
+  });
+
+  it("shows the file's invoices from the API", () => {
+    expect(invoiceSummary(summary(), [row()])).toEqual({
+      total: "Rp55.900.000",
+      countText: "43 tagihan dibuat begitu berkas disimpan.",
+      warning: null,
+    });
+  });
+
+  it("says when nothing is billed at once", () => {
+    expect(
+      invoiceSummary(summary({ invoiceCount: 0, invoiceTotal: 0 }), [
+        row({ invoiceCount: 0, invoiceTotal: 0 }),
+      ]),
+    ).toEqual({
+      total: "Rp0",
+      countText:
+        "Tidak ada tagihan yang langsung dibuat. Tagihan berikutnya dibuat 7 hari sebelum jatuh tempo.",
+      warning: null,
+    });
+  });
+
+  it("warns about the rows that bill many periods", () => {
+    const rows = [
+      row({ line: 2 }),
+      row({ line: 3, invoiceCount: MANY_INVOICES, invoiceTotal: 3_900_000 }),
+      row({ line: 4, invoiceCount: 9, invoiceTotal: 11_700_000 }),
+    ];
+    expect(invoiceSummary(summary(), rows).warning).toBe(
+      "2 baris menagih 3 periode atau lebih sekaligus. Periksa kolom mulai_tagih pada baris itu.",
+    );
   });
 
   it("titles each step", () => {
@@ -489,26 +554,36 @@ describe("filters", () => {
       status: "error",
       errors: [{ column: "unit", message: "y" }],
       notes: ["catatan"],
+      invoiceCount: 0,
+      invoiceTotal: 0,
     }),
+    row({ line: 6, invoiceCount: 5, invoiceTotal: 6_500_000 }),
   ];
 
   it("counts each filter", () => {
-    expect(filterCounts(rows)).toEqual({ all: 4, errors: 2, notes: 2 });
+    expect(filterCounts(rows)).toEqual({
+      all: 5,
+      errors: 2,
+      notes: 2,
+      many: 1,
+    });
   });
 
   it.each([
-    { filter: "all" as const, want: [2, 3, 4, 5] },
+    { filter: "all" as const, want: [2, 3, 4, 5, 6] },
     { filter: "errors" as const, want: [3, 5] },
     { filter: "notes" as const, want: [4, 5] },
+    { filter: "many" as const, want: [6] },
   ])("filters $filter", ({ filter, want }) => {
     expect(filterRows(rows, filter).map((r) => r.line)).toEqual(want);
   });
 
   it("labels the chips with their counts", () => {
     expect(filterChips(rows)).toEqual([
-      { filter: "all", label: "Semua 4" },
+      { filter: "all", label: "Semua 5" },
       { filter: "errors", label: "Perlu diperbaiki 2" },
       { filter: "notes", label: "Ada catatan 2" },
+      { filter: "many", label: "Banyak tagihan 1" },
     ]);
   });
 
@@ -520,7 +595,7 @@ describe("filters", () => {
 describe("commitButton", () => {
   it("is disabled while a row has an error, counting the good rows", () => {
     expect(commitButton(summary())).toEqual({
-      label: "Simpan 45 baris",
+      label: "Simpan 45 baris, tagihan Rp55.900.000",
       enabled: false,
       hint: "Simpan baru bisa kalau semua baris benar. Tidak ada yang tersimpan sebagian.",
     });
@@ -528,6 +603,23 @@ describe("commitButton", () => {
 
   it("saves every row when none has an error", () => {
     expect(commitButton(summary({ rows: 2, rowsWithErrors: 0 }))).toEqual({
+      label: "Simpan 2 baris, tagihan Rp55.900.000",
+      enabled: true,
+      hint: "Semuanya disimpan sekaligus, termasuk 43 tagihan senilai Rp55.900.000. Kalau satu gagal, tidak ada yang tersimpan.",
+    });
+  });
+
+  it("leaves the total out when nothing is billed at once", () => {
+    expect(
+      commitButton(
+        summary({
+          rows: 2,
+          rowsWithErrors: 0,
+          invoiceCount: 0,
+          invoiceTotal: 0,
+        }),
+      ),
+    ).toEqual({
       label: "Simpan 2 baris",
       enabled: true,
       hint: "Semuanya disimpan sekaligus. Kalau satu gagal, tidak ada yang tersimpan.",

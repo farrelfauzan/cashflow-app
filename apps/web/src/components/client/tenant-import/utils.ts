@@ -12,8 +12,10 @@ import type {
   CountRowView,
   FilterChipView,
   ImportRowView,
+  InvoiceSummaryView,
   RowChipTone,
   RowFilter,
+  RowInvoicesView,
   RowMessageView,
   StepNumber,
   SummaryTileView,
@@ -236,6 +238,27 @@ function createdChips(row: ImportRow): string[] {
   return chips;
 }
 
+// A row that creates this many invoices or more is flagged. A monthly lease entered late normally
+// gets two (its last period and the current one), so three or more means older periods are billed
+// too, which usually means mulai_tagih was left empty for periods the owner already collected.
+export const MANY_INVOICES = 3;
+
+export const MANY_INVOICES_HINT =
+  "Banyak periode lama ikut ditagih. Kalau sudah dibayar langsung ke pemilik, isi kolom mulai_tagih dengan periode pertama yang belum dibayar.";
+
+export function isManyInvoices(row: ImportRow): boolean {
+  return row.invoiceCount >= MANY_INVOICES;
+}
+
+// "Langsung ditagih: 2 tagihan, Rp2.600.000": the count and the total come from the API.
+function rowInvoices(row: ImportRow): RowInvoicesView | null {
+  if (row.invoiceCount === 0) return null;
+  return {
+    text: `Langsung ditagih: ${row.invoiceCount} tagihan, ${formatRupiah(row.invoiceTotal)}`,
+    many: isManyInvoices(row),
+  };
+}
+
 function errorMessage(error: ImportRow["errors"][number]): RowMessageView {
   return {
     label:
@@ -253,6 +276,7 @@ export function importRowView(row: ImportRow): ImportRowView {
     placeText: rowPlaceText(row),
     datesText: rowDatesText(row),
     createdChips: createdChips(row),
+    invoices: rowInvoices(row),
     errors: row.errors.map(errorMessage),
     notes: row.notes.map((note) => ({ label: "Catatan: ", text: note })),
   };
@@ -285,14 +309,40 @@ export function alsoCreatedText(summary: ImportSummary): string | null {
   return shown.length === 0 ? null : `Juga akan dibuat: ${shown.join(", ")}.`;
 }
 
-// The commit is all or nothing: the API saves only when no row has an error.
+// "Tagihan yang langsung dibuat": the file's invoice count and total, as the API's dry run
+// computes them, and how many rows bill many periods at once.
+export function invoiceSummary(
+  summary: ImportSummary,
+  rows: readonly ImportRow[],
+): InvoiceSummaryView {
+  const many = rows.filter(isManyInvoices).length;
+  return {
+    total: formatRupiah(summary.invoiceTotal),
+    countText:
+      summary.invoiceCount === 0
+        ? "Tidak ada tagihan yang langsung dibuat. Tagihan berikutnya dibuat 7 hari sebelum jatuh tempo."
+        : `${summary.invoiceCount} tagihan dibuat begitu berkas disimpan.`,
+    warning:
+      many === 0
+        ? null
+        : `${many} baris menagih ${MANY_INVOICES} periode atau lebih sekaligus. Periksa kolom mulai_tagih pada baris itu.`,
+  };
+}
+
+// The commit is all or nothing: the API saves only when no row has an error. Its label names the
+// invoices the save creates, so nobody bills a large sum without seeing it.
 export function commitButton(summary: ImportSummary): CommitButtonView {
   const enabled = summary.rowsWithErrors === 0 && summary.rows > 0;
+  const rows = `Simpan ${summary.rows - summary.rowsWithErrors} baris`;
+  const total = formatRupiah(summary.invoiceTotal);
+  const billed = summary.invoiceTotal > 0;
   return {
-    label: `Simpan ${summary.rows - summary.rowsWithErrors} baris`,
+    label: billed ? `${rows}, tagihan ${total}` : rows,
     enabled,
     hint: enabled
-      ? "Semuanya disimpan sekaligus. Kalau satu gagal, tidak ada yang tersimpan."
+      ? billed
+        ? `Semuanya disimpan sekaligus, termasuk ${summary.invoiceCount} tagihan senilai ${total}. Kalau satu gagal, tidak ada yang tersimpan.`
+        : "Semuanya disimpan sekaligus. Kalau satu gagal, tidak ada yang tersimpan."
       : "Simpan baru bisa kalau semua baris benar. Tidak ada yang tersimpan sebagian.",
   };
 }
@@ -300,6 +350,7 @@ export function commitButton(summary: ImportSummary): CommitButtonView {
 function matchesFilter(row: ImportRow, filter: RowFilter): boolean {
   if (filter === "errors") return row.status === "error";
   if (filter === "notes") return row.notes.length > 0;
+  if (filter === "many") return isManyInvoices(row);
   return true;
 }
 
@@ -317,6 +368,7 @@ export function filterCounts(
     all: rows.length,
     errors: filterRows(rows, "errors").length,
     notes: filterRows(rows, "notes").length,
+    many: filterRows(rows, "many").length,
   };
 }
 
@@ -324,13 +376,14 @@ const FILTER_NAMES: Record<RowFilter, string> = {
   all: "Semua",
   errors: "Perlu diperbaiki",
   notes: "Ada catatan",
+  many: "Banyak tagihan",
 };
 
-// "Semua 48", then "Perlu diperbaiki 3" and "Ada catatan 5" only when there are such rows (board
-// Impor-Siap.dc.html leaves out the empty one).
+// "Semua 48", then "Perlu diperbaiki 3", "Ada catatan 5" and "Banyak tagihan 2" only when there
+// are such rows (board Impor-Siap.dc.html leaves out the empty one).
 export function filterChips(rows: readonly ImportRow[]): FilterChipView[] {
   const counts = filterCounts(rows);
-  return (["all", "errors", "notes"] as const)
+  return (["all", "errors", "notes", "many"] as const)
     .filter((filter) => filter === "all" || counts[filter] > 0)
     .map((filter) => ({
       filter,
@@ -355,5 +408,6 @@ export function createdCounts(summary: ImportSummary): CountRowView[] {
     { label: "Penyewa baru", value: summary.tenantsCreated },
     { label: "Sewa baru", value: summary.leasesCreated },
     { label: "Sudah ada, tidak diubah", value: summary.leasesMatched },
+    { label: "Tagihan baru", value: summary.invoiceCount },
   ];
 }
