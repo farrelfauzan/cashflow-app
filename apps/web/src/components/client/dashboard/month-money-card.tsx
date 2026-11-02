@@ -6,7 +6,7 @@ type MonthMoneyCardProps = {
   money: MonthMoneyView;
 };
 
-// "Uang sewa bulan November": what came in on the month's invoices, a bar of how much of what
+// "Tagihan bulan November": what came in on the month's invoices, a bar of how much of what
 // they bill that is, and what is still owed and by how many tenants.
 export function MonthMoneyCard({ money }: MonthMoneyCardProps) {
   const { summary } = money;

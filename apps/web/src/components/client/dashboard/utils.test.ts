@@ -94,7 +94,7 @@ describe("collectedPercent", () => {
 describe("monthMoney", () => {
   it("names the month the API answered for and what is still owed", () => {
     expect(monthMoney(dashboard())).toEqual({
-      title: "Uang sewa bulan November",
+      title: "Tagihan bulan November",
       collected: "Rp4.820.000",
       percent: 77,
       summary: {
@@ -129,7 +129,7 @@ describe("monthMoney", () => {
         tenantsOutstanding: 0,
       }),
     );
-    expect(view.title).toBe("Uang sewa bulan Januari");
+    expect(view.title).toBe("Tagihan bulan Januari");
     expect(view.percent).toBeNull();
     expect(view.summary).toEqual({ kind: "none" });
   });

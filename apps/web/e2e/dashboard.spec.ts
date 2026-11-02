@@ -130,7 +130,7 @@ async function expectDashboard(page: Page, dashboard: Dashboard) {
 
   const region = page.getByRole("region", { name: REGION });
   const month = region.getByRole("group", {
-    name: `Uang sewa bulan ${formatMonth(`${dashboard.period}-01`)}`,
+    name: `Tagihan bulan ${formatMonth(`${dashboard.period}-01`)}`,
   });
   await expect(month).toContainText(
     `${formatRupiah(dashboard.collected)} sudah masuk`,

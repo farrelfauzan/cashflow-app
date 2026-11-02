@@ -1,9 +1,9 @@
 // The Supervisor's home, Beranda (board "iPad · Beranda Supervisor"). Every value is ready to
 // show; every amount in it is a field getDashboard sent, only formatted.
 
-// "Uang sewa bulan November": what the month's invoices collected out of what they bill.
+// "Tagihan bulan November": what the month's invoices collected out of what they bill.
 export type MonthMoneyView = {
-  // "Uang sewa bulan November".
+  // "Tagihan bulan November".
   title: string;
   // collected, formatted.
   collected: string;

@@ -52,9 +52,10 @@ export function collectedPercent(
   return Math.min(100, Math.max(0, percent));
 }
 
-// "Uang sewa bulan November", from the month the API answered for (YYYY-MM).
+// "Tagihan bulan November", from the month the API answered for (YYYY-MM). Not "Uang sewa": the
+// figures are whole invoices, extra charges included (the user's choice, 2026-11-02).
 export function monthMoney(dashboard: Dashboard): MonthMoneyView {
-  const title = `Uang sewa bulan ${formatMonth(`${dashboard.period}-01`)}`;
+  const title = `Tagihan bulan ${formatMonth(`${dashboard.period}-01`)}`;
   const billed = formatRupiah(dashboard.billed);
   const summary: MonthMoneyView["summary"] =
     dashboard.invoiceCount === 0 || dashboard.billed === 0
