@@ -4,9 +4,11 @@ import {
   formatDate,
   formatDateTime,
   formatDayMonth,
+  formatLongDate,
   formatMonth,
   formatMonthYear,
   formatTimestampDate,
+  jakartaHour,
   jakartaToday,
 } from "./date";
 
@@ -218,5 +220,38 @@ describe("formatMonth", () => {
 
   it("throws on a date that is not YYYY-MM-DD", () => {
     expect(() => formatMonth("10-2026")).toThrow(RangeError);
+  });
+});
+
+describe("formatLongDate", () => {
+  it.each([
+    { input: "2026-10-22", want: "Kamis, 22 Oktober 2026" },
+    { input: "2026-11-02", want: "Senin, 2 November 2026" },
+    { input: "2027-01-03", want: "Minggu, 3 Januari 2027" },
+    { input: "2028-02-29", want: "Selasa, 29 Februari 2028" },
+  ])("formats $input as $want", ({ input, want }) => {
+    expect(formatLongDate(input)).toBe(want);
+  });
+
+  it.each(["2026-02-30", "22-10-2026", "2026-10-22T00:00:00Z", ""])(
+    "rejects %j",
+    (input) => {
+      expect(() => formatLongDate(input)).toThrow(RangeError);
+    },
+  );
+});
+
+describe("jakartaHour", () => {
+  it.each([
+    { input: "2026-10-27T18:30:00Z", want: 1 },
+    { input: "2026-10-27T16:59:59Z", want: 23 },
+    { input: "2026-10-27T17:00:00Z", want: 0 },
+    { input: "2026-10-27T03:00:00Z", want: 10 },
+  ])("reads $input as hour $want in Jakarta", ({ input, want }) => {
+    expect(jakartaHour(new Date(input))).toBe(want);
+  });
+
+  it("rejects an invalid date", () => {
+    expect(() => jakartaHour(new Date("nope"))).toThrow(RangeError);
   });
 });

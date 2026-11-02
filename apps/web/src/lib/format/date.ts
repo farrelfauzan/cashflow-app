@@ -30,6 +30,20 @@ const calendarMonthParts = new Intl.DateTimeFormat("id-ID", {
   month: "long",
 });
 
+const calendarLongDateParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "UTC",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+const jakartaHourParts = new Intl.DateTimeFormat("en-GB", {
+  timeZone: JAKARTA,
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
 const jakartaDayParts = new Intl.DateTimeFormat("en-CA", {
   timeZone: JAKARTA,
   year: "numeric",
@@ -144,6 +158,31 @@ export function formatMonth(date: string): string {
     calendarDateToUtc(date, "formatMonth"),
   );
   return part(parts, "month");
+}
+
+/**
+ * Formats an API calendar date in full with its weekday, for a page's date line:
+ * `"2026-10-22"` gives `"Kamis, 22 Oktober 2026"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatLongDate(date: string): string {
+  const parts = calendarLongDateParts.formatToParts(
+    calendarDateToUtc(date, "formatLongDate"),
+  );
+  return `${part(parts, "weekday")}, ${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
+}
+
+/**
+ * The hour it is in Jakarta at this instant, 0 to 23: `2026-10-27T18:30:00Z` gives `1`.
+ *
+ * @throws RangeError when `now` is an invalid Date.
+ */
+export function jakartaHour(now: Date): number {
+  if (Number.isNaN(now.getTime())) {
+    throw new RangeError("jakartaHour got an invalid date");
+  }
+  return Number(part(jakartaHourParts.formatToParts(now), "hour"));
 }
 
 /**

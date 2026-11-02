@@ -72,6 +72,9 @@ export type CorrectionRowView = {
   id: string;
   // "2 Nov 2026 · Tagihan November 2026" or "2 Nov 2026 · Pembayaran 25 Nov 2026".
   title: string;
+  // A second line naming what was corrected, when the title does not (Beranda's list:
+  // "Tagihan November 2026 · Kamar 11, Kos Melati").
+  subject?: string;
   // Signed: "−Rp50.000", "+Rp100.000".
   amount: string;
   reason: string;
