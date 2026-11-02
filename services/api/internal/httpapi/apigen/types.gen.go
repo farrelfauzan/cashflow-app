@@ -122,22 +122,22 @@ func (e InvoiceLineKind) Valid() bool {
 
 // Defines values for InvoiceStatus.
 const (
-	Cancelled InvoiceStatus = "cancelled"
-	Open      InvoiceStatus = "open"
-	Paid      InvoiceStatus = "paid"
-	Partial   InvoiceStatus = "partial"
+	InvoiceStatusCancelled InvoiceStatus = "cancelled"
+	InvoiceStatusOpen      InvoiceStatus = "open"
+	InvoiceStatusPaid      InvoiceStatus = "paid"
+	InvoiceStatusPartial   InvoiceStatus = "partial"
 )
 
 // Valid indicates whether the value is a known member of the InvoiceStatus enum.
 func (e InvoiceStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case InvoiceStatusCancelled:
 		return true
-	case Open:
+	case InvoiceStatusOpen:
 		return true
-	case Paid:
+	case InvoiceStatusPaid:
 		return true
-	case Partial:
+	case InvoiceStatusPartial:
 		return true
 	default:
 		return false
@@ -261,6 +261,60 @@ func (e RoleGrantRole) Valid() bool {
 	case Karyawan:
 		return true
 	case Supervisor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListInvoicesParamsStatus.
+const (
+	ListInvoicesParamsStatusCancelled ListInvoicesParamsStatus = "cancelled"
+	ListInvoicesParamsStatusOpen      ListInvoicesParamsStatus = "open"
+	ListInvoicesParamsStatusOverdue   ListInvoicesParamsStatus = "overdue"
+	ListInvoicesParamsStatusPaid      ListInvoicesParamsStatus = "paid"
+	ListInvoicesParamsStatusPartial   ListInvoicesParamsStatus = "partial"
+	ListInvoicesParamsStatusUnpaid    ListInvoicesParamsStatus = "unpaid"
+)
+
+// Valid indicates whether the value is a known member of the ListInvoicesParamsStatus enum.
+func (e ListInvoicesParamsStatus) Valid() bool {
+	switch e {
+	case ListInvoicesParamsStatusCancelled:
+		return true
+	case ListInvoicesParamsStatusOpen:
+		return true
+	case ListInvoicesParamsStatusOverdue:
+		return true
+	case ListInvoicesParamsStatusPaid:
+		return true
+	case ListInvoicesParamsStatusPartial:
+		return true
+	case ListInvoicesParamsStatusUnpaid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListInvoicesParamsSort.
+const (
+	DueDate          ListInvoicesParamsSort = "dueDate"
+	MinusDueDate     ListInvoicesParamsSort = "-dueDate"
+	MinusOutstanding ListInvoicesParamsSort = "-outstanding"
+	TenantName       ListInvoicesParamsSort = "tenantName"
+)
+
+// Valid indicates whether the value is a known member of the ListInvoicesParamsSort enum.
+func (e ListInvoicesParamsSort) Valid() bool {
+	switch e {
+	case DueDate:
+		return true
+	case MinusDueDate:
+		return true
+	case MinusOutstanding:
+		return true
+	case TenantName:
 		return true
 	default:
 		return false
@@ -583,6 +637,68 @@ type CorrectionResult struct {
 	TenantId openapi_types.UUID `json:"tenantId"`
 }
 
+// Dashboard defines model for Dashboard.
+type Dashboard struct {
+	// Arrears Up to 10 tenants in arrears, the oldest debt first, then the most owed. Penagihan with status=overdue lists them all.
+	Arrears []TenantArrears `json:"arrears"`
+
+	// Billed What the month's invoices bill, after corrections.
+	Billed int64 `json:"billed"`
+
+	// Collected What has been paid on the month's invoices.
+	Collected int64 `json:"collected"`
+
+	// InvoiceCount The month's invoices, cancelled ones included.
+	InvoiceCount int `json:"invoiceCount"`
+
+	// Outstanding What the month's invoices still owe (billed minus collected).
+	Outstanding int64 `json:"outstanding"`
+
+	// Overdue Everything owed after its due date, any month.
+	Overdue int64 `json:"overdue"`
+
+	// Period The month shown, YYYY-MM.
+	//
+	// Example: 2026-11
+	Period string `json:"period"`
+
+	// RecentCorrections The newest 10 corrections, made by members or by the system (sewa tidak diperpanjang, potong deposit), newest first.
+	RecentCorrections []DashboardCorrection `json:"recentCorrections"`
+
+	// TenantsInArrears Tenants who owe something after its due date (Belum bayar · 9 orang).
+	TenantsInArrears int `json:"tenantsInArrears"`
+
+	// TenantsOutstanding Tenants with a month's invoice still owing something (Masih kurang ... dari 9 penyewa).
+	TenantsOutstanding int `json:"tenantsOutstanding"`
+}
+
+// DashboardCorrection defines model for DashboardCorrection.
+type DashboardCorrection struct {
+	// AmountDelta Signed rupiah.
+	AmountDelta int64     `json:"amountDelta"`
+	CreatedAt   time.Time `json:"createdAt"`
+
+	// CreatedBy The member who recorded or created a row.
+	CreatedBy StaffRef           `json:"createdBy"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// InvoiceId Set when it corrects an invoice.
+	InvoiceId *openapi_types.UUID `json:"invoiceId,omitempty"`
+
+	// PaymentId Set when it corrects a payment.
+	PaymentId *openapi_types.UUID `json:"paymentId,omitempty"`
+
+	// Period The corrected invoice's period start; set with invoiceId.
+	Period *openapi_types.Date `json:"period,omitempty"`
+	Reason string              `json:"reason"`
+
+	// ReceivedOn The corrected payment's received day; set with paymentId.
+	ReceivedOn *openapi_types.Date `json:"receivedOn,omitempty"`
+	TenantId   openapi_types.UUID  `json:"tenantId"`
+	TenantName string              `json:"tenantName"`
+	Unit       *UnitRef            `json:"unit,omitempty"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
@@ -739,6 +855,65 @@ type InvoiceLine struct {
 
 // InvoiceLineKind defines model for InvoiceLine.Kind.
 type InvoiceLineKind string
+
+// InvoiceList defines model for InvoiceList.
+type InvoiceList struct {
+	Items []InvoiceListItem `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Summary The month's invoices in the chosen property (propertyId), whatever status, q and page are. oldestOverdue is not tied to the month: the oldest debt now, in the chosen property.
+	Summary InvoiceListSummary `json:"summary"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// InvoiceListItem defines model for InvoiceListItem.
+type InvoiceListItem struct {
+	Amount  int64              `json:"amount"`
+	Billed  int64              `json:"billed"`
+	DueDate openapi_types.Date `json:"dueDate"`
+	Id      openapi_types.UUID `json:"id"`
+
+	// IssuedOn The day the invoice was made, Asia/Jakarta (terbit).
+	IssuedOn    openapi_types.Date `json:"issuedOn"`
+	LeaseId     openapi_types.UUID `json:"leaseId"`
+	Lines       []InvoiceLine      `json:"lines"`
+	Outstanding int64              `json:"outstanding"`
+
+	// OverdueDays Days since the due date while something is still owed (Telat 12 hr), in Asia/Jakarta; 0 when nothing is overdue.
+	OverdueDays int   `json:"overdueDays"`
+	Paid        int64 `json:"paid"`
+
+	// PastPlannedEnd The lease is still active after its planned end date (Lewat rencana keluar): the admin should record the move-out or change the date.
+	PastPlannedEnd bool               `json:"pastPlannedEnd"`
+	Period         openapi_types.Date `json:"period"`
+	PeriodEnd      openapi_types.Date `json:"periodEnd"`
+	PropertyId     openapi_types.UUID `json:"propertyId"`
+	PropertyName   string             `json:"propertyName"`
+
+	// Status open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero. Whether an open or partial invoice is overdue follows from its dueDate (debt from the day after it, Asia/Jakarta).
+	Status     InvoiceStatus      `json:"status"`
+	TenantId   openapi_types.UUID `json:"tenantId"`
+	TenantName string             `json:"tenantName"`
+	UnitLabel  string             `json:"unitLabel"`
+}
+
+// InvoiceListSummary The month's invoices in the chosen property (propertyId), whatever status, q and page are. oldestOverdue is not tied to the month: the oldest debt now, in the chosen property.
+type InvoiceListSummary struct {
+	Billed int64 `json:"billed"`
+
+	// OldestOverdue The tenant whose unpaid debt is oldest (Tunggakan tertua), with the unit of that invoice.
+	OldestOverdue *OldestOverdue `json:"oldestOverdue,omitempty"`
+	Outstanding   int64          `json:"outstanding"`
+	Paid          int64          `json:"paid"`
+
+	// TenantsOutstanding Tenants with a month's invoice still owing something.
+	TenantsOutstanding int `json:"tenantsOutstanding"`
+}
 
 // InvoiceStatus open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero. Whether an open or partial invoice is overdue follows from its dueDate (debt from the day after it, Asia/Jakarta).
 type InvoiceStatus string
@@ -939,6 +1114,16 @@ type MemberStatus string
 type MoveOut struct {
 	// EndDate Example: 2026-11-30
 	EndDate openapi_types.Date `json:"endDate"`
+}
+
+// OldestOverdue The tenant whose unpaid debt is oldest (Tunggakan tertua), with the unit of that invoice.
+type OldestOverdue struct {
+	AgeDays             int                `json:"ageDays"`
+	OldestUnpaidDueDate openapi_types.Date `json:"oldestUnpaidDueDate"`
+	PropertyName        string             `json:"propertyName"`
+	TenantId            openapi_types.UUID `json:"tenantId"`
+	TenantName          string             `json:"tenantName"`
+	UnitLabel           string             `json:"unitLabel"`
 }
 
 // OrgMeResponse defines model for OrgMeResponse.
@@ -1165,6 +1350,21 @@ type TenantAccount struct {
 	TenantId openapi_types.UUID `json:"tenantId"`
 }
 
+// TenantArrears A tenant who owes money after its due date.
+type TenantArrears struct {
+	// AgeDays Days since the oldest unpaid due date, in Asia/Jakarta: 1 on the day after it (Terlambat 1 hari).
+	AgeDays             int                `json:"ageDays"`
+	OldestUnpaidDueDate openapi_types.Date `json:"oldestUnpaidDueDate"`
+
+	// Overdue What the tenant owes after the due dates, in rupiah.
+	Overdue    int64              `json:"overdue"`
+	TenantId   openapi_types.UUID `json:"tenantId"`
+	TenantName string             `json:"tenantName"`
+
+	// Units The units of the overdue invoices, by property then unit.
+	Units []UnitRef `json:"units"`
+}
+
 // TenantInput defines model for TenantInput.
 type TenantInput struct {
 	// Name Example: Rina Wulandari
@@ -1272,6 +1472,15 @@ type UnitPriceInput struct {
 	Months TermMonths `json:"months"`
 }
 
+// UnitRef defines model for UnitRef.
+type UnitRef struct {
+	// PropertyName Example: Kos Melati
+	PropertyName string `json:"propertyName"`
+
+	// UnitLabel Example: Kamar 11
+	UnitLabel string `json:"unitLabel"`
+}
+
 // UnitTenant defines model for UnitTenant.
 type UnitTenant struct {
 	Id   openapi_types.UUID `json:"id"`
@@ -1331,6 +1540,9 @@ type Page = int
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// Period Example: 2026-11
+type Period = string
+
 // PropertyId defines model for PropertyId.
 type PropertyId = openapi_types.UUID
 
@@ -1340,10 +1552,42 @@ type Search = string
 // TenantId defines model for TenantId.
 type TenantId = openapi_types.UUID
 
+// GetDashboardParams defines parameters for GetDashboard.
+type GetDashboardParams struct {
+	// Period A month, YYYY-MM; this month in Asia/Jakarta when empty. A bad value is a 400 with field period.
+	Period *Period `form:"period,omitempty" json:"period,omitempty"`
+}
+
 // ImportTenantsParams defines parameters for ImportTenants.
 type ImportTenantsParams struct {
 	DryRun *bool `form:"dryRun,omitempty" json:"dryRun,omitempty"`
 }
+
+// ListInvoicesParams defines parameters for ListInvoices.
+type ListInvoicesParams struct {
+	// Period A month, YYYY-MM; this month in Asia/Jakarta when empty. A bad value is a 400 with field period.
+	Period *Period `form:"period,omitempty" json:"period,omitempty"`
+
+	// Status open: nothing paid; partial: some paid; paid; cancelled (corrected to zero); unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its due date, of any month (period is ignored, since debt is not tied to one month; the dashboard's arrears link here). Empty means every invoice.
+	Status     *ListInvoicesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	PropertyId *openapi_types.UUID       `form:"propertyId,omitempty" json:"propertyId,omitempty"`
+
+	// Q Search text, ignoring case; empty means no search.
+	Q *Search `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort dueDate (the default, oldest first), -dueDate, tenantName, or -outstanding (most owed first).
+	Sort *ListInvoicesParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListInvoicesParamsStatus defines parameters for ListInvoices.
+type ListInvoicesParamsStatus string
+
+// ListInvoicesParamsSort defines parameters for ListInvoices.
+type ListInvoicesParamsSort string
 
 // ListMembersParams defines parameters for ListMembers.
 type ListMembersParams struct {

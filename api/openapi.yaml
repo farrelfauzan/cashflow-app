@@ -1044,6 +1044,81 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/dashboard:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [money]
+      operationId: getDashboard
+      summary: The Supervisor's home, Beranda (needs report:read)
+      description: >
+        The month's money and who is in arrears now. The month's figures cover the invoices of
+        that month: an invoice belongs to the month of its period (Tagihan November), which for a
+        regular invoice is the month of its due date. Arrears are not tied to the month: every
+        invoice still owed after its due date (debt from the day after it, Asia/Jakarta). A member
+        limited to some properties sees, and every figure counts, only the invoices of leases in
+        their properties.
+      parameters:
+        - $ref: "#/components/parameters/Period"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dashboard" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/invoices:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [money]
+      operationId: listInvoices
+      summary: Penagihan, the invoices of a month (needs invoice:read)
+      description: >
+        One page of the month's invoices (an invoice belongs to the month of its period), with
+        each invoice's lines. summary covers the whole month in the chosen property, whatever
+        status, q and page are, so the tiles stay the same while the table is filtered; total
+        counts the rows matching every filter. A member limited to some properties sees, and
+        every figure counts, only the invoices of leases in their properties.
+      parameters:
+        - $ref: "#/components/parameters/Period"
+        - name: status
+          in: query
+          description: >
+            open: nothing paid; partial: some paid; paid; cancelled (corrected to zero);
+            unpaid: open or partial, due or not ("Belum lunas"); overdue: still owed after its
+            due date, of any month (period is ignored, since debt is not tied to one month; the
+            dashboard's arrears link here). Empty means every invoice.
+          schema:
+            type: string
+            enum: [open, partial, paid, cancelled, unpaid, overdue]
+        - name: propertyId
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Search"
+        - name: sort
+          in: query
+          description: dueDate (the default, oldest first), -dueDate, tenantName, or -outstanding (most owed first).
+          schema:
+            type: string
+            enum: [dueDate, -dueDate, tenantName, -outstanding]
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvoiceList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /orgs/{orgId}/payments:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -1176,6 +1251,11 @@ components:
       name: pageSize
       in: query
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Period:
+      name: period
+      in: query
+      description: A month, YYYY-MM; this month in Asia/Jakarta when empty. A bad value is a 400 with field period.
+      schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-11" }
     Search:
       name: q
       in: query
@@ -2180,3 +2260,131 @@ components:
           properties:
             correction: { $ref: "#/components/schemas/Correction" }
             tenantId: { type: string, format: uuid }
+
+    UnitRef:
+      type: object
+      required: [propertyName, unitLabel]
+      properties:
+        propertyName: { type: string, example: Kos Melati }
+        unitLabel: { type: string, example: Kamar 11 }
+
+    TenantArrears:
+      type: object
+      required: [tenantId, tenantName, units, overdue, oldestUnpaidDueDate, ageDays]
+      description: A tenant who owes money after its due date.
+      properties:
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string }
+        units:
+          type: array
+          description: The units of the overdue invoices, by property then unit.
+          items: { $ref: "#/components/schemas/UnitRef" }
+        overdue: { type: integer, format: int64, description: "What the tenant owes after the due dates, in rupiah." }
+        oldestUnpaidDueDate: { type: string, format: date }
+        ageDays:
+          type: integer
+          description: "Days since the oldest unpaid due date, in Asia/Jakarta: 1 on the day after it (Terlambat 1 hari)."
+
+    DashboardCorrection:
+      type: object
+      required: [id, tenantId, tenantName, amountDelta, reason, createdBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string }
+        invoiceId: { type: string, format: uuid, description: Set when it corrects an invoice. }
+        period: { type: string, format: date, description: "The corrected invoice's period start; set with invoiceId." }
+        unit: { $ref: "#/components/schemas/UnitRef" }
+        paymentId: { type: string, format: uuid, description: Set when it corrects a payment. }
+        receivedOn: { type: string, format: date, description: "The corrected payment's received day; set with paymentId." }
+        amountDelta: { type: integer, format: int64, description: Signed rupiah. }
+        reason: { type: string }
+        createdBy: { $ref: "#/components/schemas/StaffRef" }
+        createdAt: { type: string, format: date-time }
+
+    Dashboard:
+      type: object
+      required: [period, billed, collected, outstanding, invoiceCount, tenantsOutstanding, overdue, tenantsInArrears, arrears, recentCorrections]
+      properties:
+        period: { type: string, example: "2026-11", description: "The month shown, YYYY-MM." }
+        billed: { type: integer, format: int64, description: "What the month's invoices bill, after corrections." }
+        collected: { type: integer, format: int64, description: "What has been paid on the month's invoices." }
+        outstanding: { type: integer, format: int64, description: "What the month's invoices still owe (billed minus collected)." }
+        invoiceCount: { type: integer, description: "The month's invoices, cancelled ones included." }
+        tenantsOutstanding: { type: integer, description: "Tenants with a month's invoice still owing something (Masih kurang ... dari 9 penyewa)." }
+        overdue: { type: integer, format: int64, description: "Everything owed after its due date, any month." }
+        tenantsInArrears: { type: integer, description: "Tenants who owe something after its due date (Belum bayar · 9 orang)." }
+        arrears:
+          type: array
+          description: Up to 10 tenants in arrears, the oldest debt first, then the most owed. Penagihan with status=overdue lists them all.
+          items: { $ref: "#/components/schemas/TenantArrears" }
+        recentCorrections:
+          type: array
+          description: The newest 10 corrections, made by members or by the system (sewa tidak diperpanjang, potong deposit), newest first.
+          items: { $ref: "#/components/schemas/DashboardCorrection" }
+
+    InvoiceListItem:
+      type: object
+      required: [id, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string }
+        leaseId: { type: string, format: uuid }
+        propertyId: { type: string, format: uuid }
+        propertyName: { type: string }
+        unitLabel: { type: string }
+        period: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        issuedOn: { type: string, format: date, description: "The day the invoice was made, Asia/Jakarta (terbit)." }
+        amount: { type: integer, format: int64 }
+        billed: { type: integer, format: int64 }
+        paid: { type: integer, format: int64 }
+        outstanding: { type: integer, format: int64 }
+        status: { $ref: "#/components/schemas/InvoiceStatus" }
+        overdueDays:
+          type: integer
+          description: "Days since the due date while something is still owed (Telat 12 hr), in Asia/Jakarta; 0 when nothing is overdue."
+        pastPlannedEnd:
+          type: boolean
+          description: "The lease is still active after its planned end date (Lewat rencana keluar): the admin should record the move-out or change the date."
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/InvoiceLine" }
+
+    OldestOverdue:
+      type: object
+      required: [tenantId, tenantName, propertyName, unitLabel, oldestUnpaidDueDate, ageDays]
+      description: The tenant whose unpaid debt is oldest (Tunggakan tertua), with the unit of that invoice.
+      properties:
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string }
+        propertyName: { type: string }
+        unitLabel: { type: string }
+        oldestUnpaidDueDate: { type: string, format: date }
+        ageDays: { type: integer }
+
+    InvoiceListSummary:
+      type: object
+      required: [billed, paid, outstanding, tenantsOutstanding]
+      description: >
+        The month's invoices in the chosen property (propertyId), whatever status, q and page
+        are. oldestOverdue is not tied to the month: the oldest debt now, in the chosen property.
+      properties:
+        billed: { type: integer, format: int64 }
+        paid: { type: integer, format: int64 }
+        outstanding: { type: integer, format: int64 }
+        tenantsOutstanding: { type: integer, description: Tenants with a month's invoice still owing something. }
+        oldestOverdue: { $ref: "#/components/schemas/OldestOverdue" }
+
+    InvoiceList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items, summary]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/InvoiceListItem" }
+            summary: { $ref: "#/components/schemas/InvoiceListSummary" }

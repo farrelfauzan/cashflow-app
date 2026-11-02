@@ -219,7 +219,7 @@ func TestMoneyOverHTTP(t *testing.T) {
 		require.EqualValues(t, 700_000, inv.Amount)
 		require.EqualValues(t, 600_000, inv.Billed)
 		require.EqualValues(t, 500_000, inv.Paid)
-		require.Equal(t, apigen.Partial, inv.Status)
+		require.Equal(t, apigen.InvoiceStatusPartial, inv.Status)
 		require.Len(t, inv.Lines, 1)
 		require.Equal(t, apigen.Rent, inv.Lines[0].Kind)
 		require.Len(t, inv.Corrections, 1)

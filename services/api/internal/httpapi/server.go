@@ -114,6 +114,8 @@ func New(d Deps) *Server {
 				r.Get("/tenants/{tenantID}", s.getTenant)
 				r.Put("/tenants/{tenantID}", s.updateTenant)
 				r.Get("/tenants/{tenantID}/account", s.getTenantAccount)
+				r.Get("/dashboard", s.getDashboard)
+				r.Get("/invoices", s.listInvoices)
 				r.Post("/payments", s.recordPayment)
 				r.Post("/corrections", s.createCorrection)
 				r.Post("/leases", s.createLease)
