@@ -27,10 +27,11 @@ import { findOrCreateProperty } from "./support/property-fixtures";
 import { HOME_HEADING, ORG_HOME_URL } from "./support/shell";
 import { HENDRA, RUDI, type SeededStaff } from "./support/staff";
 
-// Beranda, the organization's home, against the real API and its worker. seed-demo makes no
-// invoices, so the admin test makes its own debt: a kos unit, a tenant and a lease entered late
-// (started on the 10th two months ago), which the API invoices for every period since its start,
-// and a correction with a reason only this run uses. Other specs write money to the same
+// Beranda, the organization's home, against the real API and its worker. The admin test makes
+// money of its own in this month: a kos unit, a tenant and a lease that started on the 1st, which
+// the worker invoices at once, and a correction with a reason only this run uses. It is owed this
+// month but is not debt (tunggakan) before its due date, so arrears are checked against the
+// answer whenever there are any, never required. Other specs write money to the same
 // organization at the same time, so every figure is checked against the getDashboard response
 // the page itself received, never against a number read earlier. Pak Hendra is Admin of the
 // whole of Griya Sejahtera and Supervisor in Kost Putri Anggrek; Mas Rudi is Karyawan in Kost
@@ -65,12 +66,10 @@ function tenantNumber(testInfo: TestInfo): string {
   return `0814-2${run.slice(0, 3)}-${run.slice(3)}${project}0${testInfo.retry}`;
 }
 
-// The 10th of the month `months` from today in Jakarta (every month has one).
-function tenthOfMonth(months: number): string {
-  const [year = 0, month = 1] = jakartaToday(new Date()).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1 + months, 10))
-    .toISOString()
-    .slice(0, 10);
+// The first day of this month in Jakarta: the dashboard's month holds the invoices whose period
+// starts in it.
+function firstOfThisMonth(): string {
+  return `${jakartaToday(new Date()).slice(0, 7)}-01`;
 }
 
 // Setup through the API, as the signed-in member (the page's cookies).
@@ -206,7 +205,7 @@ test.describe("Admin of the whole organization", () => {
     await openHome(page, HENDRA, GRIYA);
     const orgId = orgIdOf(page);
 
-    // Debt of the test's own: a lease entered late, invoiced for every period since its start.
+    // Money of the test's own this month: a lease from the 1st, its first period this month's.
     const property = await findOrCreateProperty(page, orgId, testInfo, {
       base: "Beranda",
       kind: "kos",
@@ -235,17 +234,18 @@ test.describe("Admin of the whole organization", () => {
     await call<Lease>(page, "POST", `/orgs/${orgId}/leases`, 201, {
       tenantId: tenant.id,
       unitId: unit.id,
-      startDate: tenthOfMonth(-2),
+      startDate: firstOfThisMonth(),
       termMonths: 1,
       depositAmount: 950_000,
     });
+    // The worker invoices it within seconds.
     const accountPath = `/orgs/${orgId}/tenants/${tenant.id}/account`;
     let account = await call<TenantAccount>(page, "GET", accountPath, 200);
     await expect
       .poll(
         async () => {
           account = await call<TenantAccount>(page, "GET", accountPath, 200);
-          return account.overdue;
+          return account.outstanding;
         },
         { timeout: 20_000 },
       )
@@ -259,11 +259,18 @@ test.describe("Admin of the whole organization", () => {
       amountDelta: -25_000,
       reason,
     });
+    account = await call<TenantAccount>(page, "GET", accountPath, 200);
+    const owedThisMonth = account.invoices
+      .filter((invoice) =>
+        invoice.period.startsWith(firstOfThisMonth().slice(0, 7)),
+      )
+      .reduce((sum, invoice) => sum + invoice.outstanding, 0);
+    expect(owedThisMonth).toBeGreaterThan(0);
 
     // Beranda again, checked against the answer it rendered.
     const dashboard = await openHome(page, HENDRA, GRIYA);
-    expect(dashboard.tenantsInArrears).toBeGreaterThan(0);
-    expect(dashboard.overdue).toBeGreaterThanOrEqual(account.overdue);
+    expect(dashboard.outstanding).toBeGreaterThanOrEqual(owedThisMonth);
+    expect(dashboard.tenantsOutstanding).toBeGreaterThan(0);
     await expectDashboard(page, dashboard);
 
     // The correction just made is the newest, unless ten more came in meanwhile.
