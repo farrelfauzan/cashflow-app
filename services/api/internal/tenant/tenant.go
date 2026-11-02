@@ -345,10 +345,11 @@ func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, i
 	return out, err
 }
 
-// authorizeTenantChange allows tenant:manage through every active lease of the tenant, or, for a
-// tenant with no active lease, for the whole organization. It never stops at an
-// organization-wide Allow on the bare tenant, which names no property, so a Deny on one
-// property still matches its leases there. Each allowed check is audited.
+// authorizeTenantChange allows tenant:manage through every active lease of the tenant. A tenant
+// with no active lease needs the check on the whole organization and, when it has ended
+// leases, through each of them too. It never stops at an organization-wide Allow on the bare
+// tenant, which names no property, so a Deny on one property still matches its leases there.
+// Each allowed check is audited.
 func (s *Service) authorizeTenantChange(ctx context.Context, tx pgx.Tx, p authz.Principal, id uuid.UUID, leases []Lease) error {
 	whole := authz.Request{Action: authz.ActionTenantManage, Resource: authz.Resource{Type: "tenant", ID: id.String()}}
 	var active []Lease
@@ -358,7 +359,10 @@ func (s *Service) authorizeTenantChange(ctx context.Context, tx pgx.Tx, p authz.
 		}
 	}
 	if len(active) == 0 {
-		return s.authz.Authorize(ctx, tx, p, whole)
+		if err := s.authz.Authorize(ctx, tx, p, whole); err != nil {
+			return err
+		}
+		active = leases
 	}
 	for _, l := range active {
 		req := authz.Request{Action: authz.ActionTenantManage, Resource: tenantVia(l)}

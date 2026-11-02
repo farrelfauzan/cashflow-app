@@ -453,6 +453,19 @@ func TestPropertyDenyWinsOverOrganizationWideAllow(t *testing.T) {
 		require.Equal(t, "deny", log[0].Decision)
 	})
 
+	t.Run("changing a tenant whose only lease in the denied property has ended is refused", func(t *testing.T) {
+		sari, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Sari", Phone: "0812-7320-5005"})
+		require.NoError(t, err)
+		kamar3, err := env.Properties.CreateUnit(ctx, w.admin, w.melati.ID, property.UnitInput{Label: "Kamar 3", Terms: testenv.Monthly(750_000)})
+		require.NoError(t, err)
+		l, err := env.Tenants.CreateLease(ctx, w.admin, tenant.NewLease{TenantID: sari.ID, UnitID: kamar3.ID, TermMonths: 1, Terms: terms})
+		require.NoError(t, err)
+		_, err = env.Tenants.MoveOut(ctx, w.admin, l.ID, day(2026, 10, 31))
+		require.NoError(t, err)
+		_, err = env.Tenants.Update(ctx, kasir, sari.ID, tenant.Input{Name: "Sari W.", Phone: "0812-7320-5005"})
+		require.ErrorIs(t, err, authz.ErrForbidden)
+	})
+
 	t.Run("a tenant with no lease at all is listed and readable, as the bare check allows", func(t *testing.T) {
 		eko, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Eko", Phone: "0812-7320-5004"})
 		require.NoError(t, err)
