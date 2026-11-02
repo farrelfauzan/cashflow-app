@@ -11,7 +11,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { ORG_HOME_URL, openMenu } from "./support/shell";
+import { HOME_HEADING, ORG_HOME_URL, openMenu } from "./support/shell";
 import { LOGIN_PHONES, type LoginPhones } from "./support/staff";
 
 // The staff login screen against the real Go API: codes are read from the API's DEVLOG_FILE,
@@ -123,7 +123,7 @@ test("signs in with the WhatsApp code, then signs out", async ({
   // A member of one organization goes straight in.
   await expect(page).toHaveURL(ORG_HOME_URL);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Beranda" }),
+    page.getByRole("heading", { level: 1, name: HOME_HEADING }),
   ).toBeVisible();
 
   const menu = await openMenu(page, testInfo);
@@ -262,7 +262,7 @@ test("a wrong code shows the API's error under the field; a new code works", asy
   await page.getByRole("button", { name: "Masuk", exact: true }).click();
   await expect(page).toHaveURL(ORG_HOME_URL);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Beranda" }),
+    page.getByRole("heading", { level: 1, name: HOME_HEADING }),
   ).toBeVisible();
   expect(outsideRequests).toEqual([]);
 });

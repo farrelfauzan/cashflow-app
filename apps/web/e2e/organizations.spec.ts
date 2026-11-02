@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   attachFullPageScreenshot,
+  attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
 import { isPhone, menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
@@ -84,7 +85,9 @@ test.describe("member of two organizations", () => {
       const box = await option.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
     }
-    await attachFullPageScreenshot(page, testInfo, "org-switch-open");
+    // The viewport only: a full-page capture of a page taller than the screen (Beranda with its
+    // figures) resizes the window, and the open select closes on resize.
+    await attachViewportScreenshot(page, testInfo, "org-switch-open");
     await options.filter({ hasText: "Kost Putri Anggrek" }).click();
     await expect(page).not.toHaveURL(griya);
     await expect(page).toHaveURL(ORG_HOME_URL);
