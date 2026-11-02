@@ -1,11 +1,14 @@
-import { PendingSection } from "@/components/server/shell/pending-section";
+import { Suspense } from "react";
 
-// The Supervisor's home (Beranda) comes with phase B (W10).
-export default function OrgHomePage() {
+import { DashboardScreen } from "@/components/server/dashboard/dashboard-screen";
+import { DetailScreenSkeleton } from "@/components/server/shell/detail-screen-skeleton";
+
+// Beranda streams in behind its own boundary, so a navigation inside the organization shows the
+// placeholder at once instead of waiting for the route's params.
+export default function OrgHomePage({ params }: PageProps<"/o/[orgId]">) {
   return (
-    <PendingSection
-      title="Beranda"
-      description="Ringkasan tagihan dan pembayaran akan tampil di sini."
-    />
+    <Suspense fallback={<DetailScreenSkeleton />}>
+      <DashboardScreen params={params} />
+    </Suspense>
   );
 }
