@@ -36,6 +36,7 @@ const params = (query: string) => new URLSearchParams(query);
 
 const item = (over: Partial<InvoiceListItem> = {}): InvoiceListItem => ({
   id: "inv-1",
+  kind: "regular",
   tenantId: "ten-1",
   tenantName: "Rina Wulandari",
   leaseId: "lease-1",

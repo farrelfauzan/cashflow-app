@@ -4,11 +4,13 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceKind } from './invoiceKind';
 import type { InvoiceLine } from './invoiceLine';
 import type { InvoiceStatus } from './invoiceStatus';
 
 export interface InvoiceListItem {
   id: string;
+  kind: InvoiceKind;
   tenantId: string;
   tenantName: string;
   leaseId: string;

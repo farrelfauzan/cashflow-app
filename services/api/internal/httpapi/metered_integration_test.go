@@ -279,9 +279,47 @@ func TestMeteredChargesOverHTTP(t *testing.T) {
 		require.Contains(t, string(body), `"meteredChargeId":"`+recorded.Id.String()+`"`)
 	})
 
-	t.Run("an ended lease answers lease_ended", func(t *testing.T) {
-		resp, body := admin.do(http.MethodPost, leasePath+"/move-out", map[string]string{"endDate": "2026-11-24"})
+	t.Run("move-out bills the rest on a final invoice; an ended lease answers lease_ended", func(t *testing.T) {
+		// Recorded after the 1 Dec invoice was made, so no regular invoice bills it.
+		resp, body := admin.do(http.MethodPut, meterPath(listrik.Id, "2026-11"), map[string]any{"amount": 98000})
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		november := decode[apigen.MeteredCharge](t, body)
+
+		resp, body = admin.do(http.MethodPost, leasePath+"/move-out", map[string]string{"endDate": "2026-11-24"})
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+
+		resp, body = admin.do(http.MethodGet, orgPath+"/tenants/"+rina.Id.String()+"/account", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		acct := decode[apigen.TenantAccount](t, body)
+		kinds := map[string]apigen.InvoiceKind{}
+		for _, inv := range acct.Invoices {
+			kinds[inv.Period.String()] = inv.Kind
+		}
+		require.Equal(t, map[string]apigen.InvoiceKind{
+			"2026-10-01": apigen.Regular, "2026-11-01": apigen.Regular, "2026-11-24": apigen.Final, "2026-12-01": apigen.Regular,
+		}, kinds)
+		final := acct.Invoices[2]
+		require.Equal(t, "2026-11-24", final.DueDate.String())
+		require.EqualValues(t, 98_000, final.Amount)
+		require.Len(t, final.Lines, 1)
+		require.Equal(t, "Listrik November 2026", final.Lines[0].Label)
+		require.Equal(t, november.Id, *final.Lines[0].MeteredChargeId)
+		dec := acct.Invoices[3]
+		require.EqualValues(t, 150_000, dec.Billed, "the 1 Dec rent is cancelled, Listrik Oktober billed on it stays owed")
+
+		resp, body = admin.do(http.MethodGet, orgPath+"/invoices?period=2026-11", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		list := decode[apigen.InvoiceList](t, body)
+		var listed []apigen.InvoiceKind
+		for _, it := range list.Items {
+			if it.Id == final.Id {
+				listed = append(listed, it.Kind)
+			}
+		}
+		require.Equal(t, []apigen.InvoiceKind{apigen.Final}, listed)
+		require.Contains(t, string(body), `"kind":"final"`)
+		require.Contains(t, string(body), `"kind":"regular"`)
+
 		resp, body = admin.do(http.MethodPut, meterPath(listrik.Id, "2026-11"), map[string]any{"amount": 1})
 		requireError(t, resp, body, http.StatusConflict, "lease_ended", "")
 		resp, body = admin.do(http.MethodGet, leasePath+"/metered-charges", nil)

@@ -4,12 +4,14 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceKind } from './invoiceKind';
 
 /**
  * One invoice a payment paid, and what that invoice still owes now.
  */
 export interface PaidInvoice {
   invoiceId: string;
+  kind: InvoiceKind;
   period: string;
   periodEnd: string;
   dueDate: string;
