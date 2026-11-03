@@ -190,7 +190,7 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 			"member:read", "member:invite", "member:manage", "role:read",
 			"property:read", "property:manage", "unit:read", "unit:manage",
 			"tenant:read", "tenant:manage", "lease:read", "lease:manage",
-			"invoice:read", "invoice:create", "invoice:send-reminder",
+			"charge:read", "charge:record", "invoice:read", "invoice:create", "invoice:send-reminder",
 			"payment:read", "payment:record", "payment:check",
 			"correction:read", "correction:create", "promise:read", "promise:create",
 			"visit:read", "cash:read", "payroll:read", "payroll:check", "payroll:record",
@@ -200,6 +200,7 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 		RoleKaryawan: withConditional(allow("organization:read"),
 			"tenant:read", "invoice:read", "visit:read", "visit:record",
 			"cash:record", "promise:create", "payslip:read", "cash:deposit",
+			"charge:read", "charge:record",
 		),
 	}
 
@@ -214,6 +215,43 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 			require.Equal(t, want, got)
 		})
 	}
+}
+
+// TestMeteredChargesOnALease checks charge:read and charge:record on a lease the way the billing
+// service asks: the lease in its property, owned by its collector.
+func TestMeteredChargesOnALease(t *testing.T) {
+	t.Parallel()
+	admin, karyawan, supervisor := principal(t, RoleAdmin), principal(t, RoleKaryawan), principal(t, RoleSupervisor)
+	amount := int64(123_000)
+	lease := func(collector uuid.UUID) Resource {
+		return Resource{Type: "lease", ID: uuid.NewString(), PropertyID: uuid.New(), OwnerID: collector, Amount: &amount}
+	}
+	tests := []struct {
+		name   string
+		p      Principal
+		action string
+		res    Resource
+		want   bool
+	}{
+		{"admin records on any lease", admin, ActionChargeRecord, lease(uuid.New()), true},
+		{"admin records on a lease with no collector", admin, ActionChargeRecord, lease(uuid.Nil), true},
+		{"admin reads", admin, ActionChargeRead, lease(uuid.Nil), true},
+		{"karyawan records for a tenant they collect from", karyawan, ActionChargeRecord, lease(karyawan.UserID), true},
+		{"karyawan reads for a tenant they collect from", karyawan, ActionChargeRead, lease(karyawan.UserID), true},
+		{"karyawan may not record for another collector's tenant", karyawan, ActionChargeRecord, lease(uuid.New()), false},
+		{"karyawan may not record on a lease with no collector", karyawan, ActionChargeRecord, lease(uuid.Nil), false},
+		{"karyawan may not read another collector's tenant", karyawan, ActionChargeRead, lease(uuid.New()), false},
+		{"supervisor reads", supervisor, ActionChargeRead, lease(uuid.New()), true},
+		{"supervisor never records", supervisor, ActionChargeRecord, lease(supervisor.UserID), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, Evaluate(tc.p, Request{Action: tc.action, Resource: tc.res}).Allowed)
+		})
+	}
+	require.True(t, IsSensitive(ActionChargeRecord), "recording an amount is audited")
+	require.False(t, IsSensitive(ActionChargeRead))
 }
 
 func TestCapabilitiesCoverTheWholeCatalog(t *testing.T) {

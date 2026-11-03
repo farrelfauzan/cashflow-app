@@ -21,6 +21,11 @@ const (
 	ActionTenantManage = "tenant:manage"
 	ActionLeaseManage  = "lease:manage"
 
+	// ActionChargeRead and ActionChargeRecord are a lease's metered amounts (listrik, air): read
+	// them and record one month's amount. Both are checked on the lease.
+	ActionChargeRead   = "charge:read"
+	ActionChargeRecord = "charge:record"
+
 	// ActionInvoiceCreate is recorded, as a system action with no actor, for each invoice the
 	// generate task makes. No member is checked for it: generation is the platform's own work.
 	ActionInvoiceCreate    = "invoice:create"
@@ -44,6 +49,7 @@ var catalog = map[string][]string{
 	"unit":         {"read", "manage"},
 	"tenant":       {"read", "manage"},
 	"lease":        {"read", "manage"},
+	"charge":       {"read", "record"},
 	"invoice":      {"read", "create", "send-reminder"},
 	"payment":      {"read", "record", "check"},
 	"correction":   {"read", "create"},
@@ -100,6 +106,7 @@ var sensitive = map[string]bool{
 	"unit:manage":         true,
 	"tenant:manage":       true,
 	"lease:manage":        true,
+	"charge:record":       true,
 	"payment:record":      true,
 	"payment:check":       true,
 	"correction:create":   true,
