@@ -36,6 +36,9 @@ type LeaseInvoice struct {
 	Period      time.Time // the period's first day
 	Billed      int64     // amount plus corrections; 0 when cancelled
 	Outstanding int64     // billed minus what is allocated to it
+	// Metered is what its lines that bill a metered amount add up to. That usage is owed whatever
+	// period the invoice is for, so ending the lease never cancels it.
+	Metered int64
 	// LastReason and LastDelta are its newest correction, "" and 0 when it has none.
 	LastReason string
 	LastDelta  int64
@@ -51,21 +54,24 @@ type Correction struct {
 // PlanPlannedEnd returns the corrections that bring a lease's invoices in line with its planned
 // end date (nil when it is cleared), oldest period first:
 //
-//   - an invoice for a period that starts after the date, still billing something, is cancelled:
-//     minus what it bills, ReasonNotRenewed;
+//   - an invoice for a period that starts after the date, still billing more than its metered
+//     lines, is cancelled down to them: minus what it bills beyond its metered usage,
+//     ReasonNotRenewed. Usage billed in advance on that invoice ("Listrik November" on the
+//     December invoice) is owed all the same, and no other invoice will ever bill it;
 //   - an invoice for a period on or before the date (any, when the date is cleared) whose newest
-//     correction is such a cancellation, and still billing nothing, is restored: plus what that
-//     correction took off, ReasonPlannedEndChanged.
+//     correction is such a cancellation, and still billing no more than its metered lines, is
+//     restored: plus what that correction took off, ReasonPlannedEndChanged.
 //
-// An invoice cancelled for any other reason, or corrected again since, is left alone.
+// An invoice cancelled for any other reason, or corrected again since, is left alone. One already
+// cancelled down to its metered lines is not cancelled again.
 func PlanPlannedEnd(invoices []LeaseInvoice, plannedEnd *time.Time) []Correction {
 	var out []Correction
 	for _, inv := range invoices {
 		inRange := plannedEnd == nil || !inv.Period.After(*plannedEnd)
 		switch {
-		case !inRange && inv.Billed > 0:
-			out = append(out, Correction{InvoiceID: inv.ID, Delta: -inv.Billed, Reason: ReasonNotRenewed})
-		case inRange && inv.Billed == 0 && inv.LastReason == ReasonNotRenewed && inv.LastDelta < 0:
+		case !inRange && inv.Billed > inv.Metered:
+			out = append(out, Correction{InvoiceID: inv.ID, Delta: inv.Metered - inv.Billed, Reason: ReasonNotRenewed})
+		case inRange && inv.Billed <= inv.Metered && inv.LastReason == ReasonNotRenewed && inv.LastDelta < 0:
 			out = append(out, Correction{InvoiceID: inv.ID, Delta: -inv.LastDelta, Reason: ReasonPlannedEndChanged})
 		}
 	}
@@ -74,7 +80,7 @@ func PlanPlannedEnd(invoices []LeaseInvoice, plannedEnd *time.Time) []Correction
 
 // PlanMoveOut returns the corrections that bring an ended lease's invoices in line with its end
 // date. For a cancelled booking (ended on its start date) every invoice that still bills
-// something is cancelled, ReasonBookingCancelled. Otherwise the end date works as a planned end
+// something is cancelled in full, metered lines included, ReasonBookingCancelled. Otherwise the end date works as a planned end
 // (see PlanPlannedEnd): every invoice for a period that starts after it is cancelled,
 // ReasonNotRenewed, and one an earlier planned end had cancelled for a period the tenant started
 // after all (planned end 14 Nov, moved out 20 Nov) is restored, ReasonPlannedEndChanged, since a
@@ -138,11 +144,14 @@ func (s *Service) PlannedEndChanged(ctx context.Context, tx pgx.Tx, p authz.Prin
 // transaction:
 //
 //  1. a period the tenant started that has no invoice yet (the generate task had not run) gets
-//     one, as the task would have made it;
-//  2. invoices it must not bill are cancelled, and a started period a planned end had cancelled
+//     one, as the task would have made it, with the metered amounts no invoice bills yet;
+//  2. metered amounts still unbilled after that (recorded after the last regular invoice) go on
+//     the lease's one final invoice (see createFinal), except for a cancelled booking;
+//  3. invoices it must not bill are cancelled, and a started period a planned end had cancelled
 //     is restored (see PlanMoveOut); allocation reruns;
-//  3. what the lease's invoices still owe is paid from its deposit (see PlanDeposit; decision 36,
-//     the only arrears rule until organization settings exist) and allocation reruns.
+//  4. what the lease's invoices still owe, the final one included, is paid from its deposit (see
+//     PlanDeposit; decision 36, the only arrears rule until organization settings exist) and
+//     allocation reruns.
 //
 // Every correction is authorized as correction:create by the acting member and audited.
 func (s *Service) MovedOut(ctx context.Context, tx pgx.Tx, p authz.Principal, l tenant.Lease) error {
@@ -151,14 +160,20 @@ func (s *Service) MovedOut(ctx context.Context, tx pgx.Tx, p authz.Principal, l 
 	}
 	org := p.OrganizationID
 	q := dbgen.New(tx)
-	created, err := s.createMissing(ctx, q, tx, org, billedLease{
+	today := tenant.Today(s.clock)
+	bl := billedLease{
 		ID: l.ID, TenantID: l.TenantID, UnitID: l.UnitID, PropertyID: l.PropertyID,
 		Dates: LeaseDates{
 			Start: l.StartDate, EnteredOn: l.EnteredOn, BilledFrom: l.BilledFrom, TermMonths: l.TermMonths,
 			PlannedEnd: l.PlannedEndDate, End: l.EndDate,
 		},
-	}, tenant.Today(s.clock))
+	}
+	created, err := s.createMissing(ctx, q, tx, org, bl, today)
 	if err != nil && !errors.Is(err, tenant.ErrNoPrice) { // no price: logged, the move-out goes on
+		return err
+	}
+	final, err := s.createFinal(ctx, q, tx, org, bl, today)
+	if err != nil {
 		return err
 	}
 
@@ -170,7 +185,7 @@ func (s *Service) MovedOut(ctx context.Context, tx pgx.Tx, p authz.Principal, l 
 	if err := s.correct(ctx, tx, q, p, l, cancel); err != nil {
 		return err
 	}
-	if created > 0 || len(cancel) > 0 {
+	if created > 0 || final || len(cancel) > 0 {
 		if _, err := Allocate(ctx, tx, org, l.TenantID); err != nil {
 			return err
 		}
@@ -228,7 +243,7 @@ func leaseInvoices(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID
 	out := make([]LeaseInvoice, len(rows))
 	for i, r := range rows {
 		out[i] = LeaseInvoice{
-			ID: r.InvoiceID, Period: r.Period, Billed: r.Billed, Outstanding: r.Outstanding,
+			ID: r.InvoiceID, Period: r.Period, Billed: r.Billed, Outstanding: r.Outstanding, Metered: r.Metered,
 			LastReason: r.LastReason, LastDelta: r.LastDelta,
 		}
 	}
