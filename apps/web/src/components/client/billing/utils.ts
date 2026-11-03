@@ -1,8 +1,13 @@
+import type { QueryKey } from "@tanstack/react-query";
+import { z } from "zod";
+
 import { ApiError } from "@/lib/api/errors";
+import { toFormError, type FormError } from "@/lib/api/form-error";
 import type {
   AccountInvoice,
   AccountPayment,
   Correction,
+  CorrectionInput,
   PaymentMethod,
   TenantAccount,
 } from "@/lib/api/generated/model";
@@ -13,13 +18,20 @@ import {
   formatMonthYear,
   formatTimestampDate,
 } from "@/lib/format/date";
-import { formatRupiah, formatSignedRupiah } from "@/lib/format/rupiah";
+import {
+  formatRupiah,
+  formatSignedRupiah,
+  parseRupiahInput,
+} from "@/lib/format/rupiah";
 import type { AppAbility } from "@/lib/capabilities";
 
 import type {
   AccountTileView,
   AllocationView,
+  CorrectionDialogView,
   CorrectionRowView,
+  CorrectionSelection,
+  CorrectionTarget,
   InvoiceRowView,
   InvoiceStatusView,
   PaymentRowView,
@@ -27,7 +39,8 @@ import type {
 
 // The tenant's money on Detail penyewa. Every amount shown is a field the API sent, only
 // formatted: nothing here adds, subtracts or derives rupiah. Counting, ordering and calendar
-// arithmetic on dates are the only computations.
+// arithmetic on dates are the only computations. A correction sends the new amount the member
+// typed; the API takes the difference.
 
 export const ACCOUNT_REGION_LABEL = "Uang penyewa";
 export const ACCOUNT_LOADING_TEXT = "Memuat tagihan…";
@@ -288,6 +301,7 @@ export function invoiceRows(
         label: line.label,
         amount: formatRupiah(line.amount),
       })),
+      correctionTitle: invoiceCorrectionTitle(invoice),
     };
   });
 }
@@ -329,6 +343,7 @@ export function paymentRows(account: TenantAccount): PaymentRowView[] {
         ? null
         : `dicatat ${payment.recordedBy.name}`,
     allocations: allocationViews(payment, account.invoices, settledBy),
+    correctionTitle: paymentCorrectionTitle(payment),
   }));
 }
 
@@ -377,3 +392,151 @@ export function canReadAccount(ability: AppAbility): boolean {
 // The card look of the tenant screens (lease-card.tsx).
 export const ACCOUNT_CARD_CLASS =
   "flex min-w-0 flex-col gap-3 rounded-[14px] border bg-card p-4 md:gap-4 md:rounded-2xl md:px-6 md:py-[22px]";
+
+// "Koreksi nominal" (board "iPad · Koreksi nominal"): a "Koreksi" action on each invoice and
+// payment opens a dialog that sends the new amount and a reason.
+
+export const CORRECT_BUTTON_TEXT = "Koreksi";
+export const CORRECTION_NOTE =
+  "Data lama tidak dihapus. Koreksi ini tercatat atas nama Anda dan muncul di laporan Supervisor.";
+
+// "Koreksi tagihan November 2026": the invoice's period month.
+export function invoiceCorrectionTitle(
+  invoice: Pick<AccountInvoice, "period">,
+): string {
+  return `Koreksi tagihan ${formatMonthYear(invoice.period)}`;
+}
+
+// "Koreksi pembayaran 25 Nov 2026": the day the payment was received.
+export function paymentCorrectionTitle(
+  payment: Pick<AccountPayment, "receivedOn">,
+): string {
+  return `Koreksi pembayaran ${formatDate(payment.receivedOn)}`;
+}
+
+// The muted line under the title: the tenant, and for an invoice its unit and property.
+export function invoiceCorrectionSubtitle(
+  invoice: Pick<AccountInvoice, "unitLabel" | "propertyName">,
+  tenantName: string,
+): string {
+  return `${tenantName} · ${invoice.unitLabel} · ${invoice.propertyName}`;
+}
+
+// The dialog for what "Koreksi" was pressed on, from the latest account: the current amount is
+// what the invoice bills now (billed) or what the payment counts now (net), as the API sent it.
+// Null when the record is no longer in the account.
+export function correctionDialogView(
+  account: TenantAccount,
+  selection: CorrectionSelection,
+  tenantName: string,
+): CorrectionDialogView | null {
+  if (selection.kind === "invoice") {
+    const invoice = account.invoices.find((each) => each.id === selection.id);
+    if (invoice === undefined) return null;
+    return {
+      target: { invoiceId: invoice.id },
+      title: invoiceCorrectionTitle(invoice),
+      subtitle: invoiceCorrectionSubtitle(invoice, tenantName),
+      current: formatRupiah(invoice.billed),
+    };
+  }
+  const payment = account.payments.find((each) => each.id === selection.id);
+  if (payment === undefined) return null;
+  return {
+    target: { paymentId: payment.id },
+    title: paymentCorrectionTitle(payment),
+    subtitle: tenantName,
+    current: formatRupiah(payment.net),
+  };
+}
+
+// The short confirmation after a correction is saved.
+export function correctionSavedNotice(title: string): string {
+  return `${title} disimpan.`;
+}
+
+// The "Koreksi" action shows for a member who may create corrections on some records or all;
+// "conditional" shows it and the API answers 403 per record. Never by role name.
+export function canCreateCorrection(ability: AppAbility): boolean {
+  return ability.can("create", "correction");
+}
+
+export const EMPTY_NEW_AMOUNT_MESSAGE = "Isi nominal baru.";
+export const DIGITS_ONLY_MESSAGE = "Hanya angka.";
+// CorrectionInput.newAmount's maximum.
+export const MAX_NEW_AMOUNT = 1_000_000_000_000;
+export const NEW_AMOUNT_TOO_LARGE_MESSAGE = `Nominal paling besar ${formatRupiah(MAX_NEW_AMOUNT)}.`;
+export const EMPTY_REASON_MESSAGE = "Alasan wajib diisi.";
+export const REASON_MAX_LENGTH = 500;
+export const REASON_TOO_LONG_MESSAGE = "Alasan paling banyak 500 karakter.";
+
+// "Nominal baru" as typed (digits, grouped with dots by the field) becomes integer rupiah from 0
+// (cancels an invoice, zeroes a payment) up to MAX_NEW_AMOUNT; the reason is trimmed and
+// required. Whether the amount equals the current one is the API's to say
+// (correction_no_change).
+export const correctionFormSchema = z.object({
+  newAmount: z.string().transform((text, ctx) => {
+    if (text.trim() === "") {
+      ctx.addIssue({ code: "custom", message: EMPTY_NEW_AMOUNT_MESSAGE });
+      return z.NEVER;
+    }
+    const amount = parseRupiahInput(text);
+    if (amount === null) {
+      ctx.addIssue({ code: "custom", message: DIGITS_ONLY_MESSAGE });
+      return z.NEVER;
+    }
+    if (amount > MAX_NEW_AMOUNT) {
+      ctx.addIssue({ code: "custom", message: NEW_AMOUNT_TOO_LARGE_MESSAGE });
+      return z.NEVER;
+    }
+    return amount;
+  }),
+  reason: z
+    .string()
+    .trim()
+    .min(1, { error: EMPTY_REASON_MESSAGE, abort: true })
+    .max(REASON_MAX_LENGTH, { error: REASON_TOO_LONG_MESSAGE }),
+});
+
+// The API fields the dialog shows under its own fields.
+export const CORRECTION_FORM_API_FIELDS = ["newAmount", "reason"] as const;
+
+// Where the dialog shows a refused correction. correction_below_zero names amountDelta, which the
+// dialog never sends: it is about the new amount, so it goes under "Nominal baru". Any other
+// field (requestId, invoiceId, paymentId) or none goes to the dialog's alert.
+export function correctionFormError(error: unknown): FormError {
+  const failed = toFormError(error, [
+    ...CORRECTION_FORM_API_FIELDS,
+    "amountDelta",
+  ]);
+  return failed.field === "amountDelta"
+    ? { field: "newAmount", message: failed.message }
+    : failed;
+}
+
+// The request body: the record, the new amount and the reason. Never amountDelta.
+export function correctionInput(
+  requestId: string,
+  target: CorrectionTarget,
+  values: { newAmount: number; reason: string },
+): CorrectionInput {
+  return {
+    requestId,
+    ...target,
+    newAmount: values.newAmount,
+    reason: values.reason,
+  };
+}
+
+// Any query of Penagihan (the organization's invoices, a list or one invoice): a correction
+// changes what they show.
+export function isInvoicesQuery(queryKey: QueryKey, orgId: string): boolean {
+  const [scope, keyOrgId, url] = queryKey;
+  return (
+    scope === "org" &&
+    keyOrgId === orgId &&
+    typeof url === "string" &&
+    (url === `/orgs/${orgId}/invoices` ||
+      url.startsWith(`/orgs/${orgId}/invoices/`))
+  );
+}

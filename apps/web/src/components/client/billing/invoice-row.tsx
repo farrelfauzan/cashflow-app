@@ -4,13 +4,17 @@ import { TenantChip } from "@/components/client/tenant/tenant-chip";
 import { cn } from "@/lib/utils";
 import type { InvoiceRowView } from "./type";
 
+import { CorrectButton } from "./correct-button";
+
 type InvoiceRowProps = {
   invoice: InvoiceRowView;
+  // Opens "Koreksi nominal" for this invoice; none hides the action.
+  onCorrect?: () => void;
 };
 
 // One invoice: its month, due date and status, what it bills, what is paid or left, and its
-// lines ("Sewa Rp1.050.000").
-export function InvoiceRow({ invoice }: InvoiceRowProps) {
+// lines ("Sewa Rp1.050.000"), and "Koreksi" under the status for a member who may correct.
+export function InvoiceRow({ invoice, onCorrect }: InvoiceRowProps) {
   return (
     <li className="flex flex-col gap-1.5 border-t pt-3 first:border-t-0 first:pt-0">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -39,6 +43,12 @@ export function InvoiceRow({ invoice }: InvoiceRowProps) {
           <TenantChip tone={invoice.status.tone}>
             {invoice.status.label}
           </TenantChip>
+          {onCorrect !== undefined && (
+            <CorrectButton
+              label={invoice.correctionTitle}
+              onClick={onCorrect}
+            />
+          )}
         </div>
       </div>
       {invoice.correctedFrom !== null && (

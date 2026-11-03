@@ -12,9 +12,19 @@ import { createAppAbility } from "@/lib/capabilities";
 
 import {
   accountTiles,
+  canCreateCorrection,
   canReadAccount,
+  correctionDialogView,
+  correctionFormError,
+  correctionFormSchema,
+  correctionInput,
   correctionRows,
+  correctionSavedNotice,
   CREDIT_NOTE,
+  invoiceCorrectionSubtitle,
+  invoiceCorrectionTitle,
+  isInvoicesQuery,
+  paymentCorrectionTitle,
   daysBetween,
   debtAgeText,
   invoiceRows,
@@ -421,6 +431,7 @@ describe("invoiceRows", () => {
     ]);
     const [dec, nov, oct] = rows;
     expect(dec).toMatchObject({
+      correctionTitle: "Koreksi tagihan Desember 2026",
       due: "jatuh tempo 1 Des",
       amount: "Rp1.400.000",
       correctedFrom: "dikoreksi dari Rp1.500.000",
@@ -530,6 +541,7 @@ describe("paymentRows", () => {
           { invoiceId: "oct", text: "→ Oktober Rp750.000 (lunas)" },
           { invoiceId: "nov", text: "→ November Rp250.000" },
         ],
+        correctionTitle: "Koreksi pembayaran 25 Nov 2026",
       },
       {
         id: "p1",
@@ -539,6 +551,7 @@ describe("paymentRows", () => {
         note: null,
         recordedBy: null,
         allocations: [{ invoiceId: "oct", text: "→ Oktober Rp750.000" }],
+        correctionTitle: "Koreksi pembayaran 12 Okt 2026",
       },
     ]);
   });
@@ -678,5 +691,334 @@ describe("isAccountForbidden", () => {
     { name: "not an ApiError", error: new Error("x"), want: false },
   ])("$name", ({ error, want }) => {
     expect(isAccountForbidden(error)).toBe(want);
+  });
+});
+
+describe("correction titles and subtitle", () => {
+  it("names the invoice by its period month and the payment by its day", () => {
+    expect(invoiceCorrectionTitle({ period: "2026-11-10" })).toBe(
+      "Koreksi tagihan November 2026",
+    );
+    expect(paymentCorrectionTitle({ receivedOn: "2026-11-25" })).toBe(
+      "Koreksi pembayaran 25 Nov 2026",
+    );
+  });
+
+  it("names the tenant, unit and property of an invoice", () => {
+    expect(
+      invoiceCorrectionSubtitle(
+        { unitLabel: "Kamar 3", propertyName: "Kos Melati" },
+        "Yulia Kartika",
+      ),
+    ).toBe("Yulia Kartika · Kamar 3 · Kos Melati");
+  });
+
+  it("confirms the save with the dialog's title", () => {
+    expect(correctionSavedNotice("Koreksi tagihan November 2026")).toBe(
+      "Koreksi tagihan November 2026 disimpan.",
+    );
+  });
+});
+
+describe("correctionDialogView", () => {
+  const data = account({
+    invoices: [
+      invoice({
+        id: "inv-nov",
+        period: "2026-11-10",
+        amount: 1_500_000,
+        billed: 1_400_000,
+      }),
+      invoice({
+        id: "inv-dec",
+        period: "2026-12-10",
+        status: "cancelled",
+        billed: 0,
+      }),
+    ],
+    payments: [payment({ id: "pay-1", amount: 1_000_000, net: 900_000 })],
+  });
+
+  it("shows what an invoice bills now, not what it first billed", () => {
+    expect(
+      correctionDialogView(data, { kind: "invoice", id: "inv-nov" }, "Yulia"),
+    ).toEqual({
+      target: { invoiceId: "inv-nov" },
+      title: "Koreksi tagihan November 2026",
+      subtitle: "Yulia · Kamar 3 · Kos Melati",
+      current: "Rp1.400.000",
+    });
+  });
+
+  it("shows Rp0 for a cancelled invoice, which a correction can restore", () => {
+    expect(
+      correctionDialogView(data, { kind: "invoice", id: "inv-dec" }, "Yulia")
+        ?.current,
+    ).toBe("Rp0");
+  });
+
+  it("shows what a payment counts now (net)", () => {
+    expect(
+      correctionDialogView(data, { kind: "payment", id: "pay-1" }, "Yulia"),
+    ).toEqual({
+      target: { paymentId: "pay-1" },
+      title: "Koreksi pembayaran 25 Okt 2026",
+      subtitle: "Yulia",
+      current: "Rp900.000",
+    });
+  });
+
+  it("is null for a record no longer in the account", () => {
+    expect(
+      correctionDialogView(data, { kind: "invoice", id: "gone" }, "Yulia"),
+    ).toBeNull();
+    expect(
+      correctionDialogView(data, { kind: "payment", id: "gone" }, "Yulia"),
+    ).toBeNull();
+  });
+});
+
+describe("correctionFormSchema", () => {
+  const reason = "Potongan kran rusak";
+
+  it.each([
+    { name: "digits", newAmount: "1400000", want: 1_400_000 },
+    {
+      name: "digits grouped by the field",
+      newAmount: "1.400.000",
+      want: 1_400_000,
+    },
+    { name: "zero", newAmount: "0", want: 0 },
+    {
+      name: "the maximum",
+      newAmount: "1.000.000.000.000",
+      want: 1_000_000_000_000,
+    },
+  ])("takes $name as integer rupiah", ({ newAmount, want }) => {
+    const parsed = correctionFormSchema.safeParse({ newAmount, reason });
+    expect(parsed.success && parsed.data.newAmount).toBe(want);
+  });
+
+  it.each([
+    { name: "empty", newAmount: "", message: "Isi nominal baru." },
+    { name: "only spaces", newAmount: "  ", message: "Isi nominal baru." },
+    { name: "letters", newAmount: "12a", message: "Hanya angka." },
+    { name: "a sign", newAmount: "-5000", message: "Hanya angka." },
+    { name: "a fraction", newAmount: "1500,5", message: "Hanya angka." },
+    {
+      name: "beyond the maximum",
+      newAmount: "1000000000001",
+      message: "Nominal paling besar Rp1.000.000.000.000.",
+    },
+  ])("refuses $name", ({ newAmount, message }) => {
+    const parsed = correctionFormSchema.safeParse({ newAmount, reason });
+    expect(parsed.success).toBe(false);
+    expect(
+      parsed.error?.issues.map((issue) => [issue.path, issue.message]),
+    ).toEqual([[["newAmount"], message]]);
+  });
+
+  it("trims the reason", () => {
+    const parsed = correctionFormSchema.safeParse({
+      newAmount: "5",
+      reason: "  Salah ketik  ",
+    });
+    expect(parsed.success && parsed.data.reason).toBe("Salah ketik");
+  });
+
+  it("takes a reason of exactly 500 characters", () => {
+    const parsed = correctionFormSchema.safeParse({
+      newAmount: "5",
+      reason: "a".repeat(500),
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it.each([
+    { name: "empty", reason: "", message: "Alasan wajib diisi." },
+    {
+      name: "only whitespace",
+      reason: " \n\t ",
+      message: "Alasan wajib diisi.",
+    },
+    {
+      name: "longer than 500 characters",
+      reason: "a".repeat(501),
+      message: "Alasan paling banyak 500 karakter.",
+    },
+  ])("refuses a reason that is $name", ({ reason: text, message }) => {
+    const parsed = correctionFormSchema.safeParse({
+      newAmount: "5",
+      reason: text,
+    });
+    expect(
+      parsed.error?.issues.map((issue) => [issue.path, issue.message]),
+    ).toEqual([[["reason"], message]]);
+  });
+});
+
+describe("correctionInput", () => {
+  it("sends the new amount for an invoice, never amountDelta", () => {
+    const body = correctionInput(
+      "req-1",
+      { invoiceId: "inv-1" },
+      { newAmount: 0, reason: "Sewa tidak jadi" },
+    );
+    expect(body).toEqual({
+      requestId: "req-1",
+      invoiceId: "inv-1",
+      newAmount: 0,
+      reason: "Sewa tidak jadi",
+    });
+    expect(body).not.toHaveProperty("amountDelta");
+  });
+
+  it("names only the payment for a payment", () => {
+    expect(
+      correctionInput(
+        "req-2",
+        { paymentId: "pay-1" },
+        { newAmount: 900_000, reason: "Salah ketik" },
+      ),
+    ).toEqual({
+      requestId: "req-2",
+      paymentId: "pay-1",
+      newAmount: 900_000,
+      reason: "Salah ketik",
+    });
+  });
+});
+
+describe("correctionFormError", () => {
+  it.each([
+    {
+      name: "below zero (amountDelta) goes under Nominal baru",
+      error: new ApiError({
+        status: 409,
+        code: "correction_below_zero",
+        message: "Nominal tidak boleh di bawah nol.",
+        field: "amountDelta",
+      }),
+      want: {
+        field: "newAmount",
+        message: "Nominal tidak boleh di bawah nol.",
+      },
+    },
+    {
+      name: "no change stays under Nominal baru",
+      error: new ApiError({
+        status: 409,
+        code: "correction_no_change",
+        message: "Nominal baru sama dengan nominal sekarang.",
+        field: "newAmount",
+      }),
+      want: {
+        field: "newAmount",
+        message: "Nominal baru sama dengan nominal sekarang.",
+      },
+    },
+    {
+      name: "a reason error goes under Alasan",
+      error: new ApiError({
+        status: 400,
+        code: "invalid",
+        message: "Alasan wajib diisi.",
+        field: "reason",
+      }),
+      want: { field: "reason", message: "Alasan wajib diisi." },
+    },
+    {
+      name: "a reused requestId goes to the alert",
+      error: new ApiError({
+        status: 409,
+        code: "request_id_reused",
+        message: "Permintaan ini sudah dipakai.",
+        field: "requestId",
+      }),
+      want: { field: null, message: "Permintaan ini sudah dipakai." },
+    },
+    {
+      name: "a 403 goes to the alert",
+      error: new ApiError({
+        status: 403,
+        code: "forbidden",
+        message: "Anda tidak punya akses.",
+      }),
+      want: { field: null, message: "Anda tidak punya akses." },
+    },
+    {
+      name: "a missing invoice goes to the alert",
+      error: new ApiError({
+        status: 404,
+        code: "not_found",
+        message: "Tagihan tidak ditemukan.",
+        field: "invoiceId",
+      }),
+      want: { field: null, message: "Tagihan tidak ditemukan." },
+    },
+    {
+      name: "anything else gets the generic message in the alert",
+      error: new Error("boom"),
+      want: { field: null, message: "Terjadi kesalahan. Coba lagi." },
+    },
+  ])("$name", ({ error, want }) => {
+    expect(correctionFormError(error)).toEqual(want);
+  });
+});
+
+describe("isInvoicesQuery", () => {
+  const org = "org-1";
+  it.each([
+    {
+      name: "the invoice list",
+      key: ["org", org, `/orgs/${org}/invoices`, {}],
+      want: true,
+    },
+    {
+      name: "one invoice",
+      key: ["org", org, `/orgs/${org}/invoices/inv-1`, {}],
+      want: true,
+    },
+    {
+      name: "another organization's invoices",
+      key: ["org", "org-2", "/orgs/org-2/invoices", {}],
+      want: false,
+    },
+    {
+      name: "a path that only starts like it",
+      key: ["org", org, `/orgs/${org}/invoices-export`, {}],
+      want: false,
+    },
+    {
+      name: "the dashboard",
+      key: ["org", org, `/orgs/${org}/dashboard`, {}],
+      want: false,
+    },
+    { name: "a user query", key: ["user", "/me", {}], want: false },
+  ])("$name", ({ key, want }) => {
+    expect(isInvoicesQuery(key, org)).toBe(want);
+  });
+});
+
+describe("canCreateCorrection", () => {
+  it.each<{ name: string; capabilities: Capability[]; want: boolean }>([
+    {
+      name: "allowed",
+      capabilities: [{ action: "correction:create", access: "allow" }],
+      want: true,
+    },
+    {
+      name: "conditional",
+      capabilities: [{ action: "correction:create", access: "conditional" }],
+      want: true,
+    },
+    {
+      name: "denied",
+      capabilities: [{ action: "correction:create", access: "deny" }],
+      want: false,
+    },
+    { name: "not listed", capabilities: [], want: false },
+  ])("$name", ({ capabilities, want }) => {
+    expect(canCreateCorrection(createAppAbility(capabilities))).toBe(want);
   });
 });

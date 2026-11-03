@@ -44,6 +44,8 @@ export type InvoiceRowView = {
   // "dibayar Rp250.000", "Sisa Rp1.250.000", "2 pembayaran".
   details: readonly string[];
   lines: readonly InvoiceLineView[];
+  // The name of its "Koreksi" action and of the dialog it opens: "Koreksi tagihan November 2026".
+  correctionTitle: string;
 };
 
 export type AllocationView = {
@@ -65,6 +67,8 @@ export type PaymentRowView = {
   recordedBy: string | null;
   // Empty when it all went to credit.
   allocations: readonly AllocationView[];
+  // The name of its "Koreksi" action and of the dialog it opens: "Koreksi pembayaran 25 Nov 2026".
+  correctionTitle: string;
 };
 
 // One correction in "Koreksi nominal", newest first.
@@ -80,4 +84,25 @@ export type CorrectionRowView = {
   reason: string;
   // "oleh Pak Hendra Gunawan".
   by: string;
+};
+
+// What "Koreksi" was pressed on: one invoice or one payment of the tenant, by id. The dialog reads
+// the record from the latest account, so a refetch while it is open shows the current amount.
+export type CorrectionSelection = {
+  kind: "invoice" | "payment";
+  id: string;
+};
+
+// The record a correction is sent for: exactly one of the two ids (CorrectionInput).
+export type CorrectionTarget = { invoiceId: string } | { paymentId: string };
+
+// The "Koreksi nominal" dialog (board "iPad · Koreksi nominal") for one invoice or payment.
+export type CorrectionDialogView = {
+  target: CorrectionTarget;
+  // "Koreksi tagihan November 2026", "Koreksi pembayaran 25 Nov 2026".
+  title: string;
+  // "Yulia Kartika · Kamar 3 · Kos Melati" for an invoice, the tenant's name for a payment.
+  subtitle: string;
+  // What it bills or counts now (billed or net), formatted: "Rp1.500.000".
+  current: string;
 };
