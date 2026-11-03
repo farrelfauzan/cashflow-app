@@ -679,8 +679,8 @@ export const useMoveOut = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getMoveOutMutationOptions(options), queryClient);
     }
     /**
- * Replaces the whole set at once: charge types left out are removed, and an empty list removes every extra. Each charge type appears at most once, must belong to the organization and must not be metered (metered amounts are recorded per month instead). Like a rent change, the new amounts apply from the next invoice.
- * @summary Replace the fixed extra charges of an active lease (needs lease:manage; audited)
+ * Replaces the whole set at once: charge types left out are removed, and an empty list removes every extra. Each charge type appears at most once, must belong to the organization and must not be metered (metered amounts are recorded per month instead). Like a rent change, the new amounts apply from the next invoice. meteredChargeTypeIds, when sent, replaces the metered types the lease expects an amount for every month (each metered, at most once); left out, they stay as they are. They only decide which leases listMissingMeterReadings flags: amounts already recorded are billed whatever the set.
+ * @summary Replace the fixed extra charges of an active lease, and its expected metered types (needs lease:manage; audited)
  */
 export const setLeaseCharges = (
     orgId: string,
@@ -736,7 +736,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SetLeaseChargesMutationVariables = {orgId: string;leaseId: string;data: BodyType<LeaseChargesInput>}
 
     /**
- * @summary Replace the fixed extra charges of an active lease (needs lease:manage; audited)
+ * @summary Replace the fixed extra charges of an active lease, and its expected metered types (needs lease:manage; audited)
  */
 export const useSetLeaseCharges = <TError = ErrorType<Error | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeaseCharges>>, TError,SetLeaseChargesMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}

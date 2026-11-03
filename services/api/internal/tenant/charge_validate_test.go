@@ -75,3 +75,37 @@ func TestValidCharges(t *testing.T) {
 		})
 	}
 }
+
+func TestValidMeteredTypes(t *testing.T) {
+	t.Parallel()
+	listrik, air := uuid.New(), uuid.New()
+	many := make([]uuid.UUID, maxLeaseCharges+1)
+	for i := range many {
+		many[i] = uuid.New()
+	}
+	tests := []struct {
+		name      string
+		in        []uuid.UUID
+		wantField string
+	}{
+		{"none", []uuid.UUID{}, ""},
+		{"listrik and air", []uuid.UUID{listrik, air}, ""},
+		{"the most types", many[:maxLeaseCharges], ""},
+		{"too many types", many, "meteredChargeTypeIds"},
+		{"no charge type", []uuid.UUID{listrik, uuid.Nil}, "meteredChargeTypeIds[1]"},
+		{"the same type twice", []uuid.UUID{listrik, air, listrik}, "meteredChargeTypeIds[2]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidMeteredTypes(tc.in)
+			if tc.wantField == "" {
+				require.NoError(t, err)
+				return
+			}
+			var inputErr *InputError
+			require.ErrorAs(t, err, &inputErr)
+			require.Equal(t, tc.wantField, inputErr.Field)
+		})
+	}
+}

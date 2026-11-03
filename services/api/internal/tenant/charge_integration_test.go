@@ -83,9 +83,9 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 	})
 
 	t.Run("an admin sets extras on a lease, and the change is audited", func(t *testing.T) {
-		got, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, []tenant.ChargeInput{
+		got, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{
 			{ChargeTypeID: wifi.ID, Amount: 50_000}, {ChargeTypeID: parkir.ID, Amount: 100_000},
-		})
+		}})
 		require.NoError(t, err)
 		require.Equal(t, []tenant.Charge{
 			{ChargeTypeID: parkir.ID, Name: "Parkir", Amount: 100_000},
@@ -111,7 +111,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 	})
 
 	t.Run("setting again replaces the whole set", func(t *testing.T) {
-		got, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, []tenant.ChargeInput{{ChargeTypeID: wifi.ID, Amount: 75_000}})
+		got, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{{ChargeTypeID: wifi.ID, Amount: 75_000}}})
 		require.NoError(t, err)
 		require.Equal(t, []tenant.Charge{{ChargeTypeID: wifi.ID, Name: "Wi-Fi", Amount: 75_000}}, got.Charges)
 	})
@@ -130,7 +130,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				_, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, tc.in)
+				_, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, tenant.LeaseChargesInput{Charges: tc.in})
 				requireField(t, err, tc.field)
 			})
 		}
@@ -142,7 +142,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 
 	t.Run("a karyawan and the supervisor change no extras and add no types", func(t *testing.T) {
 		for name, p := range map[string]authz.Principal{"karyawan": w.karyawan, "supervisor": w.supervisor} {
-			_, err := env.Tenants.SetLeaseCharges(ctx, p, lease.ID, []tenant.ChargeInput{})
+			_, err := env.Tenants.SetLeaseCharges(ctx, p, lease.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{}})
 			require.ErrorIs(t, err, authz.ErrForbidden, name)
 			_, err = env.Tenants.CreateChargeType(ctx, p, tenant.ChargeTypeInput{Name: "Sampah"})
 			require.ErrorIs(t, err, authz.ErrForbidden, name)
@@ -155,7 +155,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 	})
 
 	t.Run("an empty set removes every extra", func(t *testing.T) {
-		got, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, []tenant.ChargeInput{})
+		got, err := env.Tenants.SetLeaseCharges(ctx, w.admin, lease.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{}})
 		require.NoError(t, err)
 		require.Equal(t, []tenant.Charge{}, got.Charges)
 	})
@@ -169,7 +169,7 @@ func TestChargeTypesAndLeaseCharges(t *testing.T) {
 		require.NoError(t, err)
 		_, err = env.Tenants.MoveOut(ctx, w.admin, l.ID, day(2026, 11, 1))
 		require.NoError(t, err)
-		_, err = env.Tenants.SetLeaseCharges(ctx, w.admin, l.ID, []tenant.ChargeInput{{ChargeTypeID: wifi.ID, Amount: 50_000}})
+		_, err = env.Tenants.SetLeaseCharges(ctx, w.admin, l.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{{ChargeTypeID: wifi.ID, Amount: 50_000}}})
 		require.ErrorIs(t, err, tenant.ErrLeaseEnded)
 	})
 }
@@ -201,11 +201,11 @@ func TestLeaseChargesForAnAdminLimitedToOneProperty(t *testing.T) {
 		wantErr error
 	}{
 		{"sets extras on a lease in her property", func() error {
-			_, err := env.Tenants.SetLeaseCharges(ctx, limited, inMelati.ID, wifiOnly)
+			_, err := env.Tenants.SetLeaseCharges(ctx, limited, inMelati.ID, tenant.LeaseChargesInput{Charges: wifiOnly})
 			return err
 		}, nil},
 		{"not on a lease in another property", func() error {
-			_, err := env.Tenants.SetLeaseCharges(ctx, limited, inMawar.ID, wifiOnly)
+			_, err := env.Tenants.SetLeaseCharges(ctx, limited, inMawar.ID, tenant.LeaseChargesInput{Charges: wifiOnly})
 			return err
 		}, authz.ErrForbidden},
 		{"cannot add a charge type, which every property shares", func() error {
@@ -251,9 +251,9 @@ func TestLeaseChargesStayInsideTheirOrganization(t *testing.T) {
 	require.NoError(t, err, "the same name in another organization is fine")
 
 	t.Run("A cannot use B's charge type or B's lease", func(t *testing.T) {
-		_, err := env.Tenants.SetLeaseCharges(ctx, a.admin, leaseA.ID, []tenant.ChargeInput{{ChargeTypeID: wifiB.ID, Amount: 50_000}})
+		_, err := env.Tenants.SetLeaseCharges(ctx, a.admin, leaseA.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{{ChargeTypeID: wifiB.ID, Amount: 50_000}}})
 		requireField(t, err, "charges[0].chargeTypeId")
-		_, err = env.Tenants.SetLeaseCharges(ctx, a.admin, leaseB.ID, []tenant.ChargeInput{{ChargeTypeID: wifiA.ID, Amount: 50_000}})
+		_, err = env.Tenants.SetLeaseCharges(ctx, a.admin, leaseB.ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{{ChargeTypeID: wifiA.ID, Amount: 50_000}}})
 		require.ErrorIs(t, err, tenant.ErrNotFound)
 		types, err := env.Tenants.ListChargeTypes(ctx, a.admin)
 		require.NoError(t, err)

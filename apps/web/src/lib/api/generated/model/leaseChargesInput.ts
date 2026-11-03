@@ -12,4 +12,9 @@ export interface LeaseChargesInput {
      * @maxItems 20
      */
   charges: LeaseChargeInput[];
+  /**
+     * The lease's whole set of expected metered types, each a metered charge type at most once. Left out, the set stays as it is; an empty list removes them all.
+     * @maxItems 20
+     */
+  meteredChargeTypeIds?: string[];
 }

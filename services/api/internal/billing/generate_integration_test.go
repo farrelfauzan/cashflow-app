@@ -279,7 +279,7 @@ func TestGenerateInvoices(t *testing.T) {
 		setNow(env, 2026, 10, 15, 9, 0)
 		w := newWorld(t, env, "0812806")
 		r := w.rent(t, "Hendra Wijaya", day(2026, 10, 15), rentOpts{term: 3, price: 2_000_000})
-		_, err := env.Tenants.SetLeaseCharges(ctx, w.admin, r.leaseID, []tenant.ChargeInput{{ChargeTypeID: w.wifi.ID, Amount: 100_000}})
+		_, err := env.Tenants.SetLeaseCharges(ctx, w.admin, r.leaseID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{{ChargeTypeID: w.wifi.ID, Amount: 100_000}}})
 		require.NoError(t, err)
 
 		require.Equal(t, 1, w.generate(t).Invoices)

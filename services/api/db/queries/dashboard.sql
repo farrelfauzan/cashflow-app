@@ -159,7 +159,7 @@ WHERE b.organization_id = @organization_id
 
 -- name: ListLinesOfInvoices :many
 -- The lines of some invoices, in the order they were written.
-SELECT il.id, il.invoice_id, il.kind, il.label, il.amount
+SELECT il.id, il.invoice_id, il.kind, il.label, il.amount, il.metered_charge_id
 FROM invoice_line il
 WHERE il.organization_id = @organization_id AND il.invoice_id = ANY(@invoice_ids::uuid[])
 ORDER BY il.seq;

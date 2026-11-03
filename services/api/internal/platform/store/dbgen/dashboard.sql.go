@@ -295,7 +295,7 @@ func (q *Queries) ListInvoicePage(ctx context.Context, arg ListInvoicePageParams
 }
 
 const listLinesOfInvoices = `-- name: ListLinesOfInvoices :many
-SELECT il.id, il.invoice_id, il.kind, il.label, il.amount
+SELECT il.id, il.invoice_id, il.kind, il.label, il.amount, il.metered_charge_id
 FROM invoice_line il
 WHERE il.organization_id = $1 AND il.invoice_id = ANY($2::uuid[])
 ORDER BY il.seq
@@ -307,11 +307,12 @@ type ListLinesOfInvoicesParams struct {
 }
 
 type ListLinesOfInvoicesRow struct {
-	ID        uuid.UUID
-	InvoiceID uuid.UUID
-	Kind      string
-	Label     string
-	Amount    int64
+	ID              uuid.UUID
+	InvoiceID       uuid.UUID
+	Kind            string
+	Label           string
+	Amount          int64
+	MeteredChargeID uuid.NullUUID
 }
 
 // The lines of some invoices, in the order they were written.
@@ -330,6 +331,7 @@ func (q *Queries) ListLinesOfInvoices(ctx context.Context, arg ListLinesOfInvoic
 			&i.Kind,
 			&i.Label,
 			&i.Amount,
+			&i.MeteredChargeID,
 		); err != nil {
 			return nil, err
 		}

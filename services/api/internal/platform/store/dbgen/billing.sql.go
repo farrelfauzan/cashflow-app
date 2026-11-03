@@ -134,19 +134,20 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 }
 
 const createInvoiceLine = `-- name: CreateInvoiceLine :one
-INSERT INTO invoice_line (id, organization_id, invoice_id, kind, charge_type_id, label, amount)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, seq, organization_id, invoice_id, kind, charge_type_id, label, amount, created_at
+INSERT INTO invoice_line (id, organization_id, invoice_id, kind, charge_type_id, label, amount, metered_charge_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, seq, organization_id, invoice_id, kind, charge_type_id, label, amount, created_at, metered_charge_id
 `
 
 type CreateInvoiceLineParams struct {
-	ID             uuid.UUID
-	OrganizationID uuid.UUID
-	InvoiceID      uuid.UUID
-	Kind           string
-	ChargeTypeID   uuid.NullUUID
-	Label          string
-	Amount         int64
+	ID              uuid.UUID
+	OrganizationID  uuid.UUID
+	InvoiceID       uuid.UUID
+	Kind            string
+	ChargeTypeID    uuid.NullUUID
+	Label           string
+	Amount          int64
+	MeteredChargeID uuid.NullUUID
 }
 
 func (q *Queries) CreateInvoiceLine(ctx context.Context, arg CreateInvoiceLineParams) (InvoiceLine, error) {
@@ -158,6 +159,7 @@ func (q *Queries) CreateInvoiceLine(ctx context.Context, arg CreateInvoiceLinePa
 		arg.ChargeTypeID,
 		arg.Label,
 		arg.Amount,
+		arg.MeteredChargeID,
 	)
 	var i InvoiceLine
 	err := row.Scan(
@@ -170,6 +172,7 @@ func (q *Queries) CreateInvoiceLine(ctx context.Context, arg CreateInvoiceLinePa
 		&i.Label,
 		&i.Amount,
 		&i.CreatedAt,
+		&i.MeteredChargeID,
 	)
 	return i, err
 }
@@ -760,7 +763,7 @@ func (q *Queries) ListAccountCorrections(ctx context.Context, arg ListAccountCor
 }
 
 const listAccountInvoiceLines = `-- name: ListAccountInvoiceLines :many
-SELECT il.id, il.invoice_id, il.kind, il.label, il.amount
+SELECT il.id, il.invoice_id, il.kind, il.label, il.amount, il.metered_charge_id
 FROM invoice_line il
 JOIN invoice i ON i.organization_id = il.organization_id AND i.id = il.invoice_id
 WHERE il.organization_id = $1 AND i.tenant_id = $2
@@ -773,11 +776,12 @@ type ListAccountInvoiceLinesParams struct {
 }
 
 type ListAccountInvoiceLinesRow struct {
-	ID        uuid.UUID
-	InvoiceID uuid.UUID
-	Kind      string
-	Label     string
-	Amount    int64
+	ID              uuid.UUID
+	InvoiceID       uuid.UUID
+	Kind            string
+	Label           string
+	Amount          int64
+	MeteredChargeID uuid.NullUUID
 }
 
 // The lines of every invoice of a tenant, in the order they were written.
@@ -796,6 +800,7 @@ func (q *Queries) ListAccountInvoiceLines(ctx context.Context, arg ListAccountIn
 			&i.Kind,
 			&i.Label,
 			&i.Amount,
+			&i.MeteredChargeID,
 		); err != nil {
 			return nil, err
 		}
@@ -1103,7 +1108,7 @@ func (q *Queries) ListInvoiceBalancesByTenant(ctx context.Context, arg ListInvoi
 }
 
 const listInvoiceLines = `-- name: ListInvoiceLines :many
-SELECT id, seq, organization_id, invoice_id, kind, charge_type_id, label, amount, created_at FROM invoice_line
+SELECT id, seq, organization_id, invoice_id, kind, charge_type_id, label, amount, created_at, metered_charge_id FROM invoice_line
 WHERE organization_id = $1 AND invoice_id = $2
 ORDER BY seq
 `
@@ -1132,6 +1137,7 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, arg ListInvoiceLinesPara
 			&i.Label,
 			&i.Amount,
 			&i.CreatedAt,
+			&i.MeteredChargeID,
 		); err != nil {
 			return nil, err
 		}
@@ -1322,7 +1328,7 @@ func (q *Queries) ListTenantLeaseScopes(ctx context.Context, arg ListTenantLease
 
 const lockLeaseForBilling = `-- name: LockLeaseForBilling :one
 SELECT l.id, l.tenant_id, l.unit_id, u.property_id, l.start_date, l.entered_on, l.billed_from,
-       l.term_months, l.planned_end_date, l.end_date, l.status
+       l.term_months, l.planned_end_date, l.end_date, l.status, l.collector_staff_user_id
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 WHERE l.organization_id = $1 AND l.id = $2
@@ -1335,17 +1341,18 @@ type LockLeaseForBillingParams struct {
 }
 
 type LockLeaseForBillingRow struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	UnitID         uuid.UUID
-	PropertyID     uuid.UUID
-	StartDate      time.Time
-	EnteredOn      time.Time
-	BilledFrom     time.Time
-	TermMonths     int16
-	PlannedEndDate *time.Time
-	EndDate        *time.Time
-	Status         string
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	UnitID               uuid.UUID
+	PropertyID           uuid.UUID
+	StartDate            time.Time
+	EnteredOn            time.Time
+	BilledFrom           time.Time
+	TermMonths           int16
+	PlannedEndDate       *time.Time
+	EndDate              *time.Time
+	Status               string
+	CollectorStaffUserID uuid.NullUUID
 }
 
 // Locks one lease for generation and returns what generation needs. FOR NO KEY UPDATE OF the
@@ -1367,6 +1374,7 @@ func (q *Queries) LockLeaseForBilling(ctx context.Context, arg LockLeaseForBilli
 		&i.PlannedEndDate,
 		&i.EndDate,
 		&i.Status,
+		&i.CollectorStaffUserID,
 	)
 	return i, err
 }

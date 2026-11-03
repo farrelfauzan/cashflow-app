@@ -15,6 +15,8 @@ type Line struct {
 	ChargeTypeID uuid.UUID // the charge type of a charge line; uuid.Nil for rent
 	Label        string    // Bahasa Indonesia, shown to people as is
 	Amount       int64     // rupiah, more than 0
+	// MeteredChargeID is the metered amount a charge line bills; uuid.Nil for any other line.
+	MeteredChargeID uuid.UUID
 }
 
 // Invoice line kinds, as invoice_line.kind stores them.
@@ -55,10 +57,39 @@ func InvoiceLines(p tenant.Period, termMonths int, rent int64, charges []FixedCh
 	return lines
 }
 
+// MeteredAmount is a lease's metered amount for one usage month that no invoice bills yet.
+type MeteredAmount struct {
+	ID           uuid.UUID
+	ChargeTypeID uuid.UUID
+	Name         string    // the charge type's name
+	UsageMonth   time.Time // the first day of the month
+	Amount       int64
+}
+
+// MeteredLine is the invoice line that bills a metered amount: "Listrik Oktober 2026", the
+// usage month in full, so a reading billed on a later invoice still says which month it is.
+func MeteredLine(m MeteredAmount) Line {
+	return Line{
+		Kind: LineCharge, ChargeTypeID: m.ChargeTypeID, MeteredChargeID: m.ID,
+		Label: m.Name + " " + FormatMonth(m.UsageMonth), Amount: m.Amount,
+	}
+}
+
 // indonesianMonths are the short month names used in labels.
 var indonesianMonths = [12]string{"Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"}
 
 // FormatDay writes a calendar day the way invoice labels show it: "15 Okt 2026".
 func FormatDay(d time.Time) string {
 	return fmt.Sprintf("%d %s %d", d.Day(), indonesianMonths[d.Month()-1], d.Year())
+}
+
+// indonesianMonthNames are the full month names, for a month on its own.
+var indonesianMonthNames = [12]string{
+	"Januari", "Februari", "Maret", "April", "Mei", "Juni",
+	"Juli", "Agustus", "September", "Oktober", "November", "Desember",
+}
+
+// FormatMonth writes a month the way labels show it: "Oktober 2026".
+func FormatMonth(d time.Time) string {
+	return indonesianMonthNames[d.Month()-1] + " " + fmt.Sprint(d.Year())
 }

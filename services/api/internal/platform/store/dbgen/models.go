@@ -77,15 +77,16 @@ type InvoiceBalance struct {
 }
 
 type InvoiceLine struct {
-	ID             uuid.UUID
-	Seq            int64
-	OrganizationID uuid.UUID
-	InvoiceID      uuid.UUID
-	Kind           string
-	ChargeTypeID   uuid.NullUUID
-	Label          string
-	Amount         int64
-	CreatedAt      time.Time
+	ID              uuid.UUID
+	Seq             int64
+	OrganizationID  uuid.UUID
+	InvoiceID       uuid.UUID
+	Kind            string
+	ChargeTypeID    uuid.NullUUID
+	Label           string
+	Amount          int64
+	CreatedAt       time.Time
+	MeteredChargeID uuid.NullUUID
 }
 
 type Lease struct {
@@ -116,6 +117,14 @@ type LeaseCharge struct {
 	UpdatedAt      time.Time
 }
 
+type LeaseMeteredType struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+	ChargeTypeID   uuid.UUID
+	CreatedAt      time.Time
+}
+
 type Membership struct {
 	ID                   uuid.UUID
 	OrganizationID       uuid.UUID
@@ -125,6 +134,20 @@ type Membership struct {
 	InvitationState      *string
 	InvitationLastSentAt *time.Time
 	FirstSignInAt        *time.Time
+}
+
+type MeteredCharge struct {
+	ID                    uuid.UUID
+	OrganizationID        uuid.UUID
+	LeaseID               uuid.UUID
+	ChargeTypeID          uuid.UUID
+	UsageMonth            time.Time
+	Amount                int64
+	MeterStart            *int64
+	MeterEnd              *int64
+	RecordedByStaffUserID uuid.UUID
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type Organization struct {

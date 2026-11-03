@@ -6,6 +6,7 @@
  */
 import type { Collector } from './collector';
 import type { LeaseCharge } from './leaseCharge';
+import type { LeaseMeteredType } from './leaseMeteredType';
 import type { LeaseStatus } from './leaseStatus';
 import type { TermMonths } from './termMonths';
 
@@ -35,6 +36,8 @@ export interface Lease {
   collector?: Collector;
   /** Fixed monthly extras on top of rent, by name. Always present, empty when none. From slice 2 an invoice bills each one as its monthly amount times the term's months. */
   charges: LeaseCharge[];
+  /** The metered types the lease expects an amount for every month ("dicatat dari meteran tiap bulan"), by name. Always present, empty when none. Set with setLeaseCharges. */
+  meteredChargeTypes: LeaseMeteredType[];
   createdAt: string;
   updatedAt: string;
 }

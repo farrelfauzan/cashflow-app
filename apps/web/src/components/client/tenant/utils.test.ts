@@ -72,6 +72,7 @@ const lease = (over: Partial<Lease> = {}): Lease => ({
   depositAmount: 850_000,
   status: "active",
   charges: [],
+  meteredChargeTypes: [],
   createdAt: "2026-10-28T03:00:00Z",
   updatedAt: "2026-10-28T03:00:00Z",
   ...over,

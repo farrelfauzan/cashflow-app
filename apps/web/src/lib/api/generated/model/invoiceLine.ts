@@ -12,4 +12,6 @@ export interface InvoiceLine {
   label: string;
   /** Rupiah, as snapshotted when the invoice was made. */
   amount: number;
+  /** The metered amount a charge line bills ("Listrik Oktober 2026"); missing for every other line. */
+  meteredChargeId?: string;
 }

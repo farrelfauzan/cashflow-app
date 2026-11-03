@@ -70,9 +70,14 @@ func (s *Server) setLeaseCharges(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, &tenant.InputError{Field: "charges", Message: "Daftar biaya wajib diisi. Kirim daftar kosong untuk menghapus semua biaya."})
 		return
 	}
-	in := make([]tenant.ChargeInput, len(body.Charges))
+	in := tenant.LeaseChargesInput{Charges: make([]tenant.ChargeInput, len(body.Charges))}
 	for i, c := range body.Charges {
-		in[i] = tenant.ChargeInput{ChargeTypeID: c.ChargeTypeId, Amount: c.Amount}
+		in.Charges[i] = tenant.ChargeInput{ChargeTypeID: c.ChargeTypeId, Amount: c.Amount}
+	}
+	// Left out, or null, keeps the lease's metered types; a list, even empty, replaces them.
+	if body.MeteredChargeTypeIds != nil {
+		ids := append(make([]uuid.UUID, 0, len(*body.MeteredChargeTypeIds)), *body.MeteredChargeTypeIds...)
+		in.MeteredTypes = &ids
 	}
 	l, err := s.Tenants.SetLeaseCharges(r.Context(), p, id, in)
 	if err != nil {

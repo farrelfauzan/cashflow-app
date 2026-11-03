@@ -46,6 +46,8 @@ type AccountLine struct {
 	Kind   string // rent or charge
 	Label  string
 	Amount int64
+	// MeteredChargeID is the metered amount a charge line bills; uuid.Nil for any other line.
+	MeteredChargeID uuid.UUID
 }
 
 // AccountInvoice is one invoice of a tenant with its balance, lines and corrections.
@@ -209,7 +211,7 @@ func loadAccount(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID,
 
 	lines := map[uuid.UUID][]AccountLine{}
 	for _, r := range lineRows {
-		lines[r.InvoiceID] = append(lines[r.InvoiceID], AccountLine{ID: r.ID, Kind: r.Kind, Label: r.Label, Amount: r.Amount})
+		lines[r.InvoiceID] = append(lines[r.InvoiceID], AccountLine{ID: r.ID, Kind: r.Kind, Label: r.Label, Amount: r.Amount, MeteredChargeID: r.MeteredChargeID.UUID})
 	}
 	byInvoice := map[uuid.UUID][]CorrectionRecord{}
 	byPayment := map[uuid.UUID][]CorrectionRecord{}

@@ -251,8 +251,9 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 		TermMonths:    apigen.TermMonths(l.TermMonths),
 		PeriodRent:    l.PeriodRent,
 		DepositAmount: l.DepositAmount, Status: apigen.LeaseStatus(l.Status),
-		Charges:   make([]apigen.LeaseCharge, len(l.Charges)),
-		CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
+		Charges:            make([]apigen.LeaseCharge, len(l.Charges)),
+		MeteredChargeTypes: toAPIMeteredTypes(l.MeteredChargeTypes),
+		CreatedAt:          l.CreatedAt, UpdatedAt: l.UpdatedAt,
 	}
 	for i, c := range l.Charges {
 		out.Charges[i] = apigen.LeaseCharge{ChargeTypeId: c.ChargeTypeID, Name: c.Name, Amount: c.Amount}
@@ -265,6 +266,14 @@ func toAPILease(l tenant.Lease) apigen.Lease {
 	}
 	if l.CollectorMemberID != uuid.Nil {
 		out.Collector = &apigen.Collector{MemberId: l.CollectorMemberID, Name: l.CollectorName, Active: l.CollectorActive}
+	}
+	return out
+}
+
+func toAPIMeteredTypes(ts []tenant.MeteredType) []apigen.LeaseMeteredType {
+	out := make([]apigen.LeaseMeteredType, len(ts))
+	for i, t := range ts {
+		out[i] = apigen.LeaseMeteredType{ChargeTypeId: t.ChargeTypeID, Name: t.Name}
 	}
 	return out
 }

@@ -860,6 +860,9 @@ type InvoiceLine struct {
 
 	// Label Example: Sewa 15 Okt 2026 – 14 Nov 2026
 	Label string `json:"label"`
+
+	// MeteredChargeId The metered amount a charge line bills ("Listrik Oktober 2026"); missing for every other line.
+	MeteredChargeId *openapi_types.UUID `json:"meteredChargeId,omitempty"`
 }
 
 // InvoiceLineKind defines model for InvoiceLine.Kind.
@@ -947,6 +950,9 @@ type Lease struct {
 	EnteredOn openapi_types.Date `json:"enteredOn"`
 	Id        openapi_types.UUID `json:"id"`
 
+	// MeteredChargeTypes The metered types the lease expects an amount for every month ("dicatat dari meteran tiap bulan"), by name. Always present, empty when none. Set with setLeaseCharges.
+	MeteredChargeTypes []LeaseMeteredType `json:"meteredChargeTypes"`
+
 	// PeriodRent Rent for one period of the lease's term, for display: the unit's price for that term in force today (Asia/Jakarta). Missing when none is in force. Each invoice takes the price in force on the day it is made; the lease holds no rent of its own.
 	//
 	//
@@ -998,6 +1004,9 @@ type LeaseChargeInput struct {
 type LeaseChargesInput struct {
 	// Charges The lease's whole set of fixed extras; each charge type at most once.
 	Charges []LeaseChargeInput `json:"charges"`
+
+	// MeteredChargeTypeIds The lease's whole set of expected metered types, each a metered charge type at most once. Left out, the set stays as it is; an empty list removes them all.
+	MeteredChargeTypeIds *[]openapi_types.UUID `json:"meteredChargeTypeIds,omitempty"`
 }
 
 // LeaseInput defines model for LeaseInput.
@@ -1026,6 +1035,14 @@ type LeaseInput struct {
 	// Example: 12
 	TermMonths TermMonths         `json:"termMonths"`
 	UnitId     openapi_types.UUID `json:"unitId"`
+}
+
+// LeaseMeteredType defines model for LeaseMeteredType.
+type LeaseMeteredType struct {
+	ChargeTypeId openapi_types.UUID `json:"chargeTypeId"`
+
+	// Name Example: Listrik
+	Name string `json:"name"`
 }
 
 // LeasePlannedEnd defines model for LeasePlannedEnd.
@@ -1119,10 +1136,109 @@ type MemberList struct {
 // MemberStatus A disabled member keeps their roles but can do nothing in the organization.
 type MemberStatus string
 
+// MeteredCharge defines model for MeteredCharge.
+type MeteredCharge struct {
+	// Amount Example: 123000
+	Amount int64 `json:"amount"`
+
+	// Billed The invoice whose line bills the amount.
+	Billed       *MeteredChargeBilled `json:"billed,omitempty"`
+	ChargeTypeId openapi_types.UUID   `json:"chargeTypeId"`
+
+	// ChargeTypeName Example: Listrik
+	ChargeTypeName string             `json:"chargeTypeName"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	Id             openapi_types.UUID `json:"id"`
+	LeaseId        openapi_types.UUID `json:"leaseId"`
+	MeterEnd       *int64             `json:"meterEnd,omitempty"`
+	MeterStart     *int64             `json:"meterStart,omitempty"`
+
+	// RecordedBy The member who recorded or created a row.
+	RecordedBy StaffRef `json:"recordedBy"`
+
+	// UpdatedAt When it was last saved.
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// UsageMonth The month the usage belongs to, YYYY-MM.
+	//
+	// Example: 2026-10
+	UsageMonth string `json:"usageMonth"`
+}
+
+// MeteredChargeBilled The invoice whose line bills the amount.
+type MeteredChargeBilled struct {
+	InvoiceId openapi_types.UUID `json:"invoiceId"`
+
+	// Period The invoice's period start (Tagihan November).
+	Period openapi_types.Date `json:"period"`
+}
+
+// MeteredChargeInput defines model for MeteredChargeInput.
+type MeteredChargeInput struct {
+	// Amount The rupiah amount billed for the month, typed by the member.
+	//
+	// Example: 123000
+	Amount int64 `json:"amount"`
+
+	// MeterEnd The meter reading at the end of the month; not below meterStart. Optional and only shown.
+	MeterEnd *int64 `json:"meterEnd,omitempty"`
+
+	// MeterStart The meter reading at the start of the month; optional and only shown.
+	MeterStart *int64 `json:"meterStart,omitempty"`
+}
+
+// MeteredChargeList defines model for MeteredChargeList.
+type MeteredChargeList struct {
+	Items []MeteredCharge `json:"items"`
+
+	// NextInvoice The next invoice generation will make for a lease, which bills every amount recorded before it is made: its period start (Tagihan November) and the Asia/Jakarta day it is made, 7 days before it is due, or today when that day is past.
+	NextInvoice *NextInvoice `json:"nextInvoice,omitempty"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// MissingMeterReading defines model for MissingMeterReading.
+type MissingMeterReading struct {
+	LeaseId openapi_types.UUID `json:"leaseId"`
+
+	// Missing The expected metered types with no amount for the month, by name.
+	Missing []LeaseMeteredType `json:"missing"`
+
+	// NextInvoice The next invoice generation will make for a lease, which bills every amount recorded before it is made: its period start (Tagihan November) and the Asia/Jakarta day it is made, 7 days before it is due, or today when that day is past.
+	NextInvoice  *NextInvoice       `json:"nextInvoice,omitempty"`
+	PropertyName string             `json:"propertyName"`
+	TenantId     openapi_types.UUID `json:"tenantId"`
+	TenantName   string             `json:"tenantName"`
+	UnitLabel    string             `json:"unitLabel"`
+}
+
+// MissingMeterReadingList defines model for MissingMeterReadingList.
+type MissingMeterReadingList struct {
+	Items []MissingMeterReading `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
 // MoveOut defines model for MoveOut.
 type MoveOut struct {
 	// EndDate Example: 2026-11-30
 	EndDate openapi_types.Date `json:"endDate"`
+}
+
+// NextInvoice The next invoice generation will make for a lease, which bills every amount recorded before it is made: its period start (Tagihan November) and the Asia/Jakarta day it is made, 7 days before it is due, or today when that day is past.
+type NextInvoice struct {
+	IssuedOn openapi_types.Date `json:"issuedOn"`
+	Period   openapi_types.Date `json:"period"`
 }
 
 // OldestOverdue The tenant whose unpaid debt is oldest (Tunggakan tertua), with the unit of that invoice.
@@ -1598,6 +1714,19 @@ type ListInvoicesParamsStatus string
 // ListInvoicesParamsSort defines parameters for ListInvoices.
 type ListInvoicesParamsSort string
 
+// ListLeaseMeteredChargesParams defines parameters for ListLeaseMeteredCharges.
+type ListLeaseMeteredChargesParams struct {
+	// ChargeTypeId Only this charge type. A malformed id is a 400 with field chargeTypeId.
+	ChargeTypeId *openapi_types.UUID `form:"chargeTypeId,omitempty" json:"chargeTypeId,omitempty"`
+
+	// UsageMonth Only this usage month, YYYY-MM. A bad value is a 400 with field usageMonth.
+	UsageMonth *string `form:"usageMonth,omitempty" json:"usageMonth,omitempty"`
+
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // ListMembersParams defines parameters for ListMembers.
 type ListMembersParams struct {
 	// Page The page to return, from 1. A page past the last has no items.
@@ -1620,6 +1749,17 @@ type ListMembersParamsStatus string
 
 // ListMembersParamsSort defines parameters for ListMembers.
 type ListMembersParamsSort string
+
+// ListMissingMeterReadingsParams defines parameters for ListMissingMeterReadings.
+type ListMissingMeterReadingsParams struct {
+	// Month The usage month, YYYY-MM; last month in Asia/Jakarta when empty. A bad value or a month after this one is a 400 with field month.
+	Month      *string             `form:"month,omitempty" json:"month,omitempty"`
+	PropertyId *openapi_types.UUID `form:"propertyId,omitempty" json:"propertyId,omitempty"`
+
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
 
 // ListPropertiesParams defines parameters for ListProperties.
 type ListPropertiesParams struct {
@@ -1697,6 +1837,9 @@ type UpdateLeaseJSONRequestBody = LeaseTerms
 
 // SetLeaseChargesJSONRequestBody defines body for SetLeaseCharges for application/json ContentType.
 type SetLeaseChargesJSONRequestBody = LeaseChargesInput
+
+// RecordMeteredChargeJSONRequestBody defines body for RecordMeteredCharge for application/json ContentType.
+type RecordMeteredChargeJSONRequestBody = MeteredChargeInput
 
 // MoveOutJSONRequestBody defines body for MoveOut for application/json ContentType.
 type MoveOutJSONRequestBody = MoveOut

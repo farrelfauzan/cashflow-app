@@ -393,9 +393,9 @@ func TestSeedDemo(t *testing.T) {
 
 	t.Run("a lease whose extras were changed keeps them on a rerun", func(t *testing.T) {
 		budi := find(t, tenantsA, "Budi Santoso")
-		_, err := env.Tenants.SetLeaseCharges(ctx, adminA, budi.Leases[0].ID, []tenant.ChargeInput{
+		_, err := env.Tenants.SetLeaseCharges(ctx, adminA, budi.Leases[0].ID, tenant.LeaseChargesInput{Charges: []tenant.ChargeInput{
 			{ChargeTypeID: budi.Leases[0].Charges[0].ChargeTypeID, Amount: 60_000},
-		})
+		}})
 		require.NoError(t, err)
 		_, err = demoseed.Run(ctx, deps(env), env.Clock)
 		require.NoError(t, err)
