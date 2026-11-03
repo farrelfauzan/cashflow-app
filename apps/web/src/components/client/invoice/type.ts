@@ -34,3 +34,17 @@ export type InvoiceRowView = {
   // The status chip first, then "Lewat rencana keluar" when the lease is past its planned end.
   chips: readonly InvoiceChip[];
 };
+
+// One lease in "Meteran belum dicatat", every value ready to show.
+export type MissingMeterRowView = {
+  // The key of the row.
+  leaseId: string;
+  tenantId: string;
+  tenantName: string;
+  unit: string;
+  property: string;
+  // "Listrik, Air": the types with no amount yet.
+  missing: string;
+  // "terbit 8 Nov" for the lease's next invoice, "—" when the API names none.
+  nextInvoice: string;
+};

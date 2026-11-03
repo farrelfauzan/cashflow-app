@@ -11,6 +11,7 @@ import type {
   LeaseCharge,
   LeaseChargesInput,
   LeaseInput,
+  LeaseMeteredType,
   LeaseTerms,
   TermMonths,
   Unit,
@@ -43,6 +44,8 @@ import type {
   LeaseTermsFields,
   LeaseTermsResult,
   LeaseTermsValues,
+  MeteredEntries,
+  MeteredRow,
   MoveOutFormValues,
   PlannedEndFormValues,
   PlannedEndSuggestion,
@@ -981,8 +984,11 @@ export function chargesTermHint(term: TermMonths): string | null {
   return `Biaya tetap ditagih per bulan × ${term} bulan di setiap tagihan.`;
 }
 
+// "Dari meteran": the metered types (listrik, air) as switches, with no amount.
+export const METERED_SECTION_TITLE = "Dari meteran";
 export const METERED_CHARGES_NOTE =
-  "Listrik dan air yang dicatat dari meteran tidak diatur di sini. Jumlahnya dicatat tiap bulan.";
+  "Nyalakan yang ditagih dari meteran. Jumlahnya dicatat tiap bulan lewat Catat meteran.";
+export const METERED_ROW_HINT = "Dicatat dari meteran tiap bulan";
 export const LOADING_CHARGE_TYPES_TEXT = "Memuat…";
 export const NO_FIXED_CHARGE_TYPES_TEXT = "Belum ada jenis biaya tetap.";
 export const BAD_CHARGE_AMOUNT_MESSAGE =
@@ -1020,9 +1026,58 @@ export function chargeAmountLabel(name: string): string {
   return `Jumlah ${name}`;
 }
 
-// After a metered type is added: it has no row here.
+// After a metered type is added: it is a switch under "Dari meteran", switched on.
 export function meteredChargeTypeAddedText(name: string): string {
-  return `Jenis biaya ${name} ditambahkan. Biaya dari meteran dicatat tiap bulan, jadi tidak diatur di sini.`;
+  return `Jenis biaya ${name} ditambahkan dan dinyalakan di bagian Dari meteran.`;
+}
+
+// A metered switch's field in the form: "metered.<chargeTypeId>". It focuses the switch.
+export function meteredField(chargeTypeId: string): `metered.${string}` {
+  return `metered.${chargeTypeId}`;
+}
+
+// The form's starting switches: the metered types the lease expects, on.
+export function meteredEntriesFromLease(
+  types: readonly LeaseMeteredType[],
+): MeteredEntries {
+  const entries: Record<string, boolean> = {};
+  for (const type of types) {
+    entries[type.chargeTypeId] = true;
+  }
+  return entries;
+}
+
+// One row per metered charge type of the organization, in the API's order (by name), on or off
+// by the entries. The fixed charges are the other types (chargeRows).
+export function meteredRows(
+  types: readonly ChargeType[],
+  entries: MeteredEntries,
+): MeteredRow[] {
+  return types
+    .filter((type) => type.metered)
+    .map((type) => ({
+      chargeTypeId: type.id,
+      name: type.name,
+      on: entries[type.id] === true,
+    }));
+}
+
+// The fields of the metered rows, in display order: where an API error on a switch can go.
+export function meteredFields(
+  types: readonly ChargeType[],
+): `metered.${string}`[] {
+  return meteredRows(types, {}).map((row) => meteredField(row.chargeTypeId));
+}
+
+// What "Simpan biaya tambahan" sends as meteredChargeTypeIds: the metered types switched on, in
+// display order. All off sends [], which removes them all (left out, the API would keep them).
+export function meteredChargeTypeIds(
+  types: readonly ChargeType[],
+  entries: MeteredEntries,
+): string[] {
+  return meteredRows(types, entries)
+    .filter((row) => row.on)
+    .map((row) => row.chargeTypeId);
 }
 
 // The form's starting entries: the lease's charges, checked, with their amounts.
@@ -1104,14 +1159,23 @@ export function checkLeaseCharges(
 
 // "Biaya tambahan": checkLeaseCharges on the rows of the types (`types`, the API's list) with the
 // form's entries. Each bad row's message goes under its field (chargeField), in display order.
+// The metered switches are always sent (meteredChargeTypeIds), so a lease with none on says so.
 export function leaseChargesFormSchema(
   types: readonly ChargeType[],
 ): z.ZodType<LeaseChargesInput, LeaseChargesFormValues> {
   return z
-    .object({ charges: z.custom<ChargeEntries>() })
+    .object({
+      charges: z.custom<ChargeEntries>(),
+      metered: z.custom<MeteredEntries>(),
+    })
     .transform((values, ctx) => {
       const checked = checkLeaseCharges(chargeRows(types, values.charges));
-      if (checked.ok) return checked.input;
+      if (checked.ok) {
+        return {
+          ...checked.input,
+          meteredChargeTypeIds: meteredChargeTypeIds(types, values.metered),
+        };
+      }
       for (const [chargeTypeId, message] of Object.entries(checked.errors)) {
         if (message === undefined) continue;
         ctx.addIssue({
@@ -1125,6 +1189,7 @@ export function leaseChargesFormSchema(
 }
 
 const CHARGE_API_FIELD = /^charges\[(\d+)\]\.(amount|chargeTypeId)$/;
+const METERED_API_FIELD = /^meteredChargeTypeIds\[(\d+)\]$/;
 
 // The charge type id of the row an API field names, from the rows in the order they were sent;
 // null for a field that names no row sent.
@@ -1138,9 +1203,22 @@ export function chargeRowForApiField(
   return sent[Number(match[1])] ?? null;
 }
 
+// The charge type id of the metered switch an API field names (meteredChargeTypeIds[i]), from the
+// ids in the order they were sent; null for a field that names none sent.
+export function meteredRowForApiField(
+  field: string | null,
+  sent: readonly string[],
+): string | null {
+  if (field === null) return null;
+  const match = METERED_API_FIELD.exec(field);
+  if (match === null) return null;
+  return sent[Number(match[1])] ?? null;
+}
+
 // A refused save of `input` as "Biaya tambahan" shows it: an error on charges[i] names the field
-// of the row sent at index i (chargeField), so it goes under that row; any other field is
-// dropped, so it goes to the alert. Anything that is not the API's error stays as it is.
+// of the row sent at index i (chargeField), and one on meteredChargeTypeIds[i] the switch sent at
+// index i (meteredField), so each goes under its row; any other field is dropped, so it goes to
+// the alert. Anything that is not the API's error stays as it is.
 export function chargeRowApiError(
   error: unknown,
   input: LeaseChargesInput,
@@ -1148,11 +1226,21 @@ export function chargeRowApiError(
   if (!(error instanceof ApiError)) return error;
   const sent = input.charges.map((charge) => charge.chargeTypeId);
   const row = chargeRowForApiField(error.field ?? null, sent);
+  const metered = meteredRowForApiField(
+    error.field ?? null,
+    input.meteredChargeTypeIds ?? [],
+  );
+  const field =
+    row !== null
+      ? chargeField(row)
+      : metered !== null
+        ? meteredField(metered)
+        : undefined;
   return new ApiError({
     status: error.status,
     code: error.code,
     message: error.message,
-    field: row === null ? undefined : chargeField(row),
+    field,
   });
 }
 

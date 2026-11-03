@@ -4,25 +4,36 @@ import { ApiError } from "@/lib/api/errors";
 import type {
   InvoiceListItem,
   InvoiceListSummary,
+  MissingMeterReading,
 } from "@/lib/api/generated/model";
 
 import {
   CLEAR_FILTERS,
+  ALL_MONTHS_TEXT,
   currentPeriod,
+  headerLine,
   INVOICE_SORT_OPTIONS,
   invoiceChips,
   invoiceRow,
   isFiltering,
   isForbidden,
   isLatestMonth,
+  lastMonthLabel,
+  lastMonthPeriod,
   listPeriod,
+  meterFlagTitle,
+  meterShowingText,
+  missingMeterRow,
+  missingNames,
   monthLabel,
+  nextInvoiceText,
   nextMonth,
   noInvoicesText,
   paidPercent,
   periodParam,
   previousMonth,
   readInvoiceFilters,
+  readMeterView,
   readPeriod,
   shownPeriod,
   summaryTiles,
@@ -431,5 +442,122 @@ describe("invoiceRow", () => {
       outstanding: "Rp1.000.000",
       chips: [{ label: "Sebagian", tone: "neutral" }],
     });
+  });
+});
+
+describe("readMeterView", () => {
+  it.each([
+    { query: "meter=missing", want: true },
+    { query: "period=2026-09&meter=missing", want: true },
+    { query: "", want: false },
+    { query: "meter=", want: false },
+    { query: "meter=Missing", want: false },
+    { query: "meter=all", want: false },
+    { query: "meter=1", want: false },
+  ])("reads '$query' as $want", ({ query, want }) => {
+    expect(readMeterView(params(query))).toBe(want);
+  });
+
+  it("leaves the month where it is", () => {
+    expect(readPeriod(params("period=2026-09&meter=missing"))).toBe("2026-09");
+  });
+});
+
+describe("the meter flag's texts", () => {
+  it.each([
+    { today: "2026-11-04", period: "2026-10", label: "Oktober 2026" },
+    { today: "2026-12-31", period: "2026-11", label: "November 2026" },
+    { today: "2027-01-01", period: "2026-12", label: "Desember 2026" },
+    { today: "2027-01-31", period: "2026-12", label: "Desember 2026" },
+    { today: "2027-03-10", period: "2027-02", label: "Februari 2027" },
+  ])("names last month on $today", ({ today, period, label }) => {
+    expect(lastMonthPeriod(today)).toBe(period);
+    expect(lastMonthLabel(today)).toBe(label);
+  });
+
+  it("words the bold line with last month and the API's total", () => {
+    expect(meterFlagTitle("2026-11-04", 3)).toBe(
+      "Meteran Oktober 2026 belum dicatat untuk 3 sewa",
+    );
+    expect(meterFlagTitle("2027-01-05", 12)).toBe(
+      "Meteran Desember 2026 belum dicatat untuk 12 sewa",
+    );
+  });
+
+  it("words the count under the chip", () => {
+    expect(meterShowingText(1)).toBe("Menampilkan 1 sewa");
+    expect(meterShowingText(27)).toBe("Menampilkan 27 sewa");
+  });
+});
+
+describe("missingMeterRow", () => {
+  const reading = (
+    over: Partial<MissingMeterReading> = {},
+  ): MissingMeterReading => ({
+    leaseId: "lease-1",
+    tenantId: "ten-1",
+    tenantName: "Rina Wulandari",
+    propertyName: "Kos Melati",
+    unitLabel: "Kamar 01",
+    missing: [
+      { chargeTypeId: "t-listrik", name: "Listrik" },
+      { chargeTypeId: "t-air", name: "Air" },
+    ],
+    nextInvoice: { period: "2026-11", issuedOn: "2026-11-08" },
+    ...over,
+  });
+
+  it("joins the missing names in the API's order", () => {
+    expect(missingNames(reading().missing)).toBe("Listrik, Air");
+    expect(missingNames([{ chargeTypeId: "t-air", name: "Air" }])).toBe("Air");
+  });
+
+  it("words the next invoice, or a dash when there is none", () => {
+    expect(nextInvoiceText({ period: "2026-11", issuedOn: "2026-11-08" })).toBe(
+      "terbit 8 Nov",
+    );
+    expect(nextInvoiceText({ period: "2027-01", issuedOn: "2026-12-31" })).toBe(
+      "terbit 31 Des",
+    );
+    expect(nextInvoiceText(undefined)).toBe("—");
+  });
+
+  it("makes the row from what the API sent", () => {
+    expect(missingMeterRow(reading())).toEqual({
+      leaseId: "lease-1",
+      tenantId: "ten-1",
+      tenantName: "Rina Wulandari",
+      unit: "Kamar 01",
+      property: "Kos Melati",
+      missing: "Listrik, Air",
+      nextInvoice: "terbit 8 Nov",
+    });
+    expect(
+      missingMeterRow(
+        reading({
+          missing: [{ chargeTypeId: "t-listrik", name: "Listrik" }],
+          nextInvoice: undefined,
+        }),
+      ).nextInvoice,
+    ).toBe("—");
+  });
+
+  it("reads the unit and property as the phone card does", () => {
+    expect(unitText(missingMeterRow(reading()))).toBe("Kamar 01 · Kos Melati");
+  });
+});
+
+describe("headerLine", () => {
+  it("names last month in the missing meter view, whatever the status", () => {
+    expect(headerLine(true, false, "2026-11-04")).toBe("Meteran Oktober 2026");
+    expect(headerLine(true, true, "2026-01-10")).toBe("Meteran Desember 2025");
+  });
+
+  it("says every month for overdue invoices", () => {
+    expect(headerLine(false, true, "2026-11-04")).toBe(ALL_MONTHS_TEXT);
+  });
+
+  it("leaves the stepper otherwise", () => {
+    expect(headerLine(false, false, "2026-11-04")).toBeNull();
   });
 });
