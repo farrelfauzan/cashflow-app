@@ -10,7 +10,6 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 )
 
-
 func TestMeteredLine(t *testing.T) {
 	t.Parallel()
 	id, listrik := uuid.New(), uuid.New()
