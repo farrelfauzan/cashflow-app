@@ -108,9 +108,10 @@ ORDER BY mc.usage_month, ct.name COLLATE natural_sort, mc.id
 FOR UPDATE OF mc;
 
 -- name: ListInvoicePeriodsOfLeases :many
--- The period starts that already have an invoice, for each of the given leases.
+-- The period starts that already have a regular invoice, for each of the given leases. A final
+-- invoice bills no period of the term.
 SELECT lease_id, period FROM invoice
-WHERE organization_id = @organization_id AND lease_id = ANY(@lease_ids::uuid[])
+WHERE organization_id = @organization_id AND lease_id = ANY(@lease_ids::uuid[]) AND kind = 'regular'
 ORDER BY lease_id, period;
 
 -- Missing readings (Penagihan: "meteran belum dicatat") -----------------------------------------
