@@ -400,8 +400,12 @@ export function RecordMeterPanel({
       <LeasePanelFooter
         formId={formId}
         cancelLabel={saved === null ? "Batal" : "Selesai"}
+        // Right after a save the fields are empty for the next reading (board "saved" state), so
+        // the label is "Simpan meteran" again, as the warning is hidden for that reading.
         submitLabel={
-          existing === undefined ? SAVE_NEW_LABEL : SAVE_CHANGE_LABEL
+          existing === undefined || savedHere
+            ? SAVE_NEW_LABEL
+            : SAVE_CHANGE_LABEL
         }
         saving={saving}
         wide={false}

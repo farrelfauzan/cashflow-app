@@ -160,7 +160,7 @@ async function makeLease(
     },
   );
   const property = await findOrCreateProperty(page, orgId, testInfo, {
-    base: "Meteran",
+    base: "Catat Meteran",
     kind: "kos",
   });
   const unit = await call<Unit>(
@@ -169,7 +169,7 @@ async function makeLease(
     `/orgs/${orgId}/properties/${property.id}/units`,
     201,
     {
-      label: uniqueName(testInfo, `Kamar Meter ${options.digit}`),
+      label: uniqueName(testInfo, `Kamar Catat ${options.digit}`),
       terms: [{ months: 1, price: 1_000_000 }],
     },
   );
@@ -568,9 +568,7 @@ test.describe("Admin of the whole organization", () => {
       name: `Koreksi tagihan ${invoiceMonth}`,
     });
     await expectTouchTarget(correct);
-    await expectTouchTarget(
-      panel.getByRole("button", { name: "Kembali" }),
-    );
+    await expectTouchTarget(panel.getByRole("button", { name: "Kembali" }));
     await attachViewportScreenshot(page, testInfo, "meter-locked");
 
     // "Kembali" goes back to the form, which says the month is locked; the row opens it again.
