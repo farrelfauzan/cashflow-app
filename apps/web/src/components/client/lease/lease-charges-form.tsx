@@ -25,15 +25,18 @@ import {
   chargeRowApiError,
   leaseChargesFormSchema,
   LOADING_CHARGE_TYPES_TEXT,
-  METERED_CHARGES_NOTE,
   meteredChargeTypeAddedText,
+  meteredEntriesFromLease,
+  meteredField,
+  meteredFields,
+  meteredRows,
   NO_FIXED_CHARGE_TYPES_TEXT,
   registerInOrder,
   withChargeChecked,
 } from "./utils";
 
 import { LeaseChargeRow } from "./lease-charge-row";
-import { LeaseInfoNote } from "./lease-info-note";
+import { LeaseMeteredSwitches } from "./lease-metered-switches";
 import { LeasePanelFooter } from "./lease-panel-footer";
 import { NewChargeTypeBox } from "./new-charge-type-box";
 import { useRefreshLease } from "./use-refresh-lease";
@@ -49,7 +52,9 @@ type LeaseChargesFormProps = {
 // "Biaya tambahan" (boards Sewa-Biaya.dc.html and Sewa-Biaya-Phone.dc.html): the lease's fixed
 // monthly extras, which a lease on a longer term bills times its months (said under the intro).
 // One row per non-metered charge type, loaded fresh each time the panel opens; the lease's charges
-// start checked. Saving sends the whole set, so a row left unchecked is removed. A member who may
+// start checked. Saving sends the whole set, so a row left unchecked is removed. Under them,
+// "Dari meteran" lists the metered types as switches (no amount, it is recorded every month); the
+// switched-on ids are always sent with the charges. A member who may
 // manage leases everywhere can add a charge type here.
 export function LeaseChargesForm({
   orgId,
@@ -67,8 +72,11 @@ export function LeaseChargesForm({
   const chargeTypes = types.data?.chargeTypes ?? [];
   const { form, showApiError, alert } = useApiForm({
     schema: leaseChargesFormSchema(chargeTypes),
-    defaultValues: { charges: chargeEntriesFromLease(lease.charges) },
-    apiFields: chargeFields(chargeTypes),
+    defaultValues: {
+      charges: chargeEntriesFromLease(lease.charges),
+      metered: meteredEntriesFromLease(lease.meteredChargeTypes),
+    },
+    apiFields: [...chargeFields(chargeTypes), ...meteredFields(chargeTypes)],
   });
   const [boxOpen, setBoxOpen] = useState(false);
   const [meteredAdded, setMeteredAdded] = useState<string | null>(null);
@@ -80,13 +88,19 @@ export function LeaseChargesForm({
   const saving = save.isPending;
 
   const rows = chargeRows(chargeTypes, {});
+  const meteredTypeRows = meteredRows(chargeTypes, {});
 
-  // A type just added is checked and its amount focused. The list of types is already loaded
-  // again, so rendering now shows its row, and its amount can take the focus.
+  // A type just added is checked and its amount focused; a metered one is switched on and its
+  // switch focused. The list of types is already loaded again, so rendering now shows its row.
   function handleAdded(type: ChargeType) {
     if (type.metered) {
-      setBoxOpen(false);
-      setMeteredAdded(meteredChargeTypeAddedText(type.name));
+      const switchName = meteredField(type.id);
+      flushSync(() => {
+        setBoxOpen(false);
+        setMeteredAdded(meteredChargeTypeAddedText(type.name));
+        form.setValue(switchName, true);
+      });
+      form.setFocus(switchName);
       return;
     }
     const name = chargeField(type.id);
@@ -114,7 +128,10 @@ export function LeaseChargesForm({
 
   // A failed check focuses the first bad row on screen (registerInOrder).
   function submit(event: FormEvent<HTMLFormElement>) {
-    registerInOrder(form, chargeFields(chargeTypes));
+    registerInOrder(form, [
+      ...chargeFields(chargeTypes),
+      ...meteredFields(chargeTypes),
+    ]);
     return check(event);
   }
 
@@ -163,7 +180,13 @@ export function LeaseChargesForm({
         </p>
         {termHint !== null && <p className={FIELD_HINT_CLASS}>{termHint}</p>}
         {list}
-        <LeaseInfoNote text={METERED_CHARGES_NOTE} />
+        {types.data !== undefined && (
+          <LeaseMeteredSwitches
+            form={form}
+            rows={meteredTypeRows}
+            disabled={saving}
+          />
+        )}
         {meteredAdded !== null && (
           <p
             role="status"

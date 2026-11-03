@@ -32,6 +32,8 @@ import {
   isLatestMonth,
   listPeriod,
   LOADING_TEXT,
+  METER_MISSING,
+  METER_PARAM,
   monthLabel,
   nextMonth,
   noInvoicesText,
@@ -39,6 +41,8 @@ import {
   periodParam,
   previousMonth,
   readInvoiceFilters,
+  readMeterView,
+  headerLine,
   shownPeriod,
   summaryTiles,
 } from "./utils";
@@ -49,6 +53,8 @@ import { InvoiceTiles } from "./invoice-tiles";
 import { InvoicesEmpty } from "./invoices-empty";
 import { InvoicesHeader } from "./invoices-header";
 import { InvoicesNoResults } from "./invoices-no-results";
+import { MeterFlag } from "./meter-flag";
+import { MeterMissingView } from "./meter-missing-view";
 
 type InvoicesViewProps = {
   orgId: string;
@@ -57,11 +63,14 @@ type InvoicesViewProps = {
 // Penagihan: the month's invoices, one page at a time, with the three tiles of the whole month
 // above them. The month, page, size, search, filters and sort live in the URL and the API applies
 // them. Which controls show (the name's link, the property filter) comes from the member's
-// capabilities (getOrgMe), never from a role name.
+// capabilities (getOrgMe), never from a role name. For a member who may read charges, a box under
+// the header says when last month's meter amounts are missing, and "Tampilkan" (?meter=missing)
+// swaps the invoices for the list of those leases.
 export function InvoicesView({ orgId }: InvoicesViewProps) {
   const ability = useAbility<AppAbility>();
   const canRead = ability.can("read", "invoice");
   const canReadTenants = ability.can("read", "tenant");
+  const canReadCharges = ability.can("read", "charge");
 
   const url = useListUrl();
   const page = readPage(url.searchParams);
@@ -69,6 +78,9 @@ export function InvoicesView({ orgId }: InvoicesViewProps) {
   const search = readSearch(url.searchParams);
   const filters = readInvoiceFilters(url.searchParams);
   const sort = readSort(url.searchParams, INVOICE_SORT_OPTIONS);
+  // A different view, not a filter: the month stays as it is. Only for a member who may read the
+  // missing readings; for anyone else the param is ignored.
+  const meterView = readMeterView(url.searchParams) && canReadCharges;
 
   // "Today" in Jakarta, read once when the screen opens; this month comes from it.
   const [today] = useState(() => jakartaToday(new Date()));
@@ -87,9 +99,19 @@ export function InvoicesView({ orgId }: InvoicesViewProps) {
       page,
       pageSize,
     },
-    { query: { enabled: canRead, placeholderData: keepPreviousData } },
+    {
+      query: {
+        enabled: canRead && !meterView,
+        placeholderData: keepPreviousData,
+      },
+    },
   );
-  useLastPageRedirect(url, page, pageSize, invoices.data);
+  useLastPageRedirect(
+    url,
+    page,
+    pageSize,
+    meterView ? undefined : invoices.data,
+  );
 
   // The property filter's choices. Hidden when the member cannot read properties or they fail.
   const canReadProperties = ability.can("read", "property");
@@ -123,7 +145,7 @@ export function InvoicesView({ orgId }: InvoicesViewProps) {
     <div className="flex flex-col gap-4 md:gap-[22px]">
       <InvoicesHeader
         monthLabel={monthLabel(period)}
-        allMonths={allMonths}
+        fixedLine={headerLine(meterView, allMonths, today)}
         canGoNext={!isLatestMonth(period, thisMonth)}
         onPrevious={() =>
           url.change({
@@ -137,60 +159,71 @@ export function InvoicesView({ orgId }: InvoicesViewProps) {
         }
       />
 
-      {forbidden ? (
-        <p role="alert" className="text-base">
-          {FORBIDDEN_TEXT}
-        </p>
-      ) : invoices.error !== null ? (
-        <TenantLoadError
-          message={toFormError(invoices.error, []).message}
-          onRetry={() => void invoices.refetch()}
-        />
-      ) : invoices.data === undefined ? (
-        <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>
+      {meterView ? (
+        <MeterMissingView orgId={orgId} />
       ) : (
         <>
-          <InvoiceTiles
-            tiles={summaryTiles(invoices.data.summary, period, thisMonth)}
+          <MeterFlag
+            orgId={orgId}
+            today={today}
+            onShow={() => url.change({ [METER_PARAM]: METER_MISSING })}
           />
-          {empty ? (
-            <InvoicesEmpty text={noInvoicesText(period, thisMonth)} />
+          {forbidden ? (
+            <p role="alert" className="text-base">
+              {FORBIDDEN_TEXT}
+            </p>
+          ) : invoices.error !== null ? (
+            <TenantLoadError
+              message={toFormError(invoices.error, []).message}
+              onRetry={() => void invoices.refetch()}
+            />
+          ) : invoices.data === undefined ? (
+            <p className="text-base text-muted-foreground">{LOADING_TEXT}</p>
           ) : (
             <>
-              <InvoiceFilters
-                search={search}
-                filters={filters}
-                sort={sort}
-                properties={propertyOptions}
-                onChange={url.change}
+              <InvoiceTiles
+                tiles={summaryTiles(invoices.data.summary, period, thisMonth)}
               />
-              <div
-                aria-busy={invoices.isPlaceholderData}
-                className="flex flex-col gap-4 aria-busy:opacity-60"
-              >
-                {invoices.data.total === 0 ? (
-                  <InvoicesNoResults
-                    onReset={() => url.change(CLEAR_FILTERS)}
+              {empty ? (
+                <InvoicesEmpty text={noInvoicesText(period, thisMonth)} />
+              ) : (
+                <>
+                  <InvoiceFilters
+                    search={search}
+                    filters={filters}
+                    sort={sort}
+                    properties={propertyOptions}
+                    onChange={url.change}
                   />
-                ) : (
-                  <>
-                    <InvoiceList
-                      orgId={orgId}
-                      rows={rows}
-                      canReadTenants={canReadTenants}
-                    />
-                    <ListPagination
-                      page={page}
-                      pageSize={pageSize}
-                      total={invoices.data.total}
-                      hrefFor={url.hrefFor}
-                      onPageSizeChange={(size) =>
-                        url.change({ [PAGE_SIZE_PARAM]: size })
-                      }
-                    />
-                  </>
-                )}
-              </div>
+                  <div
+                    aria-busy={invoices.isPlaceholderData}
+                    className="flex flex-col gap-4 aria-busy:opacity-60"
+                  >
+                    {invoices.data.total === 0 ? (
+                      <InvoicesNoResults
+                        onReset={() => url.change(CLEAR_FILTERS)}
+                      />
+                    ) : (
+                      <>
+                        <InvoiceList
+                          orgId={orgId}
+                          rows={rows}
+                          canReadTenants={canReadTenants}
+                        />
+                        <ListPagination
+                          page={page}
+                          pageSize={pageSize}
+                          total={invoices.data.total}
+                          hrefFor={url.hrefFor}
+                          onPageSizeChange={(size) =>
+                            url.change({ [PAGE_SIZE_PARAM]: size })
+                          }
+                        />
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </>
