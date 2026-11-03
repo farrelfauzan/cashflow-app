@@ -1,5 +1,6 @@
 "use client";
 
+import { METER_PANEL_TITLE } from "@/components/client/meter/utils";
 import { Button } from "@/components/ui/button";
 import type { LeaseActions, LeasePanelKind, LeaseView } from "./type";
 import {
@@ -17,6 +18,8 @@ type LeaseCardProps = {
   // The buttons that change the lease; null shows none (an ended lease, or no lease:manage).
   actions: LeaseActions | null;
   onAction: (kind: LeasePanelKind) => void;
+  // "Catat meteran" (charge:record, on an active lease that expects a metered type); null hides it.
+  onRecordMeter: (() => void) | null;
 };
 
 // One lease of the tenant (boards Penyewa-Sewa.dc.html and Penyewa-Sewa-Phone.dc.html): the unit
@@ -24,8 +27,14 @@ type LeaseCardProps = {
 // lease:manage gets "Ubah sewa" (in the header on iPad, above the card on the phone; an outline
 // button, since the page's one primary action is "Catat pembayaran") and a footer
 // with "Biaya tambahan", "Rencana keluar" and "Catat pindah keluar", or "Batalkan sewa" for a
-// booking.
-export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
+// booking. "Catat meteran" opens first in that footer, also an outline button, for a member who may
+// record meter amounts, on a lease that expects them.
+export function LeaseCard({
+  lease,
+  actions,
+  onAction,
+  onRecordMeter,
+}: LeaseCardProps) {
   return (
     <>
       {actions !== null && (
@@ -110,15 +119,25 @@ export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
           )}
         </div>
 
-        <LeaseCharges charges={lease.charges} />
+        <LeaseCharges charges={lease.charges} metered={lease.metered} />
 
         <p className="pt-2 text-sm text-muted-foreground md:pt-0 md:text-base">
           {lease.entered}
         </p>
 
-        {actions !== null && (
+        {(actions !== null || onRecordMeter !== null) && (
           <div className="mt-3 flex flex-col gap-2.5 border-t pt-4 md:mt-0 md:flex-row">
-            {leaseFooterKinds(actions).map((kind) => (
+            {onRecordMeter !== null && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onRecordMeter}
+                className={LEASE_ACTION_CLASS}
+              >
+                {METER_PANEL_TITLE}
+              </Button>
+            )}
+            {(actions === null ? [] : leaseFooterKinds(actions)).map((kind) => (
               <Button
                 key={kind}
                 type="button"

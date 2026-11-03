@@ -106,3 +106,10 @@ export type CorrectionDialogView = {
   // What it bills or counts now (billed or net), formatted: "Rp1.500.000".
   current: string;
 };
+
+// A request from outside the section to open "Koreksi nominal" for one invoice (from "Catat
+// meteran"'s locked view). Each request has its own id, so asking twice opens the dialog twice.
+export type CorrectionRequest = {
+  id: number;
+  invoiceId: string;
+};
