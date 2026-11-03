@@ -10,7 +10,6 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 )
 
-func i64p(n int64) *int64 { return &n }
 
 func TestMeteredLine(t *testing.T) {
 	t.Parallel()
@@ -52,16 +51,16 @@ func TestValidMetered(t *testing.T) {
 		field string
 	}{
 		{"an amount alone", billing.MeteredInput{Amount: 123_000}, ""},
-		{"with both meter numbers", billing.MeteredInput{Amount: 123_000, MeterStart: i64p(1200), MeterEnd: i64p(1350)}, ""},
-		{"the same meter number twice", billing.MeteredInput{Amount: 1, MeterStart: i64p(0), MeterEnd: i64p(0)}, ""},
-		{"only the end number", billing.MeteredInput{Amount: 1, MeterEnd: i64p(5)}, ""},
+		{"with both meter numbers", billing.MeteredInput{Amount: 123_000, MeterStart: i64(1200), MeterEnd: i64(1350)}, ""},
+		{"the same meter number twice", billing.MeteredInput{Amount: 1, MeterStart: i64(0), MeterEnd: i64(0)}, ""},
+		{"only the end number", billing.MeteredInput{Amount: 1, MeterEnd: i64(5)}, ""},
 		{"the largest amount", billing.MeteredInput{Amount: billing.MaxAmount}, ""},
 		{"zero", billing.MeteredInput{Amount: 0}, "amount"},
 		{"negative", billing.MeteredInput{Amount: -1}, "amount"},
 		{"above the largest amount", billing.MeteredInput{Amount: billing.MaxAmount + 1}, "amount"},
-		{"a negative start", billing.MeteredInput{Amount: 1, MeterStart: i64p(-1)}, "meterStart"},
-		{"a negative end", billing.MeteredInput{Amount: 1, MeterEnd: i64p(-1)}, "meterEnd"},
-		{"the end before the start", billing.MeteredInput{Amount: 1, MeterStart: i64p(1350), MeterEnd: i64p(1200)}, "meterEnd"},
+		{"a negative start", billing.MeteredInput{Amount: 1, MeterStart: i64(-1)}, "meterStart"},
+		{"a negative end", billing.MeteredInput{Amount: 1, MeterEnd: i64(-1)}, "meterEnd"},
+		{"the end before the start", billing.MeteredInput{Amount: 1, MeterStart: i64(1350), MeterEnd: i64(1200)}, "meterEnd"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
