@@ -860,12 +860,16 @@ paths:
     put:
       tags: [tenants]
       operationId: setLeaseCharges
-      summary: Replace the fixed extra charges of an active lease (needs lease:manage; audited)
+      summary: Replace the fixed extra charges of an active lease, and its expected metered types (needs lease:manage; audited)
       description: >
         Replaces the whole set at once: charge types left out are removed, and an empty list
         removes every extra. Each charge type appears at most once, must belong to the
         organization and must not be metered (metered amounts are recorded per month instead).
         Like a rent change, the new amounts apply from the next invoice.
+        meteredChargeTypeIds, when sent, replaces the metered types the lease expects an amount
+        for every month (each metered, at most once); left out, they stay as they are. They only
+        decide which leases listMissingMeterReadings flags: amounts already recorded are billed
+        whatever the set.
       requestBody:
         required: true
         content:
@@ -878,7 +882,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Lease" }
         "400":
-          description: "Bad input (code invalid_input, field such as charges[1].chargeTypeId or charges[0].amount)"
+          description: "Bad input (code invalid_input, field such as charges[1].chargeTypeId, charges[0].amount or meteredChargeTypeIds[0])"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -890,6 +894,133 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/leases/{leaseId}/metered-charges:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/LeaseId"
+    get:
+      tags: [money]
+      operationId: listLeaseMeteredCharges
+      summary: A lease's metered amounts, newest month first (needs charge:read on the lease)
+      description: >
+        One page of the lease's metered amounts (listrik, air), the newest usage month first,
+        then by charge type name. Each says whether an invoice line bills it, and which invoice.
+        nextInvoice is the invoice an amount recorded now would go on and the Asia/Jakarta day it
+        is made ("Tagihan November 2026, terbit 21 Nov"); it is missing when no further invoice
+        will be made (the lease has ended, or its planned end date is reached). Ended leases are
+        readable. A member limited to some properties, or to their own tenants, may read only
+        those leases.
+      parameters:
+        - name: chargeTypeId
+          in: query
+          description: Only this charge type. A malformed id is a 400 with field chargeTypeId.
+          schema: { type: string, format: uuid }
+        - name: usageMonth
+          in: query
+          description: Only this usage month, YYYY-MM. A bad value is a 400 with field usageMonth.
+          schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-10" }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeteredChargeList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/leases/{leaseId}/metered-charges/{chargeTypeId}/{usageMonth}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/LeaseId"
+      - name: chargeTypeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: usageMonth
+        in: path
+        required: true
+        description: The month the usage belongs to, YYYY-MM.
+        schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-10" }
+    put:
+      tags: [money]
+      operationId: recordMeteredCharge
+      summary: Record or change one month's metered amount of an active lease (needs charge:record on the lease; audited)
+      description: >
+        "Catat meteran". Saves the rupiah amount of a metered charge type (listrik, air) for one
+        usage month; the meter numbers are optional and only shown. The amount is billed once, on
+        the next invoice generated after it is saved ("Listrik Oktober 2026" on the November
+        invoice); a missing amount never delays an invoice. Saving the same month and type again
+        replaces the amount while no invoice bills it; once one does it is locked (409
+        metered_charge_billed) and a fix is a correction on that invoice. The usage month may not
+        be before the month the lease started or after this month (Asia/Jakarta). Admins may
+        record for every lease, karyawan only for the tenants they collect from.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeteredChargeInput" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeteredCharge" }
+        "400":
+          description: "Bad input (code invalid_input, field usageMonth, chargeTypeId, amount, meterStart or meterEnd)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: >
+            The month's amount is already on an invoice (code metered_charge_billed), or the
+            lease has ended (code lease_ended).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/metered-charges/missing:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [money]
+      operationId: listMissingMeterReadings
+      summary: Active leases with a metered amount not recorded for a month, "meteran belum dicatat" (needs charge:read)
+      description: >
+        One page of the active leases, started by the month's last day, that expect a metered
+        type (meteredChargeTypes on the lease) with no amount for that usage month, by tenant
+        name, then unit. Each lists the missing types and the invoice an amount recorded now would
+        go on. A member limited to some properties, or to their own tenants, sees only those
+        leases.
+      parameters:
+        - name: month
+          in: query
+          description: >
+            The usage month, YYYY-MM; last month in Asia/Jakarta when empty. A bad value or a
+            month after this one is a 400 with field month.
+          schema: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-10" }
+        - name: propertyId
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissingMeterReadingList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /orgs/{orgId}/charge-types:
     parameters:
@@ -1756,7 +1887,7 @@ components:
 
     Lease:
       type: object
-      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, enteredOn, billedFrom, termMonths, depositAmount, status, charges, createdAt, updatedAt]
+      required: [id, tenantId, unitId, unitLabel, propertyId, propertyName, startDate, enteredOn, billedFrom, termMonths, depositAmount, status, charges, meteredChargeTypes, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
@@ -1809,8 +1940,21 @@ components:
             Fixed monthly extras on top of rent, by name. Always present, empty when none. From
             slice 2 an invoice bills each one as its monthly amount times the term's months.
           items: { $ref: "#/components/schemas/LeaseCharge" }
+        meteredChargeTypes:
+          type: array
+          description: >
+            The metered types the lease expects an amount for every month ("dicatat dari meteran
+            tiap bulan"), by name. Always present, empty when none. Set with setLeaseCharges.
+          items: { $ref: "#/components/schemas/LeaseMeteredType" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    LeaseMeteredType:
+      type: object
+      required: [chargeTypeId, name]
+      properties:
+        chargeTypeId: { type: string, format: uuid }
+        name: { type: string, example: Listrik }
 
     LeaseCharge:
       type: object
@@ -1836,6 +1980,13 @@ components:
           maxItems: 20
           description: The lease's whole set of fixed extras; each charge type at most once.
           items: { $ref: "#/components/schemas/LeaseChargeInput" }
+        meteredChargeTypeIds:
+          type: array
+          maxItems: 20
+          description: >
+            The lease's whole set of expected metered types, each a metered charge type at most
+            once. Left out, the set stays as it is; an empty list removes them all.
+          items: { type: string, format: uuid }
 
     ChargeTypeInput:
       type: object
@@ -2077,6 +2228,10 @@ components:
           enum: [rent, charge]
         label: { type: string, example: "Sewa 15 Okt 2026 – 14 Nov 2026" }
         amount: { type: integer, format: int64, description: "Rupiah, as snapshotted when the invoice was made." }
+        meteredChargeId:
+          type: string
+          format: uuid
+          description: The metered amount a charge line bills ("Listrik Oktober 2026"); missing for every other line.
 
     Correction:
       type: object
@@ -2405,3 +2560,98 @@ components:
               type: array
               items: { $ref: "#/components/schemas/InvoiceListItem" }
             summary: { $ref: "#/components/schemas/InvoiceListSummary" }
+
+    MeteredChargeInput:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000000000
+          description: The rupiah amount billed for the month, typed by the member.
+          example: 123000
+        meterStart:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The meter reading at the start of the month; optional and only shown.
+        meterEnd:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The meter reading at the end of the month; not below meterStart. Optional and only shown.
+
+    MeteredChargeBilled:
+      type: object
+      required: [invoiceId, period]
+      description: The invoice whose line bills the amount.
+      properties:
+        invoiceId: { type: string, format: uuid }
+        period: { type: string, format: date, description: "The invoice's period start (Tagihan November)." }
+
+    MeteredCharge:
+      type: object
+      required: [id, leaseId, chargeTypeId, chargeTypeName, usageMonth, amount, recordedBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        leaseId: { type: string, format: uuid }
+        chargeTypeId: { type: string, format: uuid }
+        chargeTypeName: { type: string, example: Listrik }
+        usageMonth: { type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", example: "2026-10", description: "The month the usage belongs to, YYYY-MM." }
+        amount: { type: integer, format: int64, example: 123000 }
+        meterStart: { type: integer, format: int64 }
+        meterEnd: { type: integer, format: int64 }
+        recordedBy: { $ref: "#/components/schemas/StaffRef" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time, description: When it was last saved. }
+        billed:
+          $ref: "#/components/schemas/MeteredChargeBilled"
+
+    NextInvoice:
+      type: object
+      required: [period, issuedOn]
+      description: >
+        The next invoice generation will make for a lease, which bills every amount recorded
+        before it is made: its period start (Tagihan November) and the Asia/Jakarta day it is made,
+        7 days before it is due, or today when that day is past.
+      properties:
+        period: { type: string, format: date }
+        issuedOn: { type: string, format: date }
+
+    MeteredChargeList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/MeteredCharge" }
+            nextInvoice: { $ref: "#/components/schemas/NextInvoice" }
+
+    MissingMeterReading:
+      type: object
+      required: [leaseId, tenantId, tenantName, propertyName, unitLabel, missing]
+      properties:
+        leaseId: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string }
+        propertyName: { type: string }
+        unitLabel: { type: string }
+        missing:
+          type: array
+          description: The expected metered types with no amount for the month, by name.
+          items: { $ref: "#/components/schemas/LeaseMeteredType" }
+        nextInvoice: { $ref: "#/components/schemas/NextInvoice" }
+
+    MissingMeterReadingList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/MissingMeterReading" }

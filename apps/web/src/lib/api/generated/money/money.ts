@@ -32,6 +32,12 @@ import type {
   GetDashboardParams,
   InvoiceList,
   ListInvoicesParams,
+  ListLeaseMeteredChargesParams,
+  ListMissingMeterReadingsParams,
+  MeteredCharge,
+  MeteredChargeInput,
+  MeteredChargeList,
+  MissingMeterReadingList,
   PaymentInput,
   PaymentResult,
   TenantAccount
@@ -60,6 +66,281 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+/**
+ * One page of the lease's metered amounts (listrik, air), the newest usage month first, then by charge type name. Each says whether an invoice line bills it, and which invoice. nextInvoice is the invoice an amount recorded now would go on and the Asia/Jakarta day it is made ("Tagihan November 2026, terbit 21 Nov"); it is missing when no further invoice will be made (the lease has ended, or its planned end date is reached). Ended leases are readable. A member limited to some properties, or to their own tenants, may read only those leases.
+ * @summary A lease's metered amounts, newest month first (needs charge:read on the lease)
+ */
+export const listLeaseMeteredCharges = (
+    orgId: string,
+    leaseId: string,
+    params?: ListLeaseMeteredChargesParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<MeteredChargeList>(
+      {url: `/orgs/${orgId}/leases/${leaseId}/metered-charges`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListLeaseMeteredChargesQueryKey = (orgId: string,
+    leaseId: string,
+    params?: ListLeaseMeteredChargesParams,) =>
+    apiQueryKey({ orgId,leaseId,params }, { url: `/orgs/${orgId}/leases/${leaseId}/metered-charges` });
+
+
+export const useListLeaseMeteredChargesQueryOptions = <TData = Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    leaseId: string,
+    params?: ListLeaseMeteredChargesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,leaseId,params }, { url: `/orgs/${orgId}/leases/${leaseId}/metered-charges`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeaseMeteredCharges>>> = ({ signal }) => listLeaseMeteredCharges(orgId,leaseId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && leaseId !== null && leaseId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListLeaseMeteredChargesQueryResult = NonNullable<Awaited<ReturnType<typeof listLeaseMeteredCharges>>>
+export type ListLeaseMeteredChargesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListLeaseMeteredCharges<TData = Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    leaseId: string,
+    params: undefined |  ListLeaseMeteredChargesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listLeaseMeteredCharges>>,
+          TError,
+          Awaited<ReturnType<typeof listLeaseMeteredCharges>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListLeaseMeteredCharges<TData = Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    leaseId: string,
+    params?: ListLeaseMeteredChargesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listLeaseMeteredCharges>>,
+          TError,
+          Awaited<ReturnType<typeof listLeaseMeteredCharges>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListLeaseMeteredCharges<TData = Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    leaseId: string,
+    params?: ListLeaseMeteredChargesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary A lease's metered amounts, newest month first (needs charge:read on the lease)
+ */
+
+export function useListLeaseMeteredCharges<TData = Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    leaseId: string,
+    params?: ListLeaseMeteredChargesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listLeaseMeteredCharges>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListLeaseMeteredChargesQueryOptions(orgId,leaseId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * "Catat meteran". Saves the rupiah amount of a metered charge type (listrik, air) for one usage month; the meter numbers are optional and only shown. The amount is billed once, on the next invoice generated after it is saved ("Listrik Oktober 2026" on the November invoice); a missing amount never delays an invoice. Saving the same month and type again replaces the amount while no invoice bills it; once one does it is locked (409 metered_charge_billed) and a fix is a correction on that invoice. The usage month may not be before the month the lease started or after this month (Asia/Jakarta). Admins may record for every lease, karyawan only for the tenants they collect from.
+ * @summary Record or change one month's metered amount of an active lease (needs charge:record on the lease; audited)
+ */
+export const recordMeteredCharge = (
+    orgId: string,
+    leaseId: string,
+    chargeTypeId: string,
+    usageMonth: string,
+    meteredChargeInput: BodyType<MeteredChargeInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<MeteredCharge>(
+      {url: `/orgs/${orgId}/leases/${leaseId}/metered-charges/${chargeTypeId}/${usageMonth}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: meteredChargeInput, signal
+    },
+      options);
+    }
+
+
+
+
+export const getRecordMeteredChargeMutationKey = () => ['recordMeteredCharge'] as const;
+
+export const getRecordMeteredChargeMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordMeteredCharge>>, TError,RecordMeteredChargeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordMeteredCharge>>, TError,RecordMeteredChargeMutationVariables, TContext> => {
+
+const mutationKey = getRecordMeteredChargeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordMeteredCharge>>, RecordMeteredChargeMutationVariables> = (props) => {
+          const {orgId,leaseId,chargeTypeId,usageMonth,data} = props ?? {};
+
+          return  recordMeteredCharge(orgId,leaseId,chargeTypeId,usageMonth,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordMeteredChargeMutationResult = NonNullable<Awaited<ReturnType<typeof recordMeteredCharge>>>
+    export type RecordMeteredChargeMutationBody = BodyType<MeteredChargeInput>
+    export type RecordMeteredChargeMutationError = ErrorType<Error | ErrorResponse>
+    export type RecordMeteredChargeMutationVariables = {orgId: string;leaseId: string;chargeTypeId: string;usageMonth: string;data: BodyType<MeteredChargeInput>}
+
+    /**
+ * @summary Record or change one month's metered amount of an active lease (needs charge:record on the lease; audited)
+ */
+export const useRecordMeteredCharge = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordMeteredCharge>>, TError,RecordMeteredChargeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof recordMeteredCharge>>,
+        TError,
+        RecordMeteredChargeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRecordMeteredChargeMutationOptions(options), queryClient);
+    }
+    /**
+ * One page of the active leases, started by the month's last day, that expect a metered type (meteredChargeTypes on the lease) with no amount for that usage month, by tenant name, then unit. Each lists the missing types and the invoice an amount recorded now would go on. A member limited to some properties, or to their own tenants, sees only those leases.
+ * @summary Active leases with a metered amount not recorded for a month, "meteran belum dicatat" (needs charge:read)
+ */
+export const listMissingMeterReadings = (
+    orgId: string,
+    params?: ListMissingMeterReadingsParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<MissingMeterReadingList>(
+      {url: `/orgs/${orgId}/metered-charges/missing`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListMissingMeterReadingsQueryKey = (orgId: string,
+    params?: ListMissingMeterReadingsParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/metered-charges/missing` });
+
+
+export const useListMissingMeterReadingsQueryOptions = <TData = Awaited<ReturnType<typeof listMissingMeterReadings>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListMissingMeterReadingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMissingMeterReadings>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/metered-charges/missing`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMissingMeterReadings>>> = ({ signal }) => listMissingMeterReadings(orgId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMissingMeterReadings>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMissingMeterReadingsQueryResult = NonNullable<Awaited<ReturnType<typeof listMissingMeterReadings>>>
+export type ListMissingMeterReadingsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListMissingMeterReadings<TData = Awaited<ReturnType<typeof listMissingMeterReadings>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params: undefined |  ListMissingMeterReadingsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMissingMeterReadings>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMissingMeterReadings>>,
+          TError,
+          Awaited<ReturnType<typeof listMissingMeterReadings>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMissingMeterReadings<TData = Awaited<ReturnType<typeof listMissingMeterReadings>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListMissingMeterReadingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMissingMeterReadings>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMissingMeterReadings>>,
+          TError,
+          Awaited<ReturnType<typeof listMissingMeterReadings>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMissingMeterReadings<TData = Awaited<ReturnType<typeof listMissingMeterReadings>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListMissingMeterReadingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMissingMeterReadings>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Active leases with a metered amount not recorded for a month, "meteran belum dicatat" (needs charge:read)
+ */
+
+export function useListMissingMeterReadings<TData = Awaited<ReturnType<typeof listMissingMeterReadings>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListMissingMeterReadingsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMissingMeterReadings>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListMissingMeterReadingsQueryOptions(orgId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
 
 /**
  * Everything the tenant was billed and paid, across all their leases, with the totals the Detail penyewa page shows: what they still owe, the due date of the oldest unpaid invoice and their credit. Every figure comes from the server; the page computes none. A member limited to some properties needs both reads through every lease the tenant has or had, since the totals span all of them; otherwise 403. Invoices and payments are bounded per tenant (about one invoice per term), so they are plain arrays, oldest first.
