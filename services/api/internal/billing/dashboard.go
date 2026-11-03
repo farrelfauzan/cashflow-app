@@ -256,7 +256,9 @@ func (s *Service) visibleLeases(ctx context.Context, tx pgx.Tx, q *dbgen.Queries
 	if err != nil {
 		return visible{}, fmt.Errorf("listing lease scopes: %w", err)
 	}
-	out := visible{leaseIDs: []uuid.UUID{}, orgWide: all}
+	// A record with no lease belongs to no property, so the bare check decides it, as in the
+	// tenant list. all can be false under an Allow on everything with a Deny on one property.
+	out := visible{leaseIDs: []uuid.UUID{}, orgWide: all || authz.Allowed(p, bare)}
 	for _, l := range scopes {
 		via := bare
 		via.Resource.PropertyID = l.PropertyID

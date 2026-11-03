@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
@@ -443,6 +445,43 @@ func TestDashboardAndInvoiceList(t *testing.T) {
 		mine := allInvoices(t, env, other.admin, nov)
 		require.Equal(t, []string{"Lina Marlina"}, tenantNames(mine))
 	})
+}
+
+// TestDashboardLeaseLessCorrectionUnderPropertyDeny: under an Allow on everything with a Deny on
+// one property, a correction on a payment of a tenant with no lease is shown, as the tenant list
+// shows that tenant, while one in the denied property stays hidden.
+func TestDashboardLeaseLessCorrectionUnderPropertyDeny(t *testing.T) {
+	env := testenv.New(t)
+	ctx := context.Background()
+	setNow(env, 2026, 11, 1, 9, 0)
+	w := newWorld(t, env, "0812964")
+	gita := w.rentIn(t, w.kos, "Kamar 1", "Gita Permata", day(2026, 11, 1), 700_000)
+	w.generate(t)
+	paidGita := w.record(t, cash(gita.renter, 700_000, day(2026, 11, 1)))
+	w.correct(t, billing.CorrectionInput{RequestID: uuid.New(), PaymentID: paidGita.Payment.ID, AmountDelta: i64(-20_000), Reason: "uang kembalian"})
+
+	hadi, err := env.Tenants.Create(ctx, w.admin, tenant.Input{Name: "Hadi Susanto", Phone: "0812-9640-5001"})
+	require.NoError(t, err)
+	w.mustTx(t, func(ctx context.Context, _ pgx.Tx, q *dbgen.Queries) error {
+		pay, err := w.insertPayment(ctx, q, renter{tenantID: hadi.ID}, 500_000, day(2026, 11, 1))
+		if err != nil {
+			return err
+		}
+		return w.insertCorrection(ctx, q, uuid.Nil, pay, -50_000, "titipan dikembalikan")
+	})
+
+	dina, err := env.Members.Invite(ctx, w.admin, member.Invite{Phone: "0812-9640-0098", Name: "Dina Kasir",
+		Roles: []member.RoleGrant{{Role: authz.RoleKaryawan}}})
+	require.NoError(t, err)
+	env.GrantCustomRole(t, w.org.ID, dina.ID, "Pembaca kecuali kos", `{"Version":"2026-10-25","Statement":[`+
+		`{"Effect":"Allow","Action":["report:read"],"Resource":["*"]},`+
+		`{"Effect":"Deny","Action":["report:read"],"Resource":["property/`+w.kos.ID.String()+`/*"]}]}`)
+	reader := env.Principal(t, w.org.ID, dina.UserID)
+
+	d, err := env.Billing.Dashboard(ctx, reader, "")
+	require.NoError(t, err)
+	require.Len(t, d.RecentCorrections, 1, "Gita's correction is in the denied kos")
+	require.Equal(t, "Hadi Susanto", d.RecentCorrections[0].TenantName)
 }
 
 func TestDashboardCorrectionsAndPlannedEnd(t *testing.T) {

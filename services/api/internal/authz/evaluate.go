@@ -330,6 +330,10 @@ func accessTo(policies []namedPolicy, action string) Access {
 	orgWide := orgWideResources[resource]
 	access := AccessDeny
 	blocked := false
+	// scoped is a Deny without a condition that covers only some records (a property, one
+	// record) of a resource that has properties: an Allow on every record then grants only
+	// the rest, so the access is conditional, and lists must check each record.
+	scoped := false
 	for _, np := range policies {
 		for _, st := range np.policy.Statement {
 			if !st.matchesAction(action) {
@@ -347,6 +351,8 @@ func accessTo(policies []namedPolicy, action string) Access {
 			switch {
 			case st.Effect == Deny && unconditional:
 				blocked = true
+			case st.Effect == Deny && st.Condition == nil && !orgWide:
+				scoped = true
 			case st.Effect == Allow && unconditional:
 				access = AccessAllow
 			case st.Effect == Allow && access == AccessDeny:
@@ -356,6 +362,9 @@ func accessTo(policies []namedPolicy, action string) Access {
 	}
 	if blocked {
 		return AccessDeny
+	}
+	if access == AccessAllow && scoped {
+		return AccessConditional
 	}
 	return access
 }
