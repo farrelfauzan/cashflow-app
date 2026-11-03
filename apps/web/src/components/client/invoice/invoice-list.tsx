@@ -33,7 +33,6 @@ export function InvoiceList({ orgId, rows, canReadTenants }: InvoiceListProps) {
           )}
         >
           <span>Penyewa</span>
-          <span>Unit</span>
           <span className="text-right">Tagihan</span>
           <span className="text-right">Dibayar</span>
           <span className="text-right">Sisa</span>
