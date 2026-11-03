@@ -52,7 +52,7 @@ jobs:
         run: pnpm build
 
   # Playwright at both sizes against the real Go API: throwaway PostgreSQL and Redis from the
-  # dev compose file, migrated and seeded with seed-demo, WhatsApp on devlog (nothing is sent).
+  # dev compose file, migrated and seeded with seed-demo and generate-invoices, WhatsApp on devlog (nothing is sent).
   # The login helper reads codes from DEVLOG_FILE.
   e2e:
     runs-on: ubuntu-latest
@@ -107,6 +107,7 @@ jobs:
         run: |
           ./bin/migrate
           ./bin/admin seed-demo
+          ./bin/admin generate-invoices
       - name: Start the API
         working-directory: services/api
         run: |

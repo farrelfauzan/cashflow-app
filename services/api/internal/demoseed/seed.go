@@ -13,6 +13,10 @@
 // by phone and leases by an active lease of that tenant on the unit. A record that already exists is left exactly as it is, even
 // when its values differ; fixed extras are set only on a lease that has none, and a member the
 // demo marks disabled is disabled only by the run that invites them.
+//
+// A new lease is entered EntryDays before today and bills from the period that was running
+// BilledFromDays before today (see billedFrom), so GenerateInvoices gives each tenant a few
+// invoices, some of them overdue, instead of one for every period since a fixed start date.
 package demoseed
 
 import (
@@ -45,6 +49,12 @@ type Deps struct {
 	Members    *member.Service
 	Properties *property.Service
 	Tenants    *tenant.Service
+	// PastProperties and PastTenants are the property and tenant services on a clock EntryDays
+	// behind the real one (see Behind). The seed creates units and leases through them, so a
+	// lease is entered about 40 days ago, with its unit's prices in force since then; every
+	// other call goes through Properties and Tenants.
+	PastProperties *property.Service
+	PastTenants    *tenant.Service
 }
 
 // Login is one staff member who can sign in to one organization.
@@ -188,7 +198,7 @@ func (s *seeder) ensureProperties(ctx context.Context) error {
 			for _, label := range ps.Units {
 				u, err := property.FindUnit(ctx, tx, s.p.OrganizationID, prop.ID, label)
 				if errors.Is(err, property.ErrNotFound) {
-					u, err = s.d.Properties.CreateUnitTx(ctx, tx, s.p, prop.ID, property.UnitInput{
+					u, err = s.d.PastProperties.CreateUnitTx(ctx, tx, s.p, prop.ID, property.UnitInput{
 						Label: label, Terms: termInputs(ps.termsOf(label)),
 					})
 				}
@@ -405,11 +415,11 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 	case !errors.Is(err, tenant.ErrNotFound):
 		return uuid.Nil, err
 	}
-	terms := tenant.Terms{StartDate: ls.Start, DepositAmount: ls.Deposit}
 	term := ls.Term
 	if term == 0 {
 		term = 1
 	}
+	terms := tenant.Terms{StartDate: ls.Start, DepositAmount: ls.Deposit, BilledFrom: billedFrom(ls.Start, term, s.today)}
 	if ls.Collector != "" {
 		number, err := phone.Normalize(ls.Collector)
 		if err != nil {
@@ -426,7 +436,7 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 			terms.CollectorMemberID = id
 		}
 	}
-	l, err := s.d.Tenants.CreateLeaseTx(ctx, tx, s.p, tenant.NewLease{TenantID: tenantID, UnitID: unitID, TermMonths: term, Terms: terms})
+	l, err := s.d.PastTenants.CreateLeaseTx(ctx, tx, s.p, tenant.NewLease{TenantID: tenantID, UnitID: unitID, TermMonths: term, Terms: terms})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("lease on %s %s: %w", ls.Property, ls.Unit, err)
 	}

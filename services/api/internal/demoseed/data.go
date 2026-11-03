@@ -12,6 +12,15 @@ import (
 // The demo contents are fixed: the web app's Playwright specs rely on these names, numbers and
 // dates. Change them only together with those specs.
 
+// How far back the demo's money starts, relative to today in Asia/Jakarta.
+const (
+	// EntryDays is how many days before today a seeded lease was entered.
+	EntryDays = 40
+	// BilledFromDays picks the first period a seeded lease bills: the one running that many
+	// days before today, so a monthly lease has about two overdue invoices before the current one.
+	BilledFromDays = 70
+)
+
 // The organization names.
 const (
 	OrgGriya   = "Griya Sejahtera"
@@ -112,6 +121,16 @@ type orgSpec struct {
 	// ChargeTypes are the organization's kinds of extra charge.
 	ChargeTypes []chargeTypeSpec
 	Tenants     []tenantSpec
+	// Payers are the three tenants whose money GenerateInvoices records: one pays in full, one
+	// pays part of the oldest invoice, one pays nothing and so stays overdue.
+	Payers payerSpec
+}
+
+// payerSpec names tenants of the organization (by name, unique within it). Each must have a
+// running lease that starts before the organization's entry day, or a period already due, so the
+// overdue one always has an invoice due before today.
+type payerSpec struct {
+	Full, Partial, Overdue string
 }
 
 func day(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
@@ -210,6 +229,7 @@ func demoOrgs(c clock.Clock) []orgSpec {
 				{Name: "Listrik", Metered: true}, {Name: "Air", Metered: true},
 				{Name: chargeWiFi}, {Name: chargeParkir}, {Name: chargeKebersihan},
 			},
+			Payers: payerSpec{Full: "Budi Santoso", Partial: "Citra Lestari", Overdue: "Eko Prasetyo"},
 			Tenants: []tenantSpec{
 				{Name: "Rina Wulandari", Phone: phoneRina, Leases: []leaseSpec{
 					{
@@ -267,6 +287,7 @@ func demoOrgs(c clock.Clock) []orgSpec {
 					UnitTerms: map[string][]termSpec{"Kamar 3": monthly(800_000)},
 				},
 			},
+			Payers: payerSpec{Full: "Nadia Putri", Partial: "Ayu Lestari", Overdue: "Rina Wulandari"},
 			Tenants: []tenantSpec{
 				{Name: "Ayu Lestari", Phone: "0813-0002-0001", Leases: []leaseSpec{
 					{Property: propAnggrek, Unit: "Kamar 1", Start: day(2026, 8, 1), Collector: rudi},

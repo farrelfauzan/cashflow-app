@@ -23,9 +23,13 @@ import (
 )
 
 func deps(env *testenv.Env) demoseed.Deps {
+	// Units and leases are created on a clock 40 days back, as cmd/admin does.
+	past := demoseed.Behind(env.Clock, demoseed.EntryDays)
 	return demoseed.Deps{
 		Store: env.Store, Authz: env.Authz, Orgs: env.Orgs, Members: env.Members,
 		Properties: env.Properties, Tenants: env.Tenants,
+		PastProperties: property.NewService(env.Store, env.Authz, past),
+		PastTenants:    tenant.NewService(env.Store, env.Authz, past, env.Billing, nil),
 	}
 }
 

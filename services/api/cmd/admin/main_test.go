@@ -14,9 +14,13 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 )
 
-// TestSeedDemoRefusesOutsideDevelopment checks that seed-demo stops before it connects to any
-// database unless APP_ENV is explicitly development.
-func TestSeedDemoRefusesOutsideDevelopment(t *testing.T) {
+// demoCommands are the commands that fill a database with demo data and so run only in
+// development.
+var demoCommands = []string{"seed-demo", "generate-invoices"}
+
+// TestDemoCommandsRefuseOutsideDevelopment checks that seed-demo and generate-invoices stop
+// before they connect to any database unless APP_ENV is explicitly development.
+func TestDemoCommandsRefuseOutsideDevelopment(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
@@ -29,51 +33,58 @@ func TestSeedDemoRefusesOutsideDevelopment(t *testing.T) {
 		{name: "production", vars: map[string]string{"APP_ENV": "production"}, wantMsg: `APP_ENV is "production"`},
 		{name: "not exactly development", vars: map[string]string{"APP_ENV": "Development"}, wantMsg: `APP_ENV is "Development"`},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			connected := false
-			var out bytes.Buffer
-			e := env{
-				lookup: func(k string) (string, bool) {
-					v, ok := tc.vars[k]
-					return v, ok
-				},
-				connect: func(context.Context) (*store.Store, *slog.Logger, error) {
-					connected = true
-					return nil, nil, errors.New("must not connect")
-				},
-				stdout: &out,
-				stderr: &out,
-			}
-			err := run(context.Background(), []string{"seed-demo"}, e)
-			require.ErrorIs(t, err, errNotDevelopment)
-			require.ErrorContains(t, err, tc.wantMsg)
-			require.False(t, connected, "seed-demo opened the database outside development")
-			require.Empty(t, out.String())
-		})
+	for _, command := range demoCommands {
+		for _, tc := range tests {
+			t.Run(command+": "+tc.name, func(t *testing.T) {
+				t.Parallel()
+				connected := false
+				var out bytes.Buffer
+				e := env{
+					lookup: func(k string) (string, bool) {
+						v, ok := tc.vars[k]
+						return v, ok
+					},
+					connect: func(context.Context) (*store.Store, *slog.Logger, error) {
+						connected = true
+						return nil, nil, errors.New("must not connect")
+					},
+					stdout: &out,
+					stderr: &out,
+				}
+				err := run(context.Background(), []string{command}, e)
+				require.ErrorIs(t, err, errNotDevelopment)
+				require.ErrorContains(t, err, tc.wantMsg)
+				require.False(t, connected, command+" opened the database outside development")
+				require.Empty(t, out.String())
+			})
+		}
 	}
 }
 
-func TestSeedDemoInDevelopmentConnects(t *testing.T) {
+func TestDemoCommandsInDevelopmentConnect(t *testing.T) {
 	t.Parallel()
-	connectErr := errors.New("no database in unit tests")
-	connected := false
-	e := env{
-		lookup: func(k string) (string, bool) {
-			if k == "APP_ENV" {
-				return "development", true
+	for _, command := range demoCommands {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+			connectErr := errors.New("no database in unit tests")
+			connected := false
+			e := env{
+				lookup: func(k string) (string, bool) {
+					if k == "APP_ENV" {
+						return "development", true
+					}
+					return "", false
+				},
+				connect: func(context.Context) (*store.Store, *slog.Logger, error) {
+					connected = true
+					return nil, nil, connectErr
+				},
 			}
-			return "", false
-		},
-		connect: func(context.Context) (*store.Store, *slog.Logger, error) {
-			connected = true
-			return nil, nil, connectErr
-		},
+			err := run(context.Background(), []string{command}, e)
+			require.ErrorIs(t, err, connectErr)
+			require.True(t, connected)
+		})
 	}
-	err := run(context.Background(), []string{"seed-demo"}, e)
-	require.ErrorIs(t, err, connectErr)
-	require.True(t, connected)
 }
 
 func TestRunRejectsBadCommands(t *testing.T) {
@@ -85,6 +96,7 @@ func TestRunRejectsBadCommands(t *testing.T) {
 		{name: "no command", args: nil},
 		{name: "unknown command", args: []string{"drop-everything"}},
 		{name: "seed-demo with arguments", args: []string{"seed-demo", "-force"}},
+		{name: "generate-invoices with arguments", args: []string{"generate-invoices", "-force"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

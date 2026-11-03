@@ -185,6 +185,7 @@ func bulananOrg() orgSpec {
 			},
 		}, bulananSmallProperties()...),
 		Tenants: tenants,
+		Payers:  payerSpec{Full: "Andi Pratama", Partial: "Bagas Aditya", Overdue: "Cahyo Wibowo"},
 	}
 }
 
