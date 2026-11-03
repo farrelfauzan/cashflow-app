@@ -17,6 +17,8 @@ type DateFieldProps = {
   name: string;
   // YYYY-MM-DD, "" for none.
   value: string;
+  // The latest day the calendar offers (YYYY-MM-DD); the schema still checks a typed date.
+  max?: string;
   onChange: (date: string) => void;
   // Under the field; null for none.
   hint: string | null;
@@ -31,6 +33,7 @@ export function DateField({
   label,
   name,
   value,
+  max,
   onChange,
   hint,
   error,
@@ -58,6 +61,7 @@ export function DateField({
         name={name}
         type="date"
         value={value}
+        max={max}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
         aria-invalid={error !== undefined}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useIsMutating } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { CancelBookingForm } from "@/components/client/lease/cancel-booking-form";
@@ -9,6 +10,8 @@ import { LeaseForm } from "@/components/client/lease/lease-form";
 import { MoveOutForm } from "@/components/client/lease/move-out-form";
 import { PlannedEndForm } from "@/components/client/lease/planned-end-form";
 import { leaseFormSubtitle } from "@/components/client/lease/utils";
+import { PaymentRecorded } from "@/components/client/payment/payment-recorded";
+import { RecordPaymentForm } from "@/components/client/payment/record-payment-form";
 import {
   Sheet,
   SheetContent,
@@ -16,6 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { getRecordPaymentMutationKey } from "@/lib/api/generated/money/money";
 import { cn } from "@/lib/utils";
 import type { OpenTenantPanel, TenantPanelState } from "./type";
 import {
@@ -26,6 +30,8 @@ import {
   leaseSavedNotice,
   leaseUpdatedNotice,
   movedOutNotice,
+  PAYMENT_PANEL_TITLE,
+  paymentPanelSubtitle,
   plannedEndNotice,
   tenantAddedNotice,
   tenantSavedNotice,
@@ -54,7 +60,8 @@ type TenantPanelProps = {
 // panel, so "Mulai tagih dari" stays in view next to the other fields, and so does "Ubah sewa"
 // (Sewa-Ubah.dc.html). "Biaya tambahan", "Rencana keluar", "Catat pindah keluar" and "Batalkan
 // sewa" (Sewa-Biaya, Sewa-Rencana, Sewa-Pindah and Sewa-Batal) open from a lease's card in the
-// narrow panel.
+// narrow panel. "Catat pembayaran" opens from the header in the narrow panel and shows
+// "Pembayaran tercatat" there once saved; the panel cannot be closed while it saves.
 export function TenantPanel({
   orgId,
   organizationName,
@@ -69,6 +76,9 @@ export function TenantPanel({
   const [shown, setShown] = useState<OpenTenantPanel | null>(null);
   if (panel.kind !== "closed" && panel !== shown) setShown(panel);
   const close = () => onPanelChange({ kind: "closed" });
+  // A payment being recorded keeps the panel open, so its answer is never lost.
+  const recording =
+    useIsMutating({ mutationKey: getRecordPaymentMutationKey() }) > 0;
 
   let title = "";
   let subtitle = "";
@@ -211,13 +221,38 @@ export function TenantPanel({
         />
       );
       break;
+    case "payment":
+      title = PAYMENT_PANEL_TITLE;
+      subtitle = paymentPanelSubtitle(shown.tenant, today);
+      body = (
+        <RecordPaymentForm
+          key={shown.requestId}
+          orgId={orgId}
+          tenantId={shown.tenant.id}
+          today={today}
+          requestId={shown.requestId}
+          onSaved={(result) =>
+            onPanelChange({
+              kind: "paymentRecorded",
+              tenant: shown.tenant,
+              result,
+            })
+          }
+        />
+      );
+      break;
+    case "paymentRecorded":
+      title = PAYMENT_PANEL_TITLE;
+      subtitle = paymentPanelSubtitle(shown.tenant, today);
+      body = <PaymentRecorded result={shown.result} onDone={close} />;
+      break;
   }
 
   return (
     <Sheet
       open={panel.kind !== "closed"}
       onOpenChange={(next) => {
-        if (!next) close();
+        if (!next && !recording) close();
       }}
     >
       <SheetContent

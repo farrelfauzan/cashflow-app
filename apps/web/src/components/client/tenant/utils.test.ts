@@ -18,6 +18,8 @@ import {
   leaseFooterKinds,
   LEASE_PANEL_TITLES,
   leasePanelSubtitle,
+  PAYMENT_PANEL_TITLE,
+  paymentPanelSubtitle,
   leaseUpdatedNotice,
   movedOutNotice,
   plannedEndNotice,
@@ -1073,5 +1075,35 @@ describe("lease notices", () => {
     },
   ])("$name", ({ got, want }) => {
     expect(got).toBe(want);
+  });
+});
+
+describe("the payment panel", () => {
+  it("is titled Catat pembayaran", () => {
+    expect(PAYMENT_PANEL_TITLE).toBe("Catat pembayaran");
+  });
+
+  it("names the tenant and the unit of their running lease", () => {
+    const booked = lease({
+      id: "b",
+      unitLabel: "Kamar 9",
+      startDate: "2026-12-01",
+    });
+    const ended = lease({ id: "e", unitLabel: "Kamar 3", status: "ended" });
+    expect(
+      paymentPanelSubtitle(tenant({ leases: [booked, ended, lease()] }), TODAY),
+    ).toBe("Rina Wulandari · Kamar 1 · Kos Melati");
+  });
+
+  it("names only the tenant without an active lease", () => {
+    expect(
+      paymentPanelSubtitle(
+        tenant({ leases: [lease({ status: "ended" })] }),
+        TODAY,
+      ),
+    ).toBe("Rina Wulandari");
+    expect(paymentPanelSubtitle(tenant({ leases: [] }), TODAY)).toBe(
+      "Rina Wulandari",
+    );
   });
 });

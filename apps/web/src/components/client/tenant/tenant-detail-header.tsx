@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Plus } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,13 @@ type TenantDetailHeaderProps = {
   // tenant:manage (allow or conditional): "Ubah penyewa".
   canEdit: boolean;
   onEdit: () => void;
+  // payment:record (allow or conditional): "Catat pembayaran", the page's one primary action.
+  canRecordPayment: boolean;
+  onRecordPayment: () => void;
 };
 
-// The back link, the tenant's name and their number, and "Ubah penyewa" (an outline button: the
-// screen's primary action is "Sewakan unit" when it shows). The board's "WhatsApp aktif" is left
+// The back link, the tenant's name and their number, "Catat pembayaran" (the page's one primary
+// action) and "Ubah penyewa" (an outline button). The board's "WhatsApp aktif" is left
 // out: the API has no such field.
 export function TenantDetailHeader({
   orgId,
@@ -26,6 +29,8 @@ export function TenantDetailHeader({
   phone,
   canEdit,
   onEdit,
+  canRecordPayment,
+  onRecordPayment,
 }: TenantDetailHeaderProps) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-5">
@@ -48,15 +53,29 @@ export function TenantDetailHeader({
           {formatPhone(phone)}
         </p>
       </div>
-      {canEdit && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onEdit}
-          className="h-12 w-full shrink-0 rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
-        >
-          Ubah penyewa
-        </Button>
+      {(canEdit || canRecordPayment) && (
+        <div className="flex shrink-0 flex-col gap-2.5 lg:flex-row-reverse">
+          {canRecordPayment && (
+            <Button
+              type="button"
+              onClick={onRecordPayment}
+              className="h-12 w-full rounded-xl px-5 text-[17px] font-semibold lg:w-auto"
+            >
+              <Plus aria-hidden="true" className="size-5" strokeWidth={2.2} />
+              Catat pembayaran
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onEdit}
+              className="h-12 w-full rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
+            >
+              Ubah penyewa
+            </Button>
+          )}
+        </div>
       )}
     </header>
   );
