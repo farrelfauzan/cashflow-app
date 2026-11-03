@@ -10,8 +10,8 @@ VALUES (@id, @organization_id, @lease_id, @tenant_id, @period, @period_end, @due
 RETURNING *;
 
 -- name: CreateInvoiceLine :one
-INSERT INTO invoice_line (id, organization_id, invoice_id, kind, charge_type_id, label, amount)
-VALUES (@id, @organization_id, @invoice_id, @kind, @charge_type_id, @label, @amount)
+INSERT INTO invoice_line (id, organization_id, invoice_id, kind, charge_type_id, label, amount, metered_charge_id)
+VALUES (@id, @organization_id, @invoice_id, @kind, @charge_type_id, @label, @amount, @metered_charge_id)
 RETURNING *;
 
 -- name: CreatePayment :one
@@ -113,7 +113,7 @@ ORDER BY id;
 -- the lease's dates run one after the other and each sees the other's committed rows. It does not
 -- conflict with the FOR KEY SHARE that inserting an invoice takes on the lease.
 SELECT l.id, l.tenant_id, l.unit_id, u.property_id, l.start_date, l.entered_on, l.billed_from,
-       l.term_months, l.planned_end_date, l.end_date, l.status
+       l.term_months, l.planned_end_date, l.end_date, l.status, l.collector_staff_user_id
 FROM lease l
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 WHERE l.organization_id = @organization_id AND l.id = @id
@@ -250,7 +250,7 @@ ORDER BY b.period, b.seq;
 
 -- name: ListAccountInvoiceLines :many
 -- The lines of every invoice of a tenant, in the order they were written.
-SELECT il.id, il.invoice_id, il.kind, il.label, il.amount
+SELECT il.id, il.invoice_id, il.kind, il.label, il.amount, il.metered_charge_id
 FROM invoice_line il
 JOIN invoice i ON i.organization_id = il.organization_id AND i.id = il.invoice_id
 WHERE il.organization_id = @organization_id AND i.tenant_id = @tenant_id
