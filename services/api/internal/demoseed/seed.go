@@ -296,7 +296,7 @@ func (s *seeder) ensureCharges(ctx context.Context, tenantID, leaseID uuid.UUID,
 		}
 		in[i] = tenant.ChargeInput{ChargeTypeID: id, Amount: c.Amount}
 	}
-	if _, err := s.d.Tenants.SetLeaseCharges(ctx, s.p, leaseID, in); err != nil {
+	if _, err := s.d.Tenants.SetLeaseCharges(ctx, s.p, leaseID, tenant.LeaseChargesInput{Charges: in}); err != nil {
 		return fmt.Errorf("extras on %s %s: %w", ls.Property, ls.Unit, err)
 	}
 	return nil

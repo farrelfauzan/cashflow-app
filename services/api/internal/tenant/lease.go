@@ -75,9 +75,12 @@ type Lease struct {
 	CollectorName     string
 	CollectorActive   bool
 	// Charges are the fixed monthly extras on top of rent, by name; never nil once loaded.
-	Charges   []Charge
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Charges []Charge
+	// MeteredChargeTypes are the metered types the lease expects an amount for every month, by
+	// name; never nil once loaded.
+	MeteredChargeTypes []MeteredType
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // Terms are the editable terms of a lease.
@@ -474,6 +477,9 @@ func attachDetails(ctx context.Context, q *dbgen.Queries, org uuid.UUID, day tim
 	if err := attachCharges(ctx, q, org, leases); err != nil {
 		return err
 	}
+	if err := attachMeteredTypes(ctx, q, org, leases); err != nil {
+		return err
+	}
 	return attachPeriodRents(ctx, q, org, day, leases)
 }
 
@@ -491,7 +497,7 @@ func toLease(r dbgen.GetLeaseDetailRow) Lease {
 		PropertyID: r.PropertyID, PropertyName: r.PropertyName,
 		StartDate: r.StartDate, EndDate: r.EndDate, EnteredOn: r.EnteredOn, BilledFrom: r.BilledFrom,
 		PlannedEndDate: r.PlannedEndDate, TermMonths: int(r.TermMonths),
-		DepositAmount: r.DepositAmount, Status: r.Status, Charges: []Charge{},
+		DepositAmount: r.DepositAmount, Status: r.Status, Charges: []Charge{}, MeteredChargeTypes: []MeteredType{},
 		CollectorMemberID: r.CollectorMemberID.UUID, CollectorUserID: r.CollectorStaffUserID.UUID,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}

@@ -53,6 +53,20 @@ type ChargeInput struct {
 	Amount       int64
 }
 
+// MeteredType is a metered charge type a lease expects an amount for every month ("Listrik
+// dicatat dari meteran tiap bulan"). It carries no amount: amounts are recorded per month.
+type MeteredType struct {
+	ChargeTypeID uuid.UUID
+	Name         string
+}
+
+// LeaseChargesInput is the extras of a lease: its whole set of fixed extras and, when
+// MeteredTypes is not nil, its whole set of expected metered types (nil leaves them unchanged).
+type LeaseChargesInput struct {
+	Charges      []ChargeInput
+	MeteredTypes *[]uuid.UUID
+}
+
 // chargeTypeRequest is lease:manage on the organization's charge types. It names no property,
 // so only an organization-wide grant allows it. Creating a type uses it, so a member limited to
 // some properties cannot add the types every property shares (decision 15). Listing is open to
@@ -120,14 +134,20 @@ func (s *Service) CreateChargeType(ctx context.Context, p authz.Principal, in Ch
 	return out, err
 }
 
-// SetLeaseCharges replaces the whole set of fixed extras on an active lease; an empty set
-// removes them all. It needs lease:manage on the lease, like a rent change, and is audited the
-// same way. Fixed extras are lease terms, not money rows: no invoice exists yet in slice 1, and
-// once invoices exist a change applies from the next invoice generated, because each invoice
-// snapshots the lease's charges into its own lines.
-func (s *Service) SetLeaseCharges(ctx context.Context, p authz.Principal, leaseID uuid.UUID, in []ChargeInput) (Lease, error) {
-	if err := ValidCharges(in); err != nil {
+// SetLeaseCharges replaces the whole set of fixed extras on an active lease, and its expected
+// metered types when in.MeteredTypes is set; an empty set removes them all. It needs
+// lease:manage on the lease, like a rent change, and is audited the same way. Fixed extras are
+// lease terms, not money rows: a change applies from the next invoice generated, because each
+// invoice snapshots the lease's charges into its own lines. The metered types only say which
+// monthly amounts to expect; amounts already recorded stay and are billed whatever the set.
+func (s *Service) SetLeaseCharges(ctx context.Context, p authz.Principal, leaseID uuid.UUID, in LeaseChargesInput) (Lease, error) {
+	if err := ValidCharges(in.Charges); err != nil {
 		return Lease{}, err
+	}
+	if in.MeteredTypes != nil {
+		if err := ValidMeteredTypes(*in.MeteredTypes); err != nil {
+			return Lease{}, err
+		}
 	}
 	var out Lease
 	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
@@ -135,33 +155,95 @@ func (s *Service) SetLeaseCharges(ctx context.Context, p authz.Principal, leaseI
 		if _, err := s.loadActiveForChange(ctx, tx, q, p, leaseID); err != nil {
 			return err
 		}
-		if err := checkChargeTypes(ctx, q, p.OrganizationID, in); err != nil {
+		if err := checkChargeTypes(ctx, q, p.OrganizationID, in.Charges); err != nil {
 			return err
 		}
-		// Never nil: a NULL array would make the delete keep every row.
-		keep := make([]uuid.UUID, 0, len(in))
-		for _, c := range in {
-			keep = append(keep, c.ChargeTypeID)
+		if err := replaceCharges(ctx, q, p.OrganizationID, leaseID, in.Charges); err != nil {
+			return err
 		}
-		err := q.DeleteLeaseChargesExcept(ctx, dbgen.DeleteLeaseChargesExceptParams{
-			OrganizationID: p.OrganizationID, LeaseID: leaseID, Keep: keep,
-		})
-		if err != nil {
-			return fmt.Errorf("removing lease charges: %w", err)
-		}
-		for _, c := range in {
-			err := q.UpsertLeaseCharge(ctx, dbgen.UpsertLeaseChargeParams{
-				ID: uuid.New(), OrganizationID: p.OrganizationID, LeaseID: leaseID,
-				ChargeTypeID: c.ChargeTypeID, Amount: c.Amount,
-			})
-			if err != nil {
-				return fmt.Errorf("setting lease charge: %w", err)
+		if in.MeteredTypes != nil {
+			if err := checkMeteredTypes(ctx, q, p.OrganizationID, *in.MeteredTypes); err != nil {
+				return err
+			}
+			if err := replaceMeteredTypes(ctx, q, p.OrganizationID, leaseID, *in.MeteredTypes); err != nil {
+				return err
 			}
 		}
+		var err error
 		out, err = loadLease(ctx, q, p.OrganizationID, leaseID, Today(s.clock))
 		return err
 	})
 	return out, err
+}
+
+// replaceCharges makes the lease's fixed extras exactly in.
+func replaceCharges(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID, in []ChargeInput) error {
+	// Never nil: a NULL array would make the delete keep every row.
+	keep := make([]uuid.UUID, 0, len(in))
+	for _, c := range in {
+		keep = append(keep, c.ChargeTypeID)
+	}
+	err := q.DeleteLeaseChargesExcept(ctx, dbgen.DeleteLeaseChargesExceptParams{OrganizationID: org, LeaseID: leaseID, Keep: keep})
+	if err != nil {
+		return fmt.Errorf("removing lease charges: %w", err)
+	}
+	for _, c := range in {
+		err := q.UpsertLeaseCharge(ctx, dbgen.UpsertLeaseChargeParams{
+			ID: uuid.New(), OrganizationID: org, LeaseID: leaseID, ChargeTypeID: c.ChargeTypeID, Amount: c.Amount,
+		})
+		if err != nil {
+			return fmt.Errorf("setting lease charge: %w", err)
+		}
+	}
+	return nil
+}
+
+// replaceMeteredTypes makes the lease's expected metered types exactly ids.
+func replaceMeteredTypes(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID, ids []uuid.UUID) error {
+	// Never nil: a NULL array would make the delete keep every row.
+	keep := append(make([]uuid.UUID, 0, len(ids)), ids...)
+	err := q.DeleteLeaseMeteredTypesExcept(ctx, dbgen.DeleteLeaseMeteredTypesExceptParams{OrganizationID: org, LeaseID: leaseID, Keep: keep})
+	if err != nil {
+		return fmt.Errorf("removing lease metered types: %w", err)
+	}
+	for _, id := range ids {
+		err := q.AddLeaseMeteredType(ctx, dbgen.AddLeaseMeteredTypeParams{
+			ID: uuid.New(), OrganizationID: org, LeaseID: leaseID, ChargeTypeID: id,
+		})
+		if err != nil {
+			return fmt.Errorf("adding lease metered type: %w", err)
+		}
+	}
+	return nil
+}
+
+// checkMeteredTypes makes sure every id names a metered charge type of the organization. Errors
+// are *InputError on meteredChargeTypeIds[i].
+func checkMeteredTypes(ctx context.Context, q *dbgen.Queries, org uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.GetChargeTypes(ctx, dbgen.GetChargeTypesParams{OrganizationID: org, Ids: ids})
+	if err != nil {
+		return fmt.Errorf("loading charge types: %w", err)
+	}
+	byID := make(map[uuid.UUID]dbgen.ChargeType, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	for i, id := range ids {
+		ct, ok := byID[id]
+		switch {
+		case !ok:
+			return &InputError{Field: meteredField(i), Message: "Jenis biaya tidak ditemukan."}
+		case !ct.Metered:
+			return &InputError{
+				Field:   meteredField(i),
+				Message: "Biaya " + ct.Name + " bukan biaya meteran. Isi jumlahnya sebagai biaya tetap.",
+			}
+		}
+	}
+	return nil
 }
 
 // checkChargeTypes makes sure every charge names a charge type of the organization that is not
@@ -234,6 +316,28 @@ func ValidCharges(in []ChargeInput) error {
 
 func chargeField(i int, name string) string { return fmt.Sprintf("charges[%d].%s", i, name) }
 
+// ValidMeteredTypes checks the shape of a lease's expected metered types: at most
+// maxLeaseCharges, each named once. Whether they exist and are metered is checked against the
+// database. Errors are *InputError.
+func ValidMeteredTypes(ids []uuid.UUID) error {
+	if len(ids) > maxLeaseCharges {
+		return &InputError{Field: "meteredChargeTypeIds", Message: fmt.Sprintf("Paling banyak %d biaya meteran per sewa.", maxLeaseCharges)}
+	}
+	seen := make(map[uuid.UUID]bool, len(ids))
+	for i, id := range ids {
+		switch {
+		case id == uuid.Nil:
+			return &InputError{Field: meteredField(i), Message: "Jenis biaya wajib dipilih."}
+		case seen[id]:
+			return &InputError{Field: meteredField(i), Message: "Jenis biaya ini sudah ada di daftar."}
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+func meteredField(i int) string { return fmt.Sprintf("meteredChargeTypeIds[%d]", i) }
+
 // attachCharges fills in the fixed extras of each lease, by name. Every lease gets a non-nil
 // slice.
 func attachCharges(ctx context.Context, q *dbgen.Queries, org uuid.UUID, leases []Lease) error {
@@ -257,6 +361,34 @@ func attachCharges(ctx context.Context, q *dbgen.Queries, org uuid.UUID, leases 
 			leases[i].Charges = c
 		} else {
 			leases[i].Charges = []Charge{}
+		}
+	}
+	return nil
+}
+
+// attachMeteredTypes fills in the expected metered types of each lease, by name. Every lease gets
+// a non-nil slice.
+func attachMeteredTypes(ctx context.Context, q *dbgen.Queries, org uuid.UUID, leases []Lease) error {
+	if len(leases) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, len(leases))
+	for i, l := range leases {
+		ids[i] = l.ID
+	}
+	rows, err := q.ListLeaseMeteredTypes(ctx, dbgen.ListLeaseMeteredTypesParams{OrganizationID: org, LeaseIds: ids})
+	if err != nil {
+		return fmt.Errorf("loading lease metered types: %w", err)
+	}
+	byLease := map[uuid.UUID][]MeteredType{}
+	for _, r := range rows {
+		byLease[r.LeaseID] = append(byLease[r.LeaseID], MeteredType{ChargeTypeID: r.ChargeTypeID, Name: r.ChargeTypeName})
+	}
+	for i := range leases {
+		if m, ok := byLease[leases[i].ID]; ok {
+			leases[i].MeteredChargeTypes = m
+		} else {
+			leases[i].MeteredChargeTypes = []MeteredType{}
 		}
 	}
 	return nil
