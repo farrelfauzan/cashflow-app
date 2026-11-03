@@ -6,11 +6,13 @@ import { useState } from "react";
 
 import { TenantAccountSection } from "@/components/client/billing/tenant-account-section";
 import { canReadAccount } from "@/components/client/billing/utils";
+import { canRecordPayment } from "@/components/client/payment/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetTenant } from "@/lib/api/generated/tenants/tenants";
 import type { AppAbility } from "@/lib/capabilities";
 import { jakartaToday } from "@/lib/format/date";
+import { cn } from "@/lib/utils";
 import type { TenantPanelState } from "./type";
 import {
   isNotFound,
@@ -35,15 +37,17 @@ type TenantDetailViewProps = {
 };
 
 // "Penyewa dan sewanya": one tenant, their money (tiles, invoices, payments and corrections,
-// for a member with invoice:read and payment:read) and a card for each lease the member may see, with "Ubah
-// penyewa" and, for a tenant without an active lease, "Sewakan unit", each shown from the
-// member's capabilities (getOrgMe). The API answers 404 for a tenant that does not exist and 403
+// for a member with invoice:read and payment:read) and a card for each lease the member may see, with "Catat
+// pembayaran" (payment:record), "Ubah penyewa" and, for a tenant without an active lease,
+// "Sewakan unit", each shown from the member's capabilities (getOrgMe). The API answers 404 for a tenant that does not exist and 403
 // for one the member may not see; both read "Penyewa tidak ditemukan".
 export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const tenant = useGetTenant(orgId, tenantId);
   const ability = useAbility<AppAbility>();
   const permissions = tenantPermissions(ability);
   const showAccount = canReadAccount(ability);
+  // The page's one primary action; "Sewakan unit" is an outline button while it shows.
+  const showRecordPayment = canRecordPayment(ability);
   const [today] = useState(() => jakartaToday(new Date()));
   const [panel, setPanel] = useState<TenantPanelState>({ kind: "closed" });
   // A short confirmation after a panel closes, announced to screen readers.
@@ -77,6 +81,14 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
         phone={data.phone}
         canEdit={permissions.canEditTenant}
         onEdit={() => openPanel({ kind: "edit", tenant: data })}
+        canRecordPayment={showRecordPayment}
+        onRecordPayment={() =>
+          openPanel({
+            kind: "payment",
+            tenant: data,
+            requestId: crypto.randomUUID(),
+          })
+        }
       />
       <p
         role="status"
@@ -98,6 +110,7 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
         <NoLeaseCard
           name={data.name}
           canManageLeases={permissions.canManageLeases}
+          secondary={showRecordPayment}
           onRent={rent}
         />
       ) : (
@@ -105,8 +118,12 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
           {permissions.canManageLeases && needsLease(data) && (
             <Button
               type="button"
+              variant={showRecordPayment ? "outline" : "default"}
               onClick={rent}
-              className="h-12 w-full rounded-xl px-5 text-[17px] font-semibold md:w-auto md:self-start"
+              className={cn(
+                "h-12 w-full rounded-xl px-5 text-[17px] font-semibold md:w-auto md:self-start",
+                showRecordPayment && "border-[1.5px] bg-card",
+              )}
             >
               <Plus aria-hidden="true" className="size-5" strokeWidth={2.2} />
               Sewakan unit

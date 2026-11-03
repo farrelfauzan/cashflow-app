@@ -434,6 +434,23 @@ export function leasePanelSubtitle(
   return `${tenantName} · ${leaseUnitText(lease)}`;
 }
 
+// "Catat pembayaran" and "Pembayaran tercatat" share the panel's title.
+export const PAYMENT_PANEL_TITLE = "Catat pembayaran";
+
+// The payment panel's subtitle: the tenant and the unit of their active lease (the running one
+// before a booking), "Bu Rina Wulandari · Kamar 07 · Kos Melati", or just the name without one.
+export function paymentPanelSubtitle(
+  tenant: Pick<Tenant, "name" | "leases">,
+  today: string,
+): string {
+  const active = orderedLeases(tenant.leases, today).find(
+    (lease) => lease.status === "active",
+  );
+  return active === undefined
+    ? tenant.name
+    : leasePanelSubtitle(tenant.name, active);
+}
+
 export function leaseUpdatedNotice(lease: Pick<Lease, "unitLabel">): string {
   return `Sewa ${lease.unitLabel} diperbarui.`;
 }

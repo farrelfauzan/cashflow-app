@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type {
   Lease,
   ListTenantsStatus,
+  PaymentResult,
   Tenant,
 } from "@/lib/api/generated/model";
 import type { tenantFormSchema } from "./utils";
@@ -45,14 +46,18 @@ export type LeasePanelKind =
 
 // The side panel of the tenant screens; one at a time. The tenant is the one the API returned
 // (after adding) or the one on the page (editing, renting a unit). A lease panel carries the
-// lease from the page and its tenant's name.
+// lease from the page and its tenant's name. "Catat pembayaran" carries the tenant from the page
+// and the requestId made when it opened (kept across retries in that opening), and goes on to
+// "Pembayaran tercatat" with the API's answer in the same panel.
 export type TenantPanelState =
   | { kind: "closed" }
   | { kind: "add" }
   | { kind: "added"; tenant: Tenant }
   | { kind: "edit"; tenant: Tenant }
   | { kind: "lease"; tenant: Tenant }
-  | { kind: LeasePanelKind; lease: Lease; tenantName: string };
+  | { kind: LeasePanelKind; lease: Lease; tenantName: string }
+  | { kind: "payment"; tenant: Tenant; requestId: string }
+  | { kind: "paymentRecorded"; tenant: Tenant; result: PaymentResult };
 
 export type OpenTenantPanel = Exclude<TenantPanelState, { kind: "closed" }>;
 

@@ -21,7 +21,8 @@ type LeaseCardProps = {
 
 // One lease of the tenant (boards Penyewa-Sewa.dc.html and Penyewa-Sewa-Phone.dc.html): the unit
 // and its status, the terms, who collects, and the dates. On an active lease a member with
-// lease:manage gets "Ubah sewa" (in the header on iPad, above the card on the phone) and a footer
+// lease:manage gets "Ubah sewa" (in the header on iPad, above the card on the phone; an outline
+// button, since the page's one primary action is "Catat pembayaran") and a footer
 // with "Biaya tambahan", "Rencana keluar" and "Catat pindah keluar", or "Batalkan sewa" for a
 // booking.
 export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
@@ -30,8 +31,9 @@ export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
       {actions !== null && (
         <Button
           type="button"
+          variant="outline"
           onClick={() => onAction("editLease")}
-          className="h-13 w-full rounded-xl px-5 text-[17px] font-semibold md:hidden"
+          className="h-13 w-full rounded-xl border-[1.5px] bg-card px-5 text-[17px] font-semibold md:hidden"
         >
           {LEASE_PANEL_TITLES.editLease}
         </Button>
@@ -55,8 +57,9 @@ export function LeaseCard({ lease, actions, onAction }: LeaseCardProps) {
           {actions !== null && (
             <Button
               type="button"
+              variant="outline"
               onClick={() => onAction("editLease")}
-              className="hidden h-12 shrink-0 rounded-xl px-5 text-[17px] font-semibold md:inline-flex"
+              className="hidden h-12 shrink-0 rounded-xl border-[1.5px] bg-card px-5 text-[17px] font-semibold md:inline-flex"
             >
               {LEASE_PANEL_TITLES.editLease}
             </Button>
