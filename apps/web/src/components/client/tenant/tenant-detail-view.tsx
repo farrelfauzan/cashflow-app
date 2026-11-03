@@ -86,7 +86,13 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
         {notice}
       </p>
       {showAccount && (
-        <TenantAccountSection orgId={orgId} tenantId={tenantId} today={today} />
+        <TenantAccountSection
+          orgId={orgId}
+          tenantId={tenantId}
+          tenantName={data.name}
+          today={today}
+          onNotice={setNotice}
+        />
       )}
       {data.leases.length === 0 ? (
         <NoLeaseCard

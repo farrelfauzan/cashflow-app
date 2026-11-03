@@ -32,6 +32,8 @@ type RupiahInputProps = {
   disabled: boolean;
   // The box's size: its height and width.
   className?: string;
+  // The typed text's size and weight, and the "Rp" before it: "text-xl font-semibold".
+  textClassName?: string;
 };
 
 // An amount in rupiah behind a fixed "Rp". It takes digits only (anything else typed or pasted is
@@ -50,6 +52,7 @@ export function RupiahInput({
   describedBy,
   disabled,
   className,
+  textClassName,
 }: RupiahInputProps) {
   // The input's own ref places the caret; the caller's gets the same input.
   const ref = useRef<HTMLInputElement>(null);
@@ -94,7 +97,10 @@ export function RupiahInput({
     >
       <span
         aria-hidden="true"
-        className="pl-3.5 text-base text-muted-foreground md:text-[17px]"
+        className={cn(
+          "pl-3.5 text-base text-muted-foreground md:text-[17px]",
+          textClassName,
+        )}
       >
         Rp
       </span>
@@ -113,7 +119,10 @@ export function RupiahInput({
         disabled={disabled}
         aria-invalid={invalid}
         aria-describedby={describedBy}
-        className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-base outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-[17px]"
+        className={cn(
+          "h-full min-w-0 flex-1 bg-transparent px-2.5 text-base outline-none placeholder:text-muted-foreground disabled:opacity-50 md:text-[17px]",
+          textClassName,
+        )}
       />
     </div>
   );

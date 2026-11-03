@@ -348,11 +348,17 @@ test.describe("Admin of the whole organization", () => {
       `oleh ${HENDRA.name}`,
     );
 
-    // Read-only: none of the board's later buttons, and nothing to press in the section.
+    // None of the board's later buttons; the only thing to press in the section is "Koreksi" on
+    // each invoice and payment (e2e/correction.spec.ts covers its dialog).
     await expect(page.getByRole("button", { name: LATER_BUTTONS })).toHaveCount(
       0,
     );
-    await expect(region.getByRole("button")).toHaveCount(0);
+    await expect(region.getByRole("button")).toHaveCount(
+      account.invoices.length + account.payments.length,
+    );
+    await expect(
+      region.getByRole("button", { name: /^Koreksi (tagihan|pembayaran) / }),
+    ).toHaveCount(account.invoices.length + account.payments.length);
     // The lease card still follows.
     await expect(
       page.getByRole("region", { name: `${unit.label} · ${property.name}` }),
