@@ -466,6 +466,18 @@ test.describe("Supervisor", () => {
     await expect(
       region.getByRole("heading", { level: 2, name: "Tagihan" }),
     ).toBeVisible();
+    // generate-invoices (CI and seed) gives Nadia a paid invoice and its payment, so there
+    // are rows a Koreksi action could sit on.
+    await expect(
+      region
+        .getByRole("list", { name: "Daftar tagihan" })
+        .locator(":scope > li"),
+    ).not.toHaveCount(0);
+    await expect(
+      region
+        .getByRole("list", { name: "Daftar pembayaran" })
+        .locator(":scope > li"),
+    ).not.toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Koreksi/ })).toHaveCount(0);
     await expect(region.getByRole("button")).toHaveCount(0);
     expect(outsideRequests).toEqual([]);
