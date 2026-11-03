@@ -78,7 +78,21 @@ func (s *Store) WithOrgTx(ctx context.Context, org uuid.UUID, fn func(tx pgx.Tx)
 	if org == uuid.Nil {
 		return ErrNoOrganization
 	}
-	return s.inTx(ctx, map[string]string{"app.org_id": org.String()}, fn)
+	return s.inTx(ctx, pgx.TxOptions{}, map[string]string{"app.org_id": org.String()}, fn)
+}
+
+// WithOrgSnapshot is WithOrgTx for reads that must agree with each other: a read-only,
+// REPEATABLE READ transaction, so every statement in fn sees the same snapshot (the one taken at
+// its first query). A screen that shows a tenant's invoices next to their totals uses it, so an
+// invoice committed by the worker in between cannot show up in one and not the other. fn must
+// not write: PostgreSQL refuses writes in a read-only transaction. A denial is still audited,
+// since authz writes denials in a transaction of its own.
+func (s *Store) WithOrgSnapshot(ctx context.Context, org uuid.UUID, fn func(tx pgx.Tx) error) error {
+	if org == uuid.Nil {
+		return ErrNoOrganization
+	}
+	opts := pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}
+	return s.inTx(ctx, opts, map[string]string{"app.org_id": org.String()}, fn)
 }
 
 // WithAuthTx runs fn in the auth scope, which login and session handling need: it can read
@@ -90,11 +104,11 @@ func (s *Store) WithAuthTx(ctx context.Context, user uuid.UUID, fn func(tx pgx.T
 	if user != uuid.Nil {
 		settings["app.user_id"] = user.String()
 	}
-	return s.inTx(ctx, settings, fn)
+	return s.inTx(ctx, pgx.TxOptions{}, settings, fn)
 }
 
-func (s *Store) inTx(ctx context.Context, settings map[string]string, fn func(tx pgx.Tx) error) error {
-	tx, err := s.pool.Begin(ctx)
+func (s *Store) inTx(ctx context.Context, opts pgx.TxOptions, settings map[string]string, fn func(tx pgx.Tx) error) error {
+	tx, err := s.pool.BeginTx(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}

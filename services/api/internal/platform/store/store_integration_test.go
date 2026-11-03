@@ -125,6 +125,57 @@ func TestOrganizationIsolation(t *testing.T) {
 	})
 }
 
+// TestOrgSnapshot: every statement in WithOrgSnapshot sees the snapshot of its first query, so
+// a row committed in between (an invoice the worker makes) never shows in one read and not in
+// the next, and the transaction refuses writes.
+func TestOrgSnapshot(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	org := uuid.New()
+	createOrg := func(tx pgx.Tx, id uuid.UUID) error {
+		_, err := dbgen.New(tx).CreateOrganization(ctx, dbgen.CreateOrganizationParams{ID: id, Name: "Kos Melati", DisplayName: "Kos Melati"})
+		return err
+	}
+	count := func(tx pgx.Tx) int {
+		t.Helper()
+		var n int
+		require.NoError(t, tx.QueryRow(ctx, "SELECT count(*) FROM organization").Scan(&n))
+		return n
+	}
+
+	t.Run("a row committed after the first read stays out of the later ones", func(t *testing.T) {
+		err := s.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
+			require.Zero(t, count(tx))
+			require.NoError(t, s.WithOrgTx(ctx, org, func(other pgx.Tx) error { return createOrg(other, org) }))
+			require.Zero(t, count(tx), "the snapshot must not see the row committed meanwhile")
+			return nil
+		})
+		require.NoError(t, err)
+		require.NoError(t, s.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
+			require.Equal(t, 1, count(tx), "a new snapshot sees it")
+			return nil
+		}))
+	})
+
+	t.Run("it refuses writes", func(t *testing.T) {
+		other := uuid.New()
+		err := s.WithOrgSnapshot(ctx, other, func(tx pgx.Tx) error { return createOrg(tx, other) })
+		var pgErr *pgconn.PgError
+		require.True(t, errors.As(err, &pgErr), "expected a Postgres error, got %v", err)
+		require.Equal(t, "25006", pgErr.Code, "expected read_only_sql_transaction")
+	})
+
+	t.Run("a missing organization id fails before any query", func(t *testing.T) {
+		called := false
+		err := s.WithOrgSnapshot(ctx, uuid.Nil, func(pgx.Tx) error {
+			called = true
+			return nil
+		})
+		require.ErrorIs(t, err, ErrNoOrganization)
+		require.False(t, called)
+	})
+}
+
 // TestEveryTableHasForcedRLS fails when a migration adds a table without enabling and forcing
 // row-level security, so a forgotten policy cannot reach production unnoticed.
 func TestEveryTableHasForcedRLS(t *testing.T) {

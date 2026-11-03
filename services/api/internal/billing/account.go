@@ -100,7 +100,8 @@ type Account struct {
 // of them; a tenant with no lease needs the organization-wide grant.
 func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.UUID) (Account, error) {
 	var out Account
-	err := s.store.WithOrgTx(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+	// One snapshot, so the totals and the invoices agree even while the worker commits one.
+	err := s.store.WithOrgSnapshot(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		leases, err := tenantLeases(ctx, q, p.OrganizationID, tenantID, "")
 		if err != nil {

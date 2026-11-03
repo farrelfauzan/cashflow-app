@@ -147,7 +147,8 @@ func (s *Service) Dashboard(ctx context.Context, p authz.Principal, period strin
 	}
 	out := Dashboard{Period: month, Arrears: []TenantArrears{}, RecentCorrections: []DashboardCorrection{}}
 	org := p.OrganizationID
-	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+	// One snapshot, so the summary, the rows and the totals agree.
+	err = s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		vis, err := s.visibleLeases(ctx, tx, q, p, authz.ActionReportRead, "report")
 		if err != nil {
@@ -205,7 +206,8 @@ func (s *Service) ListInvoices(ctx context.Context, p authz.Principal, iq Invoic
 	org := p.OrganizationID
 	property := uuid.NullUUID{UUID: iq.PropertyID, Valid: iq.PropertyID != uuid.Nil}
 	out := InvoiceList{Result: listing.Result[InvoiceListItem]{Page: iq.Page, Items: []InvoiceListItem{}}}
-	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+	// One snapshot, so the summary, the rows and the totals agree.
+	err = s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		vis, err := s.visibleLeases(ctx, tx, q, p, authz.ActionInvoiceRead, "invoice")
 		if err != nil {
