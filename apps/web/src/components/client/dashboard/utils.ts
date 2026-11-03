@@ -160,3 +160,12 @@ export function canReadDashboard(ability: AppAbility): boolean {
 export function canOpenTenant(ability: AppAbility): boolean {
   return ability.can("read", "tenant");
 }
+
+// "Lihat semua di Penagihan" under "Belum bayar": every overdue invoice, of any month, in
+// Penagihan. Shown to a member who may read invoices.
+export const BILLING_LINK_TEXT = "Lihat semua di Penagihan";
+export const OVERDUE_BILLING_SEGMENT = "billing?status=overdue";
+
+export function canOpenBilling(ability: AppAbility): boolean {
+  return ability.can("read", "invoice");
+}

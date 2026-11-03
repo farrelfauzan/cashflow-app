@@ -285,7 +285,7 @@ export function noLeaseText(name: string, canManageLeases: boolean): string {
 }
 
 // A property id as the API parses it; anything else (a link cut short in a chat) is not one.
-const UUID_PATTERN =
+export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // The tenant filters in the URL. A status outside the API's list, a property that is not an id

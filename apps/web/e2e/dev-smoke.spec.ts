@@ -134,6 +134,7 @@ test("every staff screen loads with no Next.js error", async ({ page }) => {
   const screens: [string, string][] = [
     ["properties", "Properti"],
     ["tenants", "Penyewa"],
+    ["billing", "Penagihan"],
     ["members", "Anggota tim"],
     ["tenants/import", "Impor penyewa"],
   ];

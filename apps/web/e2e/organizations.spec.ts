@@ -101,6 +101,7 @@ test.describe("member of two organizations", () => {
       "Beranda",
       "Properti",
       "Penyewa",
+      "Penagihan",
       "Anggota tim",
     ]);
     expect(outsideRequests).toEqual([]);

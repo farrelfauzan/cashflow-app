@@ -22,6 +22,8 @@ import { RecentCorrections } from "./recent-corrections";
 type DashboardContentProps = {
   orgId: string;
   canOpenTenant: boolean;
+  // ability.can("read", "invoice"): "Lihat semua di Penagihan" shows only then.
+  canOpenBilling: boolean;
 };
 
 // The figures of Beranda for this month (Asia/Jakarta, the API's default), all from
@@ -29,6 +31,7 @@ type DashboardContentProps = {
 export function DashboardContent({
   orgId,
   canOpenTenant,
+  canOpenBilling,
 }: DashboardContentProps) {
   const dashboard = useGetDashboard(orgId);
 
@@ -65,6 +68,7 @@ export function DashboardContent({
           rows={arrearsRows(data)}
           more={moreArrearsText(data)}
           canOpenTenant={canOpenTenant}
+          canOpenBilling={canOpenBilling}
         />
         <RecentCorrections corrections={correctionRows(data)} />
       </div>

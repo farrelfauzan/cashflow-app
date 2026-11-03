@@ -300,6 +300,31 @@ test.describe("Admin of the whole organization", () => {
     }
     await attachFullPageScreenshot(page, testInfo, "dashboard");
 
+    // While someone is late, "Lihat semua di Penagihan" opens every overdue invoice.
+    const billingLink = page.getByRole("link", {
+      name: "Lihat semua di Penagihan",
+    });
+    if (firstArrears === undefined) {
+      await expect(billingLink).toHaveCount(0);
+    } else {
+      await expect(billingLink).toHaveAttribute(
+        "href",
+        `/o/${orgId}/billing?status=overdue`,
+      );
+      const billingBox = await billingLink.boundingBox();
+      expect(billingBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await billingLink.click();
+      await expect(page).toHaveURL(/\/billing\?status=overdue$/);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Penagihan" }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Semua tunggakan, semua bulan"),
+      ).toBeVisible();
+      await page.goBack();
+      await expect(page).toHaveURL(ORG_HOME_URL);
+    }
+
     // A name in "Belum bayar" opens Detail penyewa.
     if (firstArrears !== undefined) {
       const link = page
