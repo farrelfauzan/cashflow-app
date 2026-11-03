@@ -1,5 +1,6 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import type { InvoiceRowView } from "./type";
 import { TABLE_COLUMNS } from "./utils";
@@ -20,8 +21,9 @@ export function InvoiceTableRow({ tenantHref, row }: InvoiceTableRowProps) {
   return (
     <li
       className={cn(
-        "grid items-center gap-3 border-t px-5 py-3 first:border-t-0",
+        "grid items-center border-t px-5 py-3 first:border-t-0",
         TABLE_COLUMNS,
+        TABLE_COLUMN_GAP,
       )}
     >
       <InvoiceTenantName

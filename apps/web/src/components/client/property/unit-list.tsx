@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import type { Unit } from "@/lib/api/generated/model";
 import type { UnitRowAction } from "./type";
 
@@ -26,7 +28,10 @@ export function UnitList({
       <section className="hidden overflow-hidden rounded-2xl border bg-card lg:block">
         <div
           aria-hidden="true"
-          className="grid min-h-11 grid-cols-[minmax(0,1fr)_180px_290px_96px] items-center gap-4 border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground"
+          className={cn(
+            "grid min-h-11 grid-cols-[minmax(0,1fr)_180px_290px_96px] items-center border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
+            TABLE_COLUMN_GAP,
+          )}
         >
           <span>Unit</span>
           <span>Sewa biasa</span>

@@ -1,5 +1,6 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/api/generated/model";
 import { formatPhone } from "@/lib/format/phone";
@@ -34,7 +35,8 @@ export function MemberTableRow({
   return (
     <li
       className={cn(
-        "grid min-h-[60px] grid-cols-[240px_minmax(0,1fr)_200px_80px] items-center gap-4 border-t px-5 py-1.5 first:border-t-0",
+        "grid min-h-[60px] grid-cols-[240px_minmax(0,1fr)_200px_80px] items-center border-t px-5 py-1.5 first:border-t-0",
+        TABLE_COLUMN_GAP,
         status.tone === "disabled" && "text-muted-foreground",
       )}
     >
