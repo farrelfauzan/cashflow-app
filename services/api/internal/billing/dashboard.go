@@ -351,7 +351,7 @@ func loadInvoicePage(ctx context.Context, q *dbgen.Queries, args dbgen.ListInvoi
 	}
 	lines := map[uuid.UUID][]AccountLine{}
 	for _, l := range lineRows {
-		lines[l.InvoiceID] = append(lines[l.InvoiceID], AccountLine{ID: l.ID, Kind: l.Kind, Label: l.Label, Amount: l.Amount})
+		lines[l.InvoiceID] = append(lines[l.InvoiceID], AccountLine{ID: l.ID, Kind: l.Kind, Label: l.Label, Amount: l.Amount, MeteredChargeID: l.MeteredChargeID.UUID})
 	}
 	for i, r := range rows {
 		item := InvoiceListItem{

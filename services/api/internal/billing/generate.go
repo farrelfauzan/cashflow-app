@@ -24,7 +24,9 @@ import (
 //     LockLease, for an update, a planned end date or a move-out);
 //  2. the unit row, FOR SHARE, only by generation before it reads the price (a price being
 //     recorded holds it FOR NO KEY UPDATE and touches no lease or tenant);
-//  3. the tenant row, FOR NO KEY UPDATE, last (billing.Allocate, and the trigger that checks a
+//  3. the lease's metered_charge rows, FOR UPDATE: generation locks the unbilled ones before it
+//     bills them, and RecordMeteredCharge the one it edits (it takes no unit lock);
+//  4. the tenant row, FOR NO KEY UPDATE, last (billing.Allocate, and the trigger that checks a
 //     correction).
 //
 // Inserting an invoice or a correction takes FOR KEY SHARE on the lease, tenant and invoice it
@@ -141,28 +143,41 @@ func PreviewLease(ctx context.Context, tx pgx.Tx, org, leaseID uuid.UUID, today 
 // lockActiveLease locks a lease for billing (see the lock order above) and reads it after the
 // lock. ok is false when the lease is missing or no longer active.
 func lockActiveLease(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID) (billedLease, bool, error) {
-	r, err := q.LockLeaseForBilling(ctx, dbgen.LockLeaseForBillingParams{OrganizationID: org, ID: leaseID})
-	if errors.Is(err, pgx.ErrNoRows) {
+	l, err := lockLease(ctx, q, org, leaseID)
+	if errors.Is(err, ErrNotFound) {
 		return billedLease{}, false, nil
 	}
 	if err != nil {
-		return billedLease{}, false, fmt.Errorf("locking lease for billing: %w", err)
+		return billedLease{}, false, err
 	}
-	if r.Status != tenant.StatusActive {
-		return billedLease{}, false, nil
+	return l, l.Status == tenant.StatusActive, nil
+}
+
+// lockLease locks a lease for billing (see the lock order above) and reads it after the lock,
+// active or ended. A missing lease is a *NotFoundError (ErrNotFound) with no field.
+func lockLease(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID) (billedLease, error) {
+	r, err := q.LockLeaseForBilling(ctx, dbgen.LockLeaseForBillingParams{OrganizationID: org, ID: leaseID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return billedLease{}, &NotFoundError{}
+	}
+	if err != nil {
+		return billedLease{}, fmt.Errorf("locking lease for billing: %w", err)
 	}
 	return billedLease{
 		ID: r.ID, TenantID: r.TenantID, UnitID: r.UnitID, PropertyID: r.PropertyID,
+		CollectorUserID: r.CollectorStaffUserID.UUID, Status: r.Status,
 		Dates: LeaseDates{
 			Start: r.StartDate, EnteredOn: r.EnteredOn, BilledFrom: r.BilledFrom, TermMonths: int(r.TermMonths),
 			PlannedEnd: r.PlannedEndDate, End: r.EndDate,
 		},
-	}, true, nil
+	}, nil
 }
 
-// billedLease is what generation needs to know about a lease.
+// billedLease is what generation, and recording a metered amount, need to know about a lease.
 type billedLease struct {
 	ID, TenantID, UnitID, PropertyID uuid.UUID
+	CollectorUserID                  uuid.UUID // uuid.Nil when no one collects
+	Status                           string
 	Dates                            LeaseDates
 }
 
@@ -183,10 +198,12 @@ func (p plannedInvoice) Amount() int64 {
 
 // planMissing returns the lease's invoices that DuePeriods asks for and that do not exist yet,
 // each with its lines: the price in force today for the lease's term and the lease's fixed
-// charges. Generation inserts exactly these, and the import's dry run shows them, so the two
-// never differ. With no price in force it returns an error wrapping tenant.ErrNoPrice. The
-// caller holds the lease row lock; planMissing locks the unit FOR SHARE before reading the
-// price, so a price recorded at the same moment cannot contradict the invoice.
+// charges, and, on the newest of them only, one line per metered amount no invoice bills yet.
+// Generation inserts exactly these, and the import's dry run shows them, so the two never
+// differ. With no price in force it returns an error wrapping tenant.ErrNoPrice. The caller
+// holds the lease row lock; planMissing locks the unit FOR SHARE before reading the price, so a
+// price recorded at the same moment cannot contradict the invoice, and then the unbilled metered
+// amounts FOR UPDATE, so an edit being saved commits first and the line bills what is stored.
 func planMissing(ctx context.Context, q *dbgen.Queries, org uuid.UUID, l billedLease, today time.Time) ([]plannedInvoice, error) {
 	due := DuePeriods(l.Dates, today)
 	if len(due) == 0 {
@@ -224,9 +241,31 @@ func planMissing(ctx context.Context, q *dbgen.Queries, org uuid.UUID, l billedL
 	if err != nil {
 		return nil, err
 	}
+	metered, err := unbilledMetered(ctx, q, org, l.ID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]plannedInvoice, len(missing))
 	for i, p := range missing {
 		out[i] = plannedInvoice{Period: p, Lines: InvoiceLines(p, l.Dates.TermMonths, rent, charges)}
+	}
+	newest := &out[len(out)-1]
+	for _, m := range metered {
+		newest.Lines = append(newest.Lines, MeteredLine(m))
+	}
+	return out, nil
+}
+
+// unbilledMetered locks and loads the lease's metered amounts that no invoice line bills yet,
+// oldest month first, then by type name.
+func unbilledMetered(ctx context.Context, q *dbgen.Queries, org, leaseID uuid.UUID) ([]MeteredAmount, error) {
+	rows, err := q.LockUnbilledMeteredCharges(ctx, dbgen.LockUnbilledMeteredChargesParams{OrganizationID: org, LeaseID: leaseID})
+	if err != nil {
+		return nil, fmt.Errorf("loading the lease's unbilled metered amounts: %w", err)
+	}
+	out := make([]MeteredAmount, len(rows))
+	for i, r := range rows {
+		out[i] = MeteredAmount{ID: r.ID, ChargeTypeID: r.ChargeTypeID, Name: r.ChargeTypeName, UsageMonth: r.UsageMonth, Amount: r.Amount}
 	}
 	return out, nil
 }
@@ -277,8 +316,9 @@ func (s *Service) insertInvoice(ctx context.Context, q *dbgen.Queries, tx pgx.Tx
 	for _, ln := range lines {
 		_, err := q.CreateInvoiceLine(ctx, dbgen.CreateInvoiceLineParams{
 			ID: uuid.New(), OrganizationID: org, InvoiceID: id, Kind: ln.Kind,
-			ChargeTypeID: uuid.NullUUID{UUID: ln.ChargeTypeID, Valid: ln.ChargeTypeID != uuid.Nil},
-			Label:        ln.Label, Amount: ln.Amount,
+			ChargeTypeID:    uuid.NullUUID{UUID: ln.ChargeTypeID, Valid: ln.ChargeTypeID != uuid.Nil},
+			MeteredChargeID: uuid.NullUUID{UUID: ln.MeteredChargeID, Valid: ln.MeteredChargeID != uuid.Nil},
+			Label:           ln.Label, Amount: ln.Amount,
 		})
 		if err != nil {
 			return false, fmt.Errorf("inserting invoice line: %w", err)

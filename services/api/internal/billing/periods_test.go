@@ -201,3 +201,108 @@ func TestDuePeriods(t *testing.T) {
 		})
 	}
 }
+
+func TestNextInvoiceOf(t *testing.T) {
+	t.Parallel()
+	monthly := func(start, entered time.Time) billing.LeaseDates {
+		return billing.LeaseDates{Start: start, EnteredOn: entered, BilledFrom: start, TermMonths: 1}
+	}
+	with := func(l billing.LeaseDates, f func(*billing.LeaseDates)) billing.LeaseDates {
+		f(&l)
+		return l
+	}
+	oct28 := monthly(d(2026, 10, 28), d(2026, 10, 28))
+	tests := []struct {
+		name     string
+		lease    billing.LeaseDates
+		today    time.Time
+		invoiced []time.Time
+		want     *billing.NextInvoice
+	}{
+		{
+			name: "the next month's invoice is made seven days before it is due", lease: oct28,
+			today: d(2026, 11, 3), invoiced: []time.Time{d(2026, 10, 28)},
+			want: &billing.NextInvoice{Period: d(2026, 11, 28), IssuedOn: d(2026, 11, 21)},
+		},
+		{
+			name: "on the day it is made it is still the next one", lease: oct28,
+			today: d(2026, 11, 21), invoiced: []time.Time{d(2026, 10, 28)},
+			want: &billing.NextInvoice{Period: d(2026, 11, 28), IssuedOn: d(2026, 11, 21)},
+		},
+		{
+			name: "once it exists the one after it is next", lease: oct28,
+			today: d(2026, 11, 21), invoiced: []time.Time{d(2026, 10, 28), d(2026, 11, 28)},
+			want: &billing.NextInvoice{Period: d(2026, 12, 28), IssuedOn: d(2026, 12, 21)},
+		},
+		{
+			name: "a lease not invoiced yet is invoiced today", lease: oct28,
+			today: d(2026, 10, 28),
+			want:  &billing.NextInvoice{Period: d(2026, 10, 28), IssuedOn: d(2026, 10, 28)},
+		},
+		{
+			name: "a booking further ahead is invoiced seven days before it starts", lease: monthly(d(2026, 12, 1), d(2026, 11, 3)),
+			today: d(2026, 11, 3),
+			want:  &billing.NextInvoice{Period: d(2026, 12, 1), IssuedOn: d(2026, 11, 24)},
+		},
+		{
+			name:  "a lease entered late gets its past periods at once; amounts go on the newest",
+			lease: monthly(d(2026, 9, 15), d(2026, 10, 28)), today: d(2026, 10, 28),
+			want: &billing.NextInvoice{Period: d(2026, 10, 15), IssuedOn: d(2026, 10, 28)},
+		},
+		{
+			name:  "after the late entry the next is the regular one",
+			lease: monthly(d(2026, 9, 15), d(2026, 10, 28)), today: d(2026, 10, 28),
+			invoiced: []time.Time{d(2026, 9, 15), d(2026, 10, 15)},
+			want:     &billing.NextInvoice{Period: d(2026, 11, 15), IssuedOn: d(2026, 11, 8)},
+		},
+		{
+			name: "invoices that fell behind are made today, the amounts on the newest", lease: oct28,
+			today: d(2027, 1, 22), invoiced: []time.Time{d(2026, 10, 28)},
+			want: &billing.NextInvoice{Period: d(2027, 1, 28), IssuedOn: d(2027, 1, 22)},
+		},
+		{
+			name:  "periods skipped with Mulai tagih dari are never next",
+			lease: with(monthly(d(2026, 6, 15), d(2026, 10, 28)), func(l *billing.LeaseDates) { l.BilledFrom = d(2026, 10, 15) }),
+			today: d(2026, 10, 28),
+			want:  &billing.NextInvoice{Period: d(2026, 10, 15), IssuedOn: d(2026, 10, 28)},
+		},
+		{
+			name: "a three-month lease's next period", lease: billing.LeaseDates{Start: d(2026, 10, 15), EnteredOn: d(2026, 10, 15), BilledFrom: d(2026, 10, 15), TermMonths: 3},
+			today: d(2026, 11, 3), invoiced: []time.Time{d(2026, 10, 15)},
+			want: &billing.NextInvoice{Period: d(2027, 1, 15), IssuedOn: d(2027, 1, 8)},
+		},
+		{
+			name:  "a period starting on the planned end date is still billed",
+			lease: with(oct28, func(l *billing.LeaseDates) { l.PlannedEnd = ptr(d(2026, 11, 28)) }),
+			today: d(2026, 11, 3), invoiced: []time.Time{d(2026, 10, 28)},
+			want: &billing.NextInvoice{Period: d(2026, 11, 28), IssuedOn: d(2026, 11, 21)},
+		},
+		{
+			name:  "none after the planned end date",
+			lease: with(oct28, func(l *billing.LeaseDates) { l.PlannedEnd = ptr(d(2026, 11, 27)) }),
+			today: d(2026, 11, 3), invoiced: []time.Time{d(2026, 10, 28)},
+		},
+		{
+			name:  "none for an ended lease",
+			lease: with(oct28, func(l *billing.LeaseDates) { l.End = ptr(d(2026, 12, 31)) }),
+			today: d(2026, 11, 3), invoiced: []time.Time{d(2026, 10, 28)},
+		},
+		{
+			name:  "none for a cancelled booking",
+			lease: with(monthly(d(2026, 12, 1), d(2026, 11, 3)), func(l *billing.LeaseDates) { l.End = ptr(d(2026, 12, 1)) }),
+			today: d(2026, 11, 3),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := billing.NextInvoiceOf(tc.lease, tc.today, tc.invoiced)
+			if tc.want == nil {
+				require.False(t, ok, "got %+v", got)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, *tc.want, got)
+		})
+	}
+}

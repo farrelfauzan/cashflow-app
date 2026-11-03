@@ -51,6 +51,9 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, billing.ErrCorrectionBelowZero):
 		s.writeErrorField(w, http.StatusConflict, "correction_below_zero",
 			"Koreksi ini membuat nominal di bawah nol.", "amountDelta")
+	case errors.Is(err, billing.ErrMeteredChargeBilled):
+		s.writeError(w, http.StatusConflict, "metered_charge_billed",
+			"Jumlah bulan ini sudah ditagihkan, jadi tidak bisa diubah lagi. Perbaiki dengan koreksi nominal pada tagihannya.")
 	case errors.As(err, &fileErr):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", fileErr.Message, "file")
 	case errors.Is(err, auth.ErrInvalidPhone):

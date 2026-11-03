@@ -136,7 +136,7 @@ func toAPIAccountInvoice(inv billing.AccountInvoice) apigen.AccountInvoice {
 		Corrections: toAPICorrections(inv.Corrections),
 	}
 	for i, l := range inv.Lines {
-		out.Lines[i] = apigen.InvoiceLine{Id: l.ID, Kind: apigen.InvoiceLineKind(l.Kind), Label: l.Label, Amount: l.Amount}
+		out.Lines[i] = toAPIInvoiceLine(l)
 	}
 	return out
 }

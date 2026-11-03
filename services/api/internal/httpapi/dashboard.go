@@ -95,7 +95,7 @@ func (s *Server) listInvoices(w http.ResponseWriter, r *http.Request) {
 	for i, inv := range res.Items {
 		lines := make([]apigen.InvoiceLine, len(inv.Lines))
 		for j, l := range inv.Lines {
-			lines[j] = apigen.InvoiceLine{Id: l.ID, Kind: apigen.InvoiceLineKind(l.Kind), Label: l.Label, Amount: l.Amount}
+			lines[j] = toAPIInvoiceLine(l)
 		}
 		out.Items[i] = apigen.InvoiceListItem{
 			Id: inv.ID, TenantId: inv.TenantID, TenantName: inv.TenantName, LeaseId: inv.LeaseID,
