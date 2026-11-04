@@ -1,5 +1,6 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import type { ImportRowView } from "./type";
 
@@ -21,7 +22,12 @@ export function ImportTableRow({ row }: ImportTableRowProps) {
         row.status.tone === "error" && "bg-destructive/5",
       )}
     >
-      <div className="grid grid-cols-[72px_minmax(0,1fr)_220px] items-start gap-3">
+      <div
+        className={cn(
+          "grid grid-cols-[72px_minmax(0,1fr)_220px] items-start",
+          TABLE_COLUMN_GAP,
+        )}
+      >
         <span className="pt-0.5 text-base font-semibold">{row.lineLabel}</span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-base font-semibold">{row.tenantName}</span>

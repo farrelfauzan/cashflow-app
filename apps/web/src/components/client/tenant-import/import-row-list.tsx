@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import type { ImportRowView } from "./type";
 import { ROW_LIST_LABEL } from "./utils";
 
@@ -18,7 +20,10 @@ export function ImportRowList({ rows }: ImportRowListProps) {
       <section className="hidden overflow-hidden rounded-2xl border bg-card lg:block">
         <div
           aria-hidden="true"
-          className="grid min-h-12 grid-cols-[72px_minmax(0,1fr)_220px] items-center gap-3 border-b bg-muted/40 px-4 text-base font-semibold text-muted-foreground"
+          className={cn(
+            "grid min-h-12 grid-cols-[72px_minmax(0,1fr)_220px] items-center border-b bg-muted/40 px-4 text-base font-semibold text-muted-foreground",
+            TABLE_COLUMN_GAP,
+          )}
         >
           <span>Baris</span>
           <span>Penyewa dan unit</span>

@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 
@@ -19,7 +21,10 @@ export function TenantTableRow({ href, row }: TenantTableRowProps) {
     <li className="border-t first:border-t-0">
       <Link
         href={href}
-        className="grid min-h-[68px] grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_130px_20px] items-center gap-4 px-5 py-2 hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none"
+        className={cn(
+          "grid min-h-[68px] grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_130px_20px] items-center px-5 py-2 hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none",
+          TABLE_COLUMN_GAP,
+        )}
       >
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-[17px] font-semibold">{row.name}</span>

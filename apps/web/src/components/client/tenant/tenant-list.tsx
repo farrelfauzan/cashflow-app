@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import { orgPath } from "@/lib/org-path";
 import type { TenantRowView } from "./type";
 
@@ -19,7 +21,10 @@ export function TenantList({ orgId, rows }: TenantListProps) {
       <section className="hidden overflow-hidden rounded-2xl border bg-card lg:block">
         <div
           aria-hidden="true"
-          className="grid min-h-11 grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_130px_20px] items-center gap-4 border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground"
+          className={cn(
+            "grid min-h-11 grid-cols-[minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_130px_20px] items-center border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
+            TABLE_COLUMN_GAP,
+          )}
         >
           <span>Penyewa</span>
           <span>Unit</span>

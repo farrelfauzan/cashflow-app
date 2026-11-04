@@ -147,7 +147,7 @@ func toAPIMeteredCharge(mc billing.MeteredCharge) apigen.MeteredCharge {
 		CreatedAt:  mc.CreatedAt, UpdatedAt: mc.UpdatedAt,
 	}
 	if mc.Billed != nil {
-		out.Billed = &apigen.MeteredChargeBilled{InvoiceId: mc.Billed.InvoiceID, Period: date(mc.Billed.Period)}
+		out.Billed = &apigen.MeteredChargeBilled{InvoiceId: mc.Billed.InvoiceID, Kind: apigen.InvoiceKind(mc.Billed.Kind), Period: date(mc.Billed.Period)}
 	}
 	return out
 }

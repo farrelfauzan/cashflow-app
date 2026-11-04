@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/api/generated/model";
 import { canManageMember, canResendInvitation } from "./utils";
 import type { MemberPermissions } from "./type";
@@ -37,7 +39,10 @@ export function MemberList({
       <section className="hidden overflow-hidden rounded-2xl border bg-card lg:block">
         <div
           aria-hidden="true"
-          className="grid grid-cols-[240px_minmax(0,1fr)_200px_80px] items-center gap-4 border-b bg-muted/40 px-5 py-2.5 text-sm font-semibold text-muted-foreground"
+          className={cn(
+            "grid grid-cols-[240px_minmax(0,1fr)_200px_80px] items-center border-b bg-muted/40 px-5 py-2.5 text-sm font-semibold text-muted-foreground",
+            TABLE_COLUMN_GAP,
+          )}
         >
           <span>Nama</span>
           <span>Peran</span>

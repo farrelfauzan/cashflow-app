@@ -1,6 +1,7 @@
 "use client";
 
 import { orgPath } from "@/lib/org-path";
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import { METER_LIST_LABEL, METER_TABLE_COLUMNS } from "./utils";
 import type { MissingMeterRowView } from "./type";
@@ -30,8 +31,9 @@ export function MeterMissingList({
         <div
           aria-hidden="true"
           className={cn(
-            "grid min-h-11 items-center gap-3 border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
+            "grid min-h-11 items-center border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
             METER_TABLE_COLUMNS,
+            TABLE_COLUMN_GAP,
           )}
         >
           <span>Penyewa</span>

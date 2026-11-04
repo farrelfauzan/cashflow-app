@@ -365,7 +365,7 @@ describe("recordedRows", () => {
         charge({
           id: "b",
           usageMonth: "2026-09",
-          billed: { invoiceId: "inv-1", period: "2026-10-01" },
+          billed: { invoiceId: "inv-1", kind: "regular", period: "2026-10-01" },
         }),
       ]),
     ).toEqual([
@@ -399,7 +399,7 @@ describe("lockedView", () => {
           meterStart: 1200,
           meterEnd: 1350,
           updatedAt: "2026-11-02T18:30:00Z",
-          billed: { invoiceId: "inv-1", period: "2026-11-01" },
+          billed: { invoiceId: "inv-1", kind: "regular", period: "2026-11-01" },
         }),
       ),
     ).toEqual({
@@ -420,7 +420,9 @@ describe("lockedView", () => {
   it("leaves out meter numbers that were not recorded", () => {
     expect(
       lockedView(
-        charge({ billed: { invoiceId: "inv-1", period: "2026-11-01" } }),
+        charge({
+          billed: { invoiceId: "inv-1", kind: "regular", period: "2026-11-01" },
+        }),
       )?.rows.map((row) => row.label),
     ).toEqual(["Jumlah", "Dicatat"]);
   });

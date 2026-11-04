@@ -110,7 +110,7 @@ func TestFinalInvoiceAtMoveOut(t *testing.T) {
 		// The readings are billed now, by the final invoice, and locked.
 		list := w.meteredList(t, w.admin, r.leaseID, billing.MeteredQuery{})
 		for _, it := range list.Items {
-			require.Equal(t, &billing.BilledRef{InvoiceID: final.InvoiceID, Period: day(2026, 11, 15)}, it.Billed, it.ChargeTypeName)
+			require.Equal(t, &billing.BilledRef{InvoiceID: final.InvoiceID, Kind: billing.InvoiceFinal, Period: day(2026, 11, 15)}, it.Billed, it.ChargeTypeName)
 		}
 		require.Nil(t, list.NextInvoice)
 		err := w.inTx(func(ctx context.Context, tx pgx.Tx, _ *dbgen.Queries) error {
