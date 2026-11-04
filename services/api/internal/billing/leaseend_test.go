@@ -62,6 +62,45 @@ func TestPlanPlannedEnd(t *testing.T) {
 			invoices:   []billing.LeaseInvoice{cancelled(nov, d(2026, 11, 15), "salah tagih")},
 			plannedEnd: nil,
 		},
+		{
+			name: "usage billed on a period after the date stays owed: only the rest is cancelled",
+			invoices: []billing.LeaseInvoice{
+				open(oct, d(2026, 10, 15)),
+				{ID: nov, Period: d(2026, 11, 15), Billed: 850_000, Metered: 150_000, Outstanding: 850_000},
+			},
+			plannedEnd: ptr(d(2026, 11, 14)),
+			want:       []billing.Correction{{InvoiceID: nov, Delta: -700_000, Reason: billing.ReasonNotRenewed}},
+		},
+		{
+			name: "an invoice cancelled down to its usage is not cancelled again",
+			invoices: []billing.LeaseInvoice{
+				{ID: nov, Period: d(2026, 11, 15), Billed: 150_000, Metered: 150_000, LastReason: billing.ReasonNotRenewed, LastDelta: -700_000},
+			},
+			plannedEnd: ptr(d(2026, 11, 10)),
+		},
+		{
+			name: "clearing the date restores an invoice cancelled down to its usage",
+			invoices: []billing.LeaseInvoice{
+				{ID: nov, Period: d(2026, 11, 15), Billed: 150_000, Metered: 150_000, LastReason: billing.ReasonNotRenewed, LastDelta: -700_000},
+			},
+			plannedEnd: nil,
+			want:       []billing.Correction{{InvoiceID: nov, Delta: 700_000, Reason: billing.ReasonPlannedEndChanged}},
+		},
+		{
+			name: "an invoice with usage cancelled in full by an earlier release is still restored in full",
+			invoices: []billing.LeaseInvoice{
+				{ID: nov, Period: d(2026, 11, 15), Billed: 0, Metered: 150_000, LastReason: billing.ReasonNotRenewed, LastDelta: -850_000},
+			},
+			plannedEnd: nil,
+			want:       []billing.Correction{{InvoiceID: nov, Delta: 850_000, Reason: billing.ReasonPlannedEndChanged}},
+		},
+		{
+			name: "an invoice corrected by hand below its usage is left alone",
+			invoices: []billing.LeaseInvoice{
+				{ID: nov, Period: d(2026, 11, 15), Billed: 100_000, Metered: 150_000, LastReason: "salah catat meteran", LastDelta: -750_000},
+			},
+			plannedEnd: ptr(d(2026, 11, 14)),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,6 +146,36 @@ func TestPlanMoveOut(t *testing.T) {
 				{InvoiceID: b, Delta: -700_000, Reason: billing.ReasonBookingCancelled},
 			},
 			billing.PlanMoveOut(invoices, d(2026, 10, 15), d(2026, 10, 15)))
+	})
+
+	metered := []billing.LeaseInvoice{
+		{ID: a, Period: d(2026, 10, 15), Billed: 700_000},
+		{ID: b, Period: d(2026, 11, 15), Billed: 850_000, Metered: 150_000},
+	}
+	t.Run("usage billed on a period after the end date stays owed", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t,
+			[]billing.Correction{{InvoiceID: b, Delta: -700_000, Reason: billing.ReasonNotRenewed}},
+			billing.PlanMoveOut(metered, d(2026, 10, 15), d(2026, 11, 10)))
+	})
+	t.Run("a started period a planned end had cancelled down to its usage is restored", func(t *testing.T) {
+		t.Parallel()
+		cancelled := []billing.LeaseInvoice{
+			metered[0],
+			{ID: b, Period: d(2026, 11, 15), Billed: 150_000, Metered: 150_000, LastReason: billing.ReasonNotRenewed, LastDelta: -700_000},
+		}
+		require.Equal(t,
+			[]billing.Correction{{InvoiceID: b, Delta: 700_000, Reason: billing.ReasonPlannedEndChanged}},
+			billing.PlanMoveOut(cancelled, d(2026, 10, 15), d(2026, 11, 20)))
+	})
+	t.Run("a cancelled booking cancels its usage too", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t,
+			[]billing.Correction{
+				{InvoiceID: a, Delta: -700_000, Reason: billing.ReasonBookingCancelled},
+				{InvoiceID: b, Delta: -850_000, Reason: billing.ReasonBookingCancelled},
+			},
+			billing.PlanMoveOut(metered, d(2026, 10, 15), d(2026, 10, 15)))
 	})
 }
 

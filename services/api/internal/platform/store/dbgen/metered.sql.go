@@ -215,7 +215,7 @@ func (q *Queries) GetMeteredCharge(ctx context.Context, arg GetMeteredChargePara
 
 const listInvoicePeriodsOfLeases = `-- name: ListInvoicePeriodsOfLeases :many
 SELECT lease_id, period FROM invoice
-WHERE organization_id = $1 AND lease_id = ANY($2::uuid[])
+WHERE organization_id = $1 AND lease_id = ANY($2::uuid[]) AND kind = 'regular'
 ORDER BY lease_id, period
 `
 
@@ -229,7 +229,8 @@ type ListInvoicePeriodsOfLeasesRow struct {
 	Period  time.Time
 }
 
-// The period starts that already have an invoice, for each of the given leases.
+// The period starts that already have a regular invoice, for each of the given leases. A final
+// invoice bills no period of the term.
 func (q *Queries) ListInvoicePeriodsOfLeases(ctx context.Context, arg ListInvoicePeriodsOfLeasesParams) ([]ListInvoicePeriodsOfLeasesRow, error) {
 	rows, err := q.db.Query(ctx, listInvoicePeriodsOfLeases, arg.OrganizationID, arg.LeaseIds)
 	if err != nil {

@@ -273,6 +273,7 @@ const RESULT: PaymentResult = {
   paid: [
     {
       invoiceId: "a",
+      kind: "regular",
       period: "2026-09-01",
       periodEnd: "2026-09-30",
       dueDate: "2026-09-01",
@@ -281,6 +282,7 @@ const RESULT: PaymentResult = {
     },
     {
       invoiceId: "b",
+      kind: "regular",
       period: "2026-10-01",
       periodEnd: "2026-10-31",
       dueDate: "2026-10-01",

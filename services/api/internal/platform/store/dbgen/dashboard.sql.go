@@ -179,7 +179,7 @@ const listInvoicePage = `-- name: ListInvoicePage :many
 SELECT b.invoice_id, b.tenant_id, t.name AS tenant_name, b.lease_id, u.property_id,
        p.name AS property_name, u.label AS unit_label,
        b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status,
-       i.created_at,
+       i.created_at, i.kind,
        (l.status = 'active' AND l.planned_end_date IS NOT NULL
         AND l.planned_end_date < $1::date)::boolean AS past_planned_end
 FROM invoice_balance b
@@ -236,6 +236,7 @@ type ListInvoicePageRow struct {
 	Outstanding    int64
 	Status         string
 	CreatedAt      time.Time
+	Kind           string
 	PastPlannedEnd bool
 }
 
@@ -282,6 +283,7 @@ func (q *Queries) ListInvoicePage(ctx context.Context, arg ListInvoicePageParams
 			&i.Outstanding,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Kind,
 			&i.PastPlannedEnd,
 		); err != nil {
 			return nil, err

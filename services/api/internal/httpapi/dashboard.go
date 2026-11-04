@@ -98,7 +98,7 @@ func (s *Server) listInvoices(w http.ResponseWriter, r *http.Request) {
 			lines[j] = toAPIInvoiceLine(l)
 		}
 		out.Items[i] = apigen.InvoiceListItem{
-			Id: inv.ID, TenantId: inv.TenantID, TenantName: inv.TenantName, LeaseId: inv.LeaseID,
+			Id: inv.ID, Kind: apigen.InvoiceKind(inv.Kind), TenantId: inv.TenantID, TenantName: inv.TenantName, LeaseId: inv.LeaseID,
 			PropertyId: inv.PropertyID, PropertyName: inv.PropertyName, UnitLabel: inv.UnitLabel,
 			Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate), IssuedOn: date(inv.IssuedOn),
 			Amount: inv.Amount, Billed: inv.Billed, Paid: inv.Paid, Outstanding: inv.Outstanding,

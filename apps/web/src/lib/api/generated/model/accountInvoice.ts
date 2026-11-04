@@ -5,11 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Correction } from './correction';
+import type { InvoiceKind } from './invoiceKind';
 import type { InvoiceLine } from './invoiceLine';
 import type { InvoiceStatus } from './invoiceStatus';
 
 export interface AccountInvoice {
   id: string;
+  kind: InvoiceKind;
   leaseId: string;
   unitLabel: string;
   propertyName: string;

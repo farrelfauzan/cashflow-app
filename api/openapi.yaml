@@ -2218,6 +2218,14 @@ components:
         Whether an open or partial invoice is overdue follows from its dueDate (debt from the
         day after it, Asia/Jakarta).
 
+    InvoiceKind:
+      type: string
+      enum: [regular, final]
+      description: >
+        regular: bills one period of the lease's term. final: the one invoice made at move-out for
+        metered usage no regular invoice billed; its period and periodEnd are the lease's last day,
+        so it belongs to the month the tenant left, and it is due on the move-out day.
+
     InvoiceLine:
       type: object
       required: [id, kind, label, amount]
@@ -2247,9 +2255,10 @@ components:
 
     AccountInvoice:
       type: object
-      required: [id, leaseId, unitLabel, propertyName, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, lines, corrections]
+      required: [id, kind, leaseId, unitLabel, propertyName, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, lines, corrections]
       properties:
         id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
         leaseId: { type: string, format: uuid }
         unitLabel: { type: string }
         propertyName: { type: string }
@@ -2367,10 +2376,11 @@ components:
 
     PaidInvoice:
       type: object
-      required: [invoiceId, period, periodEnd, dueDate, amount, outstanding]
+      required: [invoiceId, kind, period, periodEnd, dueDate, amount, outstanding]
       description: One invoice a payment paid, and what that invoice still owes now.
       properties:
         invoiceId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
         period: { type: string, format: date }
         periodEnd: { type: string, format: date }
         dueDate: { type: string, format: date }
@@ -2497,9 +2507,10 @@ components:
 
     InvoiceListItem:
       type: object
-      required: [id, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines]
+      required: [id, kind, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines]
       properties:
         id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
         tenantId: { type: string, format: uuid }
         tenantName: { type: string }
         leaseId: { type: string, format: uuid }

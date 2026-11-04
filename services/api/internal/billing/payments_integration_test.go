@@ -94,7 +94,7 @@ func TestRecordPayment(t *testing.T) {
 		res := w.record(t, cash(r.renter, 1_000_000, day(2026, 10, 28)))
 		require.True(t, res.Created)
 		require.Equal(t, []billing.PaidInvoice{{
-			InvoiceID: oct.InvoiceID, Period: day(2026, 10, 28), PeriodEnd: day(2026, 11, 27), DueDate: day(2026, 10, 28),
+			InvoiceID: oct.InvoiceID, Kind: billing.InvoiceRegular, Period: day(2026, 10, 28), PeriodEnd: day(2026, 11, 27), DueDate: day(2026, 10, 28),
 			Amount: 700_000, Outstanding: 0,
 		}}, res.Paid)
 		require.EqualValues(t, 300_000, res.Credit)

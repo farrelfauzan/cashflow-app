@@ -116,7 +116,7 @@ LIMIT @row_limit;
 SELECT b.invoice_id, b.tenant_id, t.name AS tenant_name, b.lease_id, u.property_id,
        p.name AS property_name, u.label AS unit_label,
        b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status,
-       i.created_at,
+       i.created_at, i.kind,
        (l.status = 'active' AND l.planned_end_date IS NOT NULL
         AND l.planned_end_date < @today::date)::boolean AS past_planned_end
 FROM invoice_balance b
