@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 )
@@ -124,6 +125,9 @@ type orgSpec struct {
 	// Payers are the three tenants whose money GenerateInvoices records: one pays in full, one
 	// pays part of the oldest invoice, one pays nothing and so stays overdue.
 	Payers payerSpec
+	// BankAccount is shown on the tenant payment page for a manual transfer (decision 38); nil
+	// leaves the organization without one, so the page's other state can be shown too.
+	BankAccount *paylink.BankAccount
 }
 
 // payerSpec names tenants of the organization (by name, unique within it). Each must have a
@@ -182,6 +186,9 @@ func demoOrgs(c clock.Clock) []orgSpec {
 		{
 			Name:  OrgGriya,
 			Actor: "0812-0001-0002",
+			BankAccount: &paylink.BankAccount{
+				BankName: "BCA", AccountNumber: "0123 456 789", AccountHolder: "Ani Rahmawati",
+			},
 			Founders: []staffSpec{
 				{Phone: "0812-0001-0001", Name: "Bu Ani Rahmawati", Grants: orgWide(authz.RoleSupervisor)},
 				{Phone: "0812-0001-0002", Name: "Pak Budi Hartono", Grants: orgWide(authz.RoleAdmin)},

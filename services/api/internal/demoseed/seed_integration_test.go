@@ -17,6 +17,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
@@ -30,6 +31,7 @@ func deps(env *testenv.Env) demoseed.Deps {
 		Properties: env.Properties, Tenants: env.Tenants,
 		PastProperties: property.NewService(env.Store, env.Authz, past),
 		PastTenants:    tenant.NewService(env.Store, env.Authz, past, env.Billing, nil),
+		PayLinks:       paylink.NewService(env.Store, env.Authz, env.Clock, ""),
 	}
 }
 
@@ -310,6 +312,18 @@ func TestSeedDemo(t *testing.T) {
 		require.Len(t, fajar.Leases, 1)
 		require.Equal(t, tenant.StatusActive, fajar.Leases[0].Status)
 		require.Equal(t, time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC), fajar.Leases[0].StartDate)
+	})
+
+	t.Run("only Griya Sejahtera has a bank account for transfers", func(t *testing.T) {
+		pl := paylink.NewService(env.Store, env.Authz, env.Clock, "")
+		got, err := pl.BankAccount(ctx, a.OrganizationID)
+		require.NoError(t, err)
+		require.Equal(t, &paylink.BankAccount{BankName: "BCA", AccountNumber: "0123 456 789", AccountHolder: "Ani Rahmawati"}, got)
+		for _, org := range []uuid.UUID{b.OrganizationID, c.OrganizationID} {
+			got, err := pl.BankAccount(ctx, org)
+			require.NoError(t, err)
+			require.Nil(t, got)
+		}
 	})
 
 	t.Run("Rina has two leases in A and a separate record in B", func(t *testing.T) {
