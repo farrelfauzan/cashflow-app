@@ -417,6 +417,16 @@ describe("lockedView", () => {
     });
   });
 
+  it("names the final invoice when the move-out bills the amount", () => {
+    expect(
+      lockedView(
+        charge({
+          billed: { invoiceId: "inv-9", kind: "final", period: "2026-11-01" },
+        }),
+      )?.correctLabel,
+    ).toBe("Koreksi tagihan akhir November 2026");
+  });
+
   it("leaves out meter numbers that were not recorded", () => {
     expect(
       lockedView(
