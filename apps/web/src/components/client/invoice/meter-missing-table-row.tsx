@@ -1,6 +1,7 @@
 "use client";
 
 import { TenantChip } from "@/components/client/tenant/tenant-chip";
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import { METER_CHIP_LABEL, METER_TABLE_COLUMNS } from "./utils";
 import type { MissingMeterRowView } from "./type";
@@ -23,8 +24,9 @@ export function MeterMissingTableRow({
   return (
     <li
       className={cn(
-        "grid items-center gap-3 border-t px-5 py-3 first:border-t-0",
+        "grid items-center border-t px-5 py-3 first:border-t-0",
         METER_TABLE_COLUMNS,
+        TABLE_COLUMN_GAP,
       )}
     >
       <span className="min-w-0 text-[17px] font-semibold">
