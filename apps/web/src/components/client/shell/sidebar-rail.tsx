@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import { SidebarCollapsedContext } from "./sidebar-collapsed-context";
 import { SidebarToggle } from "./sidebar-toggle";
-import { sidebarCookie, SIDEBAR_COLLAPSED } from "./utils";
+import { markSidebarChoice, sidebarCookie, SIDEBAR_COLLAPSED } from "./utils";
 
 type SidebarRailProps = {
   // From the cf_sidebar cookie, read by the server shell, so the first paint is right.
@@ -28,6 +28,7 @@ export function SidebarRail({ defaultCollapsed, children }: SidebarRailProps) {
       next,
       window.location.protocol === "https:",
     );
+    markSidebarChoice(document.documentElement, next);
   };
 
   return (

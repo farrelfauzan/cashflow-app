@@ -123,12 +123,20 @@ test.describe("Admin of the whole organization", () => {
     ).toBeVisible();
     await expect(expand).toBeVisible();
     expect(await asideWidth(page)).toBe(RAIL_PX);
+    // The root layout's script marked <html> too, for the loading skeleton.
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-sidebar-choice",
+      "collapsed",
+    );
 
     // Expanded again, and that is remembered too.
     await expand.click();
     await expect(collapse).toHaveAttribute("aria-expanded", "true");
     await expect.poll(() => asideWidth(page)).toBe(WIDE_PX);
     await expect(menu.getByText("Penyewa", { exact: true })).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute(
+      "data-sidebar-choice",
+    );
     await page.reload();
     await expect(collapse).toBeVisible();
     expect(await asideWidth(page)).toBe(WIDE_PX);

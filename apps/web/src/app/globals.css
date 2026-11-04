@@ -9,6 +9,11 @@
    utilities leave the sheet as it is. */
 @custom-variant rail (&:where([data-sidebar="collapsed"] *));
 
+/* Only for the org shell's loading skeleton: the member's choice as the root layout's script
+   and the toggle mark it on <html>. Never use it for the menu itself, since <html> holds the
+   phone's sheet too. */
+@custom-variant rail-choice (&:where([data-sidebar-choice="collapsed"] *));
+
 /* Every color in the app is defined here, once. Components use the semantic tokens below
    (bg-background, text-muted-foreground, bg-warning, ...), never raw colors.
 

@@ -7,7 +7,9 @@ import {
   currentCapabilities,
   cookieSaysCollapsed,
   isSidebarCollapsed,
-  SIDEBAR_SKELETON_SCRIPT,
+  markSidebarChoice,
+  SIDEBAR_CHOICE_ATTRIBUTE,
+  SIDEBAR_CHOICE_SCRIPT,
   sidebarCookie,
   sidebarToggleLabel,
 } from "./utils";
@@ -74,25 +76,37 @@ describe("the side menu's collapsed choice", () => {
     expect(cookieSaysCollapsed(cookie)).toBe(want);
   });
 
-  it("marks the skeleton only when the cookie says collapsed", () => {
+  it("marks <html> only when the cookie says collapsed", () => {
     // Runs the inline script against a stand-in document, as the browser would.
     const run = (cookie: string) => {
       const attributes: Record<string, string> = {};
-      const previous = {
-        setAttribute: (name: string, value: string) => {
-          attributes[name] = value;
-        },
-      };
       const document = {
         cookie,
-        currentScript: { previousElementSibling: previous },
+        documentElement: {
+          setAttribute: (name: string, value: string) => {
+            attributes[name] = value;
+          },
+        },
       };
-      new Function("document", SIDEBAR_SKELETON_SCRIPT)(document);
-      return attributes["data-sidebar"];
+      new Function("document", SIDEBAR_CHOICE_SCRIPT)(document);
+      return attributes[SIDEBAR_CHOICE_ATTRIBUTE];
     };
     expect(run("a=1; cf_sidebar=collapsed")).toBe("collapsed");
     expect(run("cf_sidebar=")).toBeUndefined();
     expect(run("")).toBeUndefined();
+  });
+
+  it("keeps <html>'s mark in step with the toggle", () => {
+    const attributes = new Map<string, string>();
+    const root = {
+      setAttribute: (name: string, value: string) =>
+        attributes.set(name, value),
+      removeAttribute: (name: string) => attributes.delete(name),
+    } as unknown as Element;
+    markSidebarChoice(root, true);
+    expect(attributes.get("data-sidebar-choice")).toBe("collapsed");
+    markSidebarChoice(root, false);
+    expect(attributes.has("data-sidebar-choice")).toBe(false);
   });
 
   it("words the toggle by what it does", () => {

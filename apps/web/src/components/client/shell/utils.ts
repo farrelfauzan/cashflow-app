@@ -53,7 +53,19 @@ export function sidebarToggleLabel(collapsed: boolean): string {
   return collapsed ? "Lebarkan menu" : "Ciutkan menu";
 }
 
-// Runs inline in the loading skeleton, before it is painted: the skeleton is prerendered without
-// the request's cookies, so this marks its side menu collapsed when the cookie says so, and the
-// width does not jump when the shell arrives. Same test as cookieSaysCollapsed.
-export const SIDEBAR_SKELETON_SCRIPT = `(function(){var e=document.currentScript&&document.currentScript.previousElementSibling;if(e&&document.cookie.split(";").some(function(p){return p.trim()==="${SIDEBAR_COOKIE}=${SIDEBAR_COLLAPSED}"}))e.setAttribute("data-sidebar","${SIDEBAR_COLLAPSED}")})()`;
+// The attribute on <html> that carries the choice for what the server cannot draw from the
+// cookie: the org shell's loading skeleton, which is prerendered without cookies.
+export const SIDEBAR_CHOICE_ATTRIBUTE = "data-sidebar-choice";
+
+// Runs inline in the root layout's <head>, before the first paint: marks <html> when the cookie
+// says collapsed, so the skeleton's side menu starts at the rail's width. It sits in the root
+// layout because React only hydrates that and never renders it again on the client, where a
+// <script> would not run (and React warns). Same test as cookieSaysCollapsed.
+export const SIDEBAR_CHOICE_SCRIPT = `(function(){try{if(document.cookie.split(";").some(function(p){return p.trim()==="${SIDEBAR_COOKIE}=${SIDEBAR_COLLAPSED}"}))document.documentElement.setAttribute("${SIDEBAR_CHOICE_ATTRIBUTE}","${SIDEBAR_COLLAPSED}")}catch(e){}})()`;
+
+// Keeps <html>'s mark in step with the toggle, so a skeleton shown later on this page (entering
+// another organization) has the width the member chose.
+export function markSidebarChoice(root: Element, collapsed: boolean): void {
+  if (collapsed) root.setAttribute(SIDEBAR_CHOICE_ATTRIBUTE, SIDEBAR_COLLAPSED);
+  else root.removeAttribute(SIDEBAR_CHOICE_ATTRIBUTE);
+}
