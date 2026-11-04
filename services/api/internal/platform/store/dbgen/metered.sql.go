@@ -157,7 +157,7 @@ const getMeteredCharge = `-- name: GetMeteredCharge :one
 
 SELECT mc.id, mc.lease_id, mc.charge_type_id, ct.name AS charge_type_name, mc.usage_month, mc.amount,
        mc.meter_start, mc.meter_end, m.id AS recorded_by_member_id, su.name AS recorded_by_name,
-       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period
+       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period, i.kind AS billed_kind
 FROM metered_charge mc
 JOIN charge_type ct ON ct.organization_id = mc.organization_id AND ct.id = mc.charge_type_id
 JOIN membership m ON m.organization_id = mc.organization_id AND m.staff_user_id = mc.recorded_by_staff_user_id
@@ -187,6 +187,7 @@ type GetMeteredChargeRow struct {
 	UpdatedAt          time.Time
 	BilledInvoiceID    uuid.NullUUID
 	BilledPeriod       *time.Time
+	BilledKind         *string
 }
 
 // Reading amounts -------------------------------------------------------------------------------
@@ -209,6 +210,7 @@ func (q *Queries) GetMeteredCharge(ctx context.Context, arg GetMeteredChargePara
 		&i.UpdatedAt,
 		&i.BilledInvoiceID,
 		&i.BilledPeriod,
+		&i.BilledKind,
 	)
 	return i, err
 }
@@ -254,7 +256,7 @@ func (q *Queries) ListInvoicePeriodsOfLeases(ctx context.Context, arg ListInvoic
 const listLeaseMeteredChargePage = `-- name: ListLeaseMeteredChargePage :many
 SELECT mc.id, mc.lease_id, mc.charge_type_id, ct.name AS charge_type_name, mc.usage_month, mc.amount,
        mc.meter_start, mc.meter_end, m.id AS recorded_by_member_id, su.name AS recorded_by_name,
-       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period
+       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period, i.kind AS billed_kind
 FROM metered_charge mc
 JOIN charge_type ct ON ct.organization_id = mc.organization_id AND ct.id = mc.charge_type_id
 JOIN membership m ON m.organization_id = mc.organization_id AND m.staff_user_id = mc.recorded_by_staff_user_id
@@ -292,6 +294,7 @@ type ListLeaseMeteredChargePageRow struct {
 	UpdatedAt          time.Time
 	BilledInvoiceID    uuid.NullUUID
 	BilledPeriod       *time.Time
+	BilledKind         *string
 }
 
 // One page of a lease's amounts, the newest month first, then by type name. CountLeaseMeteredCharges
@@ -327,6 +330,7 @@ func (q *Queries) ListLeaseMeteredChargePage(ctx context.Context, arg ListLeaseM
 			&i.UpdatedAt,
 			&i.BilledInvoiceID,
 			&i.BilledPeriod,
+			&i.BilledKind,
 		); err != nil {
 			return nil, err
 		}

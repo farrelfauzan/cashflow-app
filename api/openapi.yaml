@@ -2596,11 +2596,12 @@ components:
 
     MeteredChargeBilled:
       type: object
-      required: [invoiceId, period]
+      required: [invoiceId, kind, period]
       description: The invoice whose line bills the amount.
       properties:
         invoiceId: { type: string, format: uuid }
-        period: { type: string, format: date, description: "The invoice's period start (Tagihan November)." }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
+        period: { type: string, format: date, description: "The invoice's period start (Tagihan November); a final invoice's is the lease's last day." }
 
     MeteredCharge:
       type: object

@@ -4,12 +4,14 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceKind } from './invoiceKind';
 
 /**
  * The invoice whose line bills the amount.
  */
 export interface MeteredChargeBilled {
   invoiceId: string;
-  /** The invoice's period start (Tagihan November). */
+  kind: InvoiceKind;
+  /** The invoice's period start (Tagihan November); a final invoice's is the lease's last day. */
   period: string;
 }
