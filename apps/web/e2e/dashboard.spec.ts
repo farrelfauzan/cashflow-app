@@ -292,54 +292,48 @@ test.describe("Admin of the whole organization", () => {
     expect(
       await fontSize(page, formatLongDate(jakartaToday(new Date()))),
     ).toBeGreaterThanOrEqual(min);
+    // generate-invoices (the seed CI runs) leaves Griya Sejahtera with tenants in arrears, so
+    // "Belum bayar" must have a row.
+    expect(dashboard.arrears.length).toBeGreaterThan(0);
     const firstArrears = dashboard.arrears[0];
-    if (firstArrears !== undefined) {
-      expect(
-        await fontSize(page, `Terlambat ${firstArrears.ageDays} hari`),
-      ).toBeGreaterThanOrEqual(min);
-    }
+    if (firstArrears === undefined) throw new Error("no tenant in arrears");
+    expect(
+      await fontSize(page, `Terlambat ${firstArrears.ageDays} hari`),
+    ).toBeGreaterThanOrEqual(min);
     await attachFullPageScreenshot(page, testInfo, "dashboard");
 
-    // While someone is late, "Lihat semua di Penagihan" opens every overdue invoice.
+    // "Lihat semua di Penagihan" opens every overdue invoice.
     const billingLink = page.getByRole("link", {
       name: "Lihat semua di Penagihan",
     });
-    if (firstArrears === undefined) {
-      await expect(billingLink).toHaveCount(0);
-    } else {
-      await expect(billingLink).toHaveAttribute(
-        "href",
-        `/o/${orgId}/billing?status=overdue`,
-      );
-      const billingBox = await billingLink.boundingBox();
-      expect(billingBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-      await billingLink.click();
-      await expect(page).toHaveURL(/\/billing\?status=overdue$/);
-      await expect(
-        page.getByRole("heading", { level: 1, name: "Penagihan" }),
-      ).toBeVisible();
-      await expect(
-        page.getByText("Semua tunggakan, semua bulan"),
-      ).toBeVisible();
-      await page.goBack();
-      await expect(page).toHaveURL(ORG_HOME_URL);
-    }
+    await expect(billingLink).toHaveAttribute(
+      "href",
+      `/o/${orgId}/billing?status=overdue`,
+    );
+    const billingBox = await billingLink.boundingBox();
+    expect(billingBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await billingLink.click();
+    await expect(page).toHaveURL(/\/billing\?status=overdue$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Penagihan" }),
+    ).toBeVisible();
+    await expect(page.getByText("Semua tunggakan, semua bulan")).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(ORG_HOME_URL);
 
     // A name in "Belum bayar" opens Detail penyewa.
-    if (firstArrears !== undefined) {
-      const link = page
-        .getByRole("list", { name: "Penyewa yang belum bayar" })
-        .getByRole("link", { name: firstArrears.tenantName });
-      const box = await link.boundingBox();
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-      await link.click();
-      await expect(page).toHaveURL(
-        new RegExp(`/tenants/${firstArrears.tenantId}$`),
-      );
-      await expect(
-        page.getByRole("heading", { level: 1, name: firstArrears.tenantName }),
-      ).toBeVisible();
-    }
+    const link = page
+      .getByRole("list", { name: "Penyewa yang belum bayar" })
+      .getByRole("link", { name: firstArrears.tenantName });
+    const box = await link.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await link.click();
+    await expect(page).toHaveURL(
+      new RegExp(`/tenants/${firstArrears.tenantId}$`),
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: firstArrears.tenantName }),
+    ).toBeVisible();
     expect(outsideRequests).toEqual([]);
   });
 });
