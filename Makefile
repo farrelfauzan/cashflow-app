@@ -17,6 +17,11 @@ help: ## List the targets
 .PHONY: env
 env: ## Create services/api/.env from the example if it is missing
 	@test -f $(API_DIR)/.env || cp $(API_DIR)/.env.example $(API_DIR)/.env
+	@# A .env made before SECRETS_KEY existed gets the example's development-only key.
+	@grep -q '^SECRETS_KEY=' $(API_DIR)/.env || { \
+		printf '\n# Added by make env: development-only key from .env.example.\n' >> $(API_DIR)/.env; \
+		grep '^SECRETS_KEY=' $(API_DIR)/.env.example >> $(API_DIR)/.env; \
+		echo "make env: added the development SECRETS_KEY to $(API_DIR)/.env"; }
 
 .PHONY: dev-up
 dev-up: ## Start PostgreSQL and Redis for local development

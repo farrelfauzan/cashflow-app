@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log/slog"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 )
 
 // demoCommands are the commands that fill a database with demo data and so run only in
@@ -44,9 +43,9 @@ func TestDemoCommandsRefuseOutsideDevelopment(t *testing.T) {
 						v, ok := tc.vars[k]
 						return v, ok
 					},
-					connect: func(context.Context) (*store.Store, *slog.Logger, error) {
+					connect: func(context.Context, io.Writer) (conn, error) {
 						connected = true
-						return nil, nil, errors.New("must not connect")
+						return conn{}, errors.New("must not connect")
 					},
 					stdout: &out,
 					stderr: &out,
@@ -75,9 +74,9 @@ func TestDemoCommandsInDevelopmentConnect(t *testing.T) {
 					}
 					return "", false
 				},
-				connect: func(context.Context) (*store.Store, *slog.Logger, error) {
+				connect: func(context.Context, io.Writer) (conn, error) {
 					connected = true
-					return nil, nil, connectErr
+					return conn{}, connectErr
 				},
 			}
 			err := run(context.Background(), []string{command}, e)
@@ -97,15 +96,17 @@ func TestRunRejectsBadCommands(t *testing.T) {
 		{name: "unknown command", args: []string{"drop-everything"}},
 		{name: "seed-demo with arguments", args: []string{"seed-demo", "-force"}},
 		{name: "generate-invoices with arguments", args: []string{"generate-invoices", "-force"}},
+		{name: "set-autogopay-key without -org", args: []string{"set-autogopay-key"}},
+		{name: "set-autogopay-key with the key as an argument", args: []string{"set-autogopay-key", "-org", "6f1c2a3e-0000-4000-8000-000000000001", "agp_live_x"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			e := env{
 				lookup: func(string) (string, bool) { return "development", true },
-				connect: func(context.Context) (*store.Store, *slog.Logger, error) {
+				connect: func(context.Context, io.Writer) (conn, error) {
 					t.Fatal("must not connect")
-					return nil, nil, nil
+					return conn{}, nil
 				},
 			}
 			err := run(context.Background(), tc.args, e)
@@ -134,4 +135,93 @@ func TestWriteLogins(t *testing.T) {
 	require.Regexp(t, `^\+6281200010002\s+Pak Budi Hartono\s+Griya Sejahtera\s+Admin\s+-\s+active$`, lines[1])
 	require.Regexp(t, `^\+6281200010005\s+Mas Joko Prasetyo\s+Griya Sejahtera\s+Admin, Karyawan\s+Admin: Kontrakan Mawar\s+active$`, lines[2])
 	require.Regexp(t, `^\+6281200010006\s+Mas Agus Setiawan\s+Griya Sejahtera\s+Karyawan\s+-\s+disabled \(cannot sign in\)$`, lines[3])
+}
+
+// TestSetAutoGoPayKeyRefusesBeforeConnecting: a missing or bad -org, a key passed any way but
+// stdin, and a missing or bad key on stdin all fail before the database is opened, and no error
+// or output repeats the key.
+func TestSetAutoGoPayKeyRefusesBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	const org = "6f1c2a3e-0000-4000-8000-000000000001"
+	const key = "agp_live_do_not_print_7c2e"
+	tests := []struct {
+		name    string
+		args    []string
+		stdin   io.Reader
+		wantErr string
+	}{
+		{name: "no -org", args: nil, stdin: strings.NewReader(key + "\n"), wantErr: "needs -org"},
+		{name: "-org is not a uuid", args: []string{"-org", "griya"}, stdin: strings.NewReader(key + "\n"), wantErr: "-org must be an organization id"},
+		{name: "-org is the nil uuid", args: []string{"-org", "00000000-0000-0000-0000-000000000000"}, stdin: strings.NewReader(key + "\n"), wantErr: "-org must be an organization id"},
+		{name: "the key as an argument", args: []string{"-org", org, key}, stdin: strings.NewReader(""), wantErr: "takes no arguments"},
+		{name: "the key as a flag", args: []string{"-org", org, "-key", key}, stdin: strings.NewReader(""), wantErr: "flag provided but not defined: -key"},
+		{name: "the key in -org", args: []string{"-org", key}, stdin: strings.NewReader(""), wantErr: "-org must be an organization id"},
+		{name: "empty stdin", args: []string{"-org", org}, stdin: strings.NewReader(""), wantErr: "no API key on stdin"},
+		{name: "no stdin", args: []string{"-org", org}, stdin: nil, wantErr: "no API key on stdin"},
+		{name: "a blank line", args: []string{"-org", org}, stdin: strings.NewReader("   \n" + key + "\n"), wantErr: "no API key on stdin"},
+		{name: "a control character in the key", args: []string{"-org", org}, stdin: strings.NewReader("agp_live\x00x\n"), wantErr: "without control characters"},
+		{name: "an oversized line", args: []string{"-org", org}, stdin: strings.NewReader(strings.Repeat("k", 10_000)), wantErr: "longer than 512 bytes"},
+		{name: "a key of 513 bytes", args: []string{"-org", org}, stdin: strings.NewReader(strings.Repeat("k", 513) + "\n"), wantErr: "1 to 512 bytes"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var out, errOut bytes.Buffer
+			e := env{
+				lookup: func(string) (string, bool) { return "", false },
+				connect: func(context.Context, io.Writer) (conn, error) {
+					t.Fatal("must not connect")
+					return conn{}, nil
+				},
+				stdin:  tc.stdin,
+				stdout: &out,
+				stderr: &errOut,
+			}
+			err := run(context.Background(), append([]string{"set-autogopay-key"}, tc.args...), e)
+			require.ErrorContains(t, err, tc.wantErr)
+			require.NotContains(t, err.Error(), key)
+			require.Empty(t, out.String())
+			require.NotContains(t, errOut.String(), key)
+		})
+	}
+}
+
+func TestSetAutoGoPayKeyReadsOnlyTheFirstLine(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		stdin string
+		want  string
+	}{
+		{name: "a line from echo", stdin: "agp_live_a\n", want: "agp_live_a"},
+		{name: "no trailing newline", stdin: "agp_live_a", want: "agp_live_a"},
+		{name: "CRLF and spaces", stdin: "  agp_live_a \r\n", want: "agp_live_a"},
+		{name: "later lines are not read", stdin: "agp_live_a\nsomething else\n", want: "agp_live_a"},
+		{name: "512 bytes", stdin: strings.Repeat("k", 512) + "\n", want: strings.Repeat("k", 512)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := readKeyLine(strings.NewReader(tc.stdin))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSetAutoGoPayKeyConnectsWithAValidRequest(t *testing.T) {
+	t.Parallel()
+	connectErr := errors.New("no database in unit tests")
+	connected := false
+	e := env{
+		lookup: func(string) (string, bool) { return "", false },
+		connect: func(context.Context, io.Writer) (conn, error) {
+			connected = true
+			return conn{}, connectErr
+		},
+		stdin: strings.NewReader("agp_live_x\n"),
+	}
+	err := run(context.Background(), []string{"set-autogopay-key", "-org", "6f1c2a3e-0000-4000-8000-000000000001"}, e)
+	require.ErrorIs(t, err, connectErr)
+	require.True(t, connected)
 }

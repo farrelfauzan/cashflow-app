@@ -86,6 +86,42 @@ Utama) and 45 tenants, some with a booked lease (starting in June or July 2027),
 and some with no lease. Sign in as Pak Dimas Prakoso (0812-0009-0027, Admin of the whole
 organization) or as Mbak Lestari Anjani (0812-0009-0028, Admin of Kontrakan Seturan only).
 
+### The secrets key (`SECRETS_KEY`)
+
+Per-organization secrets, such as an organization's AutoGoPay API key, are stored encrypted
+(AES-256-GCM, `internal/secret`) under a master key from the environment. The API, the worker and
+`cmd/admin` all refuse to start without a valid one. `SECRETS_KEY` is `<id>:<base64 of 32 random
+bytes>`; the id (1 to 32 characters of `a-z`, `0-9` and `-`) is stored next to every ciphertext,
+so the database says which key made it.
+
+- `.env.example` carries a development-only key (`dev-only:...`); `make env` adds it to an older
+  `.env` that lacks one. It is public: never use it outside your machine.
+- For any other environment generate one and keep it in that environment's secret store, never
+  in git: `echo "k1:$(openssl rand -base64 32)"`. Losing it means every stored key must be
+  entered again.
+- **Rotating**: move the current value to `SECRETS_KEY_PREVIOUS` (comma-separated if there are
+  several), set a new `SECRETS_KEY` with a new id, and restart the API and the worker. New and
+  re-entered secrets use the new key; rows made under an old key still decrypt through
+  `SECRETS_KEY_PREVIOUS`. Nothing re-encrypts existing rows yet, so keep an old key in
+  `SECRETS_KEY_PREVIOUS` until every row made with it has been set again (for AutoGoPay, with
+  `set-autogopay-key` below).
+
+### Set an organization's AutoGoPay API key
+
+QRIS money goes to the landlord's own AutoGoPay account, so each organization has its own API
+key. Until a settings screen exists, the platform operator stores it with `cmd/admin`, in any
+environment. The key is read as one line from stdin, never from a flag or an environment
+variable, and is never printed:
+
+```bash
+make admin ARGS='set-autogopay-key -org <organization id>' < autogopay-key.txt
+```
+
+It prints the organization id and the organization's webhook path,
+`/webhooks/autogopay/<webhook id>`, to register at AutoGoPay (with the public origin in front).
+Setting the key again replaces it and keeps the same path. Each setting is in the organization's
+audit log as `settings:update` on `autogopay_account/<organization id>`.
+
 ### Login codes for end-to-end tests (development only)
 
 With `WHATSAPP_PROVIDER=devlog`, set `DEVLOG_FILE=/path/to/devlog.jsonl` and the API also appends
@@ -251,6 +287,9 @@ https://www.twilio.com/docs/api/errors.
 - `internal/messaging`: the WhatsApp provider interface and the message templates. Adapters:
   `gowa`, `twilio` (the Twilio sandbox, development only), `devlog` (development log)
   and the test fake in `messagingtest`.
+- `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
+  key rotation, and `secret.Value`, which prints as `[redacted]`.
+- `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook id).
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.

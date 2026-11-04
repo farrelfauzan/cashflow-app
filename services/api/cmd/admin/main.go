@@ -19,9 +19,22 @@
 //
 // Both refuse to run unless APP_ENV is explicitly "development", and check that before they
 // connect to the database.
+//
+// It stores an organization's AutoGoPay API key, encrypted under SECRETS_KEY, and prints the
+// webhook path to register at AutoGoPay for that organization:
+//
+//	admin set-autogopay-key -org 6f1c... < key.txt
+//	printf '%s\n' "$AUTOGOPAY_KEY" | admin set-autogopay-key -org 6f1c...
+//
+// The key is read as one line from stdin, never from a flag or an environment variable, so it
+// stays out of the shell history and the process list, and it is never printed. Setting it again
+// replaces the key and keeps the webhook path. It runs in every environment.
+//
+// Every command needs DATABASE_URL (the app role) and SECRETS_KEY.
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -34,7 +47,10 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/google/uuid"
+
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
@@ -44,20 +60,24 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
 const usage = `usage:
   admin create-org -name NAME -display-name NAME -member "phone|name|roles" [-member ...]
   admin seed-demo   (development only: APP_ENV=development)
-  admin generate-invoices   (development only: invoices and payments of the demo organizations)`
+  admin generate-invoices   (development only: invoices and payments of the demo organizations)
+  admin set-autogopay-key -org ORGANIZATION_ID   (reads the API key as one line from stdin)`
 
 // errNotDevelopment stops the demo commands anywhere but an explicit development environment.
 var errNotDevelopment = errors.New("demo commands only run with APP_ENV=development")
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	err := run(ctx, os.Args[1:], env{lookup: os.LookupEnv, connect: connect, stdout: os.Stdout, stderr: os.Stderr})
+	err := run(ctx, os.Args[1:], env{
+		lookup: os.LookupEnv, connect: connect, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+	})
 	stop()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "admin:", err)
@@ -68,10 +88,19 @@ func main() {
 // env is what the command needs from the process, so tests can check that seed-demo refuses
 // before anything connects to the database.
 type env struct {
-	lookup  func(key string) (string, bool)
-	connect func(ctx context.Context) (*store.Store, *slog.Logger, error)
+	lookup func(key string) (string, bool)
+	// connect loads the configuration and opens the database, logging to logTo.
+	connect func(ctx context.Context, logTo io.Writer) (conn, error)
+	stdin   io.Reader
 	stdout  io.Writer
 	stderr  io.Writer
+}
+
+// conn is what a command gets once connected.
+type conn struct {
+	store *store.Store
+	log   *slog.Logger
+	keys  *secret.Keyring // from SECRETS_KEY and SECRETS_KEY_PREVIOUS
 }
 
 func run(ctx context.Context, args []string, e env) error {
@@ -85,25 +114,31 @@ func run(ctx context.Context, args []string, e env) error {
 		return seedDemo(ctx, args[1:], e)
 	case "generate-invoices":
 		return generateInvoices(ctx, args[1:], e)
+	case "set-autogopay-key":
+		return setAutoGoPayKey(ctx, args[1:], e)
 	}
 	return errors.New(usage)
 }
 
 // connect loads the admin configuration and opens the database as the app role.
-func connect(ctx context.Context) (*store.Store, *slog.Logger, error) {
+func connect(ctx context.Context, logTo io.Writer) (conn, error) {
 	cfg, err := config.LoadAdmin(ctx)
 	if err != nil {
-		return nil, nil, err
+		return conn{}, err
 	}
-	log, err := logging.New(os.Stderr, cfg.LogLevel)
+	keys, err := cfg.Secrets.Keyring()
 	if err != nil {
-		return nil, nil, err
+		return conn{}, err
+	}
+	log, err := logging.New(logTo, cfg.LogLevel)
+	if err != nil {
+		return conn{}, err
 	}
 	st, err := store.Open(ctx, cfg.DatabaseURL, log)
 	if err != nil {
-		return nil, nil, err
+		return conn{}, err
 	}
-	return st, log, nil
+	return conn{store: st, log: log, keys: keys}, nil
 }
 
 func createOrg(ctx context.Context, args []string, e env) error {
@@ -116,11 +151,12 @@ func createOrg(ctx context.Context, args []string, e env) error {
 		return err
 	}
 
-	st, log, err := e.connect(ctx)
+	cn, err := e.connect(ctx, e.stderr)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer cn.store.Close()
+	st, log := cn.store, cn.log
 
 	svc := org.NewService(st, authz.NewService(st, clock.System(), log))
 	id, err := svc.Create(ctx, org.New{Name: *name, DisplayName: *displayName, Members: members})
@@ -152,11 +188,12 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 		return err
 	}
 
-	st, log, err := e.connect(ctx)
+	cn, err := e.connect(ctx, e.stderr)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer cn.store.Close()
+	st, log := cn.store, cn.log
 
 	c := clock.System()
 	az := authz.NewService(st, c, log)
@@ -197,11 +234,12 @@ func generateInvoices(ctx context.Context, args []string, e env) error {
 		return err
 	}
 
-	st, log, err := e.connect(ctx)
+	cn, err := e.connect(ctx, e.stderr)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer cn.store.Close()
+	st, log := cn.store, cn.log
 
 	c := clock.System()
 	az := authz.NewService(st, c, log)
@@ -219,6 +257,74 @@ func generateInvoices(ctx context.Context, args []string, e env) error {
 		fmt.Fprintln(e.stdout, ")")
 	}
 	return nil
+}
+
+// maxKeyLine bounds what set-autogopay-key reads from stdin: a little more than the longest key
+// autogopay accepts, so an oversized line is refused rather than truncated.
+const maxKeyLine = autogopay.MaxAPIKeyBytes + 64
+
+// setAutoGoPayKey stores an organization's AutoGoPay API key, read as one line from stdin, and
+// prints the organization id and the webhook path. Nothing it prints or returns contains the key.
+func setAutoGoPayKey(ctx context.Context, args []string, e env) error {
+	fs := flag.NewFlagSet("set-autogopay-key", flag.ContinueOnError)
+	fs.SetOutput(e.stderr)
+	orgFlag := fs.String("org", "", "the organization id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		// Not echoed: a key typed as an argument must not end up in the error.
+		return fmt.Errorf("set-autogopay-key takes no arguments; the API key is read from stdin\n%s", usage)
+	}
+	if *orgFlag == "" {
+		return fmt.Errorf("set-autogopay-key needs -org ORGANIZATION_ID\n%s", usage)
+	}
+	orgID, err := uuid.Parse(*orgFlag)
+	if err != nil || orgID == uuid.Nil {
+		return errors.New("set-autogopay-key: -org must be an organization id (a UUID)")
+	}
+	key, err := readKeyLine(e.stdin)
+	if err != nil {
+		return err
+	}
+
+	cn, err := e.connect(ctx, e.stderr)
+	if err != nil {
+		return err
+	}
+	defer cn.store.Close()
+
+	clk := clock.System()
+	svc := autogopay.NewService(cn.store, cn.keys, authz.NewService(cn.store, clk, cn.log), clk)
+	webhookID, err := svc.SetAPIKey(ctx, orgID, key)
+	if err != nil {
+		return fmt.Errorf("setting the AutoGoPay API key of organization %s: %w", orgID, err)
+	}
+	_, err = fmt.Fprintf(e.stdout, "organization %s\nwebhook path %s\n", orgID, autogopay.WebhookPath(webhookID))
+	return err
+}
+
+// readKeyLine reads the first line of r and checks it as an API key. Only one line is read, so a
+// key typed at a terminal ends with Enter.
+func readKeyLine(r io.Reader) (string, error) {
+	if r == nil {
+		return "", errors.New("set-autogopay-key: no API key on stdin")
+	}
+	line, err := bufio.NewReaderSize(io.LimitReader(r, maxKeyLine+1), maxKeyLine+1).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("set-autogopay-key: reading the API key from stdin: %w", err)
+	}
+	if len(line) > maxKeyLine {
+		return "", fmt.Errorf("set-autogopay-key: the API key on stdin is longer than %d bytes", autogopay.MaxAPIKeyBytes)
+	}
+	if strings.TrimSpace(line) == "" {
+		return "", errors.New("set-autogopay-key: no API key on stdin; pipe it in, for example < key.txt")
+	}
+	key, err := autogopay.NormalizeAPIKey(line)
+	if err != nil {
+		return "", fmt.Errorf("set-autogopay-key: %w", err)
+	}
+	return key, nil
 }
 
 // writeLogins prints the demo logins as a plain table.

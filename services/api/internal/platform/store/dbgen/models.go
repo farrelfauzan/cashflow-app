@@ -23,6 +23,16 @@ type AuditLog struct {
 	CreatedAt        time.Time
 }
 
+type AutogopayAccount struct {
+	OrganizationID       uuid.UUID
+	ApiKeyCiphertext     []byte
+	KeyID                string
+	WebhookID            string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	UpdatedByStaffUserID uuid.NullUUID
+}
+
 type ChargeType struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID
