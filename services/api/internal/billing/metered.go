@@ -236,7 +236,8 @@ func (s *Service) ListLeaseMeteredCharges(ctx context.Context, p authz.Principal
 	today := tenant.Today(s.clock)
 	org := p.OrganizationID
 	out := MeteredList{Result: listing.Result[MeteredCharge]{Page: mq.Page, Items: []MeteredCharge{}}}
-	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+	// One snapshot, so the total, the rows and the next invoice agree.
+	err := s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		l, err := q.GetLeaseDetail(ctx, dbgen.GetLeaseDetailParams{OrganizationID: org, ID: leaseID})
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -305,7 +306,8 @@ func (s *Service) ListMissingMeterReadings(ctx context.Context, p authz.Principa
 	}
 	org := p.OrganizationID
 	out := listing.Result[MissingReading]{Page: mq.Page, Items: []MissingReading{}}
-	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+	// One snapshot, so the total, the rows and the next invoice agree.
+	err := s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		vis, err := s.visibleLeases(ctx, tx, q, p, authz.ActionChargeRead, "lease")
 		if err != nil {

@@ -38,6 +38,7 @@ export * from './importWarningCode';
 export * from './invitation';
 export * from './invitationState';
 export * from './inviteMember';
+export * from './invoiceKind';
 export * from './invoiceLine';
 export * from './invoiceLineKind';
 export * from './invoiceList';

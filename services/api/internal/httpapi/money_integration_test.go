@@ -85,6 +85,7 @@ func TestMoneyOverHTTP(t *testing.T) {
 		invoiceID = paid.Paid[0].InvoiceId
 		require.EqualValues(t, 500_000, paid.Paid[0].Amount)
 		require.EqualValues(t, 200_000, paid.Paid[0].Outstanding)
+		require.Equal(t, apigen.Regular, paid.Paid[0].Kind)
 		require.Equal(t, "2026-11-01", paid.Paid[0].Period.String())
 		require.EqualValues(t, 200_000, paid.Outstanding)
 		require.Zero(t, paid.Credit)

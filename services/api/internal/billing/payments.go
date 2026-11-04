@@ -22,6 +22,7 @@ var errRepeat = errors.New("billing: repeated request")
 // PaidInvoice is one invoice a payment holds money on, and what the invoice still owes now.
 type PaidInvoice struct {
 	InvoiceID   uuid.UUID
+	Kind        string // InvoiceRegular or InvoiceFinal
 	Period      time.Time
 	PeriodEnd   time.Time
 	DueDate     time.Time
@@ -161,7 +162,7 @@ func paymentResult(acct Account, paymentID uuid.UUID) (PaymentResult, error) {
 			continue
 		}
 		out.Paid = append(out.Paid, PaidInvoice{
-			InvoiceID: inv.ID, Period: inv.Period, PeriodEnd: inv.PeriodEnd, DueDate: inv.DueDate,
+			InvoiceID: inv.ID, Kind: inv.Kind, Period: inv.Period, PeriodEnd: inv.PeriodEnd, DueDate: inv.DueDate,
 			Amount: a.Amount, Outstanding: inv.Outstanding,
 		})
 	}

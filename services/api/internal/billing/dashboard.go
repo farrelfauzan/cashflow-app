@@ -90,6 +90,7 @@ type InvoiceQuery struct {
 // InvoiceListItem is one invoice of Penagihan with its lines.
 type InvoiceListItem struct {
 	ID             uuid.UUID
+	Kind           string // InvoiceRegular or InvoiceFinal
 	TenantID       uuid.UUID
 	TenantName     string
 	LeaseID        uuid.UUID
@@ -357,7 +358,7 @@ func loadInvoicePage(ctx context.Context, q *dbgen.Queries, args dbgen.ListInvoi
 	}
 	for i, r := range rows {
 		item := InvoiceListItem{
-			ID: r.InvoiceID, TenantID: r.TenantID, TenantName: r.TenantName, LeaseID: r.LeaseID,
+			ID: r.InvoiceID, Kind: r.Kind, TenantID: r.TenantID, TenantName: r.TenantName, LeaseID: r.LeaseID,
 			PropertyID: r.PropertyID, PropertyName: r.PropertyName, UnitLabel: r.UnitLabel,
 			Period: r.Period, PeriodEnd: r.PeriodEnd, DueDate: r.DueDate, IssuedOn: receivedOn(r.CreatedAt),
 			Amount: r.Amount, Billed: r.Billed, Paid: r.Paid, Outstanding: r.Outstanding, Status: r.Status,

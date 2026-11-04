@@ -40,7 +40,7 @@ const CREATE_TYPE = "Tambah jenis biaya";
 const INTRO =
   "Biaya yang jumlahnya sama setiap bulan. Ditambahkan ke tagihan di atas sewa, mulai tagihan berikutnya. Hanya angka.";
 const METERED_NOTE =
-  "Listrik dan air yang dicatat dari meteran tidak diatur di sini. Jumlahnya dicatat tiap bulan.";
+  "Nyalakan yang ditagih dari meteran. Jumlahnya dicatat tiap bulan lewat Catat meteran.";
 const BAD_AMOUNT = "Isi jumlahnya dengan angka, paling sedikit Rp1.";
 const TAKEN_NAME = "Nama biaya ini sudah dipakai.";
 
@@ -331,7 +331,7 @@ test.describe("Admin of the whole organization", () => {
     await page.keyboard.type("12000");
     await expect(chargeAmount(panel, galon)).toHaveValue("12.000");
 
-    // A metered type gets no row, only a short line.
+    // A metered type gets no amount row: it is a switch under "Dari meteran", switched on.
     const meter = uniqueName(testInfo, "Gas Uji");
     await panel.getByRole("button", { name: ADD_TYPE, exact: true }).click();
     await box.getByLabel("Nama biaya").fill(meter);
@@ -343,9 +343,15 @@ test.describe("Admin of the whole organization", () => {
     await box.getByRole("button", { name: CREATE_TYPE, exact: true }).click();
     await expect(box).toHaveCount(0);
     await expect(panel).toContainText(
-      `Jenis biaya ${meter} ditambahkan. Biaya dari meteran dicatat tiap bulan, jadi tidak diatur di sini.`,
+      `Jenis biaya ${meter} ditambahkan dan dinyalakan di bagian Dari meteran.`,
     );
     await expect(chargeBox(panel, meter)).toHaveCount(0);
+    await expect(
+      panel.getByRole("switch", { name: meter, exact: true }),
+    ).toBeChecked();
+    await expect(
+      panel.getByRole("switch", { name: meter, exact: true }),
+    ).toBeFocused();
 
     await panel.getByRole("button", { name: SAVE }).click();
     await expect(panel).toHaveCount(0);

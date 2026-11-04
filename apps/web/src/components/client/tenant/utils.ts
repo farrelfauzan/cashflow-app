@@ -390,8 +390,19 @@ export function leaseView(lease: Lease, today: string): LeaseView {
       id: charge.chargeTypeId,
       label: `${charge.name} ${formatRupiah(charge.amount)}`,
     })),
+    metered: leaseMeteredText(lease),
     entered: `Dimasukkan ke aplikasi ${formatDate(lease.enteredOn)}.`,
   };
+}
+
+// The metered types a lease expects, by name as the API sends them: "Listrik, Air dari
+// meteran"; null when it expects none.
+export function leaseMeteredText(
+  lease: Pick<Lease, "meteredChargeTypes">,
+): string | null {
+  if (lease.meteredChargeTypes.length === 0) return null;
+  const names = lease.meteredChargeTypes.map((type) => type.name).join(", ");
+  return `${names} dari meteran`;
 }
 
 // The buttons on a lease's card: only on an active lease, and only for a member with lease:manage

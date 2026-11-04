@@ -137,7 +137,7 @@ func TestDashboardOverHTTP(t *testing.T) {
 		require.Len(t, l.Items, 1)
 		it := l.Items[0]
 		require.Equal(t, apigen.InvoiceListItem{
-			Id: paid.Paid[0].InvoiceId, TenantId: wulan.Id, TenantName: "Wulan Sari", LeaseId: it.LeaseId,
+			Id: paid.Paid[0].InvoiceId, Kind: apigen.Regular, TenantId: wulan.Id, TenantName: "Wulan Sari", LeaseId: it.LeaseId,
 			PropertyId: melati.Id, PropertyName: "Kos Melati", UnitLabel: "Kamar 7",
 			Period: date(2026, 11, 1), PeriodEnd: date(2026, 11, 30), DueDate: date(2026, 11, 1), IssuedOn: date(2026, 11, 1),
 			Amount: 750_000, Billed: 700_000, Paid: 250_000, Outstanding: 450_000, Status: apigen.InvoiceStatusPartial,

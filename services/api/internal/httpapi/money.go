@@ -73,7 +73,7 @@ func (s *Server) recordPayment(w http.ResponseWriter, r *http.Request) {
 	}
 	for i, inv := range res.Paid {
 		out.Paid[i] = apigen.PaidInvoice{
-			InvoiceId: inv.InvoiceID, Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate),
+			InvoiceId: inv.InvoiceID, Kind: apigen.InvoiceKind(inv.Kind), Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate),
 			Amount: inv.Amount, Outstanding: inv.Outstanding,
 		}
 	}
@@ -128,7 +128,7 @@ func toAPITotals(t billing.Totals) apigen.AccountTotals {
 
 func toAPIAccountInvoice(inv billing.AccountInvoice) apigen.AccountInvoice {
 	out := apigen.AccountInvoice{
-		Id: inv.ID, LeaseId: inv.LeaseID, UnitLabel: inv.UnitLabel, PropertyName: inv.PropertyName,
+		Id: inv.ID, Kind: apigen.InvoiceKind(inv.Kind), LeaseId: inv.LeaseID, UnitLabel: inv.UnitLabel, PropertyName: inv.PropertyName,
 		Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate), IssuedOn: date(inv.IssuedOn),
 		Amount: inv.Amount, Billed: inv.Billed, Paid: inv.Paid, Outstanding: inv.Outstanding,
 		Status:      apigen.InvoiceStatus(inv.Status),

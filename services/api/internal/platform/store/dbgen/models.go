@@ -57,6 +57,7 @@ type Invoice struct {
 	DueDate        time.Time
 	Amount         int64
 	CreatedAt      time.Time
+	Kind           string
 }
 
 type InvoiceBalance struct {

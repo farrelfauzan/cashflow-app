@@ -138,8 +138,23 @@ export type ChargeEntry = {
 // The entries by charge type id; a type without one is unchecked and empty.
 export type ChargeEntries = Readonly<Record<string, ChargeEntry>>;
 
-// What "Biaya tambahan" holds: an entry per charge type, each row's field ("charges.<id>").
-export type LeaseChargesFormValues = { charges: ChargeEntries };
+// Whether each metered charge type ("Dari meteran") is switched on, by charge type id; a type
+// without an entry is off.
+export type MeteredEntries = Readonly<Record<string, boolean>>;
+
+// What "Biaya tambahan" holds: an entry per charge type, each row's field ("charges.<id>"), and
+// the metered switches, each one's field ("metered.<id>").
+export type LeaseChargesFormValues = {
+  charges: ChargeEntries;
+  metered: MeteredEntries;
+};
+
+// One metered charge type of the organization in "Dari meteran".
+export type MeteredRow = {
+  chargeTypeId: string;
+  name: string;
+  on: boolean;
+};
 
 // One row of the form: a non-metered charge type and its entry.
 export type ChargeRow = ChargeEntry & {

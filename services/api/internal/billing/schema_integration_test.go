@@ -254,7 +254,7 @@ func TestMoneyConstraints(t *testing.T) {
 				_, err := w.insertInvoice(ctx, q, r, monthly(n), 700_000)
 				return err
 			},
-			code: "23505", constraint: "invoice_lease_id_period_key",
+			code: "23505", constraint: "invoice_regular_period",
 		},
 		{
 			name: "an invoice naming a tenant other than its lease's is refused",
