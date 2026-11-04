@@ -1,0 +1,9 @@
+{
+  "success": false,
+  "message": "Transaction refunded",
+  "data": {
+    "transaction_id": "00000000-0000-4000-8000-0000000000a1",
+    "transaction_status": "refunded",
+    "transaction_time": "2026-11-04 11:39:49"
+  }
+}
