@@ -7,7 +7,7 @@ import { TenantLoadError } from "@/components/client/tenant/tenant-load-error";
 import { toFormError } from "@/lib/api/form-error";
 import { useGetTenantAccount } from "@/lib/api/generated/money/money";
 import type { AppAbility } from "@/lib/capabilities";
-import type { CorrectionSelection } from "./type";
+import type { CorrectionRequest, CorrectionSelection } from "./type";
 import {
   ACCOUNT_FORBIDDEN_TEXT,
   ACCOUNT_LOADING_TEXT,
@@ -37,6 +37,9 @@ type TenantAccountSectionProps = {
   today: string;
   // The page's short confirmation; "" clears it.
   onNotice: (notice: string) => void;
+  // Opens "Koreksi nominal" for an invoice from elsewhere on the page ("Catat meteran"'s locked
+  // view); null for none. A new id opens it again.
+  correctionRequest: CorrectionRequest | null;
 };
 
 // The correction dialog: what it is for, whether it shows, and which opening it is (each
@@ -58,10 +61,26 @@ export function TenantAccountSection({
   tenantName,
   today,
   onNotice,
+  correctionRequest,
 }: TenantAccountSectionProps) {
   const account = useGetTenantAccount(orgId, tenantId);
   const canCorrect = canCreateCorrection(useAbility<AppAbility>());
   const [dialog, setDialog] = useState<CorrectionDialogState | null>(null);
+  // The last outside request acted on. A new one opens the dialog for its invoice, with a fresh
+  // opening (and so its own requestId), as a "Koreksi" button would.
+  const [handledRequest, setHandledRequest] = useState<number | null>(null);
+  if (
+    canCorrect &&
+    correctionRequest !== null &&
+    correctionRequest.id !== handledRequest
+  ) {
+    setHandledRequest(correctionRequest.id);
+    setDialog((previous) => ({
+      selection: { kind: "invoice", id: correctionRequest.invoiceId },
+      open: true,
+      opening: (previous?.opening ?? 0) + 1,
+    }));
+  }
 
   if (account.isError) {
     if (isAccountForbidden(account.error)) {

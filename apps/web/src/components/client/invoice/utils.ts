@@ -18,11 +18,17 @@ import {
   ListInvoicesStatus,
   type InvoiceListItem,
   type InvoiceListSummary,
+  type MissingMeterReading,
 } from "@/lib/api/generated/model";
-import { formatDate, formatMonthYear } from "@/lib/format/date";
+import { formatDate, formatDayMonth, formatMonthYear } from "@/lib/format/date";
 import { formatRupiah } from "@/lib/format/rupiah";
 
-import type { InvoiceChip, InvoiceListFilters, InvoiceRowView } from "./type";
+import type {
+  InvoiceChip,
+  InvoiceListFilters,
+  InvoiceRowView,
+  MissingMeterRowView,
+} from "./type";
 
 // Penagihan: the month's invoices. Every amount shown is a field the API sent, only formatted.
 // The one ratio is the "N%" of the first tile; counting and calendar arithmetic on months are
@@ -286,4 +292,94 @@ export function unitText(
   row: Pick<InvoiceRowView, "unit" | "property">,
 ): string {
   return `${row.unit} · ${row.property}`;
+}
+
+// "Meteran belum dicatat" (boards W14 Penagihan): the leases that expect a metered amount (listrik,
+// air) for last month and have none. The API counts and lists them (listMissingMeterReadings);
+// the screen only words what it sends.
+
+// The URL param that swaps the invoices for that list, and its one value. It is a different view,
+// not a filter of invoices: the month param stays as it is.
+export const METER_PARAM = "meter";
+export const METER_MISSING = "missing";
+
+export const METER_FLAG_HINT =
+  "Tagihan tetap terbit tanpa listrik atau air. Yang dicatat terlambat masuk ke tagihan bulan berikutnya.";
+export const METER_SHOW_LABEL = "Tampilkan";
+export const METER_CHIP_LABEL = "Meteran belum dicatat";
+export const METER_CHIP_CLEAR_LABEL = "Hapus filter Meteran belum dicatat";
+export const METER_LIST_LABEL = "Sewa dengan meteran belum dicatat";
+export const METER_ALL_RECORDED_TEXT = "Semua meteran sudah dicatat.";
+export const TENANT_LINK_LABEL = "Lihat penyewa";
+
+// The iPad table's columns, shared by its header and its rows: Penyewa, Unit, Belum dicatat,
+// Tagihan berikutnya and Aksi.
+export const METER_TABLE_COLUMNS =
+  "grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_150px_140px]";
+
+// Whether the URL asks for the list of leases with a meter amount missing. Any other value of
+// the param counts as not set, so a hand-edited link shows the normal Penagihan.
+export function readMeterView(params: URLSearchParams): boolean {
+  return params.get(METER_PARAM) === METER_MISSING;
+}
+
+// Last month in Jakarta, YYYY-MM, from the Jakarta day (YYYY-MM-DD): the month the API counts by
+// default. January goes back to the December before it.
+export function lastMonthPeriod(today: string): string {
+  return previousMonth(currentPeriod(today));
+}
+
+// "Oktober 2026".
+export function lastMonthLabel(today: string): string {
+  return monthLabel(lastMonthPeriod(today));
+}
+
+// The flag's bold line: "Meteran Oktober 2026 belum dicatat untuk 3 sewa".
+// The line under the title in place of the month stepper, or null for the stepper: the missing
+// meter readings are always last month's, and overdue invoices have no month.
+export function headerLine(
+  meterView: boolean,
+  allMonths: boolean,
+  today: string,
+): string | null {
+  if (meterView) return `Meteran ${lastMonthLabel(today)}`;
+  if (allMonths) return ALL_MONTHS_TEXT;
+  return null;
+}
+
+export function meterFlagTitle(today: string, total: number): string {
+  return `Meteran ${lastMonthLabel(today)} belum dicatat untuk ${total} sewa`;
+}
+
+// "Menampilkan 3 sewa", under the chip.
+export function meterShowingText(total: number): string {
+  return `Menampilkan ${total} sewa`;
+}
+
+// "Listrik, Air": the types with no amount yet, in the API's order.
+export function missingNames(missing: MissingMeterReading["missing"]): string {
+  return missing.map((type) => type.name).join(", ");
+}
+
+// "terbit 8 Nov", or "—" when the lease has no next invoice to name.
+export function nextInvoiceText(
+  nextInvoice: MissingMeterReading["nextInvoice"],
+): string {
+  return nextInvoice === undefined
+    ? "—"
+    : `terbit ${formatDayMonth(nextInvoice.issuedOn)}`;
+}
+
+export function missingMeterRow(
+  item: MissingMeterReading,
+): MissingMeterRowView {
+  return {
+    leaseId: item.leaseId,
+    tenantId: item.tenantId,
+    tenantName: item.tenantName,
+    unit: item.unitLabel,
+    property: item.propertyName,
+    missing: missingNames(item.missing),
+    nextInvoice: nextInvoiceText(item.nextInvoice),
+  };
 }

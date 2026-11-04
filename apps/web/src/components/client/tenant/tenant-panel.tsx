@@ -10,6 +10,8 @@ import { LeaseForm } from "@/components/client/lease/lease-form";
 import { MoveOutForm } from "@/components/client/lease/move-out-form";
 import { PlannedEndForm } from "@/components/client/lease/planned-end-form";
 import { leaseFormSubtitle } from "@/components/client/lease/utils";
+import { RecordMeterPanel } from "@/components/client/meter/record-meter-panel";
+import { METER_PANEL_TITLE } from "@/components/client/meter/utils";
 import { PaymentRecorded } from "@/components/client/payment/payment-recorded";
 import { RecordPaymentForm } from "@/components/client/payment/record-payment-form";
 import {
@@ -19,7 +21,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { getRecordPaymentMutationKey } from "@/lib/api/generated/money/money";
+import {
+  getRecordMeteredChargeMutationKey,
+  getRecordPaymentMutationKey,
+} from "@/lib/api/generated/money/money";
 import { cn } from "@/lib/utils";
 import type { OpenTenantPanel, TenantPanelState } from "./type";
 import {
@@ -52,6 +57,9 @@ type TenantPanelProps = {
   panel: TenantPanelState;
   onPanelChange: (panel: TenantPanelState) => void;
   onNotice: (notice: string) => void;
+  // "Koreksi tagihan …" from "Catat meteran"'s locked view: the panel closes and the page opens
+  // the correction dialog for the invoice; null hides it (no correction:create).
+  onCorrectInvoice: ((invoiceId: string) => void) | null;
 };
 
 // The side panel of the tenant screens (boards Penyewa-Tambah.dc.html and Sewa-Baru.dc.html):
@@ -61,7 +69,8 @@ type TenantPanelProps = {
 // (Sewa-Ubah.dc.html). "Biaya tambahan", "Rencana keluar", "Catat pindah keluar" and "Batalkan
 // sewa" (Sewa-Biaya, Sewa-Rencana, Sewa-Pindah and Sewa-Batal) open from a lease's card in the
 // narrow panel. "Catat pembayaran" opens from the header in the narrow panel and shows
-// "Pembayaran tercatat" there once saved; the panel cannot be closed while it saves.
+// "Pembayaran tercatat" there once saved; the panel cannot be closed while it saves. "Catat
+// meteran" opens from a lease's card in the narrow panel and stays open after each save.
 export function TenantPanel({
   orgId,
   organizationName,
@@ -71,14 +80,21 @@ export function TenantPanel({
   panel,
   onPanelChange,
   onNotice,
+  onCorrectInvoice,
 }: TenantPanelProps) {
   // The last panel that was open stays rendered while the sheet slides away.
   const [shown, setShown] = useState<OpenTenantPanel | null>(null);
   if (panel.kind !== "closed" && panel !== shown) setShown(panel);
   const close = () => onPanelChange({ kind: "closed" });
   // A payment being recorded keeps the panel open, so its answer is never lost.
-  const recording =
-    useIsMutating({ mutationKey: getRecordPaymentMutationKey() }) > 0;
+  // So is a meter amount being saved.
+  const payments = useIsMutating({
+    mutationKey: getRecordPaymentMutationKey(),
+  });
+  const meters = useIsMutating({
+    mutationKey: getRecordMeteredChargeMutationKey(),
+  });
+  const recording = payments + meters > 0;
 
   let title = "";
   let subtitle = "";
@@ -245,6 +261,26 @@ export function TenantPanel({
       title = PAYMENT_PANEL_TITLE;
       subtitle = paymentPanelSubtitle(shown.tenant, today);
       body = <PaymentRecorded result={shown.result} onDone={close} />;
+      break;
+    case "meter":
+      title = METER_PANEL_TITLE;
+      subtitle = leasePanelSubtitle(shown.tenantName, shown.lease);
+      body = (
+        <RecordMeterPanel
+          key={shown.opening}
+          orgId={orgId}
+          lease={shown.lease}
+          today={today}
+          onCorrectInvoice={
+            onCorrectInvoice === null
+              ? null
+              : (invoiceId) => {
+                  close();
+                  onCorrectInvoice(invoiceId);
+                }
+          }
+        />
+      );
       break;
   }
 

@@ -48,7 +48,8 @@ export type LeasePanelKind =
 // (after adding) or the one on the page (editing, renting a unit). A lease panel carries the
 // lease from the page and its tenant's name. "Catat pembayaran" carries the tenant from the page
 // and the requestId made when it opened (kept across retries in that opening), and goes on to
-// "Pembayaran tercatat" with the API's answer in the same panel.
+// "Pembayaran tercatat" with the API's answer in the same panel. "Catat meteran" carries the
+// lease, its tenant's name and an id per opening, so each opening starts a fresh form.
 export type TenantPanelState =
   | { kind: "closed" }
   | { kind: "add" }
@@ -57,7 +58,8 @@ export type TenantPanelState =
   | { kind: "lease"; tenant: Tenant }
   | { kind: LeasePanelKind; lease: Lease; tenantName: string }
   | { kind: "payment"; tenant: Tenant; requestId: string }
-  | { kind: "paymentRecorded"; tenant: Tenant; result: PaymentResult };
+  | { kind: "paymentRecorded"; tenant: Tenant; result: PaymentResult }
+  | { kind: "meter"; lease: Lease; tenantName: string; opening: string };
 
 export type OpenTenantPanel = Exclude<TenantPanelState, { kind: "closed" }>;
 
@@ -123,5 +125,7 @@ export type LeaseView = {
   // The last day, only on an ended lease.
   endDate: string | null;
   charges: readonly { id: string; label: string }[];
+  // The metered types the lease expects, "Listrik, Air dari meteran"; null when none.
+  metered: string | null;
   entered: string;
 };

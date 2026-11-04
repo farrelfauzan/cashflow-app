@@ -55,6 +55,7 @@ import {
   tenantsSubtitle,
   tenantStatusView,
   unitText,
+  leaseMeteredText,
 } from "./utils";
 
 const TODAY = "2026-10-28";
@@ -856,6 +857,26 @@ describe("leaseView", () => {
       { id: "c1", label: "Wi-Fi Rp50.000" },
       { id: "c2", label: "Kebersihan Rp25.000" },
     ]);
+  });
+
+  it("names the metered types the lease expects, or nothing", () => {
+    expect(
+      leaseMeteredText({
+        meteredChargeTypes: [
+          { chargeTypeId: "m1", name: "Listrik" },
+          { chargeTypeId: "m2", name: "Air" },
+        ],
+      }),
+    ).toBe("Listrik, Air dari meteran");
+    expect(
+      leaseMeteredText({
+        meteredChargeTypes: [{ chargeTypeId: "m1", name: "Listrik" }],
+      }),
+    ).toBe("Listrik dari meteran");
+    expect(leaseMeteredText({ meteredChargeTypes: [] })).toBeNull();
+    expect(leaseView(lease({ meteredChargeTypes: [] }), TODAY).metered).toBe(
+      null,
+    );
   });
 
   it("shows the planned end", () => {
