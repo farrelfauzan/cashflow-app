@@ -13,12 +13,14 @@ type InvoiceRowProps = {
 };
 
 // One invoice: its month, due date and status, what it bills, what is paid or left, and its
-// lines ("Sewa Rp1.050.000"), and "Koreksi" under the status for a member who may correct.
+// lines ("Sewa Rp1.050.000"), and "Koreksi" under the status for a member who may correct. The
+// amount column keeps its width and stays on the right; a long title ("Tagihan akhir November
+// 2026") wraps within its own column instead of pushing the amounts under it.
 export function InvoiceRow({ invoice, onCorrect }: InvoiceRowProps) {
   return (
     <li className="flex flex-col gap-1.5 border-t pt-3 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="text-base font-bold md:text-[17px]">
             {invoice.title}
           </h3>
@@ -31,7 +33,7 @@ export function InvoiceRow({ invoice, onCorrect }: InvoiceRowProps) {
             {invoice.due}
           </span>
         </div>
-        <div className="flex flex-col items-end gap-1">
+        <div className="flex shrink-0 flex-col items-end gap-1">
           <span
             className={cn(
               "text-base font-bold md:text-[17px]",
