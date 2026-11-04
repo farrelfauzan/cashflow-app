@@ -60,13 +60,34 @@ func (s *Store) Ping(ctx context.Context) error {
 // ActiveOrganizationIDs returns every active organization's id, for a scheduled job that then
 // runs one task per organization inside WithOrgTx. It is the one read outside an organization or
 // auth scope, and it goes through active_organization_ids(), a database function that returns
-// ids only (phase B, slice 2).
+// ids only (phase B, slice 2). LookupPaymentLink is the other, narrower one: it maps one token
+// hash to one link's ids.
 func (s *Store) ActiveOrganizationIDs(ctx context.Context) ([]uuid.UUID, error) {
 	ids, err := dbgen.New(s.pool).ActiveOrganizationIDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing organization ids: %w", err)
 	}
 	return ids, nil
+}
+
+// ErrPaymentLinkNotFound means no payment link has the token hash given to LookupPaymentLink.
+var ErrPaymentLinkNotFound = errors.New("store: payment link not found")
+
+// LookupPaymentLink maps the SHA-256 of a payment link's token to the link's organization and id,
+// for a public request that arrives with no session (the tenant payment page, decision 39). It
+// runs as the app role with no scope set and goes through payment_link_lookup(), a database
+// function that returns those two ids only; the caller then reads the link inside
+// WithOrgTx or WithOrgSnapshot for that organization, which decides whether it still works. A
+// revoked link is found like any other. An unknown hash returns ErrPaymentLinkNotFound.
+func (s *Store) LookupPaymentLink(ctx context.Context, tokenHash []byte) (org, link uuid.UUID, err error) {
+	row, err := dbgen.New(s.pool).LookupPaymentLink(ctx, tokenHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, ErrPaymentLinkNotFound
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("looking up payment link: %w", err)
+	}
+	return row.OrganizationID, row.LinkID, nil
 }
 
 // WithOrgTx runs fn in a transaction that is scoped to one organization. The transaction

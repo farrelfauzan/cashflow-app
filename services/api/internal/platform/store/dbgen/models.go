@@ -168,6 +168,16 @@ type Organization struct {
 	CreatedAt   time.Time
 }
 
+type OrganizationBankAccount struct {
+	OrganizationID       uuid.UUID
+	BankName             string
+	AccountNumber        string
+	AccountHolder        string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	UpdatedByStaffUserID uuid.NullUUID
+}
+
 type OtpChallenge struct {
 	ID         uuid.UUID
 	Phone      string
@@ -202,6 +212,17 @@ type PaymentAllocation struct {
 	TenantID       uuid.UUID
 	Amount         int64
 	CreatedAt      time.Time
+}
+
+type PaymentLink struct {
+	ID                   uuid.UUID
+	OrganizationID       uuid.UUID
+	InvoiceID            uuid.UUID
+	TenantID             uuid.UUID
+	TokenHash            []byte
+	CreatedAt            time.Time
+	CreatedByStaffUserID uuid.NullUUID
+	RevokedAt            *time.Time
 }
 
 type Property struct {

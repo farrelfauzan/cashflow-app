@@ -28,8 +28,12 @@ const (
 
 	// ActionInvoiceCreate is recorded, as a system action with no actor, for each invoice the
 	// generate task makes. No member is checked for it: generation is the platform's own work.
-	ActionInvoiceCreate    = "invoice:create"
-	ActionInvoiceRead      = "invoice:read"
+	ActionInvoiceCreate = "invoice:create"
+	ActionInvoiceRead   = "invoice:read"
+	// ActionInvoiceShare mints a tenant payment link for an invoice, or revokes all of its links
+	// ("Salin link bayar"). It is checked on the invoice, in its lease's property and assigned to
+	// its collector, and audited.
+	ActionInvoiceShare     = "invoice:share"
 	ActionPaymentRead      = "payment:read"
 	ActionPaymentRecord    = "payment:record"
 	ActionCorrectionCreate = "correction:create"
@@ -50,7 +54,7 @@ var catalog = map[string][]string{
 	"tenant":       {"read", "manage"},
 	"lease":        {"read", "manage"},
 	"charge":       {"read", "record"},
-	"invoice":      {"read", "create", "send-reminder"},
+	"invoice":      {"read", "create", "send-reminder", "share"},
 	"payment":      {"read", "record", "check"},
 	"correction":   {"read", "create"},
 	"promise":      {"read", "create"},
@@ -119,6 +123,7 @@ var sensitive = map[string]bool{
 	"expense:approve":     true,
 	"distribution:manage": true,
 	"invoice:create":      true,
+	"invoice:share":       true,
 }
 
 // IsSensitive reports whether an allowed action must still be audited.
