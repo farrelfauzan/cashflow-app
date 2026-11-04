@@ -1,6 +1,7 @@
 import type { QueryKey } from "@tanstack/react-query";
 import { z } from "zod";
 
+import { invoiceName, invoiceTitle } from "@/components/client/billing/utils";
 import { isCalendarDate } from "@/components/client/lease/utils";
 import type {
   AccountPayment,
@@ -9,7 +10,7 @@ import type {
   PaymentResult,
   TenantAccount,
 } from "@/lib/api/generated/model";
-import { formatDate, formatMonthYear } from "@/lib/format/date";
+import { formatDate } from "@/lib/format/date";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import type { AppAbility } from "@/lib/capabilities";
 
@@ -168,7 +169,7 @@ export function unpaidSummary(
   const list = unpaid
     .map(
       (invoice) =>
-        `${formatMonthYear(invoice.period)} sisa ${formatRupiah(invoice.outstanding)}`,
+        `${invoiceTitle(invoice)} sisa ${formatRupiah(invoice.outstanding)}`,
     )
     .join(", ");
   return { total, detail: `${unpaid.length} tagihan belum lunas: ${list}` };
@@ -191,7 +192,7 @@ export function paymentHeadline(payment: AccountPayment): string {
 export function paidRows(result: Pick<PaymentResult, "paid">): PaidRowView[] {
   return result.paid.map((invoice) => ({
     invoiceId: invoice.invoiceId,
-    text: `Tagihan ${formatMonthYear(invoice.period)} · ${formatRupiah(invoice.amount)}`,
+    text: `${invoiceName(invoice)} · ${formatRupiah(invoice.amount)}`,
     chip:
       invoice.outstanding === 0
         ? { label: "Lunas", settled: true }
