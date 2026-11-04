@@ -1196,7 +1196,10 @@ type MeteredCharge struct {
 type MeteredChargeBilled struct {
 	InvoiceId openapi_types.UUID `json:"invoiceId"`
 
-	// Period The invoice's period start (Tagihan November).
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind InvoiceKind `json:"kind"`
+
+	// Period The invoice's period start (Tagihan November); a final invoice's is the lease's last day.
 	Period openapi_types.Date `json:"period"`
 }
 

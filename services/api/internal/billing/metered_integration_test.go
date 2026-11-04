@@ -196,7 +196,7 @@ func TestMeteredCharges(t *testing.T) {
 		require.ErrorIs(t, err, billing.ErrMeteredChargeBilled)
 		require.EqualValues(t, 150_000, w.storedAmount(t, first.ID))
 		list = w.meteredList(t, w.admin, r.leaseID, billing.MeteredQuery{})
-		require.Equal(t, &billing.BilledRef{InvoiceID: nov.InvoiceID, Period: day(2026, 11, 28)}, list.Items[0].Billed)
+		require.Equal(t, &billing.BilledRef{InvoiceID: nov.InvoiceID, Kind: billing.InvoiceRegular, Period: day(2026, 11, 28)}, list.Items[0].Billed)
 		require.Equal(t, &billing.NextInvoice{Period: day(2026, 12, 28), IssuedOn: day(2026, 12, 21)}, list.NextInvoice)
 
 		t.Run("the database refuses to change or delete a billed amount", func(t *testing.T) {

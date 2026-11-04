@@ -257,6 +257,7 @@ func TestMeteredChargesOverHTTP(t *testing.T) {
 		item := decode[apigen.MeteredChargeList](t, body).Items[0]
 		require.NotNil(t, item.Billed)
 		require.Equal(t, "2026-12-01", item.Billed.Period.String())
+		require.Equal(t, apigen.Regular, item.Billed.Kind)
 
 		resp, body = admin.do(http.MethodGet, orgPath+"/tenants/"+rina.Id.String()+"/account", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
