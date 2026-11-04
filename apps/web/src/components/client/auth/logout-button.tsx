@@ -30,14 +30,14 @@ export function LogoutButton({ variant = "outline" }: LogoutButtonProps) {
         variant={variant === "menu" ? "ghost" : "outline"}
         className={
           variant === "menu"
-            ? "justify-start px-2 font-semibold text-muted-foreground"
+            ? "justify-start px-2 font-semibold text-muted-foreground rail:justify-center rail:px-0"
             : "font-semibold"
         }
         disabled={busy}
         onClick={() => logout.mutate()}
       >
         <LogOut aria-hidden="true" className="size-5" />
-        {busy ? "Keluar…" : "Keluar"}
+        <span className="rail:sr-only">{busy ? "Keluar…" : "Keluar"}</span>
       </Button>
     </div>
   );
