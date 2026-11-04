@@ -71,7 +71,7 @@ summarizes, reminds and reports.
 | WhatsApp account | **Decided** | ONE platform-owned number sends for every organization. No per-org WA numbers or tokens. Which provider drives it is open ("WhatsApp provider" below, decision 35). |
 | WhatsApp provider | Open | Built: GOWA (self-hosted `aldinokemal/go-whatsapp-web-multidevice`, pinned image), chosen for launch because the Cloud API needs a registered company (PT) and there is none yet; WhatsApp restricted its number on 2026-11-01. Twilio (decision 35, the user's choice of 2026-11-01): the sandbox in development now; a verified Twilio sender would need approved templates. Later: WhatsApp Cloud API, integrated directly, once a PT and a verified Meta business exist. The pilot and launch provider is decided once the company and Meta verification question is answered. All sit behind `MessagingProvider`; templates have names and ordered parameters and buttons carry both a payload and a link, so a switch is a new adapter, not a rewrite. |
 | Disbursement | Deferred | No `DisbursementProvider` for now: payroll is paid by hand and recorded in the app, as in the design. Revisit (Flip for Business or Xendit) only if the owner wants the app to send money. Confirm by week 14 of the project plan. |
-| Bank transfer | Open | Default: static open-amount VA per tenant. Second adapter: bank-mutation polling (e.g. Moota). Chosen per organization. |
+| Bank transfer | **Decided** | Manual for now (decision 38): the payment page shows the organization's bank account and asks for the tenant's name in the transfer note, and the admin records the transfer as a manual payment. The proof photo upload comes in slice 6. No virtual-account provider yet; a static VA per tenant or bank-mutation polling (e.g. Moota) can be added later behind `BankTransferProvider`. |
 
 ## Stack and architecture
 
@@ -406,9 +406,13 @@ The WA message links to OUR page. The QR is created only when the tenant opens i
 - Invoices above Rp10 juta must use bank transfer.
 
 ### Bank transfer
-`BankTransferProvider`. Default: static open-amount VA per tenant (auto-matched, so
-partials need no manual check). Stub adapter: bank-mutation polling, where unmatched
-transfers go to the admin "Antrean cek" queue.
+Manual instructions for now (decision 38). The payment page shows the organization's bank
+account (bank, account number, holder) and asks the tenant to put their name in the transfer
+note. The admin records the transfer as a manual payment, so FIFO and credit apply as usual.
+The tenant's "Kirim bukti transfer" photo arrives in slice 6 with uploads, the malware scan and
+the "Antrean cek" queue. `BankTransferProvider` stays for a later adapter: a static open-amount
+VA per tenant (auto-matched) or bank-mutation polling, where unmatched transfers go to
+"Antrean cek".
 
 ## Negative cases (each must be handled AND tested)
 
