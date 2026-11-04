@@ -4,6 +4,16 @@
    `.dark` class, which the app never sets, so a device in dark mode still gets this theme. */
 @custom-variant dark (&:is(.dark *));
 
+/* Inside the iPad side menu while it is collapsed to its icon rail (SidebarRail sets
+   data-sidebar="collapsed" on the aside). The phone's menu sheet is never inside it, so `rail:`
+   utilities leave the sheet as it is. */
+@custom-variant rail (&:where([data-sidebar="collapsed"] *));
+
+/* Only for the org shell's loading skeleton: the member's choice as the root layout's script
+   and the toggle mark it on <html>. Never use it for the menu itself, since <html> holds the
+   phone's sheet too. */
+@custom-variant rail-choice (&:where([data-sidebar-choice="collapsed"] *));
+
 /* Every color in the app is defined here, once. Components use the semantic tokens below
    (bg-background, text-muted-foreground, bg-warning, ...), never raw colors.
 

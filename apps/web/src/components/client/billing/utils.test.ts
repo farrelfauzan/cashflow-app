@@ -21,8 +21,11 @@ import {
   correctionRows,
   correctionSavedNotice,
   CREDIT_NOTE,
+  FINAL_INVOICE_LABEL,
   invoiceCorrectionSubtitle,
   invoiceCorrectionTitle,
+  invoiceName,
+  invoiceTitle,
   isInvoicesQuery,
   paymentCorrectionTitle,
   daysBetween,
@@ -1021,5 +1024,95 @@ describe("canCreateCorrection", () => {
     { name: "not listed", capabilities: [], want: false },
   ])("$name", ({ capabilities, want }) => {
     expect(canCreateCorrection(createAppAbility(capabilities))).toBe(want);
+  });
+});
+
+describe("the final invoice's names", () => {
+  // The final invoice's period is the lease's last day (31 Oct for a tenant who left then).
+  const final = invoice({
+    id: "fin",
+    kind: "final",
+    period: "2026-10-31",
+    periodEnd: "2026-10-31",
+    dueDate: "2026-10-31",
+    issuedOn: "2026-10-31",
+    amount: 180_000,
+    billed: 180_000,
+    outstanding: 180_000,
+  });
+  const oct = invoice({ id: "o", period: "2026-10-01", dueDate: "2026-10-01" });
+
+  it.each([
+    {
+      name: "a regular invoice",
+      of: oct,
+      title: "Oktober 2026",
+      name_: "Tagihan Oktober 2026",
+      correction: "Koreksi tagihan Oktober 2026",
+    },
+    {
+      name: "the final invoice",
+      of: final,
+      title: "Tagihan akhir Oktober 2026",
+      name_: "Tagihan akhir Oktober 2026",
+      correction: "Koreksi tagihan akhir Oktober 2026",
+    },
+  ])("names $name", ({ of, title, name_, correction }) => {
+    expect(invoiceTitle(of)).toBe(title);
+    expect(invoiceName(of)).toBe(name_);
+    expect(invoiceCorrectionTitle(of)).toBe(correction);
+  });
+
+  it("reads an invoice without a kind (a billed meter amount) as a regular one", () => {
+    expect(invoiceCorrectionTitle({ period: "2026-11-10" })).toBe(
+      "Koreksi tagihan November 2026",
+    );
+    expect(FINAL_INVOICE_LABEL).toBe("Tagihan akhir");
+  });
+
+  it("titles its row in Tagihan and the correction subject", () => {
+    const data = account({
+      invoices: [
+        oct,
+        {
+          ...final,
+          corrections: [correction({ id: "c-fin", amountDelta: -20_000 })],
+        },
+      ],
+    });
+    expect(invoiceRows(data, TODAY).map((row) => row.title)).toEqual([
+      "Tagihan akhir Oktober 2026",
+      "Oktober 2026",
+    ]);
+    expect(
+      invoiceRows(data, TODAY).find((row) => row.id === "fin")?.correctionTitle,
+    ).toBe("Koreksi tagihan akhir Oktober 2026");
+    expect(correctionRows(data)[0]?.title).toContain(
+      "Tagihan akhir Oktober 2026",
+    );
+  });
+
+  it("says tagihan akhir where a sentence names invoices by month", () => {
+    expect(overdueNote([oct, final], TODAY)).toBe(
+      "sisa Oktober dan tagihan akhir",
+    );
+    const rows = paymentRows(
+      account({
+        invoices: [oct, final],
+        payments: [
+          payment({
+            id: "p1",
+            allocations: [
+              { invoiceId: "o", amount: 1_500_000 },
+              { invoiceId: "fin", amount: 180_000 },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(rows[0]?.allocations.map((each) => each.text)).toEqual([
+      "→ Oktober Rp1.500.000",
+      "→ tagihan akhir Rp180.000",
+    ]);
   });
 });
