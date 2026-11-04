@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,12 @@ export function PropertyTableRow({
   const href = orgPath(orgId, `properties/${property.id}`);
 
   return (
-    <li className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_100px_80px_200px_160px] items-center gap-4 border-t px-5 py-2 first:border-t-0">
+    <li
+      className={cn(
+        "grid min-h-[72px] grid-cols-[minmax(0,1fr)_100px_80px_200px_160px] items-center border-t px-5 py-2 first:border-t-0",
+        TABLE_COLUMN_GAP,
+      )}
+    >
       <div className="flex min-w-0 flex-col gap-0.5">
         <Link
           href={href}

@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import type { Property } from "@/lib/api/generated/model";
 
 import { PropertyCard } from "./property-card";
@@ -25,7 +27,10 @@ export function PropertyList({
       <section className="hidden overflow-hidden rounded-2xl border bg-card lg:block">
         <div
           aria-hidden="true"
-          className="grid min-h-11 grid-cols-[minmax(0,1fr)_100px_80px_200px_160px] items-center gap-4 border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground"
+          className={cn(
+            "grid min-h-11 grid-cols-[minmax(0,1fr)_100px_80px_200px_160px] items-center border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
+            TABLE_COLUMN_GAP,
+          )}
         >
           <span>Nama</span>
           <span>Jenis</span>

@@ -1,5 +1,7 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { Unit } from "@/lib/api/generated/model";
 import type { UnitRowAction } from "./type";
@@ -28,7 +30,12 @@ export function UnitTableRow({
   onShowPrices,
 }: UnitTableRowProps) {
   return (
-    <li className="grid min-h-14 grid-cols-[minmax(0,1fr)_180px_290px_96px] items-center gap-4 border-t px-5 py-1.5 first:border-t-0">
+    <li
+      className={cn(
+        "grid min-h-14 grid-cols-[minmax(0,1fr)_180px_290px_96px] items-center border-t px-5 py-1.5 first:border-t-0",
+        TABLE_COLUMN_GAP,
+      )}
+    >
       <span className="truncate text-[17px] font-semibold">{unit.label}</span>
       <span className="text-base text-muted-foreground">
         {unitRentText(unit)}

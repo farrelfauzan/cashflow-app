@@ -48,11 +48,12 @@ export const LIST_LABEL = "Daftar tagihan";
 
 export const PERIOD_PARAM = "period";
 
-// The iPad table's columns, shared by its header and its rows: Penyewa, Unit (the widest free
-// column, so "Kontrakan Mawar" stays on one line), Tagihan, Dibayar, Sisa, and Status with
-// "Jatuh tempo 30 Des 2026" under the chip.
+// The iPad table's columns, shared by its header and its rows: Penyewa (the name, with the unit
+// and property under it, so both get the one wide column), Tagihan, Dibayar, Sisa, and Status
+// with "Jatuh tempo 30 Des 2026" under the chip. Five columns instead of the board's six, so the
+// 24px gaps between columns (TABLE_COLUMN_GAP) leave names room (the user's choice, 2026-11-04).
 export const TABLE_COLUMNS =
-  "grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_108px_108px_108px_188px]";
+  "grid-cols-[minmax(0,1fr)_108px_108px_108px_188px]";
 
 export const STATUS_FILTER_OPTIONS: readonly FilterOption[] = [
   { value: ListInvoicesStatus.unpaid, label: "Belum lunas" },

@@ -242,3 +242,8 @@ export function pageAfterOverflow(
   const last = pageCount(total, pageSize);
   return page > last ? last : null;
 }
+
+// The space between the columns of every table (the iPad lists: header and rows), one value for
+// the whole app so the tables read alike. The user asked for more room between columns
+// (2026-11-04); the phone shows cards instead of tables, so it never adds page scroll there.
+export const TABLE_COLUMN_GAP = "gap-x-6";
