@@ -30,6 +30,14 @@
 // stays out of the shell history and the process list, and it is never printed. Setting it again
 // replaces the key and keeps the webhook path. It runs in every environment.
 //
+// It sets the bank account an organization's tenants transfer to by hand, shown on the tenant
+// payment page (decision 38), and prints what it stored:
+//
+//	admin set-bank-account -org 6f1c... -bank BCA -number "123 456 7890" -holder "Suhwendi"
+//
+// The account number is 5 to 34 digits, spaces or '-'. Setting it again replaces it. These
+// values are not secret. It runs in every environment.
+//
 // Every command needs DATABASE_URL (the app role) and SECRETS_KEY.
 package main
 
@@ -55,6 +63,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
@@ -68,7 +77,8 @@ const usage = `usage:
   admin create-org -name NAME -display-name NAME -member "phone|name|roles" [-member ...]
   admin seed-demo   (development only: APP_ENV=development)
   admin generate-invoices   (development only: invoices and payments of the demo organizations)
-  admin set-autogopay-key -org ORGANIZATION_ID   (reads the API key as one line from stdin)`
+  admin set-autogopay-key -org ORGANIZATION_ID   (reads the API key as one line from stdin)
+  admin set-bank-account -org ORGANIZATION_ID -bank NAME -number NUMBER -holder NAME`
 
 // errNotDevelopment stops the demo commands anywhere but an explicit development environment.
 var errNotDevelopment = errors.New("demo commands only run with APP_ENV=development")
@@ -116,6 +126,8 @@ func run(ctx context.Context, args []string, e env) error {
 		return generateInvoices(ctx, args[1:], e)
 	case "set-autogopay-key":
 		return setAutoGoPayKey(ctx, args[1:], e)
+	case "set-bank-account":
+		return setBankAccount(ctx, args[1:], e)
 	}
 	return errors.New(usage)
 }
@@ -325,6 +337,51 @@ func readKeyLine(r io.Reader) (string, error) {
 		return "", fmt.Errorf("set-autogopay-key: %w", err)
 	}
 	return key, nil
+}
+
+// setBankAccount stores an organization's bank account for manual transfers and prints what was
+// stored. Every value is checked before it connects to the database.
+func setBankAccount(ctx context.Context, args []string, e env) error {
+	fs := flag.NewFlagSet("set-bank-account", flag.ContinueOnError)
+	fs.SetOutput(e.stderr)
+	orgFlag := fs.String("org", "", "the organization id")
+	bank := fs.String("bank", "", `the bank's name, for example "BCA"`)
+	number := fs.String("number", "", "the account number: 5 to 34 digits, spaces or '-'")
+	holder := fs.String("holder", "", "the account holder's name, as the bank shows it")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("set-bank-account takes no arguments besides its flags\n%s", usage)
+	}
+	if *orgFlag == "" || *bank == "" || *number == "" || *holder == "" {
+		return fmt.Errorf("set-bank-account needs -org, -bank, -number and -holder\n%s", usage)
+	}
+	orgID, err := uuid.Parse(*orgFlag)
+	if err != nil || orgID == uuid.Nil {
+		return errors.New("set-bank-account: -org must be an organization id (a UUID)")
+	}
+	account, err := paylink.NormalizeBankAccount(paylink.BankAccount{BankName: *bank, AccountNumber: *number, AccountHolder: *holder})
+	if err != nil {
+		return fmt.Errorf("set-bank-account: %w", err)
+	}
+
+	cn, err := e.connect(ctx, e.stderr)
+	if err != nil {
+		return err
+	}
+	defer cn.store.Close()
+
+	clk := clock.System()
+	// The bank account needs no link origin: no link is minted here.
+	svc := paylink.NewService(cn.store, authz.NewService(cn.store, clk, cn.log), clk, "")
+	stored, err := svc.SetBankAccount(ctx, orgID, account)
+	if err != nil {
+		return fmt.Errorf("setting the bank account of organization %s: %w", orgID, err)
+	}
+	_, err = fmt.Fprintf(e.stdout, "organization %s\nbank %s\naccount number %s\naccount holder %s\n",
+		orgID, stored.BankName, stored.AccountNumber, stored.AccountHolder)
+	return err
 }
 
 // writeLogins prints the demo logins as a plain table.

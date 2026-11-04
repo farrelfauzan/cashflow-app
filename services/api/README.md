@@ -122,6 +122,20 @@ It prints the organization id and the organization's webhook path,
 Setting the key again replaces it and keeps the same path. Each setting is in the organization's
 audit log as `settings:update` on `autogopay_account/<organization id>`.
 
+### Set an organization's bank account
+
+The tenant payment page shows the organization's bank account for a manual transfer (decision
+38). Until a settings screen exists, the platform operator sets it with `cmd/admin`, in any
+environment. The values are not secret:
+
+```bash
+make admin ARGS='set-bank-account -org <organization id> -bank BCA -number "123 456 7890" -holder "Suhwendi"'
+```
+
+The account number is 5 to 34 digits, spaces or `-`. It prints what it stored; setting it again
+replaces it. Each setting is in the organization's audit log as `settings:update` on
+`organization_bank_account/<organization id>`.
+
 ### Login codes for end-to-end tests (development only)
 
 With `WHATSAPP_PROVIDER=devlog`, set `DEVLOG_FILE=/path/to/devlog.jsonl` and the API also appends

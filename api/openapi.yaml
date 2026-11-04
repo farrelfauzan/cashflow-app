@@ -16,6 +16,7 @@ tags:
   - name: properties
   - name: tenants
   - name: money
+  - name: payment-page
 
 paths:
   /auth/otp/request:
@@ -1349,6 +1350,98 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/invoices/{invoiceId}/payment-links:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/InvoiceId"
+    post:
+      tags: [payment-page]
+      operationId: createPaymentLink
+      summary: Make a new payment link for an invoice, "Salin link bayar" (needs invoice:share; audited)
+      description: >
+        Each call makes a new link, /t/<token> on the web app; the token is shown only in this
+        answer, since only its hash is stored, so copy it now. An invoice has as many links as
+        were made, and each works until 30 days after the invoice is paid or cancelled. The link
+        names one invoice, and its page shows everything the tenant owes. A karyawan may share
+        only invoices of tenants they collect from; a member limited to some properties, only
+        invoices of leases in their properties.
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentLink" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: >
+            The invoice was paid or cancelled 30 days ago or longer, so a link would not work
+            (code payment_link_expired_invoice).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/invoices/{invoiceId}/payment-links/revoke:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/InvoiceId"
+    post:
+      tags: [payment-page]
+      operationId: revokePaymentLinks
+      summary: Stop every payment link of an invoice (needs invoice:share; audited)
+      description: >
+        Every link made for the invoice stops working at once and its page answers 404, as for a
+        link that never existed. revoked counts the links that were still working; 0 is not an
+        error. New links can be made afterwards.
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentLinksRevoked" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /t/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The secret in the payment link. Never log it or send it anywhere else.
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+    get:
+      tags: [payment-page]
+      operationId: getPaymentPage
+      summary: The tenant payment page behind a link (public; the token is the access)
+      description: >
+        No session: the token alone grants the page, and only for the link's own tenant. It shows
+        who bills them, the tenant's name and the link's invoice (so a forwarded link is
+        obvious), everything the tenant owes with the open invoices oldest first, and the bank
+        account for a manual transfer. Nothing else: no phone number, payment history, staff
+        name or note. A malformed, unknown or revoked token all answer the same 404. Limited per
+        token and per client address (429 rate_limited). Responses carry Cache-Control: no-store
+        and Referrer-Policy: no-referrer.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentPage" }
+        "404":
+          description: "No working link with this token (code payment_link_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: "The link's invoice was paid or cancelled 30 days ago or longer (code payment_link_expired)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
 components:
   parameters:
     OrgId:
@@ -1368,6 +1461,11 @@ components:
       schema: { type: string, format: uuid }
     TenantId:
       name: tenantId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    InvoiceId:
+      name: invoiceId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -2667,3 +2765,82 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/MissingMeterReading" }
+
+    PaymentLink:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: The link to send the tenant, /t/<token> on the web app. Shown once; never log it.
+          example: https://app.example.id/t/3q2-7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+    PaymentLinksRevoked:
+      type: object
+      required: [revoked]
+      properties:
+        revoked: { type: integer, description: How many links were still working and now are not. }
+
+    BankAccount:
+      type: object
+      required: [bankName, accountNumber, accountHolder]
+      description: Where to transfer by hand; the tenant writes their name in the transfer note.
+      properties:
+        bankName: { type: string, example: BCA }
+        accountNumber: { type: string, example: "123 456 7890" }
+        accountHolder: { type: string, example: Suhwendi }
+
+    PaymentPageLine:
+      type: object
+      required: [label, amount]
+      properties:
+        label: { type: string, example: "Sewa 15 Okt 2026 – 14 Nov 2026" }
+        amount: { type: integer, format: int64, description: "Rupiah, as snapshotted when the invoice was made." }
+
+    PaymentPageInvoice:
+      type: object
+      required: [id, kind, unitLabel, propertyName, period, periodEnd, dueDate, amount, balance, lines]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
+        unitLabel: { type: string, example: Kamar 11 }
+        propertyName: { type: string, example: Kos Melati }
+        period: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        amount:
+          type: integer
+          format: int64
+          description: >
+            What the invoice bills now, corrections included. Its lines are as the invoice was
+            made, so after a correction they may not add up to it.
+        balance: { type: integer, format: int64, description: What it still owes; 0 when paid or cancelled. }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/PaymentPageLine" }
+
+    PaymentPage:
+      type: object
+      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount]
+      properties:
+        organizationName: { type: string, description: "The organization's display name: who bills the tenant." }
+        tenantName: { type: string }
+        invoice:
+          description: The invoice the link was sent for, whatever its state.
+          allOf:
+            - $ref: "#/components/schemas/PaymentPageInvoice"
+        outstanding:
+          type: integer
+          format: int64
+          description: What the tenant owes over all their invoices; paying pays the oldest first.
+        credit: { type: integer, format: int64, description: Money paid and not yet used by any invoice. }
+        paid: { type: boolean, description: True when the tenant owes nothing. }
+        openInvoices:
+          type: array
+          description: The invoices that still owe something, oldest period first. Empty when paid.
+          items: { $ref: "#/components/schemas/PaymentPageInvoice" }
+        bankAccount:
+          description: The organization's bank account for a manual transfer, or null when none is set.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/BankAccount"

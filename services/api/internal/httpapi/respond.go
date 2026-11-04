@@ -14,6 +14,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
@@ -54,6 +55,13 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, billing.ErrMeteredChargeBilled):
 		s.writeError(w, http.StatusConflict, "metered_charge_billed",
 			"Jumlah bulan ini sudah ditagihkan, jadi tidak bisa diubah lagi. Perbaiki dengan koreksi nominal pada tagihannya.")
+	case errors.Is(err, paylink.ErrLinkNotFound):
+		s.writeError(w, http.StatusNotFound, "payment_link_not_found", "Link pembayaran tidak ditemukan atau sudah tidak berlaku.")
+	case errors.Is(err, paylink.ErrLinkExpired):
+		s.writeError(w, http.StatusGone, "payment_link_expired", "Link pembayaran ini sudah kedaluwarsa. Minta link baru ke pengelola.")
+	case errors.Is(err, paylink.ErrInvoicePastWindow):
+		s.writeError(w, http.StatusConflict, "payment_link_expired_invoice",
+			"Tagihan ini sudah lunas atau dibatalkan lebih dari 30 hari yang lalu, jadi link pembayaran baru tidak bisa dibuat.")
 	case errors.As(err, &fileErr):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", fileErr.Message, "file")
 	case errors.Is(err, auth.ErrInvalidPhone):
@@ -68,7 +76,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.log.InfoContext(r.Context(), "permission denied", "error", err)
 		s.writeError(w, http.StatusForbidden, "forbidden", "Anda tidak punya akses untuk tindakan ini.")
 	case errors.Is(err, authz.ErrNotMember), errors.Is(err, member.ErrNotFound), errors.Is(err, property.ErrNotFound),
-		errors.Is(err, tenant.ErrNotFound):
+		errors.Is(err, tenant.ErrNotFound), errors.Is(err, paylink.ErrInvoiceNotFound):
 		s.notFound(w, r)
 	case errors.Is(err, property.ErrNameTaken):
 		s.writeErrorField(w, http.StatusConflict, "name_taken", "Nama properti ini sudah dipakai.", "name")

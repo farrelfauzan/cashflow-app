@@ -546,6 +546,18 @@ type AccountTotals struct {
 	Overdue int64 `json:"overdue"`
 }
 
+// BankAccount Where to transfer by hand; the tenant writes their name in the transfer note.
+type BankAccount struct {
+	// AccountHolder Example: Suhwendi
+	AccountHolder string `json:"accountHolder"`
+
+	// AccountNumber Example: 123 456 7890
+	AccountNumber string `json:"accountNumber"`
+
+	// BankName Example: BCA
+	BankName string `json:"bankName"`
+}
+
 // Capability defines model for Capability.
 type Capability struct {
 	Access CapabilityAccess `json:"access"`
@@ -1349,8 +1361,79 @@ type PaymentInput struct {
 // PaymentInputMethod defines model for PaymentInput.Method.
 type PaymentInputMethod string
 
+// PaymentLink defines model for PaymentLink.
+type PaymentLink struct {
+	// Url The link to send the tenant, /t/<token> on the web app. Shown once; never log it.
+	//
+	// Example: https://app.example.id/t/3q2-7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	Url string `json:"url"`
+}
+
+// PaymentLinksRevoked defines model for PaymentLinksRevoked.
+type PaymentLinksRevoked struct {
+	// Revoked How many links were still working and now are not.
+	Revoked int `json:"revoked"`
+}
+
 // PaymentMethod A payment recorded by hand is cash or transfer; qris and va come from slice 3.
 type PaymentMethod string
+
+// PaymentPage defines model for PaymentPage.
+type PaymentPage struct {
+	// BankAccount The organization's bank account for a manual transfer, or null when none is set.
+	BankAccount *BankAccount `json:"bankAccount"`
+
+	// Credit Money paid and not yet used by any invoice.
+	Credit int64 `json:"credit"`
+
+	// Invoice The invoice the link was sent for, whatever its state.
+	Invoice PaymentPageInvoice `json:"invoice"`
+
+	// OpenInvoices The invoices that still owe something, oldest period first. Empty when paid.
+	OpenInvoices []PaymentPageInvoice `json:"openInvoices"`
+
+	// OrganizationName The organization's display name: who bills the tenant.
+	OrganizationName string `json:"organizationName"`
+
+	// Outstanding What the tenant owes over all their invoices; paying pays the oldest first.
+	Outstanding int64 `json:"outstanding"`
+
+	// Paid True when the tenant owes nothing.
+	Paid       bool   `json:"paid"`
+	TenantName string `json:"tenantName"`
+}
+
+// PaymentPageInvoice defines model for PaymentPageInvoice.
+type PaymentPageInvoice struct {
+	// Amount What the invoice bills now, corrections included. Its lines are as the invoice was made, so after a correction they may not add up to it.
+	Amount int64 `json:"amount"`
+
+	// Balance What it still owes; 0 when paid or cancelled.
+	Balance int64              `json:"balance"`
+	DueDate openapi_types.Date `json:"dueDate"`
+	Id      openapi_types.UUID `json:"id"`
+
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind      InvoiceKind        `json:"kind"`
+	Lines     []PaymentPageLine  `json:"lines"`
+	Period    openapi_types.Date `json:"period"`
+	PeriodEnd openapi_types.Date `json:"periodEnd"`
+
+	// PropertyName Example: Kos Melati
+	PropertyName string `json:"propertyName"`
+
+	// UnitLabel Example: Kamar 11
+	UnitLabel string `json:"unitLabel"`
+}
+
+// PaymentPageLine defines model for PaymentPageLine.
+type PaymentPageLine struct {
+	// Amount Rupiah, as snapshotted when the invoice was made.
+	Amount int64 `json:"amount"`
+
+	// Label Example: Sewa 15 Okt 2026 – 14 Nov 2026
+	Label string `json:"label"`
+}
 
 // PaymentResult defines model for PaymentResult.
 type PaymentResult struct {
@@ -1685,6 +1768,9 @@ type User struct {
 	// Phone E.164
 	Phone string `json:"phone"`
 }
+
+// InvoiceId defines model for InvoiceId.
+type InvoiceId = openapi_types.UUID
 
 // LeaseId defines model for LeaseId.
 type LeaseId = openapi_types.UUID

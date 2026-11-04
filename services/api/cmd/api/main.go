@@ -26,6 +26,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
@@ -124,6 +125,8 @@ func run() error {
 		Tenants:        tenants,
 		Imports:        imports,
 		Billing:        billingSvc,
+		PayLinks:       paylink.NewService(st, az, clk, cfg.PublicWebOrigin),
+		PublicLimiter:  limiter,
 		CookieSecure:   cookieSecure,
 		AllowedOrigins: allowedOrigins,
 		DocsSpecPath:   docsSpecPath,
