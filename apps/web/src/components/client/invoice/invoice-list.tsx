@@ -1,5 +1,6 @@
 "use client";
 
+import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { orgPath } from "@/lib/org-path";
 import { cn } from "@/lib/utils";
 import { LIST_LABEL, TABLE_COLUMNS } from "./utils";
@@ -26,12 +27,12 @@ export function InvoiceList({ orgId, rows, canReadTenants }: InvoiceListProps) {
         <div
           aria-hidden="true"
           className={cn(
-            "grid min-h-11 items-center gap-3 border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
+            "grid min-h-11 items-center border-b bg-muted/40 px-5 text-base font-semibold text-muted-foreground",
             TABLE_COLUMNS,
+            TABLE_COLUMN_GAP,
           )}
         >
           <span>Penyewa</span>
-          <span>Unit</span>
           <span className="text-right">Tagihan</span>
           <span className="text-right">Dibayar</span>
           <span className="text-right">Sisa</span>

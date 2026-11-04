@@ -30,6 +30,7 @@ type MeteredInput struct {
 // BilledRef is the invoice whose line bills a metered amount.
 type BilledRef struct {
 	InvoiceID uuid.UUID
+	Kind      string // InvoiceRegular or InvoiceFinal
 	Period    time.Time
 }
 
@@ -411,8 +412,8 @@ func toMeteredCharge(r dbgen.ListLeaseMeteredChargePageRow) MeteredCharge {
 		RecordedBy: StaffRef{MemberID: r.RecordedByMemberID, Name: r.RecordedByName},
 		CreatedAt:  r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
-	if r.BilledInvoiceID.Valid && r.BilledPeriod != nil {
-		out.Billed = &BilledRef{InvoiceID: r.BilledInvoiceID.UUID, Period: *r.BilledPeriod}
+	if r.BilledInvoiceID.Valid && r.BilledPeriod != nil && r.BilledKind != nil {
+		out.Billed = &BilledRef{InvoiceID: r.BilledInvoiceID.UUID, Kind: *r.BilledKind, Period: *r.BilledPeriod}
 	}
 	return out
 }

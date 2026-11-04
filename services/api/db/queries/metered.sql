@@ -57,7 +57,7 @@ WHERE organization_id = @organization_id AND id = @id;
 -- One amount with its type, who recorded it last and the invoice that bills it, if any.
 SELECT mc.id, mc.lease_id, mc.charge_type_id, ct.name AS charge_type_name, mc.usage_month, mc.amount,
        mc.meter_start, mc.meter_end, m.id AS recorded_by_member_id, su.name AS recorded_by_name,
-       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period
+       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period, i.kind AS billed_kind
 FROM metered_charge mc
 JOIN charge_type ct ON ct.organization_id = mc.organization_id AND ct.id = mc.charge_type_id
 JOIN membership m ON m.organization_id = mc.organization_id AND m.staff_user_id = mc.recorded_by_staff_user_id
@@ -71,7 +71,7 @@ WHERE mc.organization_id = @organization_id AND mc.id = @id;
 -- has the same WHERE: change both together.
 SELECT mc.id, mc.lease_id, mc.charge_type_id, ct.name AS charge_type_name, mc.usage_month, mc.amount,
        mc.meter_start, mc.meter_end, m.id AS recorded_by_member_id, su.name AS recorded_by_name,
-       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period
+       mc.created_at, mc.updated_at, il.invoice_id AS billed_invoice_id, i.period AS billed_period, i.kind AS billed_kind
 FROM metered_charge mc
 JOIN charge_type ct ON ct.organization_id = mc.organization_id AND ct.id = mc.charge_type_id
 JOIN membership m ON m.organization_id = mc.organization_id AND m.staff_user_id = mc.recorded_by_staff_user_id
