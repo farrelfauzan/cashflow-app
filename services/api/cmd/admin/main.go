@@ -226,6 +226,8 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 		// daily run.
 		Tenants:     tenant.NewService(st, az, c, money, nil),
 		PastTenants: tenant.NewService(st, az, past, money, nil),
+		// Only sets the bank account; it mints no links, so it needs no web origin.
+		PayLinks: paylink.NewService(st, az, c, ""),
 	}, c)
 	if err != nil {
 		return err

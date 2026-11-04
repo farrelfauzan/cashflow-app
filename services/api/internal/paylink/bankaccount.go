@@ -105,6 +105,18 @@ func (s *Service) SetBankAccount(ctx context.Context, org uuid.UUID, in BankAcco
 	return out, nil
 }
 
+// BankAccount returns org's bank account, or nil when none is set. It checks no member: like
+// SetBankAccount it serves the platform operator's tools (the demo seed).
+func (s *Service) BankAccount(ctx context.Context, org uuid.UUID) (*BankAccount, error) {
+	var out *BankAccount
+	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		var err error
+		out, err = loadBankAccount(ctx, dbgen.New(tx), org)
+		return err
+	})
+	return out, err
+}
+
 // loadBankAccount reads org's bank account in q's scope; nil when none is set.
 func loadBankAccount(ctx context.Context, q *dbgen.Queries, org uuid.UUID) (*BankAccount, error) {
 	row, err := q.GetBankAccount(ctx, org)
