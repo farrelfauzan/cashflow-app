@@ -10,13 +10,21 @@ import {
   canCreateCorrection,
   canReadAccount,
 } from "@/components/client/billing/utils";
+import { FormAlert } from "@/components/client/form/form-alert";
 import {
   canRecordMeter,
   meterAvailable,
 } from "@/components/client/meter/utils";
 import { canRecordPayment } from "@/components/client/payment/utils";
+import { PayLinkFallback } from "@/components/client/payment-link/pay-link-fallback";
+import { useCopyPayLink } from "@/components/client/payment-link/use-copy-pay-link";
+import {
+  canSharePayLink,
+  payLinkInvoice,
+} from "@/components/client/payment-link/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
+import { useGetTenantAccount } from "@/lib/api/generated/money/money";
 import { useGetTenant } from "@/lib/api/generated/tenants/tenants";
 import type { AppAbility } from "@/lib/capabilities";
 import { jakartaToday } from "@/lib/format/date";
@@ -48,8 +56,10 @@ type TenantDetailViewProps = {
 // for a member with invoice:read and payment:read) and a card for each lease the member may see, with "Catat
 // pembayaran" (payment:record), "Ubah penyewa" and, for a tenant without an active lease,
 // "Sewakan unit", and "Catat meteran" on a lease that expects metered amounts (charge:record),
-// each shown from the member's capabilities (getOrgMe). The API answers 404 for a tenant that does not exist and 403
-// for one the member may not see; both read "Penyewa tidak ditemukan".
+// each shown from the member's capabilities (getOrgMe). "Salin link bayar" (invoice:share) copies
+// a new payment link for the newest open invoice in the account the money section loads.
+// The API answers 404 for a tenant that does not exist and 403 for one the member may not see;
+// both read "Penyewa tidak ditemukan".
 export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const tenant = useGetTenant(orgId, tenantId);
   const ability = useAbility<AppAbility>();
@@ -67,6 +77,14 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const [notice, setNotice] = useState("");
   const [correctionRequest, setCorrectionRequest] =
     useState<CorrectionRequest | null>(null);
+  // "Salin link bayar" needs the open invoices: the same query (and cache entry) as the money
+  // section, so it adds no request; without invoice:read and payment:read it never runs.
+  const canShare = canSharePayLink(ability);
+  const account = useGetTenantAccount(orgId, tenantId, {
+    query: { enabled: showAccount && canShare },
+  });
+  const shareInvoice = payLinkInvoice(canShare && showAccount, account.data);
+  const payLink = useCopyPayLink(orgId, setNotice);
 
   if (tenant.isError) {
     if (isNotFound(tenant.error)) return <TenantNotFound orgId={orgId} />;
@@ -104,7 +122,23 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
             requestId: crypto.randomUUID(),
           })
         }
+        copyPayLink={
+          shareInvoice === null
+            ? null
+            : {
+                busy: payLink.busy,
+                onCopy: () => payLink.copy(shareInvoice.id),
+              }
+        }
       />
+      {payLink.error !== null && <FormAlert message={payLink.error} />}
+      {payLink.fallbackUrl !== null && (
+        <PayLinkFallback
+          url={payLink.fallbackUrl}
+          onCopyAgain={payLink.copyAgain}
+          onClose={payLink.close}
+        />
+      )}
       <p
         role="status"
         aria-live="polite"
