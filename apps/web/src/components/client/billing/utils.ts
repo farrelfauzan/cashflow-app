@@ -8,6 +8,7 @@ import type {
   AccountPayment,
   Correction,
   CorrectionInput,
+  InvoiceKind,
   PaymentMethod,
   TenantAccount,
 } from "@/lib/api/generated/model";
@@ -55,6 +56,38 @@ export const PAYMENTS_TITLE = "Pembayaran dan alokasi";
 export const PAYMENTS_LIST_LABEL = "Daftar pembayaran";
 export const NO_PAYMENTS_TEXT = "Belum ada pembayaran.";
 export const ALL_CREDIT_TEXT = "Semua masuk ke saldo lebih bayar";
+
+// The final invoice (made at move-out for metered usage no regular invoice billed) is named
+// "Tagihan akhir" wherever an invoice is named by its month. Its period is the lease's last day,
+// so its month is the month the tenant left.
+export const FINAL_INVOICE_LABEL = "Tagihan akhir";
+
+type NamedInvoice = { kind?: InvoiceKind; period: string };
+
+// "Tagihan November 2026", or "Tagihan akhir Oktober 2026" for the final invoice.
+export function invoiceName(invoice: NamedInvoice): string {
+  const month = formatMonthYear(invoice.period);
+  return invoice.kind === "final"
+    ? `${FINAL_INVOICE_LABEL} ${month}`
+    : `Tagihan ${month}`;
+}
+
+// The short name inside a sentence ("sisa November", "→ November Rp700.000"): the month alone, or
+// "tagihan akhir" for the final invoice, which no month would tell apart from that month's regular
+// invoice.
+function shortName(invoice: NamedInvoice): string {
+  return invoice.kind === "final"
+    ? "tagihan akhir"
+    : formatMonth(invoice.period);
+}
+
+// The title of a row in "Tagihan": the month alone ("November 2026") for a regular invoice,
+// "Tagihan akhir Oktober 2026" for the final one.
+export function invoiceTitle(invoice: NamedInvoice): string {
+  return invoice.kind === "final"
+    ? invoiceName(invoice)
+    : formatMonthYear(invoice.period);
+}
 
 export const CORRECTIONS_TITLE = "Koreksi nominal";
 export const CORRECTIONS_LIST_LABEL = "Daftar koreksi";
@@ -117,8 +150,8 @@ export function overdueNote(
   const [first, second] = overdue;
   if (first === undefined) return null;
   if (overdue.length >= 3) return `sisa ${overdue.length} tagihan`;
-  if (second === undefined) return `sisa ${formatMonth(first.period)}`;
-  return `sisa ${formatMonth(first.period)} dan ${formatMonth(second.period)}`;
+  if (second === undefined) return `sisa ${shortName(first)}`;
+  return `sisa ${shortName(first)} dan ${shortName(second)}`;
 }
 
 // How long the oldest unpaid invoice has been due: "N hari" under 31 days, then whole months
@@ -156,7 +189,7 @@ export function accountTiles(
     ? [NO_DEBT_TEXT]
     : oldest === undefined
       ? []
-      : [formatMonthYear(oldest.period)];
+      : [invoiceTitle(oldest)];
 
   return [
     {
@@ -284,7 +317,7 @@ export function invoiceRows(
     const cancelled = invoice.status === "cancelled";
     return {
       id: invoice.id,
-      title: formatMonthYear(invoice.period),
+      title: invoiceTitle(invoice),
       place: severalLeases
         ? `${invoice.unitLabel} · ${invoice.propertyName}`
         : null,
@@ -313,8 +346,7 @@ function allocationViews(
 ): AllocationView[] {
   return payment.allocations.map((allocation) => {
     const invoice = invoices.find((each) => each.id === allocation.invoiceId);
-    const month =
-      invoice === undefined ? "tagihan" : formatMonth(invoice.period);
+    const month = invoice === undefined ? "tagihan" : shortName(invoice);
     const settled = settledBy.get(allocation.invoiceId) === payment.id;
     return {
       invoiceId: allocation.invoiceId,
@@ -353,7 +385,7 @@ export function correctionRows(account: TenantAccount): CorrectionRowView[] {
     ...account.invoices.flatMap((invoice) =>
       invoice.corrections.map((correction) => ({
         correction,
-        subject: `Tagihan ${formatMonthYear(invoice.period)}`,
+        subject: invoiceName(invoice),
       })),
     ),
     ...account.payments.flatMap((payment) =>
@@ -400,11 +432,12 @@ export const CORRECT_BUTTON_TEXT = "Koreksi";
 export const CORRECTION_NOTE =
   "Data lama tidak dihapus. Koreksi ini tercatat atas nama Anda dan muncul di laporan Supervisor.";
 
-// "Koreksi tagihan November 2026": the invoice's period month.
-export function invoiceCorrectionTitle(
-  invoice: Pick<AccountInvoice, "period">,
-): string {
-  return `Koreksi tagihan ${formatMonthYear(invoice.period)}`;
+// "Koreksi tagihan November 2026": the invoice's period month; "Koreksi tagihan akhir Oktober
+// 2026" for the final invoice. Without a kind (a billed meter amount names only the period) the
+// invoice reads as a regular one.
+export function invoiceCorrectionTitle(invoice: NamedInvoice): string {
+  const name = invoiceName(invoice);
+  return `Koreksi ${name.charAt(0).toLowerCase()}${name.slice(1)}`;
 }
 
 // "Koreksi pembayaran 25 Nov 2026": the day the payment was received.
