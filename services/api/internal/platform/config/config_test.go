@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"encoding/base64"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,6 +12,9 @@ import (
 )
 
 var testSecret = strings.Repeat("s", 32)
+
+// testKey is a valid SECRETS_KEY: the id "test" and 32 bytes of 'k', base64-encoded.
+var testKey = "test:" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 
 func TestLoadAPI(t *testing.T) {
 	tests := []struct {
@@ -20,13 +25,14 @@ func TestLoadAPI(t *testing.T) {
 	}{
 		{
 			name: "defaults apply when only the required values are set",
-			env:  map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret},
+			env:  map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey},
 			want: API{
 				Common:           Common{Env: "development", LogLevel: "info"},
 				HTTPAddr:         ":8080",
 				DatabaseURL:      "postgres://app@db/cashflow",
 				RedisAddr:        "localhost:6379",
 				AuthSecret:       testSecret,
+				Secrets:          Secrets{Key: testKey},
 				AllowedOrigins:   "http://localhost:3000",
 				PublicWebOrigin:  "http://localhost:3000",
 				WhatsAppProvider: "devlog",
@@ -36,12 +42,12 @@ func TestLoadAPI(t *testing.T) {
 		{
 			name: "explicit values override defaults",
 			env: map[string]string{
-				"APP_ENV":           "production",
-				"LOG_LEVEL":         "warn",
-				"HTTP_ADDR":         ":9000",
-				"DATABASE_URL":      "postgres://app@db/cashflow",
-				"REDIS_ADDR":        "redis:6379",
-				"AUTH_SECRET":       testSecret,
+				"APP_ENV":      "production",
+				"LOG_LEVEL":    "warn",
+				"HTTP_ADDR":    ":9000",
+				"DATABASE_URL": "postgres://app@db/cashflow",
+				"REDIS_ADDR":   "redis:6379",
+				"AUTH_SECRET":  testSecret, "SECRETS_KEY": testKey,
 				"ALLOWED_ORIGINS":   "https://app.example.id",
 				"PUBLIC_WEB_ORIGIN": "https://app.example.id",
 				"WHATSAPP_PROVIDER": "gowa",
@@ -56,6 +62,7 @@ func TestLoadAPI(t *testing.T) {
 				DatabaseURL:      "postgres://app@db/cashflow",
 				RedisAddr:        "redis:6379",
 				AuthSecret:       testSecret,
+				Secrets:          Secrets{Key: testKey},
 				AllowedOrigins:   "https://app.example.id",
 				PublicWebOrigin:  "https://app.example.id",
 				WhatsAppProvider: "gowa",
@@ -65,17 +72,17 @@ func TestLoadAPI(t *testing.T) {
 		},
 		{
 			name:    "missing database url is rejected",
-			env:     map[string]string{"AUTH_SECRET": testSecret},
+			env:     map[string]string{"AUTH_SECRET": testSecret, "SECRETS_KEY": testKey},
 			wantErr: "DATABASE_URL",
 		},
 		{
 			name:    "missing auth secret is rejected",
-			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow"},
+			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey},
 			wantErr: "AUTH_SECRET",
 		},
 		{
 			name:    "short auth secret is rejected",
-			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": "short"},
+			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": "short", "SECRETS_KEY": testKey},
 			wantErr: "at least 32 bytes",
 		},
 		{
@@ -83,7 +90,7 @@ func TestLoadAPI(t *testing.T) {
 			env: map[string]string{
 				"APP_ENV":      "prod",
 				"DATABASE_URL": "postgres://app@db/cashflow",
-				"AUTH_SECRET":  testSecret,
+				"AUTH_SECRET":  testSecret, "SECRETS_KEY": testKey,
 			},
 			wantErr: "APP_ENV",
 		},
@@ -103,7 +110,7 @@ func TestLoadAPI(t *testing.T) {
 
 func TestWhatsAppProviderChoice(t *testing.T) {
 	base := map[string]string{
-		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
 		"PUBLIC_WEB_ORIGIN": "https://app.example.id",
 	}
 	with := func(extra map[string]string) map[string]string {
@@ -155,7 +162,7 @@ func TestTwilioSettings(t *testing.T) {
 	const token = "test-auth-token" //nolint:gosec // G101: a test placeholder, not a credential
 	env := func(appEnv string, twilio map[string]string) map[string]string {
 		m := map[string]string{
-			"APP_ENV": appEnv, "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+			"APP_ENV": appEnv, "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
 			"PUBLIC_WEB_ORIGIN": "https://app.example.id", "WHATSAPP_PROVIDER": "twilio",
 		}
 		for k, v := range twilio {
@@ -208,7 +215,7 @@ func TestTwilioSettings(t *testing.T) {
 			want: Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886", ContentSIDs: "login_code=HX" + fakeHex}},
 		{name: "content sids without a template name", env: env("development", withValue("TWILIO_CONTENT_SIDS", "HX"+fakeHex)), wantErr: "template=ContentSid pairs"},
 		{name: "content sids are ignored with devlog", env: map[string]string{
-			"APP_ENV": "development", "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+			"APP_ENV": "development", "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
 			"WHATSAPP_PROVIDER": "devlog", "TWILIO_CONTENT_SIDS": "not a pair",
 		}, want: Twilio{ContentSIDs: "not a pair"}},
 		{name: "content sids with a template named twice", env: env("development", withValue("TWILIO_CONTENT_SIDS", "login_code=HX"+fakeHex+",login_code=HX"+fakeHex)), wantErr: "names login_code twice"},
@@ -264,7 +271,7 @@ func TestTwilioContentSIDMap(t *testing.T) {
 
 func TestPublicWebOrigin(t *testing.T) {
 	gowa := map[string]string{
-		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret,
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
 		"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
 	}
 	env := func(appEnv, origin string) map[string]string {
@@ -332,22 +339,23 @@ func TestLoadWorker(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "defaults apply when only the database url is set",
-			env:  map[string]string{"DATABASE_URL": "postgres://app@db/cashflow"},
+			name: "defaults apply when only the database url and secrets key are set",
+			env:  map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey},
 			want: Worker{
 				Common:      Common{Env: "development", LogLevel: "info"},
 				DatabaseURL: "postgres://app@db/cashflow",
 				RedisAddr:   "localhost:6379",
+				Secrets:     Secrets{Key: testKey},
 			},
 		},
 		{
 			name:    "missing database url is rejected",
-			env:     map[string]string{},
+			env:     map[string]string{"SECRETS_KEY": testKey},
 			wantErr: "DATABASE_URL",
 		},
 		{
 			name:    "an unknown environment is rejected",
-			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "APP_ENV": "prod"},
+			env:     map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey, "APP_ENV": "prod"},
 			wantErr: "APP_ENV",
 		},
 	}
@@ -370,4 +378,89 @@ func TestLoadMigrateRequiresOwnerURL(t *testing.T) {
 		"DATABASE_URL": "postgres://app@db/cashflow",
 	}))
 	require.ErrorContains(t, err, "MIGRATE_DATABASE_URL")
+}
+
+// TestSecretsKeyEveryBinary checks that the API, the worker and the admin command each refuse to
+// start without a valid SECRETS_KEY, and that no error repeats a key.
+func TestSecretsKeyEveryBinary(t *testing.T) {
+	t.Parallel()
+	b64 := func(n int) string { return base64.StdEncoding.EncodeToString([]byte(strings.Repeat("p", n))) }
+	short := "k1:" + b64(16)
+	loaders := map[string]func(map[string]string) (Secrets, error){
+		"api": func(env map[string]string) (Secrets, error) {
+			c, err := loadAPI(context.Background(), envconfig.MapLookuper(env))
+			return c.Secrets, err
+		},
+		"worker": func(env map[string]string) (Secrets, error) {
+			c, err := loadWorker(context.Background(), envconfig.MapLookuper(env))
+			return c.Secrets, err
+		},
+		"admin": func(env map[string]string) (Secrets, error) {
+			c, err := loadAdmin(context.Background(), envconfig.MapLookuper(env))
+			return c.Secrets, err
+		},
+	}
+	tests := []struct {
+		name    string
+		vars    map[string]string // added to a valid base without SECRETS_*
+		want    Secrets
+		wantErr string
+	}{
+		{name: "missing", vars: map[string]string{}, wantErr: "SECRETS_KEY"},
+		{name: "empty", vars: map[string]string{"SECRETS_KEY": ""}, wantErr: "SECRETS_KEY is required"},
+		{name: "no key id", vars: map[string]string{"SECRETS_KEY": b64(32)}, wantErr: "SECRETS_KEY has no ':'"},
+		{name: "16-byte key", vars: map[string]string{"SECRETS_KEY": short}, wantErr: "SECRETS_KEY has a key of 16 bytes"},
+		{name: "bad base64", vars: map[string]string{"SECRETS_KEY": "k1:%%%"}, wantErr: "SECRETS_KEY has a key that is not valid standard base64"},
+		{name: "bad previous key", vars: map[string]string{"SECRETS_KEY": testKey, "SECRETS_KEY_PREVIOUS": short},
+			wantErr: "SECRETS_KEY_PREVIOUS entry 1 has a key of 16 bytes"},
+		{name: "previous key reusing the current id", vars: map[string]string{"SECRETS_KEY": testKey, "SECRETS_KEY_PREVIOUS": "test:" + b64(32)},
+			wantErr: "uses the id \"test\" of SECRETS_KEY"},
+		{name: "valid", vars: map[string]string{"SECRETS_KEY": testKey}, want: Secrets{Key: testKey}},
+		{name: "valid with a previous key", vars: map[string]string{"SECRETS_KEY": testKey, "SECRETS_KEY_PREVIOUS": "old:" + b64(32)},
+			want: Secrets{Key: testKey, Previous: "old:" + b64(32)}},
+	}
+	for binary, load := range loaders {
+		for _, tc := range tests {
+			t.Run(binary+": "+tc.name, func(t *testing.T) {
+				t.Parallel()
+				env := map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret}
+				for k, v := range tc.vars {
+					env[k] = v
+				}
+				got, err := load(env)
+				if tc.wantErr != "" {
+					require.ErrorContains(t, err, tc.wantErr)
+					for _, v := range tc.vars {
+						if _, key, ok := strings.Cut(v, ":"); ok && key != "" {
+							require.NotContains(t, err.Error(), key, "an error never repeats a key")
+						}
+					}
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, tc.want, got)
+				ring, err := got.Keyring()
+				require.NoError(t, err)
+				require.Equal(t, "test", ring.CurrentKeyID())
+			})
+		}
+	}
+}
+
+// TestEnvExampleSecretsKey keeps the development key in .env.example loadable, so `make env`
+// gives a working setup.
+func TestEnvExampleSecretsKey(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../../.env.example")
+	require.NoError(t, err)
+	vars := map[string]string{}
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		if k, v, ok := strings.Cut(line, "="); ok && !strings.HasPrefix(k, "#") {
+			vars[k] = v
+		}
+	}
+	require.Contains(t, vars, "SECRETS_KEY")
+	ring, err := Secrets{Key: vars["SECRETS_KEY"], Previous: vars["SECRETS_KEY_PREVIOUS"]}.Keyring()
+	require.NoError(t, err)
+	require.Equal(t, "dev-only", ring.CurrentKeyID())
 }

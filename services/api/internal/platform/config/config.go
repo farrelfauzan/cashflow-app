@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/sethvargo/go-envconfig/v2"
+
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 )
 
 // Common holds the settings every binary needs.
@@ -27,6 +29,32 @@ func (c Common) validate() error {
 	return fmt.Errorf("APP_ENV must be development, staging or production, got %q", c.Env)
 }
 
+// Secrets holds the master keys that encrypt per-organization secrets, such as AutoGoPay API
+// keys, at rest (internal/secret). Both are secrets: never log them or a struct that holds them.
+// The API, the worker and the admin command all need them, so a bad key stops each at startup.
+type Secrets struct {
+	// Key is SECRETS_KEY, "<id>:<base64 of 32 random bytes>": the key that encrypts.
+	Key string `env:"KEY, required"`
+	// Previous is SECRETS_KEY_PREVIOUS, optional: comma-separated keys of the same form that only
+	// decrypt, kept during a rotation until every row is encrypted under the current key.
+	Previous string `env:"KEY_PREVIOUS"`
+}
+
+// Keyring parses the keys. Load* has already checked them, so it fails only on a Secrets built
+// by hand.
+func (s Secrets) Keyring() (*secret.Keyring, error) {
+	k, err := secret.ParseKeyring(s.Key, s.Previous)
+	if err != nil {
+		return nil, fmt.Errorf("reading secrets keys: %w", err)
+	}
+	return k, nil
+}
+
+func (s Secrets) validate() error {
+	_, err := secret.ParseKeyring(s.Key, s.Previous)
+	return err
+}
+
 // API is the configuration of cmd/api.
 type API struct {
 	Common
@@ -34,7 +62,8 @@ type API struct {
 	DatabaseURL string `env:"DATABASE_URL, required"`
 	RedisAddr   string `env:"REDIS_ADDR, default=localhost:6379"`
 	// AuthSecret keys the HMAC of login codes. At least 32 bytes, random, never committed.
-	AuthSecret string `env:"AUTH_SECRET, required"`
+	AuthSecret string  `env:"AUTH_SECRET, required"`
+	Secrets    Secrets `env:", prefix=SECRETS_"`
 	// AllowedOrigins is a comma-separated list of browser origins allowed to send
 	// state-changing requests.
 	AllowedOrigins string `env:"ALLOWED_ORIGINS, default=http://localhost:3000"`
@@ -177,6 +206,9 @@ func (c API) validate() error {
 	if err := c.Common.validate(); err != nil {
 		return err
 	}
+	if err := c.Secrets.validate(); err != nil {
+		return err
+	}
 	if len(c.AuthSecret) < 32 {
 		return fmt.Errorf("AUTH_SECRET must be at least 32 bytes, got %d", len(c.AuthSecret))
 	}
@@ -219,13 +251,25 @@ func (c API) validate() error {
 // Admin is the configuration of cmd/admin. It connects as the app role, like the API.
 type Admin struct {
 	Common
-	DatabaseURL string `env:"DATABASE_URL, required"`
+	DatabaseURL string  `env:"DATABASE_URL, required"`
+	Secrets     Secrets `env:", prefix=SECRETS_"`
+}
+
+func (c Admin) validate() error {
+	if err := c.Common.validate(); err != nil {
+		return err
+	}
+	return c.Secrets.validate()
 }
 
 // LoadAdmin reads the admin command configuration from the process environment.
 func LoadAdmin(ctx context.Context) (Admin, error) {
+	return loadAdmin(ctx, envconfig.OsLookuper())
+}
+
+func loadAdmin(ctx context.Context, l envconfig.Lookuper) (Admin, error) {
 	var c Admin
-	if err := process(ctx, envconfig.OsLookuper(), &c); err != nil {
+	if err := process(ctx, l, &c); err != nil {
 		return Admin{}, fmt.Errorf("loading admin config: %w", err)
 	}
 	if err := c.validate(); err != nil {
@@ -238,8 +282,16 @@ func LoadAdmin(ctx context.Context) (Admin, error) {
 // the API, and every job runs inside one organization's scope.
 type Worker struct {
 	Common
-	DatabaseURL string `env:"DATABASE_URL, required"`
-	RedisAddr   string `env:"REDIS_ADDR, default=localhost:6379"`
+	DatabaseURL string  `env:"DATABASE_URL, required"`
+	RedisAddr   string  `env:"REDIS_ADDR, default=localhost:6379"`
+	Secrets     Secrets `env:", prefix=SECRETS_"`
+}
+
+func (c Worker) validate() error {
+	if err := c.Common.validate(); err != nil {
+		return err
+	}
+	return c.Secrets.validate()
 }
 
 // Migrate is the configuration of cmd/migrate. It connects as the owner role, never as the

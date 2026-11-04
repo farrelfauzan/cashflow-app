@@ -66,6 +66,8 @@ jobs:
       REDIS_ADDR: 127.0.0.1:6379
       HTTP_ADDR: 127.0.0.1:8080
       AUTH_SECRET: e2e-only-auth-secret-not-used-anywhere-else
+      # Encrypts per-organization secrets. A throwaway key for this job only, never used elsewhere.
+      SECRETS_KEY: e2e-only:mvKxFPmkMwoqg83XaGeqtAWXKx76x32WtmH4jkjiH1g=
       ALLOWED_ORIGINS: http://localhost:3000
       WHATSAPP_PROVIDER: devlog
       DEVLOG_FILE: /tmp/cashflow-e2e/devlog.jsonl
