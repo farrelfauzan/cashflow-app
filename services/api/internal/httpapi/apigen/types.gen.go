@@ -102,6 +102,24 @@ func (e InvitationState) Valid() bool {
 	}
 }
 
+// Defines values for InvoiceKind.
+const (
+	Final   InvoiceKind = "final"
+	Regular InvoiceKind = "regular"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceKind enum.
+func (e InvoiceKind) Valid() bool {
+	switch e {
+	case Final:
+		return true
+	case Regular:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvoiceLineKind.
 const (
 	Charge InvoiceLineKind = "charge"
@@ -462,8 +480,11 @@ type AccountInvoice struct {
 
 	// IssuedOn The day the invoice was made, Asia/Jakarta (terbit).
 	IssuedOn openapi_types.Date `json:"issuedOn"`
-	LeaseId  openapi_types.UUID `json:"leaseId"`
-	Lines    []InvoiceLine      `json:"lines"`
+
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind    InvoiceKind        `json:"kind"`
+	LeaseId openapi_types.UUID `json:"leaseId"`
+	Lines   []InvoiceLine      `json:"lines"`
 
 	// Outstanding billed minus paid.
 	Outstanding int64 `json:"outstanding"`
@@ -851,6 +872,9 @@ type InviteMember struct {
 	Roles []RoleGrant `json:"roles"`
 }
 
+// InvoiceKind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+type InvoiceKind string
+
 // InvoiceLine defines model for InvoiceLine.
 type InvoiceLine struct {
 	// Amount Rupiah, as snapshotted when the invoice was made.
@@ -891,7 +915,10 @@ type InvoiceListItem struct {
 	Id      openapi_types.UUID `json:"id"`
 
 	// IssuedOn The day the invoice was made, Asia/Jakarta (terbit).
-	IssuedOn    openapi_types.Date `json:"issuedOn"`
+	IssuedOn openapi_types.Date `json:"issuedOn"`
+
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind        InvoiceKind        `json:"kind"`
 	LeaseId     openapi_types.UUID `json:"leaseId"`
 	Lines       []InvoiceLine      `json:"lines"`
 	Outstanding int64              `json:"outstanding"`
@@ -1281,6 +1308,9 @@ type PaidInvoice struct {
 	Amount    int64              `json:"amount"`
 	DueDate   openapi_types.Date `json:"dueDate"`
 	InvoiceId openapi_types.UUID `json:"invoiceId"`
+
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind InvoiceKind `json:"kind"`
 
 	// Outstanding What the invoice still owes, 0 when paid in full.
 	Outstanding int64              `json:"outstanding"`

@@ -50,6 +50,7 @@ const SARI = { memberId: "m-sari", name: "Mbak Sari Wulandari" };
 
 const invoice = (over: Partial<AccountInvoice> = {}): AccountInvoice => ({
   id: "inv-oct",
+  kind: "regular",
   leaseId: "lease-1",
   unitLabel: "Kamar 3",
   propertyName: "Kos Melati",

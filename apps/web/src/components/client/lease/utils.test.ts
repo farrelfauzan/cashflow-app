@@ -23,7 +23,14 @@ import {
   plannedEndFormSchema,
   EMPTY_CHARGE_TYPE_NAME_MESSAGE,
   LONG_CHARGE_TYPE_NAME_MESSAGE,
+  METERED_CHARGES_NOTE,
   meteredChargeTypeAddedText,
+  meteredChargeTypeIds,
+  meteredEntriesFromLease,
+  meteredField,
+  meteredFields,
+  METERED_ROW_HINT,
+  meteredRows,
   withChargeAmount,
   withChargeChecked,
   cancelBookingText,
@@ -2421,6 +2428,7 @@ describe("lease charges", () => {
             "t-park": { checked: false, amount: "10.000" },
             "t-clean": { checked: true, amount: "25.000" },
           },
+          metered: {},
         }),
       ).toEqual({
         ok: true,
@@ -2429,7 +2437,35 @@ describe("lease charges", () => {
             { chargeTypeId: "t-clean", amount: 25_000 },
             { chargeTypeId: "t-wifi", amount: 1_250_000 },
           ],
+          meteredChargeTypeIds: [],
         },
+      });
+    });
+
+    it("sends the switched-on metered types with the charges, [] when all are off", () => {
+      const types = [
+        type("t-air", "Air", true),
+        type("t-listrik", "Listrik", true),
+        type("t-wifi", "Wi-Fi"),
+      ];
+      const form = leaseChargesFormSchema(types);
+      expect(
+        checkForm(form, {
+          charges: {},
+          metered: { "t-listrik": true, "t-air": false },
+        }),
+      ).toEqual({
+        ok: true,
+        input: { charges: [], meteredChargeTypeIds: ["t-listrik"] },
+      });
+      expect(
+        checkForm(form, {
+          charges: {},
+          metered: { "t-listrik": false, "t-air": false },
+        }),
+      ).toEqual({
+        ok: true,
+        input: { charges: [], meteredChargeTypeIds: [] },
       });
     });
 
@@ -2440,8 +2476,12 @@ describe("lease charges", () => {
             "t-air": { checked: true, amount: "" },
             "t-gone": { checked: true, amount: "" },
           },
+          metered: {},
         }),
-      ).toEqual({ ok: true, input: { charges: [] } });
+      ).toEqual({
+        ok: true,
+        input: { charges: [], meteredChargeTypeIds: [] },
+      });
     });
 
     it("puts each bad row's message under its field, first row first", () => {
@@ -2452,6 +2492,7 @@ describe("lease charges", () => {
             "t-clean": { checked: true, amount: "" },
             "t-park": { checked: false, amount: "" },
           },
+          metered: {},
         }),
       ).toEqual({
         ok: false,
@@ -2465,6 +2506,7 @@ describe("lease charges", () => {
           "t-wifi": { checked: true, amount: "" },
           "t-clean": { checked: true, amount: "" },
         },
+        metered: {},
       });
       expect(result.error?.issues.map((issue) => issue.path)).toEqual([
         ["charges", "t-clean"],
@@ -2476,8 +2518,12 @@ describe("lease charges", () => {
       expect(
         checkForm(leaseChargesFormSchema([]), {
           charges: { "t-wifi": { checked: true, amount: "" } },
+          metered: { "t-listrik": true },
         }),
-      ).toEqual({ ok: true, input: { charges: [] } });
+      ).toEqual({
+        ok: true,
+        input: { charges: [], meteredChargeTypeIds: [] },
+      });
     });
   });
 
@@ -2487,6 +2533,7 @@ describe("lease charges", () => {
         { chargeTypeId: "t-clean", amount: 25_000 },
         { chargeTypeId: "t-wifi", amount: 50_000 },
       ],
+      meteredChargeTypeIds: ["t-air", "t-listrik"],
     };
     const apiError = (field: string | undefined) =>
       new ApiError({
@@ -2499,6 +2546,10 @@ describe("lease charges", () => {
     it.each([
       { field: "charges[1].amount", want: "charges.t-wifi" },
       { field: "charges[0].chargeTypeId", want: "charges.t-clean" },
+      { field: "meteredChargeTypeIds[1]", want: "metered.t-listrik" },
+      { field: "meteredChargeTypeIds[0]", want: "metered.t-air" },
+      { field: "meteredChargeTypeIds[2]", want: null },
+      { field: "meteredChargeTypeIds", want: null },
       { field: "charges[2].amount", want: null },
       { field: "charges", want: null },
       { field: undefined, want: null },
@@ -2516,6 +2567,79 @@ describe("lease charges", () => {
     it("leaves anything that is not the API's error as it is", () => {
       const failure = new Error("boom");
       expect(chargeRowApiError(failure, input)).toBe(failure);
+    });
+
+    it("names no switch when the save sent no metered ids", () => {
+      const mapped = chargeRowApiError(apiError("meteredChargeTypeIds[0]"), {
+        charges: [],
+      });
+      expect((mapped as ApiError).field).toBeUndefined();
+    });
+  });
+
+  describe("metered switches", () => {
+    const types = [
+      type("t-air", "Air", true),
+      type("t-clean", "Kebersihan"),
+      type("t-listrik", "Listrik", true),
+    ];
+
+    it("starts with the lease's metered types on", () => {
+      expect(
+        meteredEntriesFromLease([
+          { chargeTypeId: "t-listrik", name: "Listrik" },
+        ]),
+      ).toEqual({ "t-listrik": true });
+      expect(meteredEntriesFromLease([])).toEqual({});
+    });
+
+    it("lists one row per metered type, on or off, in the API's order", () => {
+      expect(meteredRows(types, { "t-listrik": true })).toEqual([
+        { chargeTypeId: "t-air", name: "Air", on: false },
+        { chargeTypeId: "t-listrik", name: "Listrik", on: true },
+      ]);
+      expect(meteredRows([type("t-clean", "Kebersihan")], {})).toEqual([]);
+    });
+
+    it("names each switch's field by its charge type, in display order", () => {
+      expect(meteredField("t-listrik")).toBe("metered.t-listrik");
+      expect(meteredFields(types)).toEqual([
+        "metered.t-air",
+        "metered.t-listrik",
+      ]);
+      expect(meteredFields([])).toEqual([]);
+    });
+
+    const cases: {
+      name: string;
+      entries: Record<string, boolean>;
+      want: string[];
+    }[] = [
+      {
+        name: "listrik on, air off",
+        entries: { "t-listrik": true, "t-air": false },
+        want: ["t-listrik"],
+      },
+      {
+        name: "both on, in display order",
+        entries: { "t-listrik": true, "t-air": true },
+        want: ["t-air", "t-listrik"],
+      },
+      { name: "none switched", entries: {}, want: [] },
+      {
+        name: "all off",
+        entries: { "t-listrik": false, "t-air": false },
+        want: [],
+      },
+      {
+        name: "a type the list does not hold is dropped",
+        entries: { "t-gone": true },
+        want: [],
+      },
+    ];
+
+    it.each(cases)("sends the ids switched on: $name", ({ entries, want }) => {
+      expect(meteredChargeTypeIds(types, entries)).toEqual(want);
     });
   });
 
@@ -2543,8 +2667,12 @@ describe("lease charges", () => {
   it("words the rows and the metered line", () => {
     expect(chargeAmountLabel("Wi-Fi")).toBe("Jumlah Wi-Fi");
     expect(meteredChargeTypeAddedText("Listrik")).toBe(
-      "Jenis biaya Listrik ditambahkan. Biaya dari meteran dicatat tiap bulan, jadi tidak diatur di sini.",
+      "Jenis biaya Listrik ditambahkan dan dinyalakan di bagian Dari meteran.",
     );
+    expect(METERED_CHARGES_NOTE).toBe(
+      "Nyalakan yang ditagih dari meteran. Jumlahnya dicatat tiap bulan lewat Catat meteran.",
+    );
+    expect(METERED_ROW_HINT).toBe("Dicatat dari meteran tiap bulan");
     expect(LONG_CHARGE_TYPE_NAME_MESSAGE).toBe(
       "Nama biaya paling panjang 50 huruf.",
     );

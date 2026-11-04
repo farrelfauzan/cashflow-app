@@ -93,12 +93,22 @@ SELECT id::uuid AS id FROM active_organization_ids() AS id;
 -- Invoice generation (slice 2) ----------------------------------------------------------------
 
 -- name: InsertInvoiceIfMissing :one
--- Generation's insert: a period the lease already has an invoice for inserts nothing and
--- returns no row, so a rerun creates nothing. created_at comes from the injected clock: the day
--- an invoice was made decides which unit prices may still be recorded (CreateUnitPrice).
-INSERT INTO invoice (id, organization_id, lease_id, tenant_id, period, period_end, due_date, amount, created_at)
-VALUES (@id, @organization_id, @lease_id, @tenant_id, @period, @period_end, @due_date, @amount, @created_at)
-ON CONFLICT (lease_id, period) DO NOTHING
+-- Generation's insert of a regular invoice: a period the lease already has a regular invoice for
+-- inserts nothing and returns no row, so a rerun creates nothing. created_at comes from the
+-- injected clock: the day an invoice was made decides which unit prices may still be recorded
+-- (CreateUnitPrice).
+INSERT INTO invoice (id, organization_id, lease_id, tenant_id, kind, period, period_end, due_date, amount, created_at)
+VALUES (@id, @organization_id, @lease_id, @tenant_id, 'regular', @period, @period_end, @due_date, @amount, @created_at)
+ON CONFLICT (lease_id, period) WHERE kind = 'regular' DO NOTHING
+RETURNING id;
+
+-- name: InsertFinalInvoiceIfMissing :one
+-- The move-out's final invoice: the metered amounts no regular invoice billed, for the lease's
+-- last day (period and period_end). A lease that already has its final invoice inserts nothing
+-- and returns no row, so a retried move-out creates nothing twice.
+INSERT INTO invoice (id, organization_id, lease_id, tenant_id, kind, period, period_end, due_date, amount, created_at)
+VALUES (@id, @organization_id, @lease_id, @tenant_id, 'final', @end_date, @end_date, @due_date, @amount, @created_at)
+ON CONFLICT (lease_id) WHERE kind = 'final' DO NOTHING
 RETURNING id;
 
 -- name: ListActiveLeaseIDs :many
@@ -127,15 +137,20 @@ WHERE organization_id = @organization_id AND id = @id
 FOR SHARE;
 
 -- name: ListLeaseInvoicePeriods :many
+-- The period starts a lease's regular invoices bill. A final invoice bills no period of the term,
+-- so it never stands for one.
 SELECT period FROM invoice
-WHERE organization_id = @organization_id AND lease_id = @lease_id
+WHERE organization_id = @organization_id AND lease_id = @lease_id AND kind = 'regular'
 ORDER BY period;
 
 -- name: ListLeaseInvoicesForChange :many
--- A lease's invoices, oldest period first, with what each bills and owes and its latest
--- correction (an empty reason and 0 when it has none), for cancelling and restoring invoices
--- when the lease's end changes.
+-- A lease's invoices, oldest period first, with what each bills and owes, what its metered lines
+-- bill, and its latest correction (an empty reason and 0 when it has none), for cancelling and
+-- restoring invoices when the lease's end changes.
 SELECT b.invoice_id, b.period, b.amount, b.billed, b.outstanding,
+       (SELECT coalesce(sum(il.amount), 0) FROM invoice_line il
+        WHERE il.organization_id = b.organization_id AND il.invoice_id = b.invoice_id
+          AND il.metered_charge_id IS NOT NULL)::bigint AS metered,
        coalesce(lc.reason, '')::text AS last_reason, coalesce(lc.amount_delta, 0)::bigint AS last_delta
 FROM invoice_balance b
 LEFT JOIN LATERAL (
@@ -153,11 +168,12 @@ SELECT EXISTS (
 )::boolean AS has_invoices;
 
 -- name: NewestInvoiceCreatedAtForUnit :one
--- When the newest invoice of any lease of the unit was made; no row when it has none.
+-- When the newest regular invoice of any lease of the unit was made; no row when it has none. A
+-- final invoice bills no rent, so it reads no price and holds none back.
 SELECT i.created_at
 FROM invoice i
 JOIN lease l ON l.organization_id = i.organization_id AND l.id = i.lease_id
-WHERE i.organization_id = @organization_id AND l.unit_id = @unit_id
+WHERE i.organization_id = @organization_id AND l.unit_id = @unit_id AND i.kind = 'regular'
 ORDER BY i.created_at DESC
 LIMIT 1;
 
@@ -239,7 +255,7 @@ WHERE m.organization_id = @organization_id AND m.staff_user_id = @staff_user_id;
 -- A tenant's invoices with their balances and where they are, oldest period first.
 SELECT b.invoice_id, b.lease_id, u.label AS unit_label, p.name AS property_name,
        b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status,
-       i.created_at
+       i.created_at, i.kind
 FROM invoice_balance b
 JOIN invoice i ON i.organization_id = b.organization_id AND i.id = b.invoice_id
 JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id

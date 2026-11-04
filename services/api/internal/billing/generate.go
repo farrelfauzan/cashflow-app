@@ -25,7 +25,9 @@ import (
 //  2. the unit row, FOR SHARE, only by generation before it reads the price (a price being
 //     recorded holds it FOR NO KEY UPDATE and touches no lease or tenant);
 //  3. the lease's metered_charge rows, FOR UPDATE: generation locks the unbilled ones before it
-//     bills them, and RecordMeteredCharge the one it edits (it takes no unit lock);
+//     bills them, the move-out locks those still unbilled after that before it puts them on the
+//     final invoice (createFinal), and RecordMeteredCharge locks the one it edits (it takes no
+//     unit lock);
 //  4. the tenant row, FOR NO KEY UPDATE, last (billing.Allocate, and the trigger that checks a
 //     correction).
 //
@@ -188,13 +190,7 @@ type plannedInvoice struct {
 }
 
 // Amount is what the invoice bills: the sum of its lines.
-func (p plannedInvoice) Amount() int64 {
-	var total int64
-	for _, ln := range p.Lines {
-		total += ln.Amount
-	}
-	return total
-}
+func (p plannedInvoice) Amount() int64 { return linesTotal(p.Lines) }
 
 // planMissing returns the lease's invoices that DuePeriods asks for and that do not exist yet,
 // each with its lines: the price in force today for the lease's term and the lease's fixed
@@ -296,13 +292,19 @@ func (s *Service) createMissing(ctx context.Context, q *dbgen.Queries, tx pgx.Tx
 	return created, nil
 }
 
-// insertInvoice inserts one invoice and, only when it was inserted, its lines and its audit
-// row. It reports false when the period already had an invoice.
+// Invoice kinds, as invoice.kind stores them.
+const (
+	// InvoiceRegular bills one period of the lease's term.
+	InvoiceRegular = "regular"
+	// InvoiceFinal is the one invoice made at move-out for the metered amounts no regular invoice
+	// billed. Its period is the lease's last day.
+	InvoiceFinal = "final"
+)
+
+// insertInvoice inserts one regular invoice and, only when it was inserted, its lines and its
+// audit row. It reports false when the period already had a regular invoice.
 func (s *Service) insertInvoice(ctx context.Context, q *dbgen.Queries, tx pgx.Tx, org uuid.UUID, l billedLease, p tenant.Period, lines []Line, now time.Time) (bool, error) {
-	var amount int64
-	for _, ln := range lines {
-		amount += ln.Amount
-	}
+	amount := linesTotal(lines)
 	id, err := q.InsertInvoiceIfMissing(ctx, dbgen.InsertInvoiceIfMissingParams{
 		ID: uuid.New(), OrganizationID: org, LeaseID: l.ID, TenantID: l.TenantID,
 		Period: p.From, PeriodEnd: p.To, DueDate: p.Due, Amount: amount, CreatedAt: now,
@@ -313,6 +315,58 @@ func (s *Service) insertInvoice(ctx context.Context, q *dbgen.Queries, tx pgx.Tx
 	if err != nil {
 		return false, fmt.Errorf("inserting invoice: %w", err)
 	}
+	return true, s.insertLines(ctx, q, tx, org, l, id, lines, amount)
+}
+
+// createFinal makes a lease's final invoice at move-out, inside the move-out's transaction,
+// after createMissing. Every metered amount no invoice bills yet (locked, see the lock order
+// above) gets one line on it, its amount is their sum, its period and period end are the lease's
+// end date, so it belongs to the month the tenant left, and it is due today (the move-out day,
+// Asia/Jakarta). It is audited as a system action like any generated invoice. It reports false,
+// creating nothing, for a cancelled booking (ended on its start date, never billed: its amounts
+// stay unbilled), when nothing is unbilled, and when the lease already has its final invoice (the
+// unique key on it makes a retry harmless).
+func (s *Service) createFinal(ctx context.Context, q *dbgen.Queries, tx pgx.Tx, org uuid.UUID, l billedLease, today time.Time) (bool, error) {
+	end := l.Dates.End
+	if end == nil {
+		return false, errors.New("billing: a final invoice needs an ended lease")
+	}
+	if end.Equal(l.Dates.Start) {
+		return false, nil
+	}
+	metered, err := unbilledMetered(ctx, q, org, l.ID)
+	if err != nil || len(metered) == 0 {
+		return false, err
+	}
+	lines := make([]Line, len(metered))
+	for i, m := range metered {
+		lines[i] = MeteredLine(m)
+	}
+	amount := linesTotal(lines)
+	id, err := q.InsertFinalInvoiceIfMissing(ctx, dbgen.InsertFinalInvoiceIfMissingParams{
+		ID: uuid.New(), OrganizationID: org, LeaseID: l.ID, TenantID: l.TenantID,
+		EndDate: *end, DueDate: today, Amount: amount, CreatedAt: s.clock.Now(),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inserting final invoice: %w", err)
+	}
+	return true, s.insertLines(ctx, q, tx, org, l, id, lines, amount)
+}
+
+func linesTotal(lines []Line) int64 {
+	var total int64
+	for _, ln := range lines {
+		total += ln.Amount
+	}
+	return total
+}
+
+// insertLines inserts the lines of an invoice just inserted and audits the invoice as the system
+// action invoice:create.
+func (s *Service) insertLines(ctx context.Context, q *dbgen.Queries, tx pgx.Tx, org uuid.UUID, l billedLease, id uuid.UUID, lines []Line, amount int64) error {
 	for _, ln := range lines {
 		_, err := q.CreateInvoiceLine(ctx, dbgen.CreateInvoiceLineParams{
 			ID: uuid.New(), OrganizationID: org, InvoiceID: id, Kind: ln.Kind,
@@ -321,14 +375,11 @@ func (s *Service) insertInvoice(ctx context.Context, q *dbgen.Queries, tx pgx.Tx
 			Label:           ln.Label, Amount: ln.Amount,
 		})
 		if err != nil {
-			return false, fmt.Errorf("inserting invoice line: %w", err)
+			return fmt.Errorf("inserting invoice line: %w", err)
 		}
 	}
 	res := authz.Resource{Type: "invoice", ID: id.String(), PropertyID: l.PropertyID, Amount: &amount}
-	if err := s.authz.RecordSystemAction(ctx, tx, org, authz.ActionInvoiceCreate, res); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.authz.RecordSystemAction(ctx, tx, org, authz.ActionInvoiceCreate, res)
 }
 
 // fixedCharges loads a lease's fixed monthly extras, by name.

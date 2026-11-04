@@ -53,6 +53,7 @@ type AccountLine struct {
 // AccountInvoice is one invoice of a tenant with its balance, lines and corrections.
 type AccountInvoice struct {
 	ID           uuid.UUID
+	Kind         string // InvoiceRegular or InvoiceFinal
 	LeaseID      uuid.UUID
 	UnitLabel    string
 	PropertyName string
@@ -234,7 +235,7 @@ func loadAccount(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID,
 
 	for _, r := range invRows {
 		out.Invoices = append(out.Invoices, AccountInvoice{
-			ID: r.InvoiceID, LeaseID: r.LeaseID, UnitLabel: r.UnitLabel, PropertyName: r.PropertyName,
+			ID: r.InvoiceID, Kind: r.Kind, LeaseID: r.LeaseID, UnitLabel: r.UnitLabel, PropertyName: r.PropertyName,
 			Period: r.Period, PeriodEnd: r.PeriodEnd, DueDate: r.DueDate, IssuedOn: receivedOn(r.CreatedAt),
 			Amount: r.Amount, Billed: r.Billed, Paid: r.Paid, Outstanding: r.Outstanding, Status: r.Status,
 			Lines: orEmpty(lines[r.InvoiceID]), Corrections: orEmpty(byInvoice[r.InvoiceID]),

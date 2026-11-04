@@ -196,6 +196,7 @@ export function TenantsView({ orgId, organizationName }: TenantsViewProps) {
         panel={panel}
         onPanelChange={setPanel}
         onNotice={setNotice}
+        onCorrectInvoice={null}
       />
     </div>
   );

@@ -87,7 +87,7 @@ const createInvoice = `-- name: CreateInvoice :one
 
 INSERT INTO invoice (id, organization_id, lease_id, tenant_id, period, period_end, due_date, amount)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, seq, organization_id, lease_id, tenant_id, period, period_end, due_date, amount, created_at
+RETURNING id, seq, organization_id, lease_id, tenant_id, period, period_end, due_date, amount, created_at, kind
 `
 
 type CreateInvoiceParams struct {
@@ -129,6 +129,7 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		&i.DueDate,
 		&i.Amount,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -543,11 +544,48 @@ func (q *Queries) InsertCorrectionIfNew(ctx context.Context, arg InsertCorrectio
 	return i, err
 }
 
+const insertFinalInvoiceIfMissing = `-- name: InsertFinalInvoiceIfMissing :one
+INSERT INTO invoice (id, organization_id, lease_id, tenant_id, kind, period, period_end, due_date, amount, created_at)
+VALUES ($1, $2, $3, $4, 'final', $5, $5, $6, $7, $8)
+ON CONFLICT (lease_id) WHERE kind = 'final' DO NOTHING
+RETURNING id
+`
+
+type InsertFinalInvoiceIfMissingParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	LeaseID        uuid.UUID
+	TenantID       uuid.UUID
+	EndDate        time.Time
+	DueDate        time.Time
+	Amount         int64
+	CreatedAt      time.Time
+}
+
+// The move-out's final invoice: the metered amounts no regular invoice billed, for the lease's
+// last day (period and period_end). A lease that already has its final invoice inserts nothing
+// and returns no row, so a retried move-out creates nothing twice.
+func (q *Queries) InsertFinalInvoiceIfMissing(ctx context.Context, arg InsertFinalInvoiceIfMissingParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertFinalInvoiceIfMissing,
+		arg.ID,
+		arg.OrganizationID,
+		arg.LeaseID,
+		arg.TenantID,
+		arg.EndDate,
+		arg.DueDate,
+		arg.Amount,
+		arg.CreatedAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertInvoiceIfMissing = `-- name: InsertInvoiceIfMissing :one
 
-INSERT INTO invoice (id, organization_id, lease_id, tenant_id, period, period_end, due_date, amount, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (lease_id, period) DO NOTHING
+INSERT INTO invoice (id, organization_id, lease_id, tenant_id, kind, period, period_end, due_date, amount, created_at)
+VALUES ($1, $2, $3, $4, 'regular', $5, $6, $7, $8, $9)
+ON CONFLICT (lease_id, period) WHERE kind = 'regular' DO NOTHING
 RETURNING id
 `
 
@@ -564,9 +602,10 @@ type InsertInvoiceIfMissingParams struct {
 }
 
 // Invoice generation (slice 2) ----------------------------------------------------------------
-// Generation's insert: a period the lease already has an invoice for inserts nothing and
-// returns no row, so a rerun creates nothing. created_at comes from the injected clock: the day
-// an invoice was made decides which unit prices may still be recorded (CreateUnitPrice).
+// Generation's insert of a regular invoice: a period the lease already has a regular invoice for
+// inserts nothing and returns no row, so a rerun creates nothing. created_at comes from the
+// injected clock: the day an invoice was made decides which unit prices may still be recorded
+// (CreateUnitPrice).
 func (q *Queries) InsertInvoiceIfMissing(ctx context.Context, arg InsertInvoiceIfMissingParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, insertInvoiceIfMissing,
 		arg.ID,
@@ -815,7 +854,7 @@ func (q *Queries) ListAccountInvoiceLines(ctx context.Context, arg ListAccountIn
 const listAccountInvoices = `-- name: ListAccountInvoices :many
 SELECT b.invoice_id, b.lease_id, u.label AS unit_label, p.name AS property_name,
        b.period, b.period_end, b.due_date, b.amount, b.billed, b.paid, b.outstanding, b.status,
-       i.created_at
+       i.created_at, i.kind
 FROM invoice_balance b
 JOIN invoice i ON i.organization_id = b.organization_id AND i.id = b.invoice_id
 JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id
@@ -844,6 +883,7 @@ type ListAccountInvoicesRow struct {
 	Outstanding  int64
 	Status       string
 	CreatedAt    time.Time
+	Kind         string
 }
 
 // A tenant's invoices with their balances and where they are, oldest period first.
@@ -870,6 +910,7 @@ func (q *Queries) ListAccountInvoices(ctx context.Context, arg ListAccountInvoic
 			&i.Outstanding,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -1151,7 +1192,7 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, arg ListInvoiceLinesPara
 
 const listLeaseInvoicePeriods = `-- name: ListLeaseInvoicePeriods :many
 SELECT period FROM invoice
-WHERE organization_id = $1 AND lease_id = $2
+WHERE organization_id = $1 AND lease_id = $2 AND kind = 'regular'
 ORDER BY period
 `
 
@@ -1160,6 +1201,8 @@ type ListLeaseInvoicePeriodsParams struct {
 	LeaseID        uuid.UUID
 }
 
+// The period starts a lease's regular invoices bill. A final invoice bills no period of the term,
+// so it never stands for one.
 func (q *Queries) ListLeaseInvoicePeriods(ctx context.Context, arg ListLeaseInvoicePeriodsParams) ([]time.Time, error) {
 	rows, err := q.db.Query(ctx, listLeaseInvoicePeriods, arg.OrganizationID, arg.LeaseID)
 	if err != nil {
@@ -1182,6 +1225,9 @@ func (q *Queries) ListLeaseInvoicePeriods(ctx context.Context, arg ListLeaseInvo
 
 const listLeaseInvoicesForChange = `-- name: ListLeaseInvoicesForChange :many
 SELECT b.invoice_id, b.period, b.amount, b.billed, b.outstanding,
+       (SELECT coalesce(sum(il.amount), 0) FROM invoice_line il
+        WHERE il.organization_id = b.organization_id AND il.invoice_id = b.invoice_id
+          AND il.metered_charge_id IS NOT NULL)::bigint AS metered,
        coalesce(lc.reason, '')::text AS last_reason, coalesce(lc.amount_delta, 0)::bigint AS last_delta
 FROM invoice_balance b
 LEFT JOIN LATERAL (
@@ -1205,13 +1251,14 @@ type ListLeaseInvoicesForChangeRow struct {
 	Amount      int64
 	Billed      int64
 	Outstanding int64
+	Metered     int64
 	LastReason  string
 	LastDelta   int64
 }
 
-// A lease's invoices, oldest period first, with what each bills and owes and its latest
-// correction (an empty reason and 0 when it has none), for cancelling and restoring invoices
-// when the lease's end changes.
+// A lease's invoices, oldest period first, with what each bills and owes, what its metered lines
+// bill, and its latest correction (an empty reason and 0 when it has none), for cancelling and
+// restoring invoices when the lease's end changes.
 func (q *Queries) ListLeaseInvoicesForChange(ctx context.Context, arg ListLeaseInvoicesForChangeParams) ([]ListLeaseInvoicesForChangeRow, error) {
 	rows, err := q.db.Query(ctx, listLeaseInvoicesForChange, arg.OrganizationID, arg.LeaseID)
 	if err != nil {
@@ -1227,6 +1274,7 @@ func (q *Queries) ListLeaseInvoicesForChange(ctx context.Context, arg ListLeaseI
 			&i.Amount,
 			&i.Billed,
 			&i.Outstanding,
+			&i.Metered,
 			&i.LastReason,
 			&i.LastDelta,
 		); err != nil {
@@ -1424,7 +1472,7 @@ const newestInvoiceCreatedAtForUnit = `-- name: NewestInvoiceCreatedAtForUnit :o
 SELECT i.created_at
 FROM invoice i
 JOIN lease l ON l.organization_id = i.organization_id AND l.id = i.lease_id
-WHERE i.organization_id = $1 AND l.unit_id = $2
+WHERE i.organization_id = $1 AND l.unit_id = $2 AND i.kind = 'regular'
 ORDER BY i.created_at DESC
 LIMIT 1
 `
@@ -1434,7 +1482,8 @@ type NewestInvoiceCreatedAtForUnitParams struct {
 	UnitID         uuid.UUID
 }
 
-// When the newest invoice of any lease of the unit was made; no row when it has none.
+// When the newest regular invoice of any lease of the unit was made; no row when it has none. A
+// final invoice bills no rent, so it reads no price and holds none back.
 func (q *Queries) NewestInvoiceCreatedAtForUnit(ctx context.Context, arg NewestInvoiceCreatedAtForUnitParams) (time.Time, error) {
 	row := q.db.QueryRow(ctx, newestInvoiceCreatedAtForUnit, arg.OrganizationID, arg.UnitID)
 	var created_at time.Time
