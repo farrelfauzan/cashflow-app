@@ -1,4 +1,5 @@
 import type { AccountTileView } from "@/components/client/billing/type";
+import { FINAL_INVOICE_LABEL } from "@/components/client/billing/utils";
 import type { SortOptions } from "@/components/client/list/type";
 import {
   readChoice,
@@ -239,11 +240,19 @@ export function summaryTiles(
 export const PAST_PLANNED_END_CHIP = "Lewat rencana keluar";
 
 // The status chip, from the API's fields: overdueDays is the API's own count (0 on the due date
-// itself, since debt starts the day after), and pastPlannedEnd adds a second chip.
+// itself, since debt starts the day after), and pastPlannedEnd adds a second chip. The final
+// invoice (made at move-out for metered usage) says so in a chip of its own, since the list
+// names no month per row.
 export function invoiceChips(
-  invoice: Pick<InvoiceListItem, "status" | "overdueDays" | "pastPlannedEnd">,
+  invoice: Pick<
+    InvoiceListItem,
+    "kind" | "status" | "overdueDays" | "pastPlannedEnd"
+  >,
 ): InvoiceChip[] {
   const chips: InvoiceChip[] = [statusChip(invoice)];
+  if (invoice.kind === "final") {
+    chips.push({ label: FINAL_INVOICE_LABEL, tone: "neutral" });
+  }
   if (invoice.pastPlannedEnd) {
     chips.push({ label: PAST_PLANNED_END_CHIP, tone: "warning" });
   }

@@ -372,6 +372,14 @@ describe("invoiceChips", () => {
     want: { label: string; tone: string }[];
   }[] = [
     {
+      name: "the final invoice says so after its status",
+      over: { kind: "final", period: "2026-10-31", overdueDays: 2 },
+      want: [
+        { label: "Terlambat 2 hari", tone: "warning" },
+        { label: "Tagihan akhir", tone: "neutral" },
+      ],
+    },
+    {
       name: "paid",
       over: { status: "paid", paid: 1_500_000, outstanding: 0 },
       want: [{ label: "Lunas", tone: "active" }],

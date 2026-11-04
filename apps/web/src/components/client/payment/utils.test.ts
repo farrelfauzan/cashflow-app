@@ -308,6 +308,24 @@ describe("paidRows", () => {
     ]);
   });
 
+  it("names the final invoice Tagihan akhir", () => {
+    expect(
+      paidRows({
+        paid: [
+          {
+            invoiceId: "f",
+            kind: "final",
+            period: "2026-10-31",
+            periodEnd: "2026-10-31",
+            dueDate: "2026-10-31",
+            amount: 180_000,
+            outstanding: 0,
+          },
+        ],
+      })[0]?.text,
+    ).toBe("Tagihan akhir Oktober 2026 · Rp180.000");
+  });
+
   it("is empty when it all went to credit", () => {
     expect(paidRows({ paid: [] })).toEqual([]);
     expect(ALL_CREDIT_TEXT).toBe("Semua masuk ke saldo lebih bayar.");
