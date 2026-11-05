@@ -1,0 +1,9 @@
+{
+  "success": false,
+  "message": "Transaction status: ",
+  "data": {
+    "transaction_id": "",
+    "transaction_status": "",
+    "transaction_time": ""
+  }
+}

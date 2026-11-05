@@ -26,8 +26,12 @@ export function stablePropertyName(testInfo: TestInfo, base: string): string {
   return `Wisma Tetap ${base} ${project}`;
 }
 
+// Only the request context is used, so a spec whose page has no session (the tenant payment
+// page) can pass a member's API context as { request }.
+type ApiCaller = Pick<Page, "request">;
+
 async function findProperty(
-  page: Page,
+  page: ApiCaller,
   orgId: string,
   name: string,
 ): Promise<Property | undefined> {
@@ -46,7 +50,7 @@ async function findProperty(
 // member (the page's cookies) when it does not exist yet. A second test asking for the same one
 // at the same moment finds it after losing the race to create it.
 export async function findOrCreateProperty(
-  page: Page,
+  page: ApiCaller,
   orgId: string,
   testInfo: TestInfo,
   fixture: { base: string; kind: PropertyKind },

@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "message": "QRIS created successfully",
+  "data": {
+    "transaction_id": "00000000-0000-4000-8000-0000000000a1",
+    "order_id": "AUTOGOPAY-1762231189-1",
+    "amount": 1,
+    "transaction_status": "pending",
+    "qr_string": "00020101021226TEST-NOT-A-REAL-QRIS6304ABCD",
+    "qr_url": "https://v1-gateway.autogopay.site/qris/00000000-0000-4000-8000-0000000000a1/qr-code",
+    "checkout_url": "https://autogopay.site/pay/test-checkout-token-not-real",
+    "transaction_time": "2026-11-04 11:39:49",
+    "expiry_time": "2026-11-04 11:54:49"
+  }
+}

@@ -37,6 +37,18 @@ export default function config(phase: string): NextConfig {
         },
       },
     },
+    // Tenant payment pages hold their secret token in the path. The <meta name="referrer"> tag
+    // comes too late for the CSS, font and JS requests the browser starts while it reads <head>,
+    // and those would send the full URL as Referer. The header applies before any of them.
+    // Caddy sets the same header on /t/* in front of the app; this keeps the page safe without it.
+    async headers() {
+      return [
+        {
+          source: "/t/:path*",
+          headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+        },
+      ];
+    },
     async rewrites() {
       if (apiOrigin === undefined) return [];
       return [
