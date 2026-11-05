@@ -4,6 +4,11 @@
 //
 // The key is never logged, printed or returned by the API. APIKey hands it to callers as a
 // secret.Value, which redacts itself everywhere except Reveal.
+//
+// Client calls AutoGoPay's QRIS endpoints (generate, status, cancel) with an organization's key;
+// autogopaytest holds its fake. The payment page shows every Client error except
+// ErrTransactionNotFound and ErrAmountOutOfRange as "QRIS gangguan" and offers bank transfer;
+// client.go lists what each error means.
 package autogopay
 
 import (

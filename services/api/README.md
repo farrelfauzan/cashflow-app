@@ -303,7 +303,8 @@ https://www.twilio.com/docs/api/errors.
   and the test fake in `messagingtest`.
 - `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
   key rotation, and `secret.Value`, which prints as `[redacted]`.
-- `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook id).
+- `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook
+  id) and the QRIS client (generate, status, cancel), with its fake in `autogopaytest`.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.
