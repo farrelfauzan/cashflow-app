@@ -33,6 +33,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/queue"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
@@ -115,6 +116,8 @@ func run() error {
 		Messenger: msg, Limiter: limiter, Clock: clk, Log: log, LoginURL: cfg.LoginURL(),
 	})
 
+	payLinks := paylink.NewService(st, az, clk, cfg.PublicWebOrigin)
+
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,
 		DB:             st,
@@ -125,7 +128,8 @@ func run() error {
 		Tenants:        tenants,
 		Imports:        imports,
 		Billing:        billingSvc,
-		PayLinks:       paylink.NewService(st, az, clk, cfg.PublicWebOrigin),
+		PayLinks:       payLinks,
+		QRIS:           qris.NewService(st, payLinks, clk),
 		PublicLimiter:  limiter,
 		CookieSecure:   cookieSecure,
 		AllowedOrigins: allowedOrigins,

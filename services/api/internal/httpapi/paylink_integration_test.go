@@ -24,6 +24,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 )
@@ -96,14 +97,16 @@ func (lo *linkOrg) rent(t *testing.T, tenantName string, collector uuid.UUID) (t
 	return tn.ID, acct.Invoices[0].ID
 }
 
-// newLinkServer serves the API with the payment link service, logging to logs.
+// newLinkServer serves the API with the payment link and QRIS services, logging to logs.
 func newLinkServer(t *testing.T, env *testenv.Env, logs io.Writer) *httptest.Server {
 	t.Helper()
 	log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	links := paylink.NewService(env.Store, env.Authz, env.Clock, linkOrigin)
 	srv := httptest.NewServer(httpapi.New(httpapi.Deps{
 		Log: log, DB: env.Store, Auth: env.Auth, Authz: env.Authz, Members: env.Members,
 		Properties: env.Properties, Tenants: env.Tenants, Billing: env.Billing,
-		PayLinks:      paylink.NewService(env.Store, env.Authz, env.Clock, linkOrigin),
+		PayLinks:      links,
+		QRIS:          qris.NewService(env.Store, links, env.Clock),
 		PublicLimiter: env.Limiter,
 		CookieSecure:  false, AllowedOrigins: []string{origin},
 	}).Handler())

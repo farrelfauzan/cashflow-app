@@ -16,6 +16,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -59,6 +60,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeError(w, http.StatusNotFound, "payment_link_not_found", "Link pembayaran tidak ditemukan atau sudah tidak berlaku.")
 	case errors.Is(err, paylink.ErrLinkExpired):
 		s.writeError(w, http.StatusGone, "payment_link_expired", "Link pembayaran ini sudah kedaluwarsa. Minta link baru ke pengelola.")
+	case errors.Is(err, qris.ErrNoAttempt):
+		s.writeError(w, http.StatusNotFound, "qris_not_found", "Belum ada QR untuk tagihan ini.")
+	case errors.Is(err, qris.ErrQRGone):
+		s.writeError(w, http.StatusGone, "qris_expired", "QR sudah tidak berlaku. Buat QR baru.")
 	case errors.Is(err, paylink.ErrInvoicePastWindow):
 		s.writeError(w, http.StatusConflict, "payment_link_expired_invoice",
 			"Tagihan ini sudah lunas atau dibatalkan lebih dari 30 hari yang lalu, jadi link pembayaran baru tidak bisa dibuat.")

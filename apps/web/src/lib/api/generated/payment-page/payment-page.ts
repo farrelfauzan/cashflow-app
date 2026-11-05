@@ -28,7 +28,8 @@ import type {
   ErrorResponse,
   PaymentLink,
   PaymentLinksRevoked,
-  PaymentPage
+  PaymentPage,
+  QrisStatus
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -268,6 +269,187 @@ export function useGetPaymentPage<TData = Awaited<ReturnType<typeof getPaymentPa
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = useGetPaymentPageQueryOptions(token,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * No session: the token is the access, as for getPaymentPage, and link errors answer the same. Attempts belong to the tenant, so every working link of the tenant shows the same latest attempt. none means no QR was made yet; pending means the QR can be paid; checking means the tenant said they paid and no answer has come yet ("Sedang dicek"); paid means the attempt was paid; expired means the QR expired or was cancelled ("QR kedaluwarsa"). A pending QR at or past its expiry shows as expired unless a check was asked for; a late payment is still recorded when it arrives. Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * @summary The state of the tenant's latest QRIS attempt (public; polled by the payment page)
+ */
+export const getPaymentStatus = (
+    token: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<QrisStatus>(
+      {url: `/t/${token}/status`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetPaymentStatusQueryKey = (token: string,) =>
+    apiQueryKey({ token }, { url: `/t/${token}/status` });
+
+
+export const useGetPaymentStatusQueryOptions = <TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<Error | ErrorResponse>>(token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ token }, { url: `/t/${token}/status`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPaymentStatus>>> = ({ signal }) => getPaymentStatus(token, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPaymentStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getPaymentStatus>>>
+export type GetPaymentStatusQueryError = ErrorType<Error | ErrorResponse>
+
+
+export function useGetPaymentStatus<TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPaymentStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getPaymentStatus>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPaymentStatus<TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPaymentStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getPaymentStatus>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPaymentStatus<TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The state of the tenant's latest QRIS attempt (public; polled by the payment page)
+ */
+
+export function useGetPaymentStatus<TData = Awaited<ReturnType<typeof getPaymentStatus>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentStatus>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetPaymentStatusQueryOptions(token,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * A PNG drawn by the API, with the amount, the unit and property of the link's invoice and the expiry printed under the code, so the page loads no third-party image. Link errors answer as for getPaymentPage. 404 qris_not_found when the tenant has no QR yet; 410 qris_expired when the latest QR expired, was paid or was cancelled, or is at or past its expiry. Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * @summary The QR image of the tenant's live QRIS attempt (public; the token is the access)
+ */
+export const getPaymentQRImage = (
+    token: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<Blob>(
+      {url: `/t/${token}/qris.png`, method: 'GET',
+        responseType: 'blob', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetPaymentQRImageQueryKey = (token: string,) =>
+    apiQueryKey({ token }, { url: `/t/${token}/qris.png` });
+
+
+export const useGetPaymentQRImageQueryOptions = <TData = Awaited<ReturnType<typeof getPaymentQRImage>>, TError = ErrorType<Error | ErrorResponse>>(token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentQRImage>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ token }, { url: `/t/${token}/qris.png`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPaymentQRImage>>> = ({ signal }) => getPaymentQRImage(token, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPaymentQRImage>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPaymentQRImageQueryResult = NonNullable<Awaited<ReturnType<typeof getPaymentQRImage>>>
+export type GetPaymentQRImageQueryError = ErrorType<Error | ErrorResponse>
+
+
+export function useGetPaymentQRImage<TData = Awaited<ReturnType<typeof getPaymentQRImage>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentQRImage>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPaymentQRImage>>,
+          TError,
+          Awaited<ReturnType<typeof getPaymentQRImage>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPaymentQRImage<TData = Awaited<ReturnType<typeof getPaymentQRImage>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentQRImage>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPaymentQRImage>>,
+          TError,
+          Awaited<ReturnType<typeof getPaymentQRImage>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPaymentQRImage<TData = Awaited<ReturnType<typeof getPaymentQRImage>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentQRImage>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The QR image of the tenant's live QRIS attempt (public; the token is the access)
+ */
+
+export function useGetPaymentQRImage<TData = Awaited<ReturnType<typeof getPaymentQRImage>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentQRImage>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetPaymentQRImageQueryOptions(token,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

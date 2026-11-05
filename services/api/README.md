@@ -304,6 +304,8 @@ https://www.twilio.com/docs/api/errors.
 - `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
   key rotation, and `secret.Value`, which prints as `[redacted]`.
 - `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook id).
+- `internal/qris`: a tenant's QRIS attempts behind a payment link: the status the payment page
+  polls (`/api/t/{token}/status`) and the QR image (`/api/t/{token}/qris.png`).
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.
