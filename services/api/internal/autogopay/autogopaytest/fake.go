@@ -44,6 +44,9 @@ type Call struct {
 type transaction struct {
 	qris   autogopay.QRIS
 	status autogopay.TransactionStatus
+	// key is the API key that generated it. Each organization has its own AutoGoPay merchant
+	// account, so only that key can see the transaction; any other key reads it as not found.
+	key string
 }
 
 // Fake is an in-memory AutoGoPay. The zero value is not usable; call New.
@@ -88,11 +91,12 @@ func (f *Fake) Generate(_ context.Context, key secret.Value, amount int64) (auto
 		CreatedAt:     now,
 		ExpiresAt:     now.Add(QRValidity),
 	}
-	f.txs[q.TransactionID] = &transaction{qris: q, status: autogopay.StatusPending}
+	f.txs[q.TransactionID] = &transaction{qris: q, status: autogopay.StatusPending, key: key.Reveal()}
 	return q, nil
 }
 
-// Status reports the transaction's state. A pending QR past its expiry reports Expired.
+// Status reports the transaction's state. A pending QR past its expiry reports Expired. Only the
+// key that generated the transaction sees it; any other key gets ErrTransactionNotFound.
 func (f *Fake) Status(_ context.Context, key secret.Value, transactionID string) (autogopay.Transaction, error) {
 	return f.transaction(MethodStatus, key, transactionID, func(tx *transaction) {})
 }
@@ -121,7 +125,7 @@ func (f *Fake) transaction(m Method, key secret.Value, id string, change func(*t
 		return autogopay.Transaction{}, err
 	}
 	tx, ok := f.txs[id]
-	if !ok {
+	if !ok || tx.key != key.Reveal() {
 		return autogopay.Transaction{}, fmt.Errorf("autogopaytest: %s: %w", m, autogopay.ErrTransactionNotFound)
 	}
 	f.expireIfDue(tx)

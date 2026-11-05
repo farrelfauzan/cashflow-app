@@ -176,6 +176,24 @@ func TestPayAndExpireUnknownID(t *testing.T) {
 	require.ErrorIs(t, f.Expire("nope"), autogopaytest.ErrUnknownTransaction)
 }
 
+// Each organization has its own AutoGoPay account, so another organization's key never sees a
+// transaction: a reconcile that used the wrong key would fail here as it would in production.
+func TestOtherKeyDoesNotSeeTheTransaction(t *testing.T) {
+	t.Parallel()
+	f, _ := newFake(t)
+	q, err := f.Generate(t.Context(), keyA, 150_000)
+	require.NoError(t, err)
+
+	_, err = f.Status(t.Context(), keyB, q.TransactionID)
+	require.ErrorIs(t, err, autogopay.ErrTransactionNotFound)
+	_, err = f.Cancel(t.Context(), keyB, q.TransactionID)
+	require.ErrorIs(t, err, autogopay.ErrTransactionNotFound)
+
+	got, err := f.Status(t.Context(), keyA, q.TransactionID)
+	require.NoError(t, err)
+	require.Equal(t, autogopay.StatusPending, got.Status, "another key's cancel changed nothing")
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	require.NoError(t, err)

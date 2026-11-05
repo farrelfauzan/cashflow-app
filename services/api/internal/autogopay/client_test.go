@@ -143,6 +143,7 @@ func TestGenerateFailures(t *testing.T) {
 		timeout time.Duration
 		wantErr error
 		wantMsg string // must appear in the error text
+		wantID  string // the TransactionID handed back with the error
 	}{
 		{name: "success false is rejected", rep: reply{status: 200, body: fixture(t, "generate_rejected.json")},
 			wantErr: autogopay.ErrRejected, wantMsg: "Saldo merchant tidak aktif"},
@@ -165,27 +166,28 @@ func TestGenerateFailures(t *testing.T) {
 			timeout: 50 * time.Millisecond, wantErr: autogopay.ErrUnavailable},
 		{name: "missing qr_string is a bad response",
 			rep:     reply{status: 200, body: strings.Replace(generate, "00020101021226TEST-NOT-A-REAL-QRIS6304ABCD", "", 1)},
-			wantErr: autogopay.ErrBadResponse},
+			wantErr: autogopay.ErrBadResponse, wantID: txID},
 		{name: "missing transaction_id is a bad response",
 			rep:     reply{status: 200, body: strings.Replace(generate, `"transaction_id": "`+txID+`"`, `"transaction_id": ""`, 1)},
 			wantErr: autogopay.ErrBadResponse},
 		{name: "unreadable expiry_time is a bad response",
 			rep:     reply{status: 200, body: strings.Replace(generate, "2026-11-04 11:54:49", "soon", 1)},
-			wantErr: autogopay.ErrBadResponse},
+			wantErr: autogopay.ErrBadResponse, wantID: txID},
 		{name: "status other than pending is a bad response",
 			rep:     reply{status: 200, body: strings.Replace(generate, `"pending"`, `"settlement"`, 1)},
-			wantErr: autogopay.ErrBadResponse},
+			wantErr: autogopay.ErrBadResponse, wantID: txID},
 		{name: "another amount is a bad response",
 			rep:     reply{status: 200, body: strings.Replace(generate, `"amount": 1,`, `"amount": 2,`, 1)},
-			wantErr: autogopay.ErrBadResponse},
+			wantErr: autogopay.ErrBadResponse, wantID: txID},
 		{name: "3xx is not followed", rep: reply{status: 302, body: ""}, wantErr: autogopay.ErrBadResponse},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			s := newServer(t, "/qris/generate", `{"amount":1}`, tc.rep)
-			_, err := newClient(t, s.url, tc.timeout).Generate(t.Context(), key, 1)
+			got, err := newClient(t, s.url, tc.timeout).Generate(t.Context(), key, 1)
 			require.ErrorIs(t, err, tc.wantErr)
+			require.Equal(t, autogopay.QRIS{TransactionID: tc.wantID}, got, "only the id of a QR that may exist comes back")
 			if tc.wantMsg != "" {
 				require.Contains(t, err.Error(), tc.wantMsg)
 			}

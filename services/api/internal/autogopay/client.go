@@ -11,7 +11,10 @@ package autogopay
 //     docs warn that repeated generates can get the merchant account blocked).
 //   - ErrRejected: AutoGoPay refused the call (401, 403, any other 4xx, or success:false on
 //     generate). The landlord's key or IP whitelist needs attention.
-//   - ErrBadResponse: AutoGoPay answered 200 with a shape we do not understand.
+//   - ErrBadResponse: AutoGoPay answered 200 with a shape we do not understand, or a non-error
+//     status other than 200 (a redirect, which is never followed). From Generate, the QR has
+//     probably been created: when the answer named it, the returned QRIS carries its
+//     TransactionID (and nothing else), so the caller can cancel it before making another.
 //   - ErrInvalidAPIKey, ErrInvalidTransactionID: caller bugs; no request was sent.
 //
 // The payment page (slice 3, S3-5) shows every error except ErrTransactionNotFound and
@@ -191,7 +194,8 @@ type transactionData struct {
 }
 
 // Generate creates a QRIS for amount rupiah with POST /qris/generate. It sends exactly one
-// request; see the file comment before calling it again after an error.
+// request; see the file comment before calling it again after an error. On ErrBadResponse the
+// returned QRIS holds the TransactionID AutoGoPay sent, if any, because that QR may be live.
 func (c *Client) Generate(ctx context.Context, key secret.Value, amount int64) (QRIS, error) {
 	const op = "generate"
 	if key.IsZero() {
@@ -211,7 +215,12 @@ func (c *Client) Generate(ctx context.Context, key secret.Value, amount int64) (
 	if err := json.Unmarshal(env.Data, &d); err != nil {
 		return QRIS{}, fmt.Errorf("autogopay: %s: %w (data: %w)", op, ErrBadResponse, err)
 	}
-	return d.qris(op, amount)
+	q, err := d.qris(op, amount)
+	if err != nil {
+		// AutoGoPay answered 200, so the QR probably exists: hand back its id so it can be cancelled.
+		return QRIS{TransactionID: d.TransactionID}, err
+	}
+	return q, nil
 }
 
 func (d generateData) qris(op string, amount int64) (QRIS, error) {
