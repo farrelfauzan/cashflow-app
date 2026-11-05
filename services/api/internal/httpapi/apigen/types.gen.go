@@ -1630,6 +1630,26 @@ type TenantList struct {
 	Total int `json:"total"`
 }
 
+// TenantOpenInvoice One invoice of a tenant that still owes something.
+type TenantOpenInvoice struct {
+	// Amount What it bills now, rupiah: what it billed when made plus its corrections.
+	Amount int64 `json:"amount"`
+
+	// Balance What it still owes, rupiah: amount minus what payments allocated to it; always above 0.
+	Balance int64              `json:"balance"`
+	DueDate openapi_types.Date `json:"dueDate"`
+	Id      openapi_types.UUID `json:"id"`
+
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind InvoiceKind `json:"kind"`
+
+	// Period The period's first day; the invoice belongs to its month (Tagihan November).
+	Period       openapi_types.Date `json:"period"`
+	PeriodEnd    openapi_types.Date `json:"periodEnd"`
+	PropertyName string             `json:"propertyName"`
+	UnitLabel    string             `json:"unitLabel"`
+}
+
 // TermMonths A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
 //
 // Example: 12

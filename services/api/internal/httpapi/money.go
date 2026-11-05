@@ -44,6 +44,32 @@ func (s *Server) getTenantAccount(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) listTenantOpenInvoices(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	invoices, err := s.Billing.TenantOpenInvoices(r.Context(), p, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := make([]apigen.TenantOpenInvoice, len(invoices))
+	for i, inv := range invoices {
+		out[i] = apigen.TenantOpenInvoice{
+			Id: inv.ID, Kind: apigen.InvoiceKind(inv.Kind), Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate),
+			UnitLabel: inv.UnitLabel, PropertyName: inv.PropertyName, Amount: inv.Billed, Balance: inv.Outstanding,
+		}
+	}
+	s.writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) recordPayment(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFrom(r.Context())
 	if !ok {
