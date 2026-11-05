@@ -122,6 +122,15 @@ func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.
 	return out, err
 }
 
+// LoadAccountTx reads a tenant's money account inside tx, which must be scoped to org (WithOrgTx
+// or, for figures that must agree, WithOrgSnapshot); today is the current day in Asia/Jakarta
+// (tenant.Today), which decides what is overdue. It checks no permission: the caller has already
+// authorized the read, as the tenant payment page does through its link's token. It is the same
+// reader as Account, so every figure is the same derived balance.
+func LoadAccountTx(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, today time.Time) (Account, error) {
+	return loadAccount(ctx, dbgen.New(tx), org, tenantID, today)
+}
+
 // leaseScope is a lease through which a member may act on its tenant's money.
 type leaseScope struct {
 	PropertyID      uuid.UUID

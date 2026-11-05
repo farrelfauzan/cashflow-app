@@ -19,7 +19,9 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -47,6 +49,10 @@ type Deps struct {
 	Imports    *tenantimport.Service
 	// Billing records payments and corrections and reads a tenant's money account.
 	Billing *billing.Service
+	// PayLinks mints and revokes tenant payment links and reads the public payment page.
+	PayLinks *paylink.Service
+	// PublicLimiter rate-limits the public payment page per token and per client address.
+	PublicLimiter ratelimit.Limiter
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
 	CookieSecure bool
 	// AllowedOrigins are the browser origins allowed to send state-changing requests.
@@ -85,6 +91,8 @@ func New(d Deps) *Server {
 		r.Use(s.checkOrigin)
 		r.Post("/auth/otp/request", s.requestLoginCode)
 		r.Post("/auth/otp/verify", s.verifyLoginCode)
+		// The tenant payment page: public, no session; the token in the path is the access.
+		r.With(publicPageHeaders).Get("/t/{token}", s.getPaymentPage)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireSession)
@@ -118,6 +126,8 @@ func New(d Deps) *Server {
 				r.Get("/invoices", s.listInvoices)
 				r.Post("/payments", s.recordPayment)
 				r.Post("/corrections", s.createCorrection)
+				r.Post("/invoices/{invoiceID}/payment-links", s.createPaymentLink)
+				r.Post("/invoices/{invoiceID}/payment-links/revoke", s.revokePaymentLinks)
 				r.Post("/leases", s.createLease)
 				r.Put("/leases/{leaseID}", s.updateLease)
 				r.Put("/leases/{leaseID}/planned-end", s.setLeasePlannedEnd)

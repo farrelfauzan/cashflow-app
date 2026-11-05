@@ -89,6 +89,7 @@ var builtinRoles = map[string]Role{
 					Action: []string{
 						"tenant:read", "invoice:read", "visit:read", "visit:record",
 						"cash:record", "promise:create", "charge:read", "charge:record",
+						"invoice:share",
 					},
 					Condition: &Condition{Self: ptr(true)},
 				},

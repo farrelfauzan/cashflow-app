@@ -10,7 +10,8 @@
 // among its Admin's own memberships, members by phone, properties by name, units by label in
 // their property (a new unit gets its terms and today's prices), a scheduled price by a row of
 // the unit's history with the same term and amount, charge types by name ignoring case, tenants
-// by phone and leases by an active lease of that tenant on the unit. A record that already exists is left exactly as it is, even
+// by phone and leases by an active lease of that tenant on the unit. A demo organization's bank account is set only
+// when it has none. A record that already exists is left exactly as it is, even
 // when its values differ; fixed extras are set only on a lease that has none, and a member the
 // demo marks disabled is disabled only by the run that invites them.
 //
@@ -34,6 +35,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
@@ -55,6 +57,8 @@ type Deps struct {
 	// other call goes through Properties and Tenants.
 	PastProperties *property.Service
 	PastTenants    *tenant.Service
+	// PayLinks sets the organization's bank account, as cmd/admin set-bank-account does.
+	PayLinks *paylink.Service
 }
 
 // Login is one staff member who can sign in to one organization.
@@ -122,6 +126,9 @@ func (s *seeder) run(ctx context.Context) error {
 	if err := s.ensureOrganization(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureBankAccount(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureProperties(ctx); err != nil {
 		return err
 	}
@@ -168,6 +175,25 @@ func (s *seeder) ensureOrganization(ctx context.Context) error {
 	s.p, err = s.d.Authz.LoadPrincipal(ctx, m.OrganizationID, m.UserID)
 	if err != nil {
 		return fmt.Errorf("loading the acting admin: %w", err)
+	}
+	return nil
+}
+
+// ensureBankAccount sets the organization's bank account when the demo has one and none is set
+// yet; one already set is left as it is.
+func (s *seeder) ensureBankAccount(ctx context.Context) error {
+	if s.spec.BankAccount == nil {
+		return nil
+	}
+	got, err := s.d.PayLinks.BankAccount(ctx, s.p.OrganizationID)
+	if err != nil {
+		return fmt.Errorf("reading the bank account: %w", err)
+	}
+	if got != nil {
+		return nil
+	}
+	if _, err := s.d.PayLinks.SetBankAccount(ctx, s.p.OrganizationID, *s.spec.BankAccount); err != nil {
+		return fmt.Errorf("setting the bank account: %w", err)
 	}
 	return nil
 }

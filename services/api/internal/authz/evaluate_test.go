@@ -190,7 +190,7 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 			"member:read", "member:invite", "member:manage", "role:read",
 			"property:read", "property:manage", "unit:read", "unit:manage",
 			"tenant:read", "tenant:manage", "lease:read", "lease:manage",
-			"charge:read", "charge:record", "invoice:read", "invoice:create", "invoice:send-reminder",
+			"charge:read", "charge:record", "invoice:read", "invoice:create", "invoice:send-reminder", "invoice:share",
 			"payment:read", "payment:record", "payment:check",
 			"correction:read", "correction:create", "promise:read", "promise:create",
 			"visit:read", "cash:read", "payroll:read", "payroll:check", "payroll:record",
@@ -200,7 +200,7 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 		RoleKaryawan: withConditional(allow("organization:read"),
 			"tenant:read", "invoice:read", "visit:read", "visit:record",
 			"cash:record", "promise:create", "payslip:read", "cash:deposit",
-			"charge:read", "charge:record",
+			"charge:read", "charge:record", "invoice:share",
 		),
 	}
 
@@ -252,6 +252,36 @@ func TestMeteredChargesOnALease(t *testing.T) {
 	}
 	require.True(t, IsSensitive(ActionChargeRecord), "recording an amount is audited")
 	require.False(t, IsSensitive(ActionChargeRead))
+}
+
+// TestSharingAnInvoice checks invoice:share (payment links) the way the paylink service asks: the
+// invoice in its lease's property, owned by the lease's collector.
+func TestSharingAnInvoice(t *testing.T) {
+	t.Parallel()
+	admin, karyawan, supervisor := principal(t, RoleAdmin), principal(t, RoleKaryawan), principal(t, RoleSupervisor)
+	invoice := func(collector uuid.UUID) Resource {
+		return Resource{Type: "invoice", ID: uuid.NewString(), PropertyID: uuid.New(), OwnerID: collector}
+	}
+	tests := []struct {
+		name string
+		p    Principal
+		res  Resource
+		want bool
+	}{
+		{"admin shares any invoice", admin, invoice(uuid.New()), true},
+		{"admin shares an invoice with no collector", admin, invoice(uuid.Nil), true},
+		{"karyawan shares an invoice of a tenant they collect from", karyawan, invoice(karyawan.UserID), true},
+		{"karyawan may not share another collector's invoice", karyawan, invoice(uuid.New()), false},
+		{"karyawan may not share an invoice with no collector", karyawan, invoice(uuid.Nil), false},
+		{"supervisor never shares", supervisor, invoice(supervisor.UserID), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, Evaluate(tc.p, Request{Action: ActionInvoiceShare, Resource: tc.res}).Allowed)
+		})
+	}
+	require.True(t, IsSensitive(ActionInvoiceShare), "minting and revoking links is audited")
 }
 
 func TestCapabilitiesCoverTheWholeCatalog(t *testing.T) {

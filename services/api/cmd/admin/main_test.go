@@ -225,3 +225,81 @@ func TestSetAutoGoPayKeyConnectsWithAValidRequest(t *testing.T) {
 	require.ErrorIs(t, err, connectErr)
 	require.True(t, connected)
 }
+
+// TestSetBankAccountRefusesBeforeConnecting: a missing flag, a bad -org and a malformed value all
+// fail before the database is opened.
+func TestSetBankAccountRefusesBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	const org = "6f1c2a3e-0000-4000-8000-000000000001"
+	valid := map[string]string{"-org": org, "-bank": "BCA", "-number": "123 456 7890", "-holder": "Suhwendi"}
+	with := func(flag, value string) []string {
+		var args []string
+		for _, k := range []string{"-org", "-bank", "-number", "-holder"} {
+			v := valid[k]
+			if k == flag {
+				v = value
+			}
+			if v != "" {
+				args = append(args, k, v)
+			}
+		}
+		return args
+	}
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "no flags", args: nil, wantErr: "needs -org, -bank, -number and -holder"},
+		{name: "no -org", args: with("-org", ""), wantErr: "needs -org"},
+		{name: "no -bank", args: with("-bank", ""), wantErr: "needs -org, -bank"},
+		{name: "no -number", args: with("-number", ""), wantErr: "-number"},
+		{name: "no -holder", args: with("-holder", ""), wantErr: "-holder"},
+		{name: "-org is not a uuid", args: with("-org", "griya"), wantErr: "-org must be an organization id"},
+		{name: "-org is the nil uuid", args: with("-org", "00000000-0000-0000-0000-000000000000"), wantErr: "-org must be an organization id"},
+		{name: "a stray argument", args: append(with("", ""), "BCA"), wantErr: "takes no arguments"},
+		{name: "letters in the number", args: with("-number", "1234O6789"), wantErr: "account number"},
+		{name: "a number too short", args: with("-number", "1234"), wantErr: "account number"},
+		{name: "a number of 35 characters", args: with("-number", strings.Repeat("1", 35)), wantErr: "account number"},
+		{name: "a blank bank name", args: with("-bank", "   "), wantErr: "bank name"},
+		{name: "a bank name of 61 characters", args: with("-bank", strings.Repeat("B", 61)), wantErr: "bank name"},
+		{name: "a control character in the holder", args: with("-holder", "Suh\twendi"), wantErr: "account holder"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var out, errOut bytes.Buffer
+			e := env{
+				lookup: func(string) (string, bool) { return "", false },
+				connect: func(context.Context, io.Writer) (conn, error) {
+					t.Fatal("must not connect")
+					return conn{}, nil
+				},
+				stdout: &out,
+				stderr: &errOut,
+			}
+			err := run(context.Background(), append([]string{"set-bank-account"}, tc.args...), e)
+			require.ErrorContains(t, err, tc.wantErr)
+			require.Empty(t, out.String())
+		})
+	}
+}
+
+func TestSetBankAccountConnectsWithAValidRequest(t *testing.T) {
+	t.Parallel()
+	connectErr := errors.New("no database in unit tests")
+	connected := false
+	e := env{
+		lookup: func(string) (string, bool) { return "", false },
+		connect: func(context.Context, io.Writer) (conn, error) {
+			connected = true
+			return conn{}, connectErr
+		},
+	}
+	err := run(context.Background(), []string{
+		"set-bank-account", "-org", "6f1c2a3e-0000-4000-8000-000000000001",
+		"-bank", "BCA", "-number", "123-456-7890", "-holder", "Suhwendi",
+	}, e)
+	require.ErrorIs(t, err, connectErr)
+	require.True(t, connected)
+}
