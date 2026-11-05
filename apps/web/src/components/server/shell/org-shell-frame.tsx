@@ -1,7 +1,13 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { OrgAbilityProvider } from "@/components/client/shell/org-ability-provider";
+import { SidebarRail } from "@/components/client/shell/sidebar-rail";
+import {
+  isSidebarCollapsed,
+  SIDEBAR_COOKIE,
+} from "@/components/client/shell/utils";
 import { getMe } from "@/lib/api/generated/auth/auth";
 import { createAppAbility } from "@/lib/capabilities";
 import { orgPath } from "@/lib/org-path";
@@ -17,7 +23,11 @@ type OrgShellFrameProps = {
 
 export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
   const { orgId } = await params;
-  const [me, orgMe] = await Promise.all([getMe(), loadOrgMe(orgId)]);
+  const [me, orgMe, cookieStore] = await Promise.all([
+    getMe(),
+    loadOrgMe(orgId),
+    cookies(),
+  ]);
   const organization = me.organizations.find((o) => o.id === orgId);
   if (orgMe === null || organization === undefined) redirect(PICKER_PATH);
 
@@ -40,9 +50,13 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background md:flex-row">
-      <aside className="sticky top-0 hidden h-dvh w-[228px] shrink-0 border-r bg-secondary/60 md:block">
+      <SidebarRail
+        defaultCollapsed={isSidebarCollapsed(
+          cookieStore.get(SIDEBAR_COOKIE)?.value,
+        )}
+      >
         {nav}
-      </aside>
+      </SidebarRail>
       <MobileHeader
         organizationName={organization.name}
         detail={[me.user.name, roleSummary(orgMe.roles)]

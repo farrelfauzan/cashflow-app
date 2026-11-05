@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { SIDEBAR_CHOICE_SCRIPT } from "@/components/client/shell/utils";
 import { APP_NAME } from "@/lib/app-name";
 import { QueryProvider } from "@/lib/query/query-provider";
 
@@ -14,7 +15,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="id" className={plusJakartaSans.variable}>
+    // The inline script marks <html> with the side menu's choice before the first paint, hence
+    // suppressHydrationWarning (it reaches only <html>'s own attributes).
+    <html
+      lang="id"
+      className={plusJakartaSans.variable}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SIDEBAR_CHOICE_SCRIPT }} />
+      </head>
       <body>
         <QueryProvider>{children}</QueryProvider>
       </body>
