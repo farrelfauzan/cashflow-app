@@ -1460,9 +1460,12 @@ paths:
         means the tenant said they paid and no answer has come yet ("Sedang dicek"); paid means
         the attempt was paid; expired means the QR expired or was cancelled ("QR kedaluwarsa").
         A pending QR at or past its expiry shows as expired unless a check was asked for; a late
-        payment is still recorded when it arrives. Limited per token and per client address
-        together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store
-        and Referrer-Policy: no-referrer.
+        payment is still recorded when it arrives. The latest attempt can be old (paid or
+        abandoned weeks ago), so the page chooses its first state from getPaymentPage (paid,
+        outstanding) and reads this only to resume a pending or checking QR or to poll a QR made
+        in this visit; it never shows a paid or expired answer from before the visit. Limited
+        per token and per client address together with getPaymentPage (429 rate_limited).
+        Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
       security: []
       responses:
         "200":

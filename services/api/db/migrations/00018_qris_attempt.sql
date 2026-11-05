@@ -21,9 +21,10 @@ ALTER TABLE payment_link ADD CONSTRAINT payment_link_id_tenant_org_key UNIQUE (i
 -- live QR instead is decided with that endpoint.
 --
 -- 'paid' is terminal: once the payment is recorded nothing about the attempt changes again, so a
--- late expiry or cancel cannot hide a payment. Every other transition is allowed, including
--- expired to paid and cancelled to paid: a QR can be paid in its last second and the webhook or
--- reconcile arrive after it was marked expired, and a cancel can race a payment.
+-- late expiry or cancel cannot hide a payment. A closed attempt never goes back to pending. Every
+-- other transition is allowed, including expired to paid and cancelled to paid: a QR can be paid
+-- in its last second and the webhook or reconcile arrive after it was marked expired, and a
+-- cancel can race a payment.
 CREATE TABLE qris_attempt (
     id                 uuid        PRIMARY KEY,
     organization_id    uuid        NOT NULL REFERENCES organization (id),
@@ -57,12 +58,17 @@ CREATE INDEX qris_attempt_latest ON qris_attempt (organization_id, tenant_id, cr
 REVOKE UPDATE, DELETE, TRUNCATE ON qris_attempt FROM cashflow_app;
 GRANT UPDATE (status, closed_at, check_requested_at) ON qris_attempt TO cashflow_app;
 
--- A paid attempt is final, for every role. It runs as the caller, on the row it changes.
+-- A paid attempt is final, and a closed attempt never goes back to pending (a status read that
+-- lags behind AutoGoPay must not revive a dead QR and take the tenant's one pending slot), for
+-- every role. It runs as the caller, on the row it changes.
 -- +goose StatementBegin
 CREATE FUNCTION reject_paid_qris_attempt_change() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF OLD.status = 'paid' THEN
         RAISE EXCEPTION 'qris_attempt % is paid', OLD.id USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF OLD.status <> 'pending' AND NEW.status = 'pending' THEN
+        RAISE EXCEPTION 'qris_attempt % is closed', OLD.id USING ERRCODE = 'insufficient_privilege';
     END IF;
     RETURN NEW;
 END;

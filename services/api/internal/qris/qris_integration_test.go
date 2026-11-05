@@ -240,4 +240,18 @@ func TestQrisAttemptSchema(t *testing.T) {
 			})
 		}
 	})
+
+	// A reconcile that copies AutoGoPay's lagging "pending" back onto a closed attempt would
+	// revive a dead QR and take the tenant's one pending slot.
+	t.Run("expired and cancelled attempts never go back to pending", func(t *testing.T) {
+		r := a.rent(t, "Rina Marlina")
+		for _, from := range []string{qris.AttemptExpired, qris.AttemptCancelled} {
+			t.Run(from, func(t *testing.T) {
+				p := a.attempt(r)
+				require.NoError(t, a.insert(p))
+				require.NoError(t, a.exec("UPDATE qris_attempt SET status = $2, closed_at = now() WHERE id = $1", p.ID, from))
+				requireCode(t, a.exec("UPDATE qris_attempt SET status = 'pending', closed_at = NULL WHERE id = $1", p.ID), "42501")
+			})
+		}
+	})
 }
