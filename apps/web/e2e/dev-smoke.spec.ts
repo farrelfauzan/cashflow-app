@@ -6,6 +6,7 @@ import {
   type TestInfo,
 } from "@playwright/test";
 
+import type { InvoiceList, PaymentLink } from "../src/lib/api/generated/model";
 import { HOME_HEADING, ORG_HOME_URL, openMenu } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
@@ -44,7 +45,7 @@ const COLD_COMPILE_MS = 60_000;
 const DEV_SERVER_PATH = /^\/(?:_next\/webpack-hmr|__nextjs)/;
 const inFlightByPage = new WeakMap<Page, Set<Request>>();
 
-test.beforeEach(({ page }) => {
+function trackInFlight(page: Page) {
   const inFlight = new Set<Request>();
   inFlightByPage.set(page, inFlight);
   page.on("request", (request) => {
@@ -55,6 +56,10 @@ test.beforeEach(({ page }) => {
   const done = (request: Request) => inFlight.delete(request);
   page.on("requestfinished", done);
   page.on("requestfailed", done);
+}
+
+test.beforeEach(({ page }) => {
+  trackInFlight(page);
 });
 
 // The page is settled once none of its requests has been open for QUIET_MS.
@@ -284,6 +289,46 @@ test("every client navigation inside an organization shows no Next.js error", as
 
   await clickMenu(page, testInfo, "Beranda");
   await expectHeading(page, HOME_HEADING);
+
+  expect(errors).toEqual([]);
+});
+
+// The tenant payment page reads its params in a client component under <Suspense>; a mistake
+// there shows only in development. A real link, so the page's one API read answers 200 (a 404
+// would log "Failed to load resource" as a console error).
+test("the tenant payment page loads with no Next.js error", async ({
+  page,
+  browser,
+}) => {
+  const home = await openGriya(page);
+  const orgId = /\/o\/([0-9a-f-]{36})/.exec(home)?.[1];
+  if (orgId === undefined) throw new Error("not on an organization's page");
+  const unpaid = await page.request.get(`/api/orgs/${orgId}/invoices`, {
+    params: { status: "unpaid", pageSize: 1 },
+  });
+  expect(unpaid.status()).toBe(200);
+  const invoice = ((await unpaid.json()) as InvoiceList).items[0];
+  if (invoice === undefined) throw new Error("seed-demo has no unpaid invoice");
+  const made = await page.request.post(
+    `/api/orgs/${orgId}/invoices/${invoice.id}/payment-links`,
+  );
+  expect(made.status()).toBe(201);
+  const { url } = (await made.json()) as PaymentLink;
+  const path = new URL(url, "http://localhost").pathname;
+
+  // The tenant has no session.
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+  });
+  const tenantPage = await context.newPage();
+  trackInFlight(tenantPage);
+  const errors = collectErrors(tenantPage);
+
+  await tenantPage.goto(path);
+  await expectHeading(tenantPage, /^Bayar tagihan /);
+  await tenantPage.reload();
+  await expectHeading(tenantPage, /^Bayar tagihan /);
+  await context.close();
 
   expect(errors).toEqual([]);
 });
