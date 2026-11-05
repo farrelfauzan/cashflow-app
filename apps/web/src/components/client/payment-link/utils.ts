@@ -18,7 +18,9 @@ export const COPY_AGAIN_TEXT = "Salin";
 export const CLOSE_TEXT = "Tutup";
 
 // invoice:share, on some records or all: "conditional" shows the button and the API decides per
-// invoice (a karyawan only for tenants they collect from). Never by role name.
+// invoice. Never by role name. The button also needs the tenant's account (invoice:read and
+// payment:read, see payLinkInvoice), which the built-in Karyawan role cannot read yet, so a
+// karyawan does not see it until the API offers them a way to find the open invoices.
 export function canSharePayLink(ability: AppAbility): boolean {
   return ability.can("share", "invoice");
 }
@@ -107,7 +109,13 @@ export function copyPendingText(
 // The browser's ClipboardItem for pending text, or undefined where there is none.
 export function browserClipboardItem(): ClipboardItemFactory | undefined {
   if (typeof ClipboardItem === "undefined") return undefined;
-  return (text) => new ClipboardItem({ "text/plain": text });
+  // A Blob, not a string: older Safari (the iPad) accepts only Blob values in a ClipboardItem.
+  return (text) =>
+    new ClipboardItem({
+      "text/plain": text.then(
+        (value) => new Blob([value], { type: "text/plain" }),
+      ),
+    });
 }
 
 // The browser's clipboard, or undefined where there is none.

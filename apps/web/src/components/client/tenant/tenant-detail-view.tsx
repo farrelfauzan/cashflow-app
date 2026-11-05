@@ -78,7 +78,8 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const [correctionRequest, setCorrectionRequest] =
     useState<CorrectionRequest | null>(null);
   // "Salin link bayar" needs the open invoices: the same query (and cache entry) as the money
-  // section, so it adds no request; without invoice:read and payment:read it never runs.
+  // section, so it adds no request; without invoice:read and payment:read it never runs. That
+  // leaves out the built-in Karyawan (invoice:read and invoice:share, no payment:read) for now.
   const canShare = canSharePayLink(ability);
   const account = useGetTenantAccount(orgId, tenantId, {
     query: { enabled: showAccount && canShare },
