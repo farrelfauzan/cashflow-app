@@ -418,8 +418,7 @@ describe("paymentPageView, paid", () => {
         title: "Bayar tagihan November 2026",
         subtitle: "Bu Rina · Kamar 07 Kos Melati",
       },
-      invoiceName: "Tagihan November 2026",
-      amount: "Rp1.500.000",
+      invoice: { name: "Tagihan November 2026", amount: "Rp1.500.000" },
       credit: null,
     });
   });
@@ -446,10 +445,24 @@ describe("paymentPageView, paid", () => {
         outstanding: 0,
       }),
     );
-    expect(view.status === "paid" && view.invoiceName).toBe(
-      "Tagihan akhir November 2026",
+    expect(view.status === "paid" && view.invoice).toEqual({
+      name: "Tagihan akhir November 2026",
+      amount: "Rp230.000",
+    });
+  });
+
+  it("does not list a link invoice cancelled by a correction as paid Rp0", () => {
+    const view = paymentPageView(
+      page({
+        paid: true,
+        invoice: invoice({ amount: 0, balance: 0 }),
+        openInvoices: [],
+        outstanding: 0,
+        credit: 0,
+      }),
     );
-    expect(view.status === "paid" && view.amount).toBe("Rp230.000");
+    expect(view.status === "paid" && view.invoice).toBeNull();
+    expect(view.status === "paid" && view.credit).toBeNull();
   });
 
   it("follows the API's paid flag, not the invoices", () => {

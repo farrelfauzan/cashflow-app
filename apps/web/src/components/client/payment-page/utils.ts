@@ -212,12 +212,19 @@ function openView(page: PaymentPage): OpenPaymentPageView {
   };
 }
 
+// A link invoice cancelled by a correction bills nothing, so it is not listed (as in
+// linkInvoicePaidNote).
 function paidView(page: PaymentPage): PaidPaymentPageView {
   return {
     status: "paid",
     header: headerView(page),
-    invoiceName: invoiceName(page.invoice),
-    amount: formatRupiah(page.invoice.amount),
+    invoice:
+      page.invoice.amount <= 0
+        ? null
+        : {
+            name: invoiceName(page.invoice),
+            amount: formatRupiah(page.invoice.amount),
+          },
     credit: creditText(page),
   };
 }

@@ -16,8 +16,8 @@ type PaymentPaidViewProps = {
   view: PaidPaymentPageView;
 };
 
-// The tenant owes nothing (board "Bayar · Lunas"): the link's invoice and any credit. The API
-// gives no method, time or receipt, so none is shown.
+// The tenant owes nothing (board "Bayar · Lunas"): the link's invoice and any credit, under
+// "Rincian" when there is either. The API gives no method, time or receipt, so none is shown.
 export function PaymentPaidView({ view }: PaymentPaidViewProps) {
   return (
     <>
@@ -30,34 +30,38 @@ export function PaymentPaidView({ view }: PaymentPaidViewProps) {
         <p className="text-[26px] font-bold">{PAID_TITLE}</p>
         <p className="text-sm md:text-base">{PAID_TEXT}</p>
       </section>
-      <section
-        aria-label={PAID_DETAILS_LABEL}
-        className="flex flex-col rounded-xl border bg-card px-4 py-1.5 shadow-xs md:px-5"
-      >
-        <div className="flex items-center justify-between gap-3 py-3">
-          <span className="text-sm text-muted-foreground md:text-base">
-            {view.invoiceName}
-          </span>
-          <span className="text-sm font-semibold whitespace-nowrap md:text-base">
-            {view.amount}
-          </span>
-        </div>
-        {view.credit !== null && (
-          <div className="flex flex-col gap-0.5 border-t py-3">
-            <div className="flex items-center justify-between gap-3">
+      {(view.invoice !== null || view.credit !== null) && (
+        <section
+          aria-label={PAID_DETAILS_LABEL}
+          className="flex flex-col divide-y rounded-xl border bg-card px-4 py-1.5 shadow-xs md:px-5"
+        >
+          {view.invoice !== null && (
+            <div className="flex items-center justify-between gap-3 py-3">
               <span className="text-sm text-muted-foreground md:text-base">
-                {CREDIT_LABEL}
+                {view.invoice.name}
               </span>
               <span className="text-sm font-semibold whitespace-nowrap md:text-base">
-                {view.credit}
+                {view.invoice.amount}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground md:text-base">
-              {CREDIT_NOTE}
-            </p>
-          </div>
-        )}
-      </section>
+          )}
+          {view.credit !== null && (
+            <div className="flex flex-col gap-0.5 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground md:text-base">
+                  {CREDIT_LABEL}
+                </span>
+                <span className="text-sm font-semibold whitespace-nowrap md:text-base">
+                  {view.credit}
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground md:text-base">
+                {CREDIT_NOTE}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
     </>
   );
 }

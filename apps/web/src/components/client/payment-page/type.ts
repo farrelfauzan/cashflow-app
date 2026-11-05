@@ -46,12 +46,20 @@ export type OpenPaymentPageView = {
   noTransferText: string;
 };
 
+// The link's invoice under "Rincian" on Lunas.
+export type PaidInvoiceView = {
+  // "Tagihan November 2026"
+  name: string;
+  amount: string;
+};
+
 // The tenant owes nothing.
 export type PaidPaymentPageView = {
   status: "paid";
   header: PaymentPageHeaderView;
-  invoiceName: string;
-  amount: string;
+  // Null when the link's invoice bills nothing now (cancelled by a correction), so Lunas never
+  // lists it as paid Rp0.
+  invoice: PaidInvoiceView | null;
   credit: string | null;
 };
 
