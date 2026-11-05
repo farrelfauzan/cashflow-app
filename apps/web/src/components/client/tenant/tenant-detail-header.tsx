@@ -3,6 +3,7 @@
 import { ChevronLeft, Plus } from "lucide-react";
 import Link from "next/link";
 
+import { COPY_PAY_LINK_TEXT } from "@/components/client/payment-link/utils";
 import { Button } from "@/components/ui/button";
 import { formatPhone } from "@/lib/format/phone";
 import { orgPath } from "@/lib/org-path";
@@ -18,11 +19,14 @@ type TenantDetailHeaderProps = {
   // payment:record (allow or conditional): "Catat pembayaran", the page's one primary action.
   canRecordPayment: boolean;
   onRecordPayment: () => void;
+  // invoice:share (allow or conditional) and an open invoice: "Salin link bayar", an outline
+  // button; null hides it. `busy` while a link is being made, so one press makes one link.
+  copyPayLink: { busy: boolean; onCopy: () => void } | null;
 };
 
 // The back link, the tenant's name and their number, "Catat pembayaran" (the page's one primary
-// action) and "Ubah penyewa" (an outline button). The board's "WhatsApp aktif" is left
-// out: the API has no such field.
+// action), "Ubah penyewa" and "Salin link bayar" (outline buttons). The board's "WhatsApp aktif"
+// is left out: the API has no such field.
 export function TenantDetailHeader({
   orgId,
   name,
@@ -31,6 +35,7 @@ export function TenantDetailHeader({
   onEdit,
   canRecordPayment,
   onRecordPayment,
+  copyPayLink,
 }: TenantDetailHeaderProps) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-5">
@@ -53,7 +58,7 @@ export function TenantDetailHeader({
           {formatPhone(phone)}
         </p>
       </div>
-      {(canEdit || canRecordPayment) && (
+      {(canEdit || canRecordPayment || copyPayLink !== null) && (
         <div className="flex shrink-0 flex-col gap-2.5 lg:flex-row-reverse">
           {canRecordPayment && (
             <Button
@@ -73,6 +78,18 @@ export function TenantDetailHeader({
               className="h-12 w-full rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
             >
               Ubah penyewa
+            </Button>
+          )}
+          {copyPayLink !== null && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={copyPayLink.onCopy}
+              disabled={copyPayLink.busy}
+              aria-busy={copyPayLink.busy}
+              className="h-12 w-full rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
+            >
+              {COPY_PAY_LINK_TEXT}
             </Button>
           )}
         </div>
