@@ -4,14 +4,30 @@ import { ApiError } from "@/lib/api/errors";
 import type {
   AccountInvoice,
   AccountPayment,
+  ActivePromise,
   Capability,
   Correction,
   TenantAccount,
+  TenantPromise,
+  TenantPromiseVersion,
 } from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
 import {
   accountTiles,
+  activePromiseReplacesLine,
+  activePromiseTile,
+  brokenPromisesNote,
+  canCreatePromise,
+  canReadPromises,
+  isPromiseStaleError,
+  NO_ACTIVE_PROMISE_TEXT,
+  promiseByText,
+  promiseDialogView,
+  promiseHistoryCountNote,
+  promiseHistoryRows,
+  staffPromiseFormError,
+  staffPromiseSchema,
   canCreateCorrection,
   canReadAccount,
   correctionDialogView,
@@ -263,6 +279,12 @@ describe("accountTiles", () => {
         tone: "default",
       },
       {
+        label: "Janji aktif",
+        value: "—",
+        notes: [NO_ACTIVE_PROMISE_TEXT],
+        tone: "default",
+      },
+      {
         label: "Saldo lebih bayar",
         value: "Rp0",
         notes: [CREDIT_NOTE],
@@ -320,7 +342,7 @@ describe("accountTiles", () => {
       "Total belum dibayar Rp1.300.000",
     ]);
     expect(tiles[1]?.value).toBe("—");
-    expect(tiles[2]?.value).toBe("Rp50.000");
+    expect(tiles[3]?.value).toBe("Rp50.000");
   });
 });
 
@@ -1118,5 +1140,466 @@ describe("the final invoice's names", () => {
       "→ Oktober Rp1.500.000",
       "→ tagihan akhir Rp180.000",
     ]);
+  });
+});
+
+const activePromise = (over: Partial<ActivePromise> = {}): ActivePromise => ({
+  id: "promise-1",
+  version: 1,
+  kind: "specific_date",
+  promisedDate: "2026-12-12",
+  promisedAmount: 1_250_000,
+  payingNow: 0,
+  source: "tenant_page",
+  note: null,
+  createdBy: null,
+  createdAt: "2026-11-25T03:00:00Z",
+  coveredInvoiceIds: ["inv-oct"],
+  ...over,
+});
+
+const promiseVersion = (
+  over: Partial<TenantPromiseVersion> = {},
+): TenantPromiseVersion => ({
+  version: 1,
+  kind: "specific_date",
+  promisedDate: "2026-12-12",
+  promisedAmount: 1_250_000,
+  payingNow: 0,
+  outstandingAt: 1_250_000,
+  source: "tenant_page",
+  note: null,
+  createdBy: null,
+  createdAt: "2026-11-25T03:00:00Z",
+  coveredInvoiceIds: ["inv-oct"],
+  ...over,
+});
+
+const tenantPromise = (over: Partial<TenantPromise> = {}): TenantPromise => ({
+  id: "promise-1",
+  tenantId: "tenant-1",
+  status: "active",
+  createdAt: "2026-11-25T03:00:00Z",
+  closedAt: null,
+  versions: [promiseVersion()],
+  ...over,
+});
+
+const OFFER_DATES = { earliest: "2026-11-03", latest: "2027-01-01" };
+
+describe("promiseByText and brokenPromisesNote", () => {
+  it("names who made a promise", () => {
+    expect(promiseByText("tenant_page", null)).toBe("dibuat penyewa");
+    expect(promiseByText("admin", HENDRA)).toBe("dicatat Pak Hendra Gunawan");
+    expect(promiseByText("karyawan", null)).toBeNull();
+  });
+
+  it("counts broken promises as history, none for 0", () => {
+    expect(brokenPromisesNote(0)).toBeNull();
+    expect(brokenPromisesNote(2)).toBe("Janji lewat 2× (sejak awal)");
+  });
+});
+
+describe("activePromiseTile", () => {
+  it("shows the promised day, the amount and that the tenant made it", () => {
+    expect(
+      activePromiseTile(account({ activePromise: activePromise() })),
+    ).toEqual({
+      label: "Janji aktif",
+      value: "Sab, 12 Des",
+      notes: ["Rp1.250.000 · dibuat penyewa"],
+      tone: "default",
+    });
+  });
+
+  it("names the member, the note and the broken count", () => {
+    const tile = activePromiseTile(
+      account({
+        brokenPromises: 1,
+        activePromise: activePromise({
+          promisedAmount: null,
+          source: "admin",
+          createdBy: SARI,
+          note: "Gajian tanggal 10",
+        }),
+      }),
+    );
+    expect(tile.notes).toEqual([
+      "Semua sisa tagihan · dicatat Mbak Sari Wulandari",
+      "Gajian tanggal 10",
+      "Janji lewat 1× (sejak awal)",
+    ]);
+  });
+
+  it("shows a dash without an active promise, with the broken count", () => {
+    const tile = activePromiseTile(account({ brokenPromises: 3 }));
+    expect(tile.value).toBe("—");
+    expect(tile.notes).toEqual([
+      NO_ACTIVE_PROMISE_TEXT,
+      "Janji lewat 3× (sejak awal)",
+    ]);
+  });
+
+  it("sits between Tunggakan tertua and Saldo lebih bayar", () => {
+    expect(accountTiles(account(), TODAY).map((tile) => tile.label)).toEqual([
+      "Tunggakan",
+      "Tunggakan tertua",
+      "Janji aktif",
+      "Saldo lebih bayar",
+    ]);
+  });
+});
+
+describe("promiseHistoryRows", () => {
+  it("shows each promise from its newest version, with its chip", () => {
+    const rows = promiseHistoryRows([
+      tenantPromise(),
+      tenantPromise({
+        id: "promise-0",
+        status: "partially_kept",
+        versions: [
+          promiseVersion({
+            kind: "with_next_invoice",
+            promisedDate: "2026-11-01",
+            promisedAmount: null,
+            createdAt: "2026-10-05T03:00:00Z",
+          }),
+        ],
+      }),
+    ]);
+    expect(rows).toEqual([
+      {
+        id: "promise-1",
+        title: "Sab, 12 Des · Rp1.250.000",
+        byline: "dibuat penyewa 25 Nov",
+        status: { label: "Aktif", tone: "upcoming" },
+      },
+      {
+        id: "promise-0",
+        title: "Min, 1 Nov · Semua sisa tagihan",
+        byline: "dibuat penyewa 5 Okt",
+        status: { label: "Ditepati sebagian", tone: "neutral" },
+      },
+    ]);
+  });
+
+  it("names the member of the newest version and counts the edits", () => {
+    const [row] = promiseHistoryRows([
+      tenantPromise({
+        status: "broken",
+        versions: [
+          promiseVersion(),
+          promiseVersion({
+            version: 2,
+            promisedDate: "2026-12-20",
+            source: "admin",
+            createdBy: HENDRA,
+            // 23:30 in Jakarta is still 26 Nov there.
+            createdAt: "2026-11-26T16:30:00Z",
+          }),
+        ],
+      }),
+    ]);
+    expect(row?.title).toBe("Min, 20 Des · Rp1.250.000");
+    expect(row?.byline).toBe("dicatat Pak Hendra Gunawan 26 Nov · diubah 1×");
+    expect(row?.status).toEqual({ label: "Tidak ditepati", tone: "warning" });
+  });
+
+  it("labels a kept promise and skips one without versions", () => {
+    const rows = promiseHistoryRows([
+      tenantPromise({ status: "kept" }),
+      tenantPromise({ id: "empty", versions: [] }),
+    ]);
+    expect(rows.map((row) => row.status.label)).toEqual(["Ditepati"]);
+  });
+});
+
+describe("promiseHistoryCountNote", () => {
+  it("says how many show only when the page is not all of them", () => {
+    const items = Array.from({ length: 20 }, (_, index) =>
+      tenantPromise({ id: `p-${index}` }),
+    );
+    expect(
+      promiseHistoryCountNote({ items, page: 1, pageSize: 20, total: 23 }),
+    ).toBe("Menampilkan 20 dari 23");
+    expect(
+      promiseHistoryCountNote({ items, page: 1, pageSize: 20, total: 20 }),
+    ).toBeNull();
+  });
+});
+
+describe("promise abilities", () => {
+  const ability = (capabilities: Capability[]) =>
+    createAppAbility(capabilities);
+
+  it("reads and creates promises by action, conditional included", () => {
+    const admin = ability([
+      { action: "promise:read", access: "allow" },
+      { action: "promise:create", access: "conditional" },
+    ]);
+    expect(canReadPromises(admin)).toBe(true);
+    expect(canCreatePromise(admin)).toBe(true);
+    const supervisor = ability([
+      { action: "promise:read", access: "allow" },
+      { action: "promise:create", access: "deny" },
+    ]);
+    expect(canReadPromises(supervisor)).toBe(true);
+    expect(canCreatePromise(supervisor)).toBe(false);
+    expect(canReadPromises(ability([]))).toBe(false);
+  });
+});
+
+describe("promiseDialogView", () => {
+  it("is null when no promise can be made", () => {
+    expect(promiseDialogView(account(), "Yulia Kartika")).toBeNull();
+  });
+
+  it("opens empty on Bareng tagihan berikutnya when it is offered", () => {
+    const view = promiseDialogView(
+      account({
+        outstanding: 1_250_000,
+        promiseDates: OFFER_DATES,
+        nextInvoiceDueDate: "2026-12-01",
+      }),
+      "Yulia Kartika",
+    );
+    expect(view).toMatchObject({
+      subtitle: "Yulia Kartika",
+      replacesLine: null,
+      dateMin: "2026-11-03",
+      dateMax: "2027-01-01",
+      amountHint: "Kosongkan untuk semua sisa, Rp1.250.000.",
+      primaryLabel: "Simpan janji",
+      defaults: {
+        kind: "with_next_invoice",
+        date: "",
+        amountText: "",
+        note: "",
+      },
+    });
+    expect(view?.kindOptions).toEqual([
+      {
+        value: "with_next_invoice",
+        label: "Bareng tagihan berikutnya",
+        sub: "Jatuh tempo 1 Des 2026",
+      },
+      {
+        value: "specific_date",
+        label: "Pilih tanggal sendiri",
+        sub: "Paling lambat 1 Jan 2027, tanpa denda",
+      },
+    ]);
+  });
+
+  it("opens on Pilih tanggal sendiri when there is no next invoice", () => {
+    const view = promiseDialogView(
+      account({ outstanding: 500_000, promiseDates: OFFER_DATES }),
+      "Yulia Kartika",
+    );
+    expect(view?.defaults.kind).toBe("specific_date");
+    expect(view?.kindOptions.map((option) => option.value)).toEqual([
+      "specific_date",
+    ]);
+  });
+
+  it("opens filled from the active promise, which it replaces", () => {
+    const view = promiseDialogView(
+      account({
+        outstanding: 1_250_000,
+        promiseDates: OFFER_DATES,
+        nextInvoiceDueDate: "2026-12-01",
+        activePromise: activePromise({
+          promisedAmount: 750_000,
+          note: "Gajian",
+        }),
+      }),
+      "Yulia Kartika",
+    );
+    expect(view?.replacesLine).toBe(
+      "Janji aktif Sab, 12 Des, Rp750.000 akan diganti.",
+    );
+    expect(view?.primaryLabel).toBe("Simpan perubahan");
+    expect(view?.defaults).toEqual({
+      kind: "specific_date",
+      date: "2026-12-12",
+      amountText: "750.000",
+      note: "",
+    });
+  });
+
+  it("names a promise of everything left in lower case", () => {
+    expect(
+      activePromiseReplacesLine(activePromise({ promisedAmount: null })),
+    ).toBe("Janji aktif Sab, 12 Des, semua sisa tagihan akan diganti.");
+  });
+});
+
+describe("staffPromiseSchema", () => {
+  const offer = {
+    outstanding: 1_250_000,
+    earliest: "2026-11-03",
+    latest: "2027-01-01",
+    nextInvoiceDueDate: "2026-12-01",
+  };
+  const values = {
+    kind: "specific_date" as const,
+    date: "2026-12-12",
+    amountText: "",
+    note: "",
+  };
+  const issues = (input: typeof values | Record<string, string>) => {
+    const result = staffPromiseSchema(offer).safeParse(input);
+    return result.success
+      ? []
+      : result.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        }));
+  };
+
+  it("sends the date, the typed amount and the trimmed note, never payingNow", () => {
+    expect(
+      staffPromiseSchema(offer).parse({
+        ...values,
+        amountText: "750.000",
+        note: "  Gajian tanggal 10 ",
+      }),
+    ).toEqual({
+      kind: "specific_date",
+      promisedDate: "2026-12-12",
+      promisedAmount: 750_000,
+      note: "Gajian tanggal 10",
+    });
+  });
+
+  it("sends only the kind for Bareng tagihan with nothing typed", () => {
+    expect(
+      staffPromiseSchema(offer).parse({
+        ...values,
+        kind: "with_next_invoice",
+        note: "   ",
+      }),
+    ).toEqual({ kind: "with_next_invoice" });
+  });
+
+  it.each([
+    {
+      name: "a missing date",
+      input: { ...values, date: "" },
+      want: [{ path: "date", message: "Pilih tanggal pelunasan." }],
+    },
+    {
+      name: "a date after the last one",
+      input: { ...values, date: "2027-01-02" },
+      want: [
+        {
+          path: "date",
+          message: "Pilih tanggal dari 3 Nov 2026 sampai 1 Jan 2027.",
+        },
+      ],
+    },
+    {
+      name: "an amount above what is owed",
+      input: { ...values, amountText: "1.250.001" },
+      want: [
+        {
+          path: "amountText",
+          message: "Nominal janji paling banyak Rp1.250.000.",
+        },
+      ],
+    },
+    {
+      name: "an amount of 0",
+      input: { ...values, amountText: "0" },
+      want: [
+        {
+          path: "amountText",
+          message: "Isi nominal minimal Rp1, atau kosongkan untuk semua sisa.",
+        },
+      ],
+    },
+    {
+      name: "a note too long",
+      input: { ...values, note: "a".repeat(501) },
+      want: [{ path: "note", message: "Catatan paling banyak 500 karakter." }],
+    },
+  ])("refuses $name", ({ input, want }) => {
+    expect(issues(input)).toEqual(want);
+  });
+});
+
+describe("staffPromiseFormError", () => {
+  const apiError = (code: string, status: number, field?: string) =>
+    new ApiError({ status, code, message: `pesan ${code}`, field });
+
+  it.each([
+    {
+      name: "a date out of range under the date",
+      error: apiError("promise_date_out_of_range", 400, "promisedDate"),
+      kind: "specific_date" as const,
+      want: { field: "date", message: "pesan promise_date_out_of_range" },
+    },
+    {
+      name: "a date error while the date input is hidden in the alert",
+      error: apiError("promise_date_out_of_range", 400, "promisedDate"),
+      kind: "with_next_invoice" as const,
+      want: { field: null, message: "pesan promise_date_out_of_range" },
+    },
+    {
+      name: "no next invoice under the choice",
+      error: apiError("promise_no_next_invoice", 400, "kind"),
+      kind: "with_next_invoice" as const,
+      want: { field: "kind", message: "pesan promise_no_next_invoice" },
+    },
+    {
+      name: "an amount above what is owed under the amount",
+      error: apiError(
+        "promise_amount_above_outstanding",
+        400,
+        "promisedAmount",
+      ),
+      kind: "specific_date" as const,
+      want: {
+        field: "amountText",
+        message: "pesan promise_amount_above_outstanding",
+      },
+    },
+    {
+      name: "a note under the note",
+      error: apiError("invalid_input", 400, "note"),
+      kind: "specific_date" as const,
+      want: { field: "note", message: "pesan invalid_input" },
+    },
+    {
+      name: "nothing owed in the alert",
+      error: apiError("promise_nothing_owed", 409),
+      kind: "specific_date" as const,
+      want: { field: null, message: "pesan promise_nothing_owed" },
+    },
+    {
+      name: "a refusal in the alert",
+      error: apiError("forbidden", 403),
+      kind: "specific_date" as const,
+      want: { field: null, message: "pesan forbidden" },
+    },
+  ])("puts $name", ({ error, kind, want }) => {
+    expect(staffPromiseFormError(error, kind)).toEqual(want);
+  });
+
+  it("shows the generic message for anything that is not the API's answer", () => {
+    expect(
+      staffPromiseFormError(new Error("network"), "specific_date").field,
+    ).toBeNull();
+  });
+
+  it("reloads the account after the refusals that mean it moved", () => {
+    expect(isPromiseStaleError(apiError("promise_nothing_owed", 409))).toBe(
+      true,
+    );
+    expect(
+      isPromiseStaleError(apiError("promise_date_out_of_range", 400)),
+    ).toBe(true);
+    expect(isPromiseStaleError(apiError("forbidden", 403))).toBe(false);
+    expect(isPromiseStaleError(new Error("network"))).toBe(false);
   });
 });

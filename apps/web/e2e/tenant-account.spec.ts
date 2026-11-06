@@ -41,7 +41,8 @@ import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 const REGION = "Uang penyewa";
-const LATER_BUTTONS = /^(Kirim link bayar|Catat janji|Koreksi nominal)$/;
+// "Catat janji" is built (e2e/tenant-promise.spec.ts); these two are not yet.
+const LATER_BUTTONS = /^(Kirim link bayar|Koreksi nominal)$/;
 const MINUS = "−";
 
 // Minimum body text per project, CLAUDE.md "UX rules".
