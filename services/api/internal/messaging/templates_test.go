@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -180,4 +181,82 @@ func TestTenantTemplatesRefuseMistakes(t *testing.T) {
 			require.ErrorContains(t, err, "has no link")
 		})
 	}
+}
+
+func TestRenderPlain(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		msg  Message
+		want string
+	}{
+		{
+			name: "login code loses its bold markers",
+			msg:  Message{Template: TemplateLoginCode, Params: map[string]string{"code": "123456"}},
+			want: "Kode masuk Anda: 123456\n\n" +
+				"Berlaku 5 menit. Jangan berikan kode ini kepada siapa pun, termasuk orang yang mengaku petugas.",
+		},
+		{
+			name: "an asterisk inside a parameter value survives",
+			msg:  Message{Template: TemplateLoginCode, Params: map[string]string{"code": "12*45"}},
+			want: "Kode masuk Anda: 12*45\n\n" +
+				"Berlaku 5 menit. Jangan berikan kode ini kepada siapa pun, termasuk orang yang mengaku petugas.",
+		},
+		{
+			name: "button links are appended like Render does",
+			msg: Message{Template: TemplateLoginCode, Params: map[string]string{"code": "123456"},
+				Buttons: []Button{{Title: "Bayar", Payload: "x", URL: "https://app.example.id/t/tok"}}},
+			want: "Kode masuk Anda: 123456\n\n" +
+				"Berlaku 5 menit. Jangan berikan kode ini kepada siapa pun, termasuk orang yang mengaku petugas." +
+				"\n\nBayar:\nhttps://app.example.id/t/tok",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := RenderPlain(tc.msg)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRenderPlainIsRenderWithoutMarkers(t *testing.T) {
+	t.Parallel()
+	for name, m := range tenantMessages() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			withMarkers, err := Render(m)
+			require.NoError(t, err)
+			plain, err := RenderPlain(m)
+			require.NoError(t, err)
+			require.Equal(t, strings.ReplaceAll(withMarkers, "*", ""), plain, "sample values hold no asterisk")
+		})
+	}
+}
+
+func TestRenderPlainRejectsTheSameMistakes(t *testing.T) {
+	t.Parallel()
+	for name, m := range map[string]Message{
+		"unknown template":      {Template: "nope"},
+		"missing parameter":     {Template: TemplateLoginCode},
+		"unexpected parameter":  {Template: TemplateLoginCode, Params: map[string]string{"code": "1", "kode": "1"}},
+		"button without a link": {Template: TemplateLoginCode, Params: map[string]string{"code": "1"}, Buttons: []Button{{Title: "Setujui", Payload: "x"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := RenderPlain(m)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestStripBold(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "a {{.x}} b", stripBold("t", "a *{{.x}}* b"))
+	require.Equal(t, "{{.due_date}}", stripBold("t", "{{.due_date}}"), "underscores inside an action are parameter names")
+	for _, text := range []string{"_miring_", "~coret~", "`kode`", "{{.x}} _miring_"} {
+		require.Panics(t, func() { stripBold("t", text) }, text)
+	}
+	require.Panics(t, func() { stripBold("t", "{{.x") }, "unclosed action")
 }

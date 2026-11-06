@@ -4,14 +4,15 @@
 //
 // Client does not implement messaging.Provider. A Provider sends to a phone number, and a bot
 // can only message a chat that pressed Start on it, so which chat (or whether WhatsApp instead)
-// is chosen per recipient by the router that comes later (TG-3). Send takes the chat id. The
-// router is the messaging.Provider: callers keep calling SendTemplate, and through it this
-// adapter is one of the MessagingProvider adapters CLAUDE.md lists.
+// is chosen per recipient by package router. Send takes the chat id. The router is the
+// messaging.Provider: callers keep calling SendTemplate, and through it this adapter is one of
+// the MessagingProvider adapters CLAUDE.md lists.
 //
-// Messages use the same templates as WhatsApp (messaging.Render) and go out as plain text, with
-// no parse_mode, so template text is never read as markup. Buttons become inline keyboard URL
-// buttons; a button's Payload is not sent as callback data yet (nothing handles callbacks), so
-// every button needs its URL, as on GOWA.
+// Messages use the same templates as WhatsApp and go out as plain text, with no parse_mode, so
+// template text is never read as markup. WhatsApp's *bold* markers are stripped from the
+// template text (messaging.RenderPlain), so no literal asterisks show in the chat. Buttons
+// become inline keyboard URL buttons; a button's Payload is not sent as callback data yet
+// (nothing handles callbacks), so every button needs its URL, as on GOWA.
 //
 // The bot token is part of every request URL (/bot<token>/<method>), and Go's *url.Error
 // prints the URL. Every error this package returns names the method, the HTTP status and the
@@ -157,7 +158,7 @@ type sentMessage struct {
 	MessageID int64 `json:"message_id"`
 }
 
-// Send renders m with messaging.Render and sends it to chatID as plain text, each button as an
+// Send renders m with messaging.RenderPlain and sends it to chatID as plain text, each button as an
 // inline keyboard URL button on its own row. m.To is ignored. The receipt holds Telegram's
 // message_id.
 func (c *Client) Send(ctx context.Context, chatID int64, m messaging.Message) (messaging.Receipt, error) {
@@ -168,7 +169,7 @@ func (c *Client) Send(ctx context.Context, chatID int64, m messaging.Message) (m
 	// The text itself leaves the links out: they are the keyboard's buttons.
 	bare := m
 	bare.Buttons = nil
-	text, err := messaging.Render(bare)
+	text, err := messaging.RenderPlain(bare)
 	if err != nil {
 		return messaging.Receipt{}, err
 	}

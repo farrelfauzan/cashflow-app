@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/messagingtest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
 )
 
@@ -75,8 +76,9 @@ func TestSend(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "42", receipt.ProviderMessageID)
 
-	want, err := messaging.Render(loginMessage)
+	want, err := messaging.RenderPlain(loginMessage)
 	require.NoError(t, err)
+	require.Equal(t, "Kode masuk Anda: "+loginCode, strings.SplitN(want, "\n", 2)[0], "no bold markers")
 	require.Equal(t, http.MethodPost, got.method)
 	require.Equal(t, "/bot"+botToken+"/sendMessage", got.path)
 	require.Equal(t, "application/json", got.contentType)
@@ -106,13 +108,55 @@ func TestSendButtonsBecomeAnInlineKeyboard(t *testing.T) {
 	_, err := c.Send(t.Context(), chatID, msg)
 	require.NoError(t, err)
 
-	require.Contains(t, got.Text, "*Griya Sejahtera*")
+	require.Contains(t, got.Text, "di Griya Sejahtera oleh")
+	require.NotContains(t, got.Text, "*", "WhatsApp's bold markers are stripped")
 	require.NotContains(t, got.Text, "https://", "links travel as buttons, not in the text")
 	require.NotNil(t, got.ReplyMarkup)
 	require.Equal(t, [][]map[string]string{
 		{{"text": "Masuk", "url": "https://app.example.id/login"}},
 		{{"text": "Bantuan", "url": "https://app.example.id/bantuan"}},
 	}, got.ReplyMarkup.InlineKeyboard, "one URL button per row, no callback_data")
+}
+
+// TestEveryTemplateSendsAsPlainText is the contract test: each registered template goes through
+// Send and arrives as a sendMessage with plain text (no WhatsApp markers, no parse_mode, no links)
+// and its buttons as inline keyboard URL buttons.
+func TestEveryTemplateSendsAsPlainText(t *testing.T) {
+	t.Parallel()
+	for name, msg := range messagingtest.Samples() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var raw map[string]any
+			var got sendRequest
+			c := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &raw)
+				_ = json.Unmarshal(body, &got)
+				_, _ = io.WriteString(w, sentBody)
+			})
+
+			_, err := c.Send(t.Context(), chatID, msg)
+			require.NoError(t, err)
+
+			require.Equal(t, chatID, got.ChatID)
+			require.NotContains(t, raw, "parse_mode")
+			require.Empty(t, got.ParseMode)
+			require.NotEmpty(t, strings.TrimSpace(got.Text))
+			require.NotContains(t, got.Text, "*", "WhatsApp's bold markers never reach Telegram")
+			for _, b := range msg.Buttons {
+				require.NotContains(t, got.Text, b.URL, "links travel as buttons, not in the text")
+			}
+			if len(msg.Buttons) == 0 {
+				require.Nil(t, got.ReplyMarkup)
+				return
+			}
+			require.NotNil(t, got.ReplyMarkup)
+			require.Len(t, got.ReplyMarkup.InlineKeyboard, len(msg.Buttons))
+			for i, b := range msg.Buttons {
+				require.Equal(t, []map[string]string{{"text": b.Title, "url": b.URL}}, got.ReplyMarkup.InlineKeyboard[i])
+			}
+		})
+	}
 }
 
 func TestBadMessagesNeverReachTelegram(t *testing.T) {
