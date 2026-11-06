@@ -233,6 +233,30 @@ func TestPaymentPreviewOverHTTP(t *testing.T) {
 		env.Clock.Advance(time.Minute)
 	})
 
+	// The preview promises "this is what your money will pay": the payment's real allocation must
+	// match it, so a change to allocation's order cannot leave the preview behind unnoticed.
+	t.Run("the payment then pays exactly what the preview showed", func(t *testing.T) {
+		token := mint(t, admin, a.o.ID, rinaOldest) // an earlier case revoked Rina's first links
+		tokens = append(tokens, token)
+		resp, body := getPreview(t, srv.URL, token, "800000", "203.0.113.24")
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		preview := decode[apigen.PaymentPreview](t, body)
+		require.Len(t, preview.Items, 2, "800.000 reaches both invoices")
+
+		resp, body = admin.do(http.MethodPost, "/api/orgs/"+a.o.ID.String()+"/payments", map[string]any{
+			"requestId": uuid.New(), "tenantId": rina, "amount": 800_000, "method": "cash", "receivedOn": "2026-11-02",
+		})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		paid := decode[apigen.PaymentResult](t, body)
+
+		want := make([]apigen.PaymentAllocation, len(preview.Items))
+		for i, it := range preview.Items {
+			want[i] = apigen.PaymentAllocation{InvoiceId: it.InvoiceId, Amount: it.Applied}
+		}
+		require.Equal(t, want, paid.Payment.Allocations, "the allocation follows the preview, in order")
+		require.Equal(t, preview.OutstandingAfter, paid.Outstanding)
+	})
+
 	t.Run("an expired link answers the page's 410", func(t *testing.T) {
 		paid, invoice := a.rent(t, "Sari Puspita", uuid.Nil)
 		token := mint(t, admin, a.o.ID, invoice)
