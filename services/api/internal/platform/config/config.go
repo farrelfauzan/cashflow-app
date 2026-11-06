@@ -403,6 +403,11 @@ func (t Telegram) LogValue() slog.Value {
 
 // validate checks each setting that is set. Errors name the setting, never its secret value.
 func (t Telegram) validate(env string) error {
+	// Telegram is a demo channel (decision 42), like the Twilio sandbox: development and staging
+	// with test accounts only. Production stays WhatsApp.
+	if env == "production" && (t.BotToken != "" || t.BotUsername != "" || t.WebhookSecret != "" || t.APIBaseURL != "") {
+		return errors.New("Telegram is a demo channel for development and staging (decision 42); unset the TELEGRAM_* settings in production")
+	}
 	if t.BotToken != "" && !telegramToken.MatchString(t.BotToken) {
 		return errors.New("TELEGRAM_BOT_TOKEN must be the token BotFather gives: digits, a colon, then at least 30 letters, digits, _ or -")
 	}
@@ -432,7 +437,7 @@ func (c TelegramPoll) validate() error {
 		return err
 	}
 	if c.Env != "development" {
-		return fmt.Errorf("the Telegram poller only runs in development, not %s; staging and production use the webhook", c.Env)
+		return fmt.Errorf("the Telegram poller only runs in development, not %s; staging uses the webhook", c.Env)
 	}
 	if !c.Telegram.Enabled() {
 		return errors.New("the Telegram poller needs TELEGRAM_BOT_TOKEN (and TELEGRAM_BOT_USERNAME) in services/api/.env")

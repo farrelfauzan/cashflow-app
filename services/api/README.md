@@ -341,13 +341,14 @@ https://www.twilio.com/docs/api/errors.
 
 ### Telegram bot in development (polling)
 
-Telegram is the second messaging channel (decision 42). Staging and production will receive the
-bot's updates on a webhook; on a developer machine `make telegram-poll` runs `cmd/telegrampoll`,
+Telegram is a demo channel only (decision 42), like the Twilio sandbox: it shows the flows end to
+end in development and staging with test accounts, and the API and worker refuse any `TELEGRAM_*`
+setting in production. Staging will receive the bot's updates on a webhook; on a developer machine `make telegram-poll` runs `cmd/telegrampoll`,
 which asks Telegram for updates by long polling instead, so no public address or tunnel is
 needed. It refuses to start unless `APP_ENV=development` and a bot token is set.
 
 1. In Telegram, open @BotFather, send `/newbot` and follow it. Use a development bot of your own,
-   never the staging or production bot. BotFather answers with the bot's username and its token.
+   never the staging bot. BotFather answers with the bot's username and its token.
 2. In `services/api/.env` set `TELEGRAM_BOT_TOKEN` (the token) and `TELEGRAM_BOT_USERNAME` (the
    username without the @). Never commit the token and never paste it in a chat, an issue or a
    pull request; if it leaks, revoke it in BotFather (`/revoke`) and set the new one.
