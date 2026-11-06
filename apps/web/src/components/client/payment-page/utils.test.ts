@@ -12,7 +12,9 @@ import type {
 import type {
   OpenPaymentPageView,
   PayFlowMode,
+  PromiseDraft,
   PromiseOfferView,
+  PromisePaying,
   PreviewView,
   QrisCard,
   QrisEvent,
@@ -53,7 +55,8 @@ import {
   promiseFormView,
   promiseOfferView,
   promiseRecordedView,
-  promiseRequest,
+  promiseFormError,
+  promiseSchema,
   promiseSaved,
   showsPayBack,
   toPayChoice,
@@ -2224,36 +2227,52 @@ describe("the Janji screen", () => {
   });
 });
 
-describe("promiseRequest", () => {
+// What "Simpan janji" sends for these fields, or each message by the field it goes under.
+function checkPromise(
+  draft: PromiseDraft,
+  offer: PromiseOfferView,
+  paying: PromisePaying | null,
+) {
+  const result = promiseSchema(offer, paying).safeParse(draft);
+  if (result.success) return { ok: true, body: result.data };
+  return {
+    ok: false,
+    errors: Object.fromEntries(
+      result.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+    ),
+  };
+}
+
+describe("promiseSchema", () => {
   it("sends Bareng tagihan without a date, the amount only when typed", () => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "with_next_invoice", date: "2026-11-20", amountText: "" },
         OFFER,
         null,
       ),
-    ).toEqual({ kind: "valid", body: { kind: "with_next_invoice" } });
+    ).toEqual({ ok: true, body: { kind: "with_next_invoice" } });
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "with_next_invoice", date: "", amountText: "500.000" },
         OFFER,
         null,
       ),
     ).toEqual({
-      kind: "valid",
+      ok: true,
       body: { kind: "with_next_invoice", promisedAmount: 500_000 },
     });
   });
 
   it("sends the chosen date and what is paid now", () => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "specific_date", date: "2026-11-20", amountText: "" },
         OFFER,
         PAYING,
       ),
     ).toEqual({
-      kind: "valid",
+      ok: true,
       body: {
         kind: "specific_date",
         promisedDate: "2026-11-20",
@@ -2264,15 +2283,12 @@ describe("promiseRequest", () => {
 
   it("asks for a date", () => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "specific_date", date: "", amountText: "" },
         OFFER,
         null,
       ),
-    ).toEqual({
-      kind: "invalid",
-      error: { target: "promisedDate", message: PROMISE_DATE_REQUIRED_TEXT },
-    });
+    ).toEqual({ ok: false, errors: { date: PROMISE_DATE_REQUIRED_TEXT } });
   });
 
   it.each([
@@ -2280,79 +2296,121 @@ describe("promiseRequest", () => {
     { name: "after the latest", date: "2027-01-02" },
   ])("refuses a date $name", ({ date }) => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "specific_date", date, amountText: "" },
         OFFER,
         null,
       ),
     ).toEqual({
-      kind: "invalid",
-      error: {
-        target: "promisedDate",
-        message: "Pilih tanggal dari 3 Nov 2026 sampai 1 Jan 2027.",
-      },
+      ok: false,
+      errors: { date: "Pilih tanggal dari 3 Nov 2026 sampai 1 Jan 2027." },
     });
   });
 
   it("takes both bounds", () => {
     for (const date of ["2026-11-03", "2027-01-01"]) {
       expect(
-        promiseRequest(
+        checkPromise(
           { kind: "specific_date", date, amountText: "" },
           OFFER,
           null,
-        ).kind,
-      ).toBe("valid");
+        ).ok,
+      ).toBe(true);
     }
   });
 
   it("sends a date when Bareng tagihan is no longer offered", () => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "with_next_invoice", date: "", amountText: "" },
         NO_NEXT_OFFER,
         null,
       ),
+    ).toEqual({ ok: false, errors: { date: PROMISE_DATE_REQUIRED_TEXT } });
+    expect(
+      checkPromise(
+        { kind: "with_next_invoice", date: "2026-11-20", amountText: "" },
+        NO_NEXT_OFFER,
+        null,
+      ),
     ).toEqual({
-      kind: "invalid",
-      error: { target: "promisedDate", message: PROMISE_DATE_REQUIRED_TEXT },
+      ok: true,
+      body: { kind: "specific_date", promisedDate: "2026-11-20" },
     });
+  });
+
+  it("shows only the first wrong field", () => {
+    expect(
+      checkPromise(
+        { kind: "specific_date", date: "", amountText: "0" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({ ok: false, errors: { date: PROMISE_DATE_REQUIRED_TEXT } });
   });
 
   it("refuses an amount of 0", () => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "with_next_invoice", date: "", amountText: "0" },
         OFFER,
         null,
       ),
-    ).toEqual({
-      kind: "invalid",
-      error: { target: "promisedAmount", message: PROMISE_AMOUNT_MIN_TEXT },
-    });
+    ).toEqual({ ok: false, errors: { amountText: PROMISE_AMOUNT_MIN_TEXT } });
   });
 
   it("refuses an amount above the rest", () => {
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "with_next_invoice", date: "", amountText: "1.250.001" },
         OFFER,
         PAYING,
       ),
     ).toEqual({
-      kind: "invalid",
-      error: {
-        target: "promisedAmount",
-        message: "Nominal janji paling banyak Rp1.250.000.",
-      },
+      ok: false,
+      errors: { amountText: "Nominal janji paling banyak Rp1.250.000." },
     });
     expect(
-      promiseRequest(
+      checkPromise(
         { kind: "with_next_invoice", date: "", amountText: "1.250.000" },
         OFFER,
         PAYING,
-      ).kind,
-    ).toBe("valid");
+      ).ok,
+    ).toBe(true);
+  });
+});
+
+describe("promiseFormError", () => {
+  it("puts each field the API names under the form field showing it", () => {
+    const refused = (field: string) =>
+      new ApiError({
+        status: 400,
+        code: "validation_failed",
+        message: "Periksa lagi.",
+        field,
+      });
+    expect(promiseFormError(refused("kind"), "specific_date").field).toBe(
+      "kind",
+    );
+    expect(
+      promiseFormError(refused("promisedDate"), "specific_date").field,
+    ).toBe("date");
+    expect(
+      promiseFormError(refused("promisedDate"), "with_next_invoice").field,
+    ).toBeNull();
+    expect(
+      promiseFormError(refused("promisedAmount"), "specific_date"),
+    ).toEqual({ field: "amountText", message: "Periksa lagi." });
+    expect(
+      promiseFormError(refused("payingNow"), "specific_date").field,
+    ).toBeNull();
+  });
+
+  it("shows anything that is not the API's answer in the alert", () => {
+    expect(promiseFormError(new Error("boom"), "specific_date")).toEqual({
+      field: null,
+      message: GENERIC_ERROR_MESSAGE,
+    });
   });
 });
 

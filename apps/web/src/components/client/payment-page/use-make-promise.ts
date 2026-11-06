@@ -44,7 +44,7 @@ export function useMakePromise({
       const view = promiseErrorView(error, body.kind);
       if (view.kind === "link-gone") onLinkGone();
       else if (view.refetchPage) void refetchPage();
-      return { kind: "failed", error: view };
+      return { kind: "failed", error: view, cause: error };
     } finally {
       running.current = false;
     }

@@ -14,6 +14,7 @@ import type {
   QrisStatus,
 } from "@/lib/api/generated/model";
 import { PromiseKind } from "@/lib/api/generated/model";
+import type { FormError } from "@/lib/api/form-error";
 import {
   formatDate,
   formatDateTime,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/format/date";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { groupRupiahDigits } from "@/lib/format/rupiah-input";
+import { z } from "zod";
 
 import type {
   ActivePromiseView,
@@ -39,7 +41,6 @@ import type {
   PromiseOfferView,
   PromisePaying,
   RecordedView,
-  PromiseRequestCheck,
   RecordedFlowMode,
   PaidPaymentPageView,
   PaymentPageErrorKind,
@@ -1397,49 +1398,60 @@ export function promiseAmountMaxText(rest: number): string {
   return `Nominal janji paling banyak ${formatRupiah(rest)}.`;
 }
 
-function invalidPromise(
-  target: PromiseErrorTarget,
-  message: string,
-): PromiseRequestCheck {
-  return { kind: "invalid", error: { target, message } };
-}
+// The form fields of "Janji pelunasan" that a message can go under, the API's own field names
+// mapped to them by promiseFormError.
+export const PROMISE_FORM_API_FIELDS = ["kind", "date", "amountText"] as const;
 
-// The request "Simpan janji" sends, or the first field that is wrong by comparison: a missing or
-// out-of-range date, an amount of 0 or above the rest. The API checks everything again and its
-// message wins. The date is sent only for "Pilih tanggal sendiri", the amount only when typed
-// (empty is everything left), payingNow only when something is paid right after.
-export function promiseRequest(
-  draft: PromiseDraft,
+// "Simpan janji": the request it sends, or the first field that is wrong by comparison (a
+// missing or out-of-range date, an amount of 0 or above the rest) with its message under it. The
+// API checks everything again and its message wins. The date is sent only for "Pilih tanggal
+// sendiri", the amount only when typed (empty is everything left), payingNow only when something
+// is paid right after. A kind no longer offered is sent as "Pilih tanggal sendiri".
+export function promiseSchema(
   offer: PromiseOfferView,
   paying: PromisePaying | null,
-): PromiseRequestCheck {
-  const kind = offeredPromiseKind(draft.kind, offer);
-  const body: MakePaymentPromiseRequest = { kind };
-  if (kind === PromiseKind.specific_date) {
-    if (draft.date === "") {
-      return invalidPromise("promisedDate", PROMISE_DATE_REQUIRED_TEXT);
-    }
-    if (draft.date < offer.earliest || draft.date > offer.latest) {
-      return invalidPromise(
-        "promisedDate",
-        promiseDateRangeText(offer.earliest, offer.latest),
-      );
-    }
-    body.promisedDate = draft.date;
-  }
-  if (draft.amountText.trim() !== "") {
-    const amount = parseRupiahInput(draft.amountText);
-    if (amount === null || amount < 1) {
-      return invalidPromise("promisedAmount", PROMISE_AMOUNT_MIN_TEXT);
-    }
-    const rest = promiseRest(offer, paying);
-    if (amount > rest) {
-      return invalidPromise("promisedAmount", promiseAmountMaxText(rest));
-    }
-    body.promisedAmount = amount;
-  }
-  if (paying !== null) body.payingNow = paying.amount;
-  return { kind: "valid", body };
+) {
+  return z
+    .object({
+      kind: z.enum(PromiseKind),
+      date: z.string(),
+      amountText: z.string(),
+    })
+    .transform((draft, ctx): MakePaymentPromiseRequest => {
+      const invalid = (
+        field: (typeof PROMISE_FORM_API_FIELDS)[number],
+        message: string,
+      ) => {
+        ctx.addIssue({ code: "custom", path: [field], message });
+        return z.NEVER;
+      };
+      const kind = offeredPromiseKind(draft.kind, offer);
+      const body: MakePaymentPromiseRequest = { kind };
+      if (kind === PromiseKind.specific_date) {
+        if (draft.date === "")
+          return invalid("date", PROMISE_DATE_REQUIRED_TEXT);
+        if (draft.date < offer.earliest || draft.date > offer.latest) {
+          return invalid(
+            "date",
+            promiseDateRangeText(offer.earliest, offer.latest),
+          );
+        }
+        body.promisedDate = draft.date;
+      }
+      if (draft.amountText.trim() !== "") {
+        const amount = parseRupiahInput(draft.amountText);
+        if (amount === null || amount < 1) {
+          return invalid("amountText", PROMISE_AMOUNT_MIN_TEXT);
+        }
+        const rest = promiseRest(offer, paying);
+        if (amount > rest) {
+          return invalid("amountText", promiseAmountMaxText(rest));
+        }
+        body.promisedAmount = amount;
+      }
+      if (paying !== null) body.payingNow = paying.amount;
+      return body;
+    });
 }
 
 // Answers after which what the page shows is out of date: nothing is owed any more, the amount
@@ -1490,6 +1502,30 @@ export function promiseErrorView(
     kind: "shown",
     error: { target, message: error.message },
     refetchPage: PROMISE_REFETCH_CODES.has(error.code),
+  };
+}
+
+// The form field each place of promiseErrorView is shown in; null for the alert.
+const PROMISE_ERROR_FIELDS: Record<
+  PromiseErrorTarget,
+  (typeof PROMISE_FORM_API_FIELDS)[number] | null
+> = {
+  kind: "kind",
+  promisedDate: "date",
+  promisedAmount: "amountText",
+  alert: null,
+};
+
+// Where the Janji form shows a refused makePaymentPromise of this kind, as promiseErrorView
+// places it. A link that stopped working replaces the page, so it never reaches the form.
+export function promiseFormError(error: unknown, kind: PromiseKind): FormError {
+  const view = promiseErrorView(error, kind);
+  if (view.kind !== "shown") {
+    return { field: null, message: GENERIC_ERROR_MESSAGE };
+  }
+  return {
+    field: PROMISE_ERROR_FIELDS[view.error.target],
+    message: view.error.message,
   };
 }
 

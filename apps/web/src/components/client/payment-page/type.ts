@@ -190,11 +190,6 @@ export type PromiseFormError = {
   message: string;
 };
 
-// The Janji fields checked by comparison before sending; the API checks everything again.
-export type PromiseRequestCheck =
-  | { kind: "valid"; body: MakePaymentPromiseRequest }
-  | { kind: "invalid"; error: PromiseFormError };
-
 // What a refused makePaymentPromise means on screen.
 export type PromiseErrorView =
   // The link stopped working: the page shows "Link tidak berlaku".
@@ -205,7 +200,8 @@ export type PromiseErrorView =
 // The end of one "Simpan janji".
 export type PromiseSaveResult =
   | { kind: "saved"; promise: PaymentPromise }
-  | { kind: "failed"; error: PromiseErrorView }
+  // `cause` is the request's own error, for the form to place.
+  | { kind: "failed"; error: PromiseErrorView; cause: unknown }
   // Another save of this form is still running; nothing was sent.
   | { kind: "busy" };
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { Controller, useWatch } from "react-hook-form";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { useApiForm } from "@/components/client/form/use-api-form";
 import { Button } from "@/components/ui/button";
 import type { PaymentPage, PaymentPromise } from "@/lib/api/generated/model";
 import { PromiseKind } from "@/lib/api/generated/model";
@@ -16,18 +17,18 @@ import { PromiseDateField } from "./promise-date-field";
 import type {
   PaymentPageHeaderView,
   PromiseDraft,
-  PromiseErrorTarget,
-  PromiseFormError,
   PromiseOfferView,
   PromisePaying,
 } from "./type";
 import { useMakePromise } from "./use-make-promise";
 import {
+  PROMISE_FORM_API_FIELDS,
   PROMISE_KIND_LEGEND,
   PROMISE_SAVING_TEXT,
   offeredPromiseKind,
+  promiseFormError,
   promiseFormView,
-  promiseRequest,
+  promiseSchema,
   toPromiseKind,
 } from "./utils";
 
@@ -63,60 +64,32 @@ export function PromiseForm({
   onSaved,
   onBack,
 }: PromiseFormProps) {
-  const [draft, setDraft] = useState<PromiseDraft>(initial);
-  const [error, setError] = useState<PromiseFormError | null>(null);
   const { save, pending } = useMakePromise({ token, refetchPage, onLinkGone });
-
-  const kindRef = useRef<HTMLDivElement>(null);
-  const dateRef = useRef<HTMLInputElement>(null);
-  const amountRef = useRef<HTMLInputElement>(null);
-
   const formView = promiseFormView(offer, paying, editing);
-  const kind = offeredPromiseKind(draft.kind, offer);
+  const { form, showApiError, alert } = useApiForm({
+    schema: promiseSchema(offer, paying),
+    defaultValues: initial,
+    apiFields: PROMISE_FORM_API_FIELDS,
+    // `kind` (below) is this render's, the one whose submit sent the request, so the date's
+    // error goes under its input only when that request was for "Pilih tanggal sendiri".
+    apiError: (error) => promiseFormError(error, kind),
+  });
+  const kind = offeredPromiseKind(
+    useWatch({ control: form.control, name: "kind" }),
+    offer,
+  );
 
-  function errorFor(target: PromiseErrorTarget): string | null {
-    return error !== null && error.target === target ? error.message : null;
-  }
-
-  function show(next: PromiseFormError) {
-    setError(next);
-    const target =
-      next.target === "kind"
-        ? kindRef.current
-        : next.target === "promisedDate"
-          ? dateRef.current
-          : next.target === "promisedAmount"
-            ? amountRef.current
-            : null;
-    target?.focus();
-  }
-
-  // Editing a field clears its error; the next save checks it again.
-  function edit(change: Partial<PromiseDraft>, clears: PromiseErrorTarget[]) {
-    setDraft((current) => ({ ...current, ...change }));
-    if (error !== null && clears.includes(error.target)) setError(null);
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const submit = form.handleSubmit(async (body) => {
     if (pending) return;
-    const check = promiseRequest(draft, offer, paying);
-    if (check.kind === "invalid") {
-      show(check.error);
-      return;
-    }
-    setError(null);
-    const result = await save(check.body);
+    const result = await save(body);
     if (result.kind === "saved") {
       onSaved(result.promise);
       return;
     }
     if (result.kind === "failed" && result.error.kind === "shown") {
-      show(result.error.error);
+      showApiError(result.cause);
     }
-  }
-
-  const alert = errorFor("alert");
+  });
 
   return (
     <form
@@ -126,36 +99,62 @@ export function PromiseForm({
     >
       <PaymentPageHeader header={header} />
       <p className="text-sm font-semibold md:text-base">{formView.subline}</p>
-      <ChoiceRadioGroup
-        groupRef={kindRef}
-        legend={PROMISE_KIND_LEGEND}
-        legendHidden
-        options={formView.kindOptions}
-        value={kind}
-        onChange={(value) => {
-          const next = toPromiseKind(value);
-          if (next !== null) edit({ kind: next }, ["kind", "promisedDate"]);
-        }}
-        error={errorFor("kind")}
+      <Controller
+        control={form.control}
+        name="kind"
+        render={({ field, fieldState }) => (
+          <ChoiceRadioGroup
+            groupRef={field.ref}
+            legend={PROMISE_KIND_LEGEND}
+            legendHidden
+            options={formView.kindOptions}
+            value={kind}
+            onChange={(value) => {
+              const next = toPromiseKind(value);
+              if (next === null) return;
+              field.onChange(next);
+              form.clearErrors(["kind", "date"]);
+            }}
+            error={fieldState.error?.message ?? null}
+          />
+        )}
       />
       {kind === PromiseKind.specific_date && (
-        <PromiseDateField
-          inputRef={dateRef}
-          value={draft.date}
-          min={formView.dateMin}
-          max={formView.dateMax}
-          onChange={(date) => edit({ date }, ["promisedDate"])}
-          error={errorFor("promisedDate")}
+        <Controller
+          control={form.control}
+          name="date"
+          render={({ field, fieldState }) => (
+            <PromiseDateField
+              inputRef={field.ref}
+              value={field.value}
+              min={formView.dateMin}
+              max={formView.dateMax}
+              onChange={(date) => {
+                field.onChange(date);
+                form.clearErrors("date");
+              }}
+              error={fieldState.error?.message ?? null}
+            />
+          )}
         />
       )}
-      <PromiseAmountField
-        inputRef={amountRef}
-        text={draft.amountText}
-        hint={formView.amountHint}
-        onTextChange={(amountText) => edit({ amountText }, ["promisedAmount"])}
-        error={errorFor("promisedAmount")}
+      <Controller
+        control={form.control}
+        name="amountText"
+        render={({ field, fieldState }) => (
+          <PromiseAmountField
+            inputRef={field.ref}
+            text={field.value}
+            hint={formView.amountHint}
+            onTextChange={(amountText) => {
+              field.onChange(amountText);
+              form.clearErrors("amountText");
+            }}
+            error={fieldState.error?.message ?? null}
+          />
+        )}
       />
-      {alert !== null && <FormAlert message={alert} />}
+      {alert !== undefined && <FormAlert message={alert} />}
       <div className="mt-auto flex flex-col gap-2">
         <Button
           type="submit"
