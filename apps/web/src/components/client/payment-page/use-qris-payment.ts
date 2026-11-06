@@ -89,8 +89,15 @@ export function useQrisPayment({
       // Each answer is an event for the state machine; the cached value itself is not shown.
       queryFn: async ({ signal }) => {
         try {
+          // A "Saya sudah bayar" that starts or ends meanwhile makes this answer stale.
+          const checks = current.current.checks;
           const answer = await getPaymentStatus(token, undefined, signal);
-          apply({ type: "status-read", status: answer, now: Date.now() });
+          apply({
+            type: "status-read",
+            status: answer,
+            now: Date.now(),
+            checks,
+          });
           return answer;
         } catch (error) {
           if (!signal.aborted) apply({ type: "status-failed", error });

@@ -54,8 +54,10 @@ export type OpenPaymentPageView = {
 export type QrisOfferView = {
   // The API's outstanding, sent as is as the QR's amount (never computed here).
   outstanding: number;
-  // "Bayar QRIS Rp2.250.000", or null above Rp10.000.000, where QRIS cannot take it in one go.
-  startLabel: string | null;
+  // "Bayar QRIS Rp2.250.000"; "Bayar QRIS Rp10.000.000" when more is owed (one QR's most).
+  startLabel: string;
+  // Shown when more than Rp10.000.000 is owed: one QR pays at most that, the rest later.
+  limitNote: string | null;
   // "qris-kamar-07.png": the name "Unduh QR" saves under; never holds the token.
   downloadName: string;
 };
@@ -131,14 +133,18 @@ export type QrisModel = {
   // "Saya sudah bayar" is running: status reads that land meanwhile are ignored, so an older
   // "pending" never overwrites the check's answer.
   checkRunning: boolean;
+  // Counts each start and end of "Saya sudah bayar". A status read that began under another
+  // count is stale (it may say "pending" after the check said "checking") and is dropped.
+  checks: number;
 };
 
 // What happens on the QRIS card, with the time of the event (epoch ms) where it matters.
 export type QrisEvent =
-  | { type: "status-read"; status: QrisStatus; now: number }
+  // `checks`: the model's count when the read began.
+  | { type: "status-read"; status: QrisStatus; now: number; checks: number }
   | { type: "status-failed"; error: unknown }
   | { type: "create-started" }
-  // The amount cannot go to QRIS after all (nothing owed, or above Rp10.000.000).
+  // Nothing is owed after all, so no QR is asked for.
   | { type: "create-skipped" }
   | { type: "created"; status: QrisStatus; now: number }
   | { type: "create-failed"; error: unknown; now: number }

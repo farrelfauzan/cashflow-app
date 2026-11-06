@@ -3,6 +3,7 @@ import {
   request as playwrightRequest,
   test,
   type APIRequestContext,
+  type Locator,
   type Page,
   type TestInfo,
 } from "@playwright/test";
@@ -54,8 +55,8 @@ const EXPIRED_TEXT =
 const EXPIRED_NOTE = "Belum ada pembayaran yang masuk dari QR ini.";
 const UNAVAILABLE_TEXT =
   "QRIS sedang gangguan. Pakai transfer bank dulu; tagihan tetap berjalan seperti biasa.";
-const ABOVE_LIMIT_TEXT =
-  "QRIS hanya sampai Rp10.000.000 sekali bayar. Pakai transfer bank untuk tagihan ini.";
+const LIMIT_NOTE =
+  "QRIS paling banyak Rp10.000.000 sekali bayar. Sisanya bayar dengan QR berikutnya atau transfer bank.";
 
 // The tenant: no cookies, no storage, and a client address of the test's own (see
 // tenantClientAddress).
@@ -173,7 +174,10 @@ function qrImage(page: Page, fixture: QrisFixture) {
 
 // The QR image is on screen and its PNG loaded.
 async function expectQrImageLoaded(page: Page, fixture: QrisFixture) {
-  const image = qrImage(page, fixture);
+  await expectImageLoaded(qrImage(page, fixture));
+}
+
+async function expectImageLoaded(image: Locator) {
   await expect(image).toBeVisible();
   await expect
     .poll(() =>
@@ -440,15 +444,29 @@ test("an expired QR from an earlier visit does not show on a new one", async ({
   await finish(fixture);
 });
 
-test("above Rp10.000.000 the QRIS tab says to transfer instead", async ({
+test("above Rp10.000.000 one QR asks for Rp10.000.000 and says the rest comes later", async ({
   page,
 }, testInfo) => {
   // Two months of a room above Rp5.000.000.
   const fixture = await openQrisPage(page, testInfo, 8, 5_100_000);
   expect(fixture.expected.outstanding).toBeGreaterThan(10_000_000);
 
-  await expect(page.getByText(ABOVE_LIMIT_TEXT)).toBeVisible();
-  await expect(page.getByRole("button", { name: /Bayar QRIS/ })).toHaveCount(0);
-  await expect(page.getByRole("button")).toHaveCount(0);
+  await expect(page.getByText(LIMIT_NOTE)).toBeVisible();
+  const start = page.getByRole("button", { name: "Bayar QRIS Rp10.000.000" });
+  await expectTouchTarget(start);
+  await start.click();
+
+  // The stand-in tells QRs apart only by amount, and both projects make a Rp10.000.000 QR here,
+  // so this test reads the page, not the stand-in, and leaves the QR unpaid.
+  await expectImageLoaded(
+    page.getByRole("img", { name: "Kode QRIS Rp10.000.000" }),
+  );
+  await expect(page.getByRole("link", { name: "Unduh QR" })).toBeVisible();
+  await expect(page.getByText(LIMIT_NOTE)).toBeVisible();
+  // The summary still shows the whole total the API gave.
+  await expect(
+    page.getByText(formatRupiah(fixture.expected.outstanding)).first(),
+  ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-qris-above-limit");
   await finish(fixture);
 });

@@ -295,8 +295,8 @@ export const QRIS_TAB_TEXT = "QRIS";
 export const TRANSFER_TAB_TEXT = "Transfer bank";
 
 export const QRIS_AMOUNT_LABEL = "Jumlah";
-export const QRIS_ABOVE_LIMIT_TEXT =
-  "QRIS hanya sampai Rp10.000.000 sekali bayar. Pakai transfer bank untuk tagihan ini.";
+export const QRIS_LIMIT_NOTE =
+  "QRIS paling banyak Rp10.000.000 sekali bayar. Sisanya bayar dengan QR berikutnya atau transfer bank.";
 export const QRIS_CREATING_TEXT = "Membuat QR…";
 export const QRIS_HELP_TEXT =
   "Bayar dari HP ini? Unduh QR, lalu pilih dari galeri di aplikasi bank atau e-wallet.";
@@ -323,17 +323,22 @@ export const QRIS_METHOD_VALUE = "QRIS";
 export const QRIS_UNAVAILABLE_TEXT =
   "QRIS sedang gangguan. Pakai transfer bank dulu; tagihan tetap berjalan seperti biasa.";
 
-// "Bayar QRIS Rp2.250.000", or null when the total is above what one QR can take.
-export function qrisStartLabel(outstanding: number): string | null {
-  if (outstanding > QRIS_LIMIT) return null;
-  return `Bayar QRIS ${formatRupiah(outstanding)}`;
+// The amount one QR asks for: the API's outstanding as is, or Rp10.000.000 when more is owed
+// (the most one QR can take; the rest is paid by a next QR or a transfer). Null when nothing is
+// owed. Choosing the smaller of two API-given limits, not computing rupiah.
+export function qrisCreateAmount(outstanding: number): number | null {
+  if (outstanding < 1) return null;
+  return Math.min(outstanding, QRIS_LIMIT);
 }
 
-// The amount to ask a QR for: the API's outstanding as is, or null when QRIS cannot take it
-// (nothing owed, or above Rp10.000.000).
-export function qrisCreateAmount(outstanding: number): number | null {
-  if (outstanding < 1 || outstanding > QRIS_LIMIT) return null;
-  return outstanding;
+// "Bayar QRIS Rp2.250.000", or "Bayar QRIS Rp10.000.000" when more than that is owed.
+export function qrisStartLabel(outstanding: number): string {
+  return `Bayar QRIS ${formatRupiah(Math.min(outstanding, QRIS_LIMIT))}`;
+}
+
+// Says one QR pays at most Rp10.000.000, when more than that is owed; null otherwise.
+export function qrisLimitNote(outstanding: number): string | null {
+  return outstanding > QRIS_LIMIT ? QRIS_LIMIT_NOTE : null;
 }
 
 // The file name "Unduh QR" saves under: "qris-kamar-07.png", "qris-tagihan.png". Built from the
@@ -354,6 +359,7 @@ export function qrisOfferView(page: PaymentPage): QrisOfferView | null {
   return {
     outstanding: page.outstanding,
     startLabel: qrisStartLabel(page.outstanding),
+    limitNote: qrisLimitNote(page.outstanding),
     downloadName: qrisDownloadName(page.invoice.unitLabel),
   };
 }
@@ -461,6 +467,7 @@ export const INITIAL_QRIS_MODEL: QrisModel = {
   tab: "qris",
   alert: null,
   checkRunning: false,
+  checks: 0,
 };
 
 // Whether "Bayar QRIS" or "Buat QR baru" may start a request now.
@@ -581,8 +588,10 @@ function statusRead(
   model: QrisModel,
   status: QrisStatus,
   now: number,
+  checks: number,
 ): QrisStep {
-  if (model.checkRunning) return step(model);
+  // A read that began before the latest check started or ended can be older than its answer.
+  if (model.checkRunning || checks !== model.checks) return step(model);
   const { card } = model;
   switch (card.kind) {
     // On load only a QR that can still be paid, or one being checked, comes back. A paid or
@@ -700,7 +709,11 @@ function createFailed(model: QrisModel, error: unknown, now: number): QrisStep {
 }
 
 function checked(model: QrisModel, status: QrisStatus): QrisStep {
-  const done = { ...model, checkRunning: false };
+  const done = {
+    ...model,
+    checkRunning: false,
+    checks: model.checks + 1,
+  };
   const fallback = cardAmount(model.card);
   switch (status.status) {
     case "checking":
@@ -725,7 +738,11 @@ function checked(model: QrisModel, status: QrisStatus): QrisStep {
 }
 
 function checkFailed(model: QrisModel, error: unknown): QrisStep {
-  const done = { ...model, checkRunning: false };
+  const done = {
+    ...model,
+    checkRunning: false,
+    checks: model.checks + 1,
+  };
   if (error instanceof ApiError) {
     if (error.code === "qris_busy") return step(done, { pollNow: true });
     if (error.code === "qris_not_found") {
@@ -745,7 +762,7 @@ function checkFailed(model: QrisModel, error: unknown): QrisStep {
 export function qrisStep(model: QrisModel, event: QrisEvent): QrisStep {
   switch (event.type) {
     case "status-read":
-      return statusRead(model, event.status, event.now);
+      return statusRead(model, event.status, event.now, event.checks);
     case "status-failed":
       return statusFailed(model, event.error);
     case "create-started":
@@ -765,7 +782,12 @@ export function qrisStep(model: QrisModel, event: QrisEvent): QrisStep {
       return createFailed(model, event.error, event.now);
     case "check-started":
       if (!canCheckQris(model)) return step(model);
-      return step({ ...model, checkRunning: true, alert: null });
+      return step({
+        ...model,
+        checkRunning: true,
+        checks: model.checks + 1,
+        alert: null,
+      });
     case "checked":
       if (!model.checkRunning) return step(model);
       return checked(model, event.status);

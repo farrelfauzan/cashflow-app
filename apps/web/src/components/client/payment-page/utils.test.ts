@@ -25,6 +25,7 @@ import {
   qrisDownloadName,
   qrisImageAlt,
   qrisImageUrl,
+  qrisLimitNote,
   qrisOfferView,
   qrisStartLabel,
   qrisStep,
@@ -549,33 +550,50 @@ describe("qrisOfferView", () => {
     expect(qrisOfferView(page({ qrisAvailable: true }))).toEqual({
       outstanding: 2_250_000,
       startLabel: "Bayar QRIS Rp2.250.000",
+      limitNote: null,
       downloadName: "qris-kamar-07.png",
     });
     const view = paymentPageView(page({ qrisAvailable: true }));
     expect(view.status === "open" && view.qris?.outstanding).toBe(2_250_000);
   });
 
-  it("has no Bayar QRIS button above Rp10.000.000", () => {
-    expect(
-      qrisOfferView(page({ qrisAvailable: true, outstanding: 10_000_001 }))
-        ?.startLabel,
-    ).toBeNull();
+  it("offers a Rp10.000.000 QR with a note when more is owed", () => {
+    const offer = qrisOfferView(
+      page({ qrisAvailable: true, outstanding: 12_500_000 }),
+    );
+    expect(offer?.outstanding).toBe(12_500_000);
+    expect(offer?.startLabel).toBe("Bayar QRIS Rp10.000.000");
+    expect(offer?.limitNote).toBe(
+      "QRIS paling banyak Rp10.000.000 sekali bayar. Sisanya bayar dengan QR berikutnya atau transfer bank.",
+    );
   });
 });
 
 describe("the Rp10.000.000 rule", () => {
   it.each([
-    { outstanding: 1, label: "Bayar QRIS Rp1", amount: 1 },
+    { outstanding: 1, label: "Bayar QRIS Rp1", amount: 1, note: false },
     {
       outstanding: 10_000_000,
       label: "Bayar QRIS Rp10.000.000",
       amount: 10_000_000,
+      note: false,
     },
-    { outstanding: 10_000_001, label: null, amount: null },
-    { outstanding: 25_000_000, label: null, amount: null },
-  ])("$outstanding", ({ outstanding, label, amount }) => {
+    {
+      outstanding: 10_000_001,
+      label: "Bayar QRIS Rp10.000.000",
+      amount: 10_000_000,
+      note: true,
+    },
+    {
+      outstanding: 25_000_000,
+      label: "Bayar QRIS Rp10.000.000",
+      amount: 10_000_000,
+      note: true,
+    },
+  ])("$outstanding", ({ outstanding, label, amount, note }) => {
     expect(qrisStartLabel(outstanding)).toBe(label);
     expect(qrisCreateAmount(outstanding)).toBe(amount);
+    expect(qrisLimitNote(outstanding) !== null).toBe(note);
   });
 
   it("asks no QR when nothing is owed", () => {
@@ -766,6 +784,7 @@ describe("qrisStep, resuming on load", () => {
   function read(answer: QrisStatus) {
     return qrisStep(resuming, {
       type: "status-read",
+      checks: 0,
       status: answer,
       now: NOW,
     });
@@ -1069,7 +1088,12 @@ describe("qrisStep, waiting after qris_busy", () => {
   const waiting = model({ kind: "waiting", until: NOW + BUSY_WAIT_MS });
 
   function read(answer: QrisStatus, now = NOW) {
-    return qrisStep(waiting, { type: "status-read", status: answer, now });
+    return qrisStep(waiting, {
+      type: "status-read",
+      checks: 0,
+      status: answer,
+      now,
+    });
   }
 
   it("shows the other request's QR once it is there", () => {
@@ -1203,6 +1227,7 @@ describe("qrisStep, polling a QR of this visit", () => {
   ])("$name", ({ from, answer, card, refetchPage }) => {
     const step = qrisStep(model(from), {
       type: "status-read",
+      checks: 0,
       status: answer,
       now: NOW,
     });
@@ -1214,6 +1239,7 @@ describe("qrisStep, polling a QR of this visit", () => {
   it("keeps the alert while the card stays the same", () => {
     const step = qrisStep(model(PENDING, { alert: "Pesan." }), {
       type: "status-read",
+      checks: 0,
       status: status({ status: "pending", amount: 1, expiresAt: at(1) }),
       now: NOW,
     });
@@ -1255,7 +1281,12 @@ describe("qrisStep, polling a QR of this visit", () => {
         status({ status: "pending", amount: 1, expiresAt: at(600_000) }),
       ]) {
         expect(
-          qrisStep(before, { type: "status-read", status: answer, now: NOW }),
+          qrisStep(before, {
+            type: "status-read",
+            checks: 0,
+            status: answer,
+            now: NOW,
+          }),
         ).toEqual({ model: before, ...NO_EFFECTS });
       }
     },
@@ -1266,6 +1297,7 @@ describe("qrisStep, polling a QR of this visit", () => {
     expect(
       qrisStep(before, {
         type: "status-read",
+        checks: 0,
         status: status({ status: "expired", amount: 1 }),
         now: NOW,
       }).model,
@@ -1274,7 +1306,9 @@ describe("qrisStep, polling a QR of this visit", () => {
 });
 
 describe("qrisStep, Saya sudah bayar", () => {
-  const running = model(PENDING, { checkRunning: true });
+  // One check started (checks 1); its answer ends it (checks 2).
+  const running = model(PENDING, { checkRunning: true, checks: 1 });
+  const DONE = { checks: 2 };
 
   it("runs only under a live QR, once at a time", () => {
     expect(canCheckQris(model(PENDING))).toBe(true);
@@ -1323,7 +1357,7 @@ describe("qrisStep, Saya sudah bayar", () => {
       status: answer,
       now: NOW,
     });
-    expect(step.model).toEqual(model(card as QrisCard));
+    expect(step.model).toEqual(model(card as QrisCard, DONE));
     expect(step.refetchPage).toBe(refetchPage);
   });
 
@@ -1333,7 +1367,7 @@ describe("qrisStep, Saya sudah bayar", () => {
 
   it("polls on 409 qris_busy", () => {
     expect(failed(qrisError(409, "qris_busy"))).toEqual({
-      model: model(PENDING),
+      model: model(PENDING, DONE),
       ...NO_EFFECTS,
       pollNow: true,
     });
@@ -1341,7 +1375,7 @@ describe("qrisStep, Saya sudah bayar", () => {
 
   it("goes idle on 404 qris_not_found, which is not a dead link", () => {
     expect(failed(qrisError(404, "qris_not_found"))).toEqual({
-      model: model({ kind: "idle" }),
+      model: model({ kind: "idle" }, DONE),
       ...NO_EFFECTS,
     });
   });
@@ -1349,7 +1383,7 @@ describe("qrisStep, Saya sudah bayar", () => {
   it("shows the API's message on 429", () => {
     const error = qrisError(429, "rate_limited");
     expect(failed(error)).toEqual({
-      model: model(PENDING, { alert: error.message }),
+      model: model(PENDING, { ...DONE, alert: error.message }),
       ...NO_EFFECTS,
     });
   });
@@ -1363,10 +1397,10 @@ describe("qrisStep, Saya sudah bayar", () => {
   it("keeps the QR and says what went wrong otherwise", () => {
     const error = qrisError(0, "network_error");
     expect(failed(error).model).toEqual(
-      model(PENDING, { alert: error.message }),
+      model(PENDING, { ...DONE, alert: error.message }),
     );
     expect(failed(new Error("bug")).model).toEqual(
-      model(PENDING, { alert: "Terjadi kesalahan. Coba lagi." }),
+      model(PENDING, { ...DONE, alert: "Terjadi kesalahan. Coba lagi." }),
     );
   });
 
@@ -1379,6 +1413,63 @@ describe("qrisStep, Saya sudah bayar", () => {
     for (const event of events) {
       expect(qrisStep(before, event).model).toBe(before);
     }
+  });
+
+  it("drops a status read that began before the check, even when it lands after", () => {
+    // A 5 s poll left (checks 0), the tenant tapped Saya sudah bayar, and the check answered
+    // checking before the poll's older pending came back.
+    const checking = qrisStep(running, {
+      type: "checked",
+      status: status({
+        status: "checking",
+        amount: 2_250_000,
+        checkedAt: at(0),
+      }),
+      now: NOW,
+    }).model;
+    const stale = qrisStep(checking, {
+      type: "status-read",
+      checks: 0,
+      status: status({
+        status: "pending",
+        amount: 2_250_000,
+        expiresAt: at(10 * 60),
+      }),
+      now: NOW,
+    });
+    expect(stale.model).toBe(checking);
+    // The same read begun during the check is stale too.
+    expect(
+      qrisStep(checking, {
+        type: "status-read",
+        checks: 1,
+        status: status({
+          status: "pending",
+          amount: 2_250_000,
+          expiresAt: at(10 * 60),
+        }),
+        now: NOW,
+      }).model,
+    ).toBe(checking);
+  });
+
+  it("follows a read that began after the check, such as a QR made in another tab", () => {
+    const checking = model(CHECKING, DONE);
+    const next = qrisStep(checking, {
+      type: "status-read",
+      checks: 2,
+      status: status({
+        status: "pending",
+        amount: 2_250_000,
+        expiresAt: at(14 * 60),
+      }),
+      now: NOW,
+    });
+    expect(next.model.card).toEqual({
+      kind: "pending",
+      amount: 2_250_000,
+      expiresAt: at(14 * 60),
+    });
   });
 });
 

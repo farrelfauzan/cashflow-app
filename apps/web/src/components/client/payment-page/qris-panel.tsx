@@ -15,7 +15,8 @@ type QrisPanelProps = {
   qris: QrisPayment;
 };
 
-// The QRIS tab: what the card shows in its current state, and the alert under its buttons.
+// The QRIS tab: when more than one QR can take is owed, a note that the rest is paid later; what
+// the card shows in its current state; and the alert under its buttons.
 export function QrisPanel({ token, offer, qris }: QrisPanelProps) {
   const { card, alert, checkRunning } = qris.model;
 
@@ -61,6 +62,11 @@ export function QrisPanel({ token, offer, qris }: QrisPanelProps) {
 
   return (
     <>
+      {offer.limitNote !== null && card.kind !== "resuming" && (
+        <p className="rounded-xl border bg-card px-4 py-3.5 text-sm leading-normal md:px-5 md:py-4 md:text-base">
+          {offer.limitNote}
+        </p>
+      )}
       {body()}
       {alert !== null && <FormAlert message={alert} />}
     </>
