@@ -1166,6 +1166,9 @@ paths:
         A member limited to some properties needs both reads through every lease the tenant has
         or had, since the totals span all of them; otherwise 403. Invoices and payments are
         bounded per tenant (about one invoice per term), so they are plain arrays, oldest first.
+        It also carries the tenant's payment promise as staff see it: the active one's newest
+        version, how many promises the tenant broke, and what a promise made now may say (the
+        same promiseDates and nextInvoiceDueDate as the payment page).
       responses:
         "200":
           description: OK
@@ -1314,7 +1317,9 @@ paths:
         each invoice's lines. summary covers the whole month in the chosen property, whatever
         status, q and page are, so the tiles stay the same while the table is filtered; total
         counts the rows matching every filter. A member limited to some properties sees, and
-        every figure counts, only the invoices of leases in their properties.
+        every figure counts, only the invoices of leases in their properties. Each row carries
+        its tenant's active promise when that promise's newest version covers the row's invoice,
+        and the tenant's count of broken promises.
       parameters:
         - $ref: "#/components/parameters/Period"
         - name: status
@@ -2901,7 +2906,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/AccountTotals"
         - type: object
-          required: [tenantId, invoices, payments]
+          required: [tenantId, invoices, payments, activePromise, brokenPromises, promiseDates, nextInvoiceDueDate]
           properties:
             tenantId: { type: string, format: uuid }
             invoices:
@@ -2912,6 +2917,34 @@ components:
               type: array
               description: Oldest received first.
               items: { $ref: "#/components/schemas/AccountPayment" }
+            activePromise:
+              description: >
+                The newest version of the tenant's active payment promise, or null when the tenant
+                has none. It stays active until it is closed, even once everything is paid.
+              nullable: true
+              allOf:
+                - $ref: "#/components/schemas/ActivePromise"
+            brokenPromises:
+              type: integer
+              minimum: 0
+              description: How many of the tenant's promises closed broken, ever; 0 when none did.
+            promiseDates:
+              description: >
+                The days a promise made now may name, exactly as the payment page gives them: for
+                an edit of the active promise, no later than 60 days from its first version. Null
+                when no promise can be made now: the tenant owes nothing, or the active promise
+                has reached that bound.
+              nullable: true
+              allOf:
+                - $ref: "#/components/schemas/PromiseDates"
+            nextInvoiceDueDate:
+              type: string
+              format: date
+              nullable: true
+              description: >
+                The due date a with_next_invoice promise made now would take, the same value as
+                the payment page's nextInvoiceDueDate. Null when the tenant owes nothing, no lease
+                will bill again, or it is after promiseDates.latest (or promiseDates is null).
 
     PaymentInput:
       type: object
@@ -3068,7 +3101,7 @@ components:
 
     InvoiceListItem:
       type: object
-      required: [id, kind, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines]
+      required: [id, kind, tenantId, tenantName, leaseId, propertyId, propertyName, unitLabel, period, periodEnd, dueDate, issuedOn, amount, billed, paid, outstanding, status, overdueDays, pastPlannedEnd, lines, promise, brokenPromises]
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/InvoiceKind" }
@@ -3096,6 +3129,19 @@ components:
         lines:
           type: array
           items: { $ref: "#/components/schemas/InvoiceLine" }
+        promise:
+          description: >
+            The tenant's active payment promise when its newest version covers this invoice
+            (the invoice still owed something when that version was made); null when the tenant
+            has no active promise or it does not cover this invoice. Its coveredInvoiceIds list
+            only the invoices the caller may see.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ActivePromise"
+        brokenPromises:
+          type: integer
+          minimum: 0
+          description: How many of the tenant's promises closed broken, ever; 0 when none did.
 
     OldestOverdue:
       type: object
@@ -3111,7 +3157,7 @@ components:
 
     InvoiceListSummary:
       type: object
-      required: [billed, paid, outstanding, tenantsOutstanding]
+      required: [billed, paid, outstanding, tenantsOutstanding, tenantsWithPromise]
       description: >
         The month's invoices in the chosen property (propertyId), whatever status, q and page
         are. oldestOverdue is not tied to the month: the oldest debt now, in the chosen property.
@@ -3120,6 +3166,9 @@ components:
         paid: { type: integer, format: int64 }
         outstanding: { type: integer, format: int64 }
         tenantsOutstanding: { type: integer, description: Tenants with a month's invoice still owing something. }
+        tenantsWithPromise:
+          type: integer
+          description: "Of the tenants counted in tenantsOutstanding, those with an active payment promise (9 penyewa, 3 ada janji)."
         oldestOverdue: { $ref: "#/components/schemas/OldestOverdue" }
 
     InvoiceList:
@@ -3463,6 +3512,34 @@ components:
         coveredInvoiceIds:
           type: array
           description: The invoices still owing when it was made, oldest period first.
+          items: { type: string, format: uuid }
+
+    ActivePromise:
+      type: object
+      required: [id, version, kind, promisedDate, promisedAmount, payingNow, source, note, createdBy, createdAt, coveredInvoiceIds]
+      description: The newest version of a tenant's active payment promise, as staff see it.
+      properties:
+        id: { type: string, format: uuid, description: The promise's id (as in listTenantPromises). }
+        version: { type: integer, description: "The newest version's number, from 1; above 1 after an edit." }
+        kind: { $ref: "#/components/schemas/PromiseKind" }
+        promisedDate: { type: string, format: date }
+        promisedAmount:
+          type: integer
+          format: int64
+          nullable: true
+          description: Rupiah promised by the date; null means everything owed after payingNow.
+        payingNow: { type: integer, format: int64, description: What the tenant said they pay right after saving. }
+        source: { $ref: "#/components/schemas/PromiseSource" }
+        note: { type: string, nullable: true, description: "The member's note; null when there is none." }
+        createdBy:
+          description: The member who recorded it; null when the tenant made it on the payment page.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/StaffRef"
+        createdAt: { type: string, format: date-time, description: When the newest version was saved. }
+        coveredInvoiceIds:
+          type: array
+          description: The invoices still owing when the newest version was made, oldest period first.
           items: { type: string, format: uuid }
 
     TenantPromise:

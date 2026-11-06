@@ -348,7 +348,7 @@ export function useListMissingMeterReadings<TData = Awaited<ReturnType<typeof li
 
 
 /**
- * Everything the tenant was billed and paid, across all their leases, with the totals the Detail penyewa page shows: what they still owe, the due date of the oldest unpaid invoice and their credit. Every figure comes from the server; the page computes none. A member limited to some properties needs both reads through every lease the tenant has or had, since the totals span all of them; otherwise 403. Invoices and payments are bounded per tenant (about one invoice per term), so they are plain arrays, oldest first.
+ * Everything the tenant was billed and paid, across all their leases, with the totals the Detail penyewa page shows: what they still owe, the due date of the oldest unpaid invoice and their credit. Every figure comes from the server; the page computes none. A member limited to some properties needs both reads through every lease the tenant has or had, since the totals span all of them; otherwise 403. Invoices and payments are bounded per tenant (about one invoice per term), so they are plain arrays, oldest first. It also carries the tenant's payment promise as staff see it: the active one's newest version, how many promises the tenant broke, and what a promise made now may say (the same promiseDates and nextInvoiceDueDate as the payment page).
  * @summary A tenant's money, invoices, payments and corrections (needs invoice:read and payment:read)
  */
 export const getTenantAccount = (
@@ -815,7 +815,7 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 
 
 /**
- * One page of the month's invoices (an invoice belongs to the month of its period), with each invoice's lines. summary covers the whole month in the chosen property, whatever status, q and page are, so the tiles stay the same while the table is filtered; total counts the rows matching every filter. A member limited to some properties sees, and every figure counts, only the invoices of leases in their properties.
+ * One page of the month's invoices (an invoice belongs to the month of its period), with each invoice's lines. summary covers the whole month in the chosen property, whatever status, q and page are, so the tiles stay the same while the table is filtered; total counts the rows matching every filter. A member limited to some properties sees, and every figure counts, only the invoices of leases in their properties. Each row carries its tenant's active promise when that promise's newest version covers the row's invoice, and the tenant's count of broken promises.
  * @summary Penagihan, the invoices of a month (needs invoice:read)
  */
 export const listInvoices = (

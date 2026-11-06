@@ -83,7 +83,7 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 			if _, err := Allocate(ctx, tx, org, in.TenantID); err != nil {
 				return err
 			}
-			if err := s.payments.PaymentRecorded(ctx, tx, org, in.TenantID); err != nil {
+			if err := s.promises.PaymentRecorded(ctx, tx, org, in.TenantID); err != nil {
 				return fmt.Errorf("closing the tenant's promise after a payment: %w", err)
 			}
 		}

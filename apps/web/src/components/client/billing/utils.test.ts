@@ -100,6 +100,10 @@ const account = (over: Partial<TenantAccount> = {}): TenantAccount => ({
   credit: 0,
   invoices: [],
   payments: [],
+  activePromise: null,
+  brokenPromises: 0,
+  promiseDates: null,
+  nextInvoiceDueDate: null,
   ...over,
 });
 

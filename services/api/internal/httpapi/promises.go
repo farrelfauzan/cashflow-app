@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 )
@@ -163,13 +164,34 @@ func toAPITenantPromise(p promise.Promise) apigen.TenantPromise {
 	return out
 }
 
+// toAPIActivePromise is nil for nil: no active promise (or none covering the row).
+func toAPIActivePromise(a *billing.ActivePromise) *apigen.ActivePromise {
+	if a == nil {
+		return nil
+	}
+	out := &apigen.ActivePromise{
+		Id: a.ID, Version: a.Version, Kind: apigen.PromiseKind(a.Kind), PromisedDate: date(a.PromisedDate),
+		PromisedAmount: a.PromisedAmount, PayingNow: a.PayingNow, Source: apigen.PromiseSource(a.Source),
+		CreatedAt: a.CreatedAt, CoveredInvoiceIds: make([]openapi_types.UUID, len(a.CoveredInvoiceIDs)),
+	}
+	copy(out.CoveredInvoiceIds, a.CoveredInvoiceIDs)
+	if a.Note != "" {
+		note := a.Note
+		out.Note = &note
+	}
+	if a.CreatedBy != nil {
+		out.CreatedBy = &apigen.StaffRef{MemberId: a.CreatedBy.MemberID, Name: a.CreatedBy.Name}
+	}
+	return out
+}
+
 // promisePageFields fills the payment page's promise fields from the page's promise state.
 func promisePageFields(out *apigen.PaymentPage, st promise.PageState) {
 	if v := st.Active; v != nil {
 		ap := toAPIPaymentPromise(promise.StatusActive, *v)
 		out.Promise = &ap
 	}
-	if win := st.Window; win != nil && !win.Empty() {
+	if win := st.Offer(); win != nil {
 		out.PromiseDates = &apigen.PromiseDates{Earliest: date(win.Earliest), Latest: date(win.Latest)}
 		if due := win.NextDueInRange(); due != nil {
 			d := date(*due)
