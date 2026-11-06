@@ -15,7 +15,7 @@ export interface PaymentPage {
   /** The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible). */
   promiseDates: PromiseDates | null;
   /**
-     * The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill, whether that invoice is already made or not: the next bill to fall due. An invoice belongs to the month of its due date, so the page labels the choice by this date's month ("Bareng tagihan November · Jatuh tempo 13 Nov 2026"). Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
+     * The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill, whether that invoice is already made or not: the next bill to fall due. The page labels the choice by this date, not by a month ("Bareng jatuh tempo berikutnya · 13 Nov 2026"): a late-entered lease's current period can be due in the month after the one it belongs to. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
      * @nullable
      */
   nextInvoiceDueDate: string | null;
