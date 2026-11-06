@@ -408,8 +408,10 @@ The WA message links to OUR page. The QR is created only when the tenant opens i
 - `POST /api/t/:token/qris {amount}` creates a qris_attempt and cancels any previous live one
 - `GET /api/t/:token/qris.png` server-rendered PNG with amount, unit and expiry; 410 if expired or paid
 - `GET /api/t/:token/status` polled by the page
-- `POST /webhooks/autogopay` verifies the signature, then enqueues
-- Task `qris-paid` (asynq TaskID = transaction_id; the payment insert also has a UNIQUE key).
+- `POST /webhooks/autogopay/{webhookId}` finds the organization from the id, verifies the
+  signature with its key, then enqueues
+- Task `qris-paid` (asynq TaskID = organization id + transaction_id; the payment insert also has
+  a UNIQUE key).
   Task `qris-reconcile` every 30 min + nightly checks pending attempts against `/qris/status`.
 - Invoices above Rp10 juta must use bank transfer.
 
