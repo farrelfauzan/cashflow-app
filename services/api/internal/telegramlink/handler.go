@@ -26,6 +26,10 @@ const (
 	replyStopped             = "Berhenti. Pesan tidak lagi dikirim ke Telegram."
 	replyHelp                = "Bot ini mengirim pesan tagihan sewa. Untuk menghubungkan, buka halaman pembayaran dari link tagihan Anda, lalu tekan Hubungkan Telegram. Ketik /stop untuk berhenti."
 	replyFailed              = "Maaf, terjadi kesalahan. Coba lagi sebentar lagi."
+	// noticeReleasedFormat goes to a chat whose link to a tenant was replaced by a newer one (the
+	// pay link was opened and linked from another Telegram): demo only, so the replacement is
+	// allowed, but the old chat is told.
+	noticeReleasedFormat = "Telegram ini dilepas dari tagihan %s. Pesan tagihan sekarang dikirim ke Telegram lain yang dihubungkan dari halaman pembayaran."
 )
 
 // Outcomes, for logs.
@@ -84,6 +88,7 @@ func (h *Handler) HandleUpdate(ctx context.Context, u telegram.Update) error {
 		reply, outcome string
 		org            uuid.UUID
 		err            error
+		rel            released
 	)
 	switch cmd.kind {
 	case cmdStart:
@@ -91,7 +96,7 @@ func (h *Handler) HandleUpdate(ctx context.Context, u telegram.Update) error {
 			reply, outcome = replyHowToLink, outcomeNoCode
 			break
 		}
-		reply, outcome, org, err = h.start(ctx, m.Chat.ID, m.From.ID, cmd.arg)
+		reply, outcome, org, err = h.start(ctx, m.Chat.ID, m.From.ID, cmd.arg, &rel)
 	case cmdStop:
 		reply, outcome, err = h.stop(ctx, m.Chat.ID)
 	default:
@@ -108,7 +113,21 @@ func (h *Handler) HandleUpdate(ctx context.Context, u telegram.Update) error {
 	if _, err := h.bot.SendText(ctx, m.Chat.ID, reply); err != nil {
 		return fmt.Errorf("telegramlink: replying to %s: %w", cmd.kind, err)
 	}
+	// Tell a chat that lost its link to this one. A failed notice is logged, not returned: the
+	// link is made and the new chat was answered.
+	for _, old := range rel.chats {
+		if _, err := h.bot.SendText(ctx, old, rel.notice); err != nil {
+			h.log.WarnContext(ctx, "telegram: telling the replaced chat failed", "update", u, "error", err)
+		}
+	}
 	return nil
+}
+
+// released is what a /start that replaced a tenant's link leaves to tell: the chats that lost it
+// (never the new chat itself) and the notice for them.
+type released struct {
+	chats  []int64
+	notice string
 }
 
 // logOutcome logs the update's id and kind (never its chat id or text), the command and what
@@ -123,7 +142,7 @@ func (h *Handler) logOutcome(ctx context.Context, u telegram.Update, cmd, outcom
 
 // start links chatID to the tenant of code. A malformed or unknown code, a used one (unless this
 // chat's link from it is still live) and an expired one all get the same reply.
-func (h *Handler) start(ctx context.Context, chatID, userID int64, code string) (reply, outcome string, org uuid.UUID, err error) {
+func (h *Handler) start(ctx context.Context, chatID, userID int64, code string, rel *released) (reply, outcome string, org uuid.UUID, err error) {
 	hash, ok := codeHash(code)
 	if !ok {
 		return replyInvalidCode, outcomeInvalidCode, uuid.Nil, nil
@@ -136,7 +155,7 @@ func (h *Handler) start(ctx context.Context, chatID, userID int64, code string) 
 		return "", "", uuid.Nil, err
 	}
 	err = h.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
-		reply, outcome, err = h.startInOrg(ctx, tx, org, codeID, chatID, userID)
+		reply, outcome, err = h.startInOrg(ctx, tx, org, codeID, chatID, userID, rel)
 		return err
 	})
 	if err != nil {
@@ -146,7 +165,7 @@ func (h *Handler) start(ctx context.Context, chatID, userID int64, code string) 
 }
 
 // startInOrg uses the code inside its organization's scope.
-func (h *Handler) startInOrg(ctx context.Context, tx pgx.Tx, org, codeID uuid.UUID, chatID, userID int64) (reply, outcome string, err error) {
+func (h *Handler) startInOrg(ctx context.Context, tx pgx.Tx, org, codeID uuid.UUID, chatID, userID int64, rel *released) (reply, outcome string, err error) {
 	q := dbgen.New(tx)
 	c, err := q.LockTelegramLinkCode(ctx, dbgen.LockTelegramLinkCodeParams{OrganizationID: org, ID: codeID})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -173,8 +192,14 @@ func (h *Handler) startInOrg(ctx context.Context, tx pgx.Tx, org, codeID uuid.UU
 	case !now.Before(c.ExpiresAt):
 		return replyInvalidCode, outcomeExpiredCode, nil
 	default:
-		if err := h.link(ctx, q, org, c.ID, c.TenantID, chatID, userID, now); err != nil {
+		old, err := h.link(ctx, q, org, c.ID, c.TenantID, chatID, userID, now)
+		if err != nil {
 			return "", "", err
+		}
+		for _, id := range old {
+			if id != chatID {
+				rel.chats = append(rel.chats, id)
+			}
 		}
 		outcome = outcomeLinked
 	}
@@ -186,33 +211,38 @@ func (h *Handler) startInOrg(ctx context.Context, tx pgx.Tx, org, codeID uuid.UU
 	if err != nil {
 		return "", "", fmt.Errorf("telegramlink: loading the tenant: %w", err)
 	}
+	if len(rel.chats) > 0 {
+		rel.notice = fmt.Sprintf(noticeReleasedFormat, o.DisplayName)
+	}
 	return fmt.Sprintf(format, o.DisplayName, t.Name), outcome, nil
 }
 
-// link marks the code used and makes the tenant's live link, replacing an older one.
-func (h *Handler) link(ctx context.Context, q *dbgen.Queries, org, codeID, tenantID uuid.UUID, chatID, userID int64, now time.Time) error {
+// link marks the code used and makes the tenant's live link, replacing an older one, and returns
+// the chats of the links it replaced.
+func (h *Handler) link(ctx context.Context, q *dbgen.Queries, org, codeID, tenantID uuid.UUID, chatID, userID int64, now time.Time) ([]int64, error) {
 	if err := q.LockTenantTelegramLink(ctx, tenantID); err != nil {
-		return fmt.Errorf("telegramlink: locking the tenant's link: %w", err)
+		return nil, fmt.Errorf("telegramlink: locking the tenant's link: %w", err)
 	}
 	n, err := q.UseTelegramLinkCode(ctx, dbgen.UseTelegramLinkCodeParams{UsedAt: &now, OrganizationID: org, ID: codeID})
 	if err != nil {
-		return fmt.Errorf("telegramlink: using the code: %w", err)
+		return nil, fmt.Errorf("telegramlink: using the code: %w", err)
 	}
 	if n != 1 {
 		// The code is locked and was unused when read, so this cannot happen.
-		return errors.New("telegramlink: the code was used meanwhile")
+		return nil, errors.New("telegramlink: the code was used meanwhile")
 	}
-	if _, err := q.UnlinkTenantTelegram(ctx, dbgen.UnlinkTenantTelegramParams{UnlinkedAt: &now, OrganizationID: org, TenantID: tenantID}); err != nil {
-		return fmt.Errorf("telegramlink: unlinking the older link: %w", err)
+	old, err := q.UnlinkTenantTelegram(ctx, dbgen.UnlinkTenantTelegramParams{UnlinkedAt: &now, OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return nil, fmt.Errorf("telegramlink: unlinking the older link: %w", err)
 	}
 	err = q.InsertTelegramLink(ctx, dbgen.InsertTelegramLinkParams{
 		ID: uuid.New(), OrganizationID: org, TenantID: tenantID, LinkCodeID: codeID,
 		ChatID: chatID, TelegramUserID: userID, LinkedAt: now,
 	})
 	if err != nil {
-		return fmt.Errorf("telegramlink: storing the link: %w", err)
+		return nil, fmt.Errorf("telegramlink: storing the link: %w", err)
 	}
-	return nil
+	return old, nil
 }
 
 // stop unlinks every live link of chatID, in each organization that has one.

@@ -340,7 +340,17 @@ func TestTelegramLinkOverHTTP(t *testing.T) {
 	t.Run("a second link replaces the first for the same tenant", func(t *testing.T) {
 		env.Clock.Advance(time.Minute)
 		code := deepLink(t, rinaToken)
-		require.Equal(t, confirmA, say(t, srv.URL, bot, sharedChat, "/start "+code))
+		before := len(bot.replies())
+		status, body := deliver(t, srv.URL, tgWebhookSecret, message(sharedChat, "private", "/start "+code))
+		require.Equal(t, http.StatusOK, status)
+		require.Empty(t, body)
+		sent := bot.replies()[before:]
+		require.Len(t, sent, 2, "the confirmation to the new chat, then a notice to the replaced one")
+		require.Equal(t, sharedChat, sent[0].ChatID)
+		require.Equal(t, confirmA, sent[0].Text)
+		require.Equal(t, rinaChat, sent[1].ChatID)
+		require.Equal(t, "Telegram ini dilepas dari tagihan Griya Sejahtera. Pesan tagihan sekarang dikirim ke Telegram lain yang dihubungkan dari halaman pembayaran.",
+			sent[1].Text)
 		require.Equal(t, map[uuid.UUID]int64{rina: sharedChat}, liveLinks(t, a.o.ID))
 		var all, unlinked int
 		require.NoError(t, env.Store.WithOrgTx(ctx, a.o.ID, func(tx pgx.Tx) error {

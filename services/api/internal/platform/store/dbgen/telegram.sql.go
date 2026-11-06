@@ -222,9 +222,10 @@ func (q *Queries) UnlinkTelegramChat(ctx context.Context, arg UnlinkTelegramChat
 	return result.RowsAffected(), nil
 }
 
-const unlinkTenantTelegram = `-- name: UnlinkTenantTelegram :execrows
+const unlinkTenantTelegram = `-- name: UnlinkTenantTelegram :many
 UPDATE telegram_link SET unlinked_at = $1
 WHERE organization_id = $2 AND tenant_id = $3 AND unlinked_at IS NULL
+RETURNING chat_id
 `
 
 type UnlinkTenantTelegramParams struct {
@@ -233,12 +234,25 @@ type UnlinkTenantTelegramParams struct {
 	TenantID       uuid.UUID
 }
 
-func (q *Queries) UnlinkTenantTelegram(ctx context.Context, arg UnlinkTenantTelegramParams) (int64, error) {
-	result, err := q.db.Exec(ctx, unlinkTenantTelegram, arg.UnlinkedAt, arg.OrganizationID, arg.TenantID)
+// Ends the tenant's live link and returns the chat it was in, so that chat can be told.
+func (q *Queries) UnlinkTenantTelegram(ctx context.Context, arg UnlinkTenantTelegramParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, unlinkTenantTelegram, arg.UnlinkedAt, arg.OrganizationID, arg.TenantID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var chat_id int64
+		if err := rows.Scan(&chat_id); err != nil {
+			return nil, err
+		}
+		items = append(items, chat_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const useTelegramLinkCode = `-- name: UseTelegramLinkCode :execrows

@@ -269,7 +269,9 @@ of the same organization can do. Both must pass.
   added or removed.
 - **Not RBAC principals**: penyewa and pemegang porsi have no accounts. A penyewa link token
   grants only `invoice:read`, `payment:attempt` and `promise:create` on that one invoice or
-  lease. Pemegang porsi only receive the WA report.
+  lease, and, in demo environments only (decision 42), `telegram:link`: linking a Telegram chat
+  to that tenant, which replaces the tenant's earlier link and tells the earlier chat. Pemegang
+  porsi only receive the WA report.
 - **Enforcement**: the service layer calls `authz.Service.Authorize(ctx, tx, principal, request)`
   inside the transaction that makes the change, for every API handler and every queued job, not
   only in middleware or the UI. `Check` is the same without a transaction, for checks that must

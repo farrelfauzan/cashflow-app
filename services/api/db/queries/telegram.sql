@@ -34,9 +34,11 @@ WHERE organization_id = @organization_id AND id = @id AND used_at IS NULL;
 -- so it never waits on payment allocation, which locks the tenant row.
 SELECT pg_advisory_xact_lock(hashtextextended('telegram_link:' || CAST(@tenant_id AS uuid)::text, 0));
 
--- name: UnlinkTenantTelegram :execrows
+-- name: UnlinkTenantTelegram :many
+-- Ends the tenant's live link and returns the chat it was in, so that chat can be told.
 UPDATE telegram_link SET unlinked_at = @unlinked_at
-WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND unlinked_at IS NULL;
+WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND unlinked_at IS NULL
+RETURNING chat_id;
 
 -- name: InsertTelegramLink :exec
 INSERT INTO telegram_link (id, organization_id, tenant_id, link_code_id, chat_id, telegram_user_id, linked_at)
