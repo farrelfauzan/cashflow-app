@@ -1582,8 +1582,11 @@ paths:
 
 
         At most 5 new QRs per tenant in 24 hours (429 qris_limit); failed attempts count, reuses
-        do not. Never retry automatically. 503 qris_unavailable ("QRIS gangguan") when AutoGoPay
-        fails or the organization has no AutoGoPay account: offer bank transfer. 409 qris_busy
+        do not. Never retry automatically, with one exception: 503 qris_overloaded (with
+        Retry-After) means too many payments are waiting on AutoGoPay right now and nothing reached
+        it, so the page may try once more after Retry-After. 503 qris_unavailable ("QRIS
+        gangguan") when AutoGoPay fails or the organization has no AutoGoPay account: offer bank
+        transfer. 409 qris_busy
         when another request for the same tenant is making or checking a QR right now (a double
         tap): poll getPaymentStatus. The request takes up to about 20 seconds; if the page gives
         up, what AutoGoPay answered is still recorded and getPaymentStatus shows it. Limited per
@@ -1631,7 +1634,15 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "503":
-          description: "AutoGoPay failed or QRIS is not set up for the organization (code qris_unavailable): offer bank transfer"
+          description: >
+            AutoGoPay failed or QRIS is not set up for the organization (code qris_unavailable):
+            offer bank transfer. Or too many payments are waiting on AutoGoPay right now (code
+            qris_overloaded, with Retry-After in seconds): nothing reached AutoGoPay, so the page
+            may try once more after Retry-After before it offers bank transfer.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying once more. Sent with qris_overloaded only.
+              schema: { type: integer, example: 5 }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

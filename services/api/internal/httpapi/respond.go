@@ -78,6 +78,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, qris.ErrGenerateLimit):
 		s.writeError(w, http.StatusTooManyRequests, "qris_limit",
 			"Batas pembuatan QR hari ini sudah tercapai. Bayar lewat transfer bank atau coba lagi besok.")
+	case errors.Is(err, qris.ErrOverloaded):
+		// Nothing reached AutoGoPay: trying again in a moment is safe.
+		w.Header().Set("Retry-After", "5")
+		s.writeError(w, http.StatusServiceUnavailable, "qris_overloaded", "Banyak yang sedang membayar. Coba lagi sebentar.")
 	case errors.Is(err, qris.ErrUnavailable):
 		s.writeError(w, http.StatusServiceUnavailable, "qris_unavailable",
 			"QRIS sedang gangguan. Silakan bayar lewat transfer bank.")

@@ -980,7 +980,7 @@ func (g *hangingGateway) Generate(ctx context.Context, key secret.Value, amount 
 }
 
 // A hanging AutoGoPay holds at most MaxConcurrentCalls connections: the next QR request answers
-// unavailable at once, a check leaves the read to reconcile, and the payment page, with its bank
+// overloaded at once, a check leaves the read to reconcile, and the payment page, with its bank
 // transfer fallback, still loads.
 func TestAutoGoPayHangIsBounded(t *testing.T) {
 	s := newSuite(t)
@@ -1003,7 +1003,8 @@ func TestAutoGoPayHangIsBounded(t *testing.T) {
 	before := len(f.calls())
 
 	_, err := bounded.MakeQR(ctx, refused.token, 700_000)
-	require.ErrorIs(t, err, qris.ErrUnavailable)
+	require.ErrorIs(t, err, qris.ErrOverloaded)
+	require.NotErrorIs(t, err, qris.ErrUnavailable, "busy for a moment is not an outage")
 	v, err := bounded.Check(ctx, checked.token)
 	require.NoError(t, err)
 	require.Equal(t, qris.StatusChecking, v.Status, "the check is recorded; reconcile reads it")

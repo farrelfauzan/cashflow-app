@@ -142,9 +142,10 @@ reaches AutoGoPay. With a real key, every QR made locally is a real QR on that a
 can block an account that makes QRs in a loop, so make them by hand only.
 
 A payment page request that waits on AutoGoPay holds a database connection for up to about 20
-seconds. At most `QRIS_MAX_CONCURRENT` (default 3) do so at once, below the pool's
-`DATABASE_MAX_CONNS` (default 10); one more answers `qris_unavailable` at once, so a hanging
-AutoGoPay never stops the page and its bank transfer details from loading.
+seconds. At most `QRIS_MAX_CONCURRENT` (default 10) do so at once, below the pool's
+`DATABASE_MAX_CONNS` (default 20); one more answers `503 qris_overloaded` with `Retry-After: 5`
+at once (nothing reached AutoGoPay, so the page may try again), so a hanging AutoGoPay never stops
+the page and its bank transfer details from loading.
 
 ### The AutoGoPay stand-in (development only)
 
