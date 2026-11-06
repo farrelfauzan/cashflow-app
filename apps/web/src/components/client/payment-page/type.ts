@@ -1,7 +1,12 @@
 // What the tenant payment page (/t/[token]) renders, built from getPaymentPage by utils.ts.
 // Every amount is a field the API sent, formatted; nothing here is computed rupiah.
 
-import type { QrisStatus } from "@/lib/api/generated/model";
+import type {
+  MakePaymentPromiseRequest,
+  PaymentPromise,
+  PromiseKind,
+  QrisStatus,
+} from "@/lib/api/generated/model";
 
 // The top of every loaded state: who bills the tenant, the link's invoice and whose it is.
 export type PaymentPageHeaderView = {
@@ -48,6 +53,32 @@ export type OpenPaymentPageView = {
   noTransferText: string;
   // Null when the organization has not set up QRIS: no tabs, bank transfer only.
   qris: QrisOfferView | null;
+  // "Terima kasih, Bu Rina." on Janji tercatat.
+  tenantName: string;
+  // The API's outstanding, compared only ("Sisa tagihan" on Janji tercatat, when above 0).
+  outstanding: number;
+  // Null when no promise can be made (the API sent no promiseDates).
+  promise: PromiseOfferView | null;
+  // The tenant's active promise as the compact card above the choice; null when there is none.
+  activePromise: ActivePromiseView | null;
+};
+
+// What a promise made now may name, from getPaymentPage as is.
+export type PromiseOfferView = {
+  // What the tenant owes now: the promise's rest when nothing is paid now.
+  outstanding: number;
+  // The days "Pilih tanggal sendiri" may take, both included (YYYY-MM-DD).
+  earliest: string;
+  latest: string;
+  // The due date "Bareng tagihan …" takes; null when that choice is not offered.
+  nextInvoiceDueDate: string | null;
+};
+
+// "Janji pelunasan 1 Des 2026 · Semua sisa tagihan" above the choice.
+export type ActivePromiseView = {
+  text: string;
+  // The promise as the API sent it: "Ubah janji" opens the Janji screen filled from it.
+  promise: PaymentPromise;
 };
 
 // What the QRIS tab starts from when the organization has set up QRIS.
@@ -74,15 +105,121 @@ export type QuickAmountView = {
   label: string;
 };
 
-// Which part of the QRIS flow the page shows. The field text of "Bayar sebagian" stays while the
-// tenant moves between the entry and the chosen amount, and goes when they leave.
-export type PartialPayMode =
-  // Today's page: everything owed, "Bayar QRIS Rp…" for the total.
-  | { kind: "full" }
+// The three answers of "Mau bayar berapa?" (board "Bayar-Pilih").
+export type PayChoice = "all" | "partial" | "later";
+
+// One row of a radio group: its value, its bold label and the line under it.
+export type ChoiceOptionView = {
+  value: string;
+  label: string;
+  sub: string;
+};
+
+// What the Janji screen's fields hold. The amount stays as the field's text (digits grouped with
+// dots, empty for "all the rest").
+export type PromiseDraft = {
+  kind: PromiseKind;
+  // YYYY-MM-DD from the date input, empty for none; sent only for specific_date.
+  date: string;
+  amountText: string;
+};
+
+// What the tenant pays right after saving the promise ("Simpan janji, lalu bayar Rp…"): the
+// amount of "Bayar sebagian", its field text, and what its preview said would be left.
+export type PromisePaying = {
+  amount: number;
+  text: string;
+  outstandingAfter: number;
+};
+
+// Which view the open page shows. Every view lives in one flow component, so the QRIS state
+// survives moving between them.
+export type PayFlowMode =
+  // "Mau bayar berapa?": the summary and the choices, with the one the tenant last picked.
+  | { kind: "choice"; selected: PayChoice }
+  // Everything owed: the QRIS | Transfer bank tabs, or bank transfer alone.
+  | { kind: "pay" }
   // "Bayar sebagian": the amount field, quick amounts and the preview.
   | { kind: "entry"; text: string }
-  // A chosen amount, paid by QRIS. `outstandingAfter` is the preview's, kept when it was chosen.
-  | { kind: "chosen"; text: string; amount: number; outstandingAfter: number };
+  // "Kapan sisanya dilunasi?". `paying` is null when nothing is paid now; `editing` is "Ubah
+  // janji"; `back` is the view "Kembali" returns to.
+  | {
+      kind: "promise";
+      draft: PromiseDraft;
+      paying: PromisePaying | null;
+      editing: boolean;
+      back: PayFlowMode;
+    }
+  // A chosen amount, paid by QRIS. `outstandingAfter` is the preview's, kept when it was chosen;
+  // `promise` is the one saved just before, when the rest was promised.
+  | {
+      kind: "chosen";
+      text: string;
+      amount: number;
+      outstandingAfter: number;
+      promise: PaymentPromise | null;
+    }
+  // "Janji tercatat": the promise just saved, and what this visit's QR paid (null for nothing).
+  | { kind: "recorded"; paidAmount: number | null; promise: PaymentPromise };
+
+export type ChosenFlowMode = Extract<PayFlowMode, { kind: "chosen" }>;
+export type PromiseFlowMode = Extract<PayFlowMode, { kind: "promise" }>;
+export type RecordedFlowMode = Extract<PayFlowMode, { kind: "recorded" }>;
+
+// The Janji screen, from the page and what is paid now.
+export type PromiseFormView = {
+  // "Sisa setelah bayar hari ini: Rp1.250.000", or "Total tagihan Rp2.250.000".
+  subline: string;
+  // "Bareng tagihan Desember" (when offered) and "Pilih tanggal sendiri".
+  kindOptions: ChoiceOptionView[];
+  // The date input's bounds (YYYY-MM-DD).
+  dateMin: string;
+  dateMax: string;
+  // "Kosongkan untuk semua sisa, Rp1.250.000.".
+  amountHint: string;
+  // "Simpan janji, lalu bayar Rp1.000.000", "Simpan perubahan" or "Simpan janji".
+  primaryLabel: string;
+};
+
+// Where a message about the promise goes: under one of the fields, or in the alert.
+export type PromiseErrorTarget =
+  "kind" | "promisedDate" | "promisedAmount" | "alert";
+
+export type PromiseFormError = {
+  target: PromiseErrorTarget;
+  message: string;
+};
+
+// The Janji fields checked by comparison before sending; the API checks everything again.
+export type PromiseRequestCheck =
+  | { kind: "valid"; body: MakePaymentPromiseRequest }
+  | { kind: "invalid"; error: PromiseFormError };
+
+// What a refused makePaymentPromise means on screen.
+export type PromiseErrorView =
+  // The link stopped working: the page shows "Link tidak berlaku".
+  | { kind: "link-gone" }
+  // `refetchPage`: what the page shows is out of date (nothing owed now, dates moved).
+  | { kind: "shown"; error: PromiseFormError; refetchPage: boolean };
+
+// The end of one "Simpan janji".
+export type PromiseSaveResult =
+  | { kind: "saved"; promise: PaymentPromise }
+  | { kind: "failed"; error: PromiseErrorView }
+  // Another save of this form is still running; nothing was sent.
+  | { kind: "busy" };
+
+// "Janji tercatat" (board "Janji tercatat").
+export type RecordedView = {
+  // "Pembayaran Rp1.000.000 sudah diterima. Terima kasih, Bu Rina."; null when nothing was paid.
+  paidLine: string | null;
+  // "Sisa tagihan Rp1.250.000"; null when nothing is owed.
+  outstandingLine: string | null;
+  // "Selasa, 1 Desember 2026".
+  date: string;
+  // "Rp500.000", or "Semua sisa tagihan".
+  amount: string;
+};
 
 // What the amount field of "Bayar sebagian" holds, checked by comparison only.
 export type PartialAmountCheck =
@@ -253,4 +390,12 @@ export type Countdown = {
   now: number;
   // Whole seconds left, never below 0.
   seconds: number;
+};
+
+// What useMakePromise gives the Janji screen.
+export type MakePromise = {
+  // Sends one makePaymentPromise; a second call while one runs sends nothing ("busy").
+  save: (body: MakePaymentPromiseRequest) => Promise<PromiseSaveResult>;
+  // A save is running: the primary is disabled.
+  pending: boolean;
 };

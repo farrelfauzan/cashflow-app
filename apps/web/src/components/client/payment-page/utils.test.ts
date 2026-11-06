@@ -5,11 +5,14 @@ import type {
   PaymentPage,
   PaymentPageInvoice,
   PaymentPreview,
+  PaymentPromise,
   QrisStatus,
 } from "@/lib/api/generated/model";
 
 import type {
-  PartialPayMode,
+  OpenPaymentPageView,
+  PayFlowMode,
+  PromiseOfferView,
   PreviewView,
   QrisCard,
   QrisEvent,
@@ -17,17 +20,44 @@ import type {
 } from "./type";
 import {
   BUSY_WAIT_MS,
-  FULL_MODE,
+  PAY_MODE,
   PARTIAL_ABOVE_LIMIT_TEXT,
+  PROMISE_AMOUNT_MIN_TEXT,
+  PROMISE_DATE_REQUIRED_TEXT,
+  activePromiseView,
+  backFromPromise,
   canChangePartialAmount,
   changePartialAmount,
-  choosePartial,
+  choiceMode,
+  choicePrimaryLabel,
+  chooseFromEntry,
+  chosenPromiseLine,
+  chosenRemainder,
   chosenRemainderLine,
-  openPartialEntry,
+  defaultPromiseDraft,
+  editPromise,
+  entryLeadsToPromise,
+  entryNextLine,
+  entryPrimaryLabel,
+  flowModeAfterCard,
+  initialFlowMode,
+  nextFromChoice,
+  offeredChoice,
+  offeredPromiseKind,
   partialAmountCheck,
   partialFieldText,
-  partialModeAfterCard,
   partialPayLabel,
+  payChoices,
+  prefilledPromiseDraft,
+  promiseErrorView,
+  promiseFormView,
+  promiseOfferView,
+  promiseRecordedView,
+  promiseRequest,
+  promiseSaved,
+  showsPayBack,
+  toPayChoice,
+  toPromiseKind,
   previewErrorView,
   previewView,
   qrisPartialAmount,
@@ -356,6 +386,15 @@ describe("paymentPageView, open", () => {
       noTransferText:
         "Cara bayar belum diatur. Hubungi Griya Sejahtera untuk membayar.",
       qris: null,
+      tenantName: "Bu Rina",
+      outstanding: 2_250_000,
+      promise: {
+        outstanding: 2_250_000,
+        earliest: "2026-11-03",
+        latest: "2027-01-01",
+        nextInvoiceDueDate: "2026-12-01",
+      },
+      activePromise: null,
     });
   });
 
@@ -1791,29 +1830,757 @@ describe("previewErrorView", () => {
   });
 });
 
-describe("partial pay modes", () => {
+function openView(overrides: Partial<PaymentPage> = {}): OpenPaymentPageView {
+  const view = paymentPageView(page(overrides));
+  if (view.status !== "open") throw new Error("expected an open page");
+  return view;
+}
+
+const OFFER: PromiseOfferView = {
+  outstanding: 2_250_000,
+  earliest: "2026-11-03",
+  latest: "2027-01-01",
+  nextInvoiceDueDate: "2026-12-01",
+};
+
+const NO_NEXT_OFFER: PromiseOfferView = { ...OFFER, nextInvoiceDueDate: null };
+
+function promise(overrides: Partial<PaymentPromise> = {}): PaymentPromise {
+  return {
+    status: "active",
+    version: 1,
+    kind: "with_next_invoice",
+    promisedDate: "2026-12-01",
+    promisedAmount: null,
+    payingNow: 0,
+    createdAt: "2026-11-02T03:00:00Z",
+    ...overrides,
+  };
+}
+
+const PAYING = {
+  amount: 1_000_000,
+  text: "1.000.000",
+  outstandingAfter: 1_250_000,
+};
+
+const IDLE_MODEL: QrisModel = { ...INITIAL_QRIS_MODEL, card: { kind: "idle" } };
+
+describe("Bayar-Pilih choices", () => {
+  it("offers all three with QRIS and promise dates", () => {
+    expect(payChoices(openView({ qrisAvailable: true }))).toEqual([
+      {
+        value: "all",
+        label: "Bayar semua",
+        sub: "Rp2.250.000, langsung lunas",
+      },
+      {
+        value: "partial",
+        label: "Bayar sebagian",
+        sub: "Tentukan sendiri nominalnya, berapa pun",
+      },
+      {
+        value: "later",
+        label: "Belum bisa bayar sekarang",
+        sub: "Catat kapan Anda akan melunasi",
+      },
+    ]);
+  });
+
+  it("leaves out Bayar sebagian without QRIS", () => {
+    expect(
+      payChoices(openView({ qrisAvailable: false })).map((c) => c.value),
+    ).toEqual(["all", "later"]);
+  });
+
+  it("leaves out Belum bisa bayar without promise dates", () => {
+    expect(
+      payChoices(openView({ qrisAvailable: true, promiseDates: null })).map(
+        (c) => c.value,
+      ),
+    ).toEqual(["all", "partial"]);
+  });
+
+  it("names the total on the primary of Bayar semua, Lanjut otherwise", () => {
+    expect(choicePrimaryLabel("all", "Rp2.250.000")).toBe(
+      "Lanjut bayar Rp2.250.000",
+    );
+    expect(choicePrimaryLabel("partial", "Rp2.250.000")).toBe("Lanjut");
+    expect(choicePrimaryLabel("later", "Rp2.250.000")).toBe("Lanjut");
+  });
+
+  it("reads only the three choices from the radio group", () => {
+    expect(toPayChoice("all")).toBe("all");
+    expect(toPayChoice("later")).toBe("later");
+    expect(toPayChoice("semua")).toBeNull();
+  });
+
+  it("falls back to Bayar semua when the picked choice is gone", () => {
+    const choices = payChoices(openView({ qrisAvailable: false }));
+    expect(offeredChoice("partial", choices)).toBe("all");
+    expect(offeredChoice("later", choices)).toBe("later");
+  });
+
+  it("starts on the choice, or on paying when it is the only one", () => {
+    expect(initialFlowMode(openView({ qrisAvailable: true }))).toEqual(
+      choiceMode("all"),
+    );
+    expect(
+      initialFlowMode(openView({ qrisAvailable: false, promiseDates: null })),
+    ).toBe(PAY_MODE);
+  });
+
+  it("offers Kembali on the pay view only with a choice and no QR in flight", () => {
+    const view = openView({ qrisAvailable: true });
+    expect(showsPayBack(view, { kind: "idle" })).toBe(true);
+    expect(showsPayBack(view, { kind: "expired", amount: 1 })).toBe(true);
+    expect(
+      showsPayBack(view, {
+        kind: "pending",
+        amount: 1,
+        expiresAt: "2026-11-06T10:00:00Z",
+      }),
+    ).toBe(false);
+    expect(showsPayBack(view, { kind: "creating" })).toBe(false);
+    expect(showsPayBack(openView({ qrisAvailable: false }), null)).toBe(true);
+    expect(
+      showsPayBack(
+        openView({ qrisAvailable: false, promiseDates: null }),
+        null,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Bayar-Pilih transitions", () => {
+  const view = openView({ qrisAvailable: true });
+
+  it("goes to the pay view, the entry or the Janji screen", () => {
+    expect(nextFromChoice("all", view)).toBe(PAY_MODE);
+    expect(nextFromChoice("partial", view)).toEqual({
+      kind: "entry",
+      text: "",
+    });
+    expect(nextFromChoice("later", view)).toEqual({
+      kind: "promise",
+      draft: { kind: "with_next_invoice", date: "", amountText: "" },
+      paying: null,
+      editing: false,
+      back: choiceMode("later"),
+    });
+  });
+
+  it("never goes to a view that is not offered", () => {
+    expect(nextFromChoice("partial", openView({ qrisAvailable: false }))).toBe(
+      PAY_MODE,
+    );
+    expect(
+      nextFromChoice(
+        "later",
+        openView({ qrisAvailable: true, promiseDates: null }),
+      ),
+    ).toBe(PAY_MODE);
+  });
+
+  it("skips the choice when a QR comes back on load", () => {
+    const pending: QrisModel = {
+      ...INITIAL_QRIS_MODEL,
+      card: { kind: "pending", amount: 1, expiresAt: "2026-11-06T10:00:00Z" },
+    };
+    const checking: QrisModel = {
+      ...INITIAL_QRIS_MODEL,
+      card: { kind: "checking", amount: 1, checkedAt: null },
+    };
+    expect(
+      flowModeAfterCard(choiceMode("all"), { kind: "resuming" }, pending),
+    ).toBe(PAY_MODE);
+    expect(
+      flowModeAfterCard(choiceMode("all"), { kind: "resuming" }, checking),
+    ).toBe(PAY_MODE);
+    const choice = choiceMode("all");
+    expect(flowModeAfterCard(choice, { kind: "resuming" }, IDLE_MODEL)).toBe(
+      choice,
+    );
+    expect(flowModeAfterCard(choice, { kind: "idle" }, pending)).toBe(choice);
+  });
+});
+
+describe("Bayar sebagian, then the promise", () => {
   const preview: PreviewView = previewView(PREVIEW);
-  const entry: PartialPayMode = { kind: "entry", text: "1.000.000" };
-  const chosen: PartialPayMode = {
+  const entry: PayFlowMode = { kind: "entry", text: "1.000.000" };
+
+  it("goes on to the Janji screen when something stays owed", () => {
+    expect(chooseFromEntry(entry, preview, OFFER)).toEqual({
+      kind: "promise",
+      draft: { kind: "with_next_invoice", date: "", amountText: "" },
+      paying: PAYING,
+      editing: false,
+      back: entry,
+    });
+  });
+
+  it("goes straight to the QR when the amount pays everything", () => {
+    expect(
+      chooseFromEntry(entry, { ...preview, outstandingAfter: 0 }, OFFER),
+    ).toEqual({
+      kind: "chosen",
+      text: "1.000.000",
+      amount: 1_000_000,
+      outstandingAfter: 0,
+      promise: null,
+    });
+  });
+
+  it("goes straight to the QR when no promise can be made", () => {
+    expect(chooseFromEntry(entry, preview, null)).toEqual({
+      kind: "chosen",
+      text: "1.000.000",
+      amount: 1_000_000,
+      outstandingAfter: 1_250_000,
+      promise: null,
+    });
+    expect(chooseFromEntry(PAY_MODE, preview, OFFER)).toBe(PAY_MODE);
+  });
+
+  it("names the next step on the primary while something stays owed", () => {
+    const base = { outstanding: 2_250_000, promiseOffered: true };
+    const toPromise = entryLeadsToPromise({
+      ...base,
+      amount: 1_000_000,
+      preview,
+    });
+    expect(toPromise).toBe(true);
+    expect(entryPrimaryLabel(1_000_000, toPromise)).toBe(
+      "Lanjut pilih tanggal pelunasan",
+    );
+    expect(entryNextLine(preview, toPromise)).toBe(
+      "Berikutnya: pilih kapan sisa Rp1.250.000 dilunasi.",
+    );
+  });
+
+  it("keeps Bayar QRIS when the amount pays everything", () => {
+    const paysAll = { ...preview, amount: 2_250_000, outstandingAfter: 0 };
+    const toPromise = entryLeadsToPromise({
+      amount: 2_250_000,
+      preview: paysAll,
+      outstanding: 2_250_000,
+      promiseOffered: true,
+    });
+    expect(toPromise).toBe(false);
+    expect(entryPrimaryLabel(2_250_000, toPromise)).toBe(
+      "Bayar QRIS Rp2.250.000",
+    );
+    expect(entryNextLine(paysAll, toPromise)).toBeNull();
+  });
+
+  it("compares with what is owed while the preview is for another amount", () => {
+    const input = { preview, outstanding: 2_250_000, promiseOffered: true };
+    expect(entryLeadsToPromise({ ...input, amount: 500_000 })).toBe(true);
+    expect(entryLeadsToPromise({ ...input, amount: 2_250_000 })).toBe(false);
+    expect(entryLeadsToPromise({ ...input, amount: null })).toBe(false);
+  });
+
+  it("never leads to a promise when none can be made", () => {
+    expect(
+      entryLeadsToPromise({
+        amount: 1_000_000,
+        preview,
+        outstanding: 2_250_000,
+        promiseOffered: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("goes back from the Janji screen to the entry with the amount kept", () => {
+    const mode = chooseFromEntry(entry, preview, OFFER);
+    expect(backFromPromise(mode)).toEqual(entry);
+    expect(backFromPromise(PAY_MODE)).toBe(PAY_MODE);
+  });
+});
+
+describe("the promise offer and the active promise", () => {
+  it("is built from the page as is", () => {
+    expect(promiseOfferView(page())).toEqual(OFFER);
+    expect(promiseOfferView(page({ promiseDates: null }))).toBeNull();
+    expect(promiseOfferView(page({ nextInvoiceDueDate: null }))).toEqual(
+      NO_NEXT_OFFER,
+    );
+  });
+
+  it("shows the active promise's date and amount", () => {
+    const active = promise();
+    expect(activePromiseView(active)).toEqual({
+      text: "Janji pelunasan 1 Des 2026 · Semua sisa tagihan",
+      promise: active,
+    });
+    expect(
+      activePromiseView(
+        promise({ kind: "specific_date", promisedAmount: 500_000 }),
+      )?.text,
+    ).toBe("Janji pelunasan 1 Des 2026 · Rp500.000");
+  });
+
+  it("shows no card without an active promise", () => {
+    expect(activePromiseView(null)).toBeNull();
+    expect(activePromiseView(promise({ status: "kept" }))).toBeNull();
+    expect(openView({ promise: promise() }).activePromise?.text).toBe(
+      "Janji pelunasan 1 Des 2026 · Semua sisa tagihan",
+    );
+  });
+});
+
+describe("the Janji screen", () => {
+  it("offers Bareng tagihan with the next due date, then Pilih tanggal sendiri", () => {
+    expect(promiseFormView(OFFER, null, false)).toEqual({
+      subline: "Total tagihan Rp2.250.000",
+      kindOptions: [
+        {
+          value: "with_next_invoice",
+          label: "Bareng tagihan Desember",
+          sub: "Jatuh tempo 1 Des 2026",
+        },
+        {
+          value: "specific_date",
+          label: "Pilih tanggal sendiri",
+          sub: "Paling lambat 1 Jan 2027, tanpa denda",
+        },
+      ],
+      dateMin: "2026-11-03",
+      dateMax: "2027-01-01",
+      amountHint: "Kosongkan untuk semua sisa, Rp2.250.000.",
+      primaryLabel: "Simpan janji",
+    });
+  });
+
+  it("hides Bareng tagihan without a next due date", () => {
+    expect(
+      promiseFormView(NO_NEXT_OFFER, null, false).kindOptions.map(
+        (o) => o.value,
+      ),
+    ).toEqual(["specific_date"]);
+  });
+
+  it("speaks of the rest after paying now", () => {
+    const view = promiseFormView(OFFER, PAYING, false);
+    expect(view.subline).toBe("Sisa setelah bayar hari ini: Rp1.250.000");
+    expect(view.amountHint).toBe("Kosongkan untuk semua sisa, Rp1.250.000.");
+    expect(view.primaryLabel).toBe("Simpan janji, lalu bayar Rp1.000.000");
+  });
+
+  it("saves changes when editing", () => {
+    expect(promiseFormView(OFFER, null, true).primaryLabel).toBe(
+      "Simpan perubahan",
+    );
+  });
+
+  it("defaults to Bareng tagihan when offered, else Pilih tanggal sendiri", () => {
+    expect(defaultPromiseDraft(OFFER)).toEqual({
+      kind: "with_next_invoice",
+      date: "",
+      amountText: "",
+    });
+    expect(defaultPromiseDraft(NO_NEXT_OFFER).kind).toBe("specific_date");
+  });
+
+  it("falls back to Pilih tanggal sendiri when Bareng tagihan goes away", () => {
+    expect(offeredPromiseKind("with_next_invoice", NO_NEXT_OFFER)).toBe(
+      "specific_date",
+    );
+    expect(offeredPromiseKind("with_next_invoice", OFFER)).toBe(
+      "with_next_invoice",
+    );
+  });
+
+  it("reads only the two kinds from the radio group", () => {
+    expect(toPromiseKind("specific_date")).toBe("specific_date");
+    expect(toPromiseKind("next")).toBeNull();
+  });
+
+  it("fills Ubah janji from the active promise", () => {
+    expect(
+      prefilledPromiseDraft(
+        promise({
+          kind: "specific_date",
+          promisedDate: "2026-11-20",
+          promisedAmount: 500_000,
+        }),
+        OFFER,
+      ),
+    ).toEqual({
+      kind: "specific_date",
+      date: "2026-11-20",
+      amountText: "500.000",
+    });
+    expect(prefilledPromiseDraft(promise(), OFFER)).toEqual({
+      kind: "with_next_invoice",
+      date: "",
+      amountText: "",
+    });
+    expect(prefilledPromiseDraft(promise(), NO_NEXT_OFFER)).toEqual({
+      kind: "specific_date",
+      date: "2026-12-01",
+      amountText: "",
+    });
+  });
+});
+
+describe("promiseRequest", () => {
+  it("sends Bareng tagihan without a date, the amount only when typed", () => {
+    expect(
+      promiseRequest(
+        { kind: "with_next_invoice", date: "2026-11-20", amountText: "" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({ kind: "valid", body: { kind: "with_next_invoice" } });
+    expect(
+      promiseRequest(
+        { kind: "with_next_invoice", date: "", amountText: "500.000" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({
+      kind: "valid",
+      body: { kind: "with_next_invoice", promisedAmount: 500_000 },
+    });
+  });
+
+  it("sends the chosen date and what is paid now", () => {
+    expect(
+      promiseRequest(
+        { kind: "specific_date", date: "2026-11-20", amountText: "" },
+        OFFER,
+        PAYING,
+      ),
+    ).toEqual({
+      kind: "valid",
+      body: {
+        kind: "specific_date",
+        promisedDate: "2026-11-20",
+        payingNow: 1_000_000,
+      },
+    });
+  });
+
+  it("asks for a date", () => {
+    expect(
+      promiseRequest(
+        { kind: "specific_date", date: "", amountText: "" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({
+      kind: "invalid",
+      error: { target: "promisedDate", message: PROMISE_DATE_REQUIRED_TEXT },
+    });
+  });
+
+  it.each([
+    { name: "before the earliest", date: "2026-11-02" },
+    { name: "after the latest", date: "2027-01-02" },
+  ])("refuses a date $name", ({ date }) => {
+    expect(
+      promiseRequest(
+        { kind: "specific_date", date, amountText: "" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({
+      kind: "invalid",
+      error: {
+        target: "promisedDate",
+        message: "Pilih tanggal dari 3 Nov 2026 sampai 1 Jan 2027.",
+      },
+    });
+  });
+
+  it("takes both bounds", () => {
+    for (const date of ["2026-11-03", "2027-01-01"]) {
+      expect(
+        promiseRequest(
+          { kind: "specific_date", date, amountText: "" },
+          OFFER,
+          null,
+        ).kind,
+      ).toBe("valid");
+    }
+  });
+
+  it("sends a date when Bareng tagihan is no longer offered", () => {
+    expect(
+      promiseRequest(
+        { kind: "with_next_invoice", date: "", amountText: "" },
+        NO_NEXT_OFFER,
+        null,
+      ),
+    ).toEqual({
+      kind: "invalid",
+      error: { target: "promisedDate", message: PROMISE_DATE_REQUIRED_TEXT },
+    });
+  });
+
+  it("refuses an amount of 0", () => {
+    expect(
+      promiseRequest(
+        { kind: "with_next_invoice", date: "", amountText: "0" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({
+      kind: "invalid",
+      error: { target: "promisedAmount", message: PROMISE_AMOUNT_MIN_TEXT },
+    });
+  });
+
+  it("refuses an amount above the rest", () => {
+    expect(
+      promiseRequest(
+        { kind: "with_next_invoice", date: "", amountText: "1.250.001" },
+        OFFER,
+        PAYING,
+      ),
+    ).toEqual({
+      kind: "invalid",
+      error: {
+        target: "promisedAmount",
+        message: "Nominal janji paling banyak Rp1.250.000.",
+      },
+    });
+    expect(
+      promiseRequest(
+        { kind: "with_next_invoice", date: "", amountText: "1.250.000" },
+        OFFER,
+        PAYING,
+      ).kind,
+    ).toBe("valid");
+  });
+});
+
+describe("promiseErrorView", () => {
+  function fieldError(status: number, code: string, field?: string) {
+    return new ApiError({ status, code, message: "Pesan API.", field });
+  }
+
+  it.each([
+    { field: "kind", target: "kind" },
+    { field: "promisedDate", target: "promisedDate" },
+    { field: "promisedAmount", target: "promisedAmount" },
+    { field: "payingNow", target: "alert" },
+  ])("puts a 400 on $field under $target", ({ field, target }) => {
+    expect(
+      promiseErrorView(
+        fieldError(400, "invalid_input", field),
+        "specific_date",
+      ),
+    ).toEqual({
+      kind: "shown",
+      error: { target, message: "Pesan API." },
+      refetchPage: false,
+    });
+  });
+
+  it("puts a date error in the alert while the date input is hidden", () => {
+    const view = promiseErrorView(
+      fieldError(400, "promise_date_out_of_range", "promisedDate"),
+      "with_next_invoice",
+    );
+    expect(view).toEqual({
+      kind: "shown",
+      error: { target: "alert", message: "Pesan API." },
+      refetchPage: true,
+    });
+  });
+
+  it("reads the page again when it is out of date", () => {
+    expect(
+      promiseErrorView(
+        fieldError(400, "promise_no_next_invoice", "kind"),
+        "with_next_invoice",
+      ),
+    ).toEqual({
+      kind: "shown",
+      error: { target: "kind", message: "Pesan API." },
+      refetchPage: true,
+    });
+    expect(
+      promiseErrorView(
+        fieldError(400, "promise_amount_above_outstanding", "payingNow"),
+        "with_next_invoice",
+      ),
+    ).toEqual({
+      kind: "shown",
+      error: { target: "alert", message: "Pesan API." },
+      refetchPage: true,
+    });
+    expect(
+      promiseErrorView(
+        fieldError(409, "promise_nothing_owed"),
+        "with_next_invoice",
+      ),
+    ).toEqual({
+      kind: "shown",
+      error: { target: "alert", message: "Pesan API." },
+      refetchPage: true,
+    });
+  });
+
+  it("shows a rate limit's message in the alert, without reading again", () => {
+    expect(
+      promiseErrorView(fieldError(429, "rate_limited"), "specific_date"),
+    ).toEqual({
+      kind: "shown",
+      error: { target: "alert", message: "Pesan API." },
+      refetchPage: false,
+    });
+  });
+
+  it("replaces the page when the link stopped working", () => {
+    expect(
+      promiseErrorView(
+        apiError(404, "payment_link_not_found"),
+        "specific_date",
+      ),
+    ).toEqual({ kind: "link-gone" });
+    expect(
+      promiseErrorView(apiError(410, "payment_link_expired"), "specific_date"),
+    ).toEqual({ kind: "link-gone" });
+  });
+
+  it("shows the generic message for anything that is not the API's", () => {
+    expect(promiseErrorView(new Error("boom"), "specific_date")).toEqual({
+      kind: "shown",
+      error: { target: "alert", message: GENERIC_ERROR_MESSAGE },
+      refetchPage: false,
+    });
+  });
+});
+
+describe("after Simpan janji", () => {
+  const saved = promise({
+    kind: "specific_date",
+    promisedDate: "2026-11-20",
+    payingNow: 1_000_000,
+  });
+  const entry: PayFlowMode = { kind: "entry", text: "1.000.000" };
+
+  it("pays the chosen amount next, with the promise on its card", () => {
+    const mode: PayFlowMode = {
+      kind: "promise",
+      draft: defaultPromiseDraft(OFFER),
+      paying: PAYING,
+      editing: false,
+      back: entry,
+    };
+    expect(promiseSaved(mode, saved)).toEqual({
+      kind: "chosen",
+      text: "1.000.000",
+      amount: 1_000_000,
+      outstandingAfter: 1_250_000,
+      promise: saved,
+    });
+  });
+
+  it("shows Janji tercatat when nothing is paid now", () => {
+    const mode = nextFromChoice("later", openView({ qrisAvailable: true }));
+    expect(promiseSaved(mode, saved)).toEqual({
+      kind: "recorded",
+      paidAmount: null,
+      promise: saved,
+    });
+    expect(promiseSaved(PAY_MODE, saved)).toBe(PAY_MODE);
+  });
+
+  it("opens Ubah janji prefilled, then shows Janji tercatat again", () => {
+    const recorded: PayFlowMode = {
+      kind: "recorded",
+      paidAmount: 1_000_000,
+      promise: saved,
+    };
+    const editing = editPromise(saved, OFFER, recorded);
+    expect(editing).toEqual({
+      kind: "promise",
+      draft: { kind: "specific_date", date: "2026-11-20", amountText: "" },
+      paying: null,
+      editing: true,
+      back: recorded,
+    });
+    expect(backFromPromise(editing)).toBe(recorded);
+    const edited = promise({ promisedDate: "2026-11-25", version: 2 });
+    expect(promiseSaved(editing, edited)).toEqual({
+      kind: "recorded",
+      paidAmount: 1_000_000,
+      promise: edited,
+    });
+  });
+
+  it("opens Ubah janji from the active promise card and returns to the choice", () => {
+    const active = promise();
+    const editing = editPromise(active, OFFER, choiceMode("all"));
+    expect(backFromPromise(editing)).toEqual(choiceMode("all"));
+    expect(promiseSaved(editing, active)).toEqual({
+      kind: "recorded",
+      paidAmount: null,
+      promise: active,
+    });
+  });
+});
+
+describe("the chosen amount with a promise", () => {
+  it("says when the rest is promised", () => {
+    expect(
+      chosenPromiseLine(
+        1_250_000,
+        promise({ promisedDate: "2026-12-01", promisedAmount: null }),
+      ),
+    ).toBe("Sisa Rp1.250.000 dijanjikan Selasa, 1 Desember 2026.");
+  });
+
+  it("names a promise of part of the rest", () => {
+    expect(
+      chosenPromiseLine(
+        1_250_000,
+        promise({ promisedDate: "2026-12-01", promisedAmount: 500_000 }),
+      ),
+    ).toBe("Sisa Rp1.250.000, Rp500.000 dijanjikan Selasa, 1 Desember 2026.");
+  });
+
+  it("keeps the old line without a promise", () => {
+    expect(
+      chosenRemainder({
+        kind: "chosen",
+        text: "1.000.000",
+        amount: 1_000_000,
+        outstandingAfter: 1_250_000,
+        promise: null,
+      }),
+    ).toBe("Sisa Rp1.250.000 tetap jadi tagihan.");
+    expect(
+      chosenRemainder({
+        kind: "chosen",
+        text: "1.000.000",
+        amount: 1_000_000,
+        outstandingAfter: 1_250_000,
+        promise: promise(),
+      }),
+    ).toBe("Sisa Rp1.250.000 dijanjikan Selasa, 1 Desember 2026.");
+  });
+});
+
+describe("chosen amount modes", () => {
+  const entry: PayFlowMode = { kind: "entry", text: "1.000.000" };
+  const chosen: PayFlowMode = {
     kind: "chosen",
     text: "1.000.000",
     amount: 1_000_000,
     outstandingAfter: 1_250_000,
+    promise: null,
   };
-  const idle: QrisModel = { ...INITIAL_QRIS_MODEL, card: { kind: "idle" } };
-
-  it("opens the entry empty", () => {
-    expect(openPartialEntry()).toEqual({ kind: "entry", text: "" });
-  });
-
-  it("chooses the previewed amount and keeps what stays owed", () => {
-    expect(choosePartial(entry, preview)).toEqual(chosen);
-    expect(choosePartial(FULL_MODE, preview)).toBe(FULL_MODE);
-  });
+  const saved = promise({ promisedDate: "2026-12-01" });
+  const promised: PayFlowMode = { ...chosen, promise: saved };
 
   it("goes back to the entry with the amount kept", () => {
     expect(changePartialAmount(chosen)).toEqual(entry);
-    expect(changePartialAmount(FULL_MODE)).toBe(FULL_MODE);
+    expect(changePartialAmount(PAY_MODE)).toBe(PAY_MODE);
   });
 
   it("offers Ubah nominal only while no QR is in flight", () => {
@@ -1838,31 +2605,43 @@ describe("partial pay modes", () => {
       name: "pending",
       previous: {
         kind: "pending",
-        amount: 1,
+        amount: 1_000_000,
         expiresAt: "2026-11-06T10:00:00Z",
       },
     },
     {
       name: "checking",
-      previous: { kind: "checking", amount: 1, checkedAt: null },
+      previous: { kind: "checking", amount: 1_000_000, checkedAt: null },
     },
     { name: "creating", previous: { kind: "creating" } },
     { name: "waiting", previous: { kind: "waiting", until: 0 } },
-  ])("returns to the whole page when a $name QR ends paid", ({ previous }) => {
-    expect(partialModeAfterCard(chosen, previous, idle)).toBe(FULL_MODE);
+  ])("returns to the choice when a $name QR ends paid", ({ previous }) => {
+    expect(flowModeAfterCard(chosen, previous, IDLE_MODEL)).toEqual(
+      choiceMode("all"),
+    );
+  });
+
+  it("shows Janji tercatat with what was paid when the rest was promised", () => {
+    expect(
+      flowModeAfterCard(
+        promised,
+        { kind: "pending", amount: 999_000, expiresAt: "2026-11-06T10:00:00Z" },
+        IDLE_MODEL,
+      ),
+    ).toEqual({ kind: "recorded", paidAmount: 999_000, promise: saved });
+    expect(
+      flowModeAfterCard(promised, { kind: "creating" }, IDLE_MODEL),
+    ).toEqual({ kind: "recorded", paidAmount: 1_000_000, promise: saved });
   });
 
   it("keeps the chosen amount when a create fails with an alert", () => {
     expect(
-      partialModeAfterCard(
-        chosen,
+      flowModeAfterCard(
+        promised,
         { kind: "creating" },
-        {
-          ...idle,
-          alert: QRIS_CREATE_FAILED_TEXT,
-        },
+        { ...IDLE_MODEL, alert: QRIS_CREATE_FAILED_TEXT },
       ),
-    ).toBe(chosen);
+    ).toBe(promised);
   });
 
   it("keeps the chosen amount while the QR goes on or expires", () => {
@@ -1870,11 +2649,11 @@ describe("partial pay modes", () => {
       ...INITIAL_QRIS_MODEL,
       card: { kind: "pending", amount: 1, expiresAt: "2026-11-06T10:00:00Z" },
     };
-    expect(partialModeAfterCard(chosen, { kind: "creating" }, pending)).toBe(
+    expect(flowModeAfterCard(chosen, { kind: "creating" }, pending)).toBe(
       chosen,
     );
     expect(
-      partialModeAfterCard(chosen, pending.card, {
+      flowModeAfterCard(chosen, pending.card, {
         ...INITIAL_QRIS_MODEL,
         card: { kind: "expired", amount: 1 },
       }),
@@ -1882,12 +2661,58 @@ describe("partial pay modes", () => {
   });
 
   it("leaves other views alone", () => {
-    expect(partialModeAfterCard(entry, { kind: "creating" }, idle)).toBe(entry);
-    expect(partialModeAfterCard(FULL_MODE, { kind: "creating" }, idle)).toBe(
-      FULL_MODE,
+    expect(flowModeAfterCard(entry, { kind: "creating" }, IDLE_MODEL)).toBe(
+      entry,
     );
-    expect(partialModeAfterCard(chosen, { kind: "resuming" }, idle)).toBe(
+    expect(flowModeAfterCard(PAY_MODE, { kind: "creating" }, IDLE_MODEL)).toBe(
+      PAY_MODE,
+    );
+    expect(flowModeAfterCard(chosen, { kind: "resuming" }, IDLE_MODEL)).toBe(
       chosen,
     );
+  });
+});
+
+describe("Janji tercatat", () => {
+  const saved = promise({
+    kind: "specific_date",
+    promisedDate: "2026-11-20",
+    promisedAmount: 500_000,
+  });
+
+  it("thanks the tenant for what this visit paid and shows what is left", () => {
+    expect(
+      promiseRecordedView(openView({ outstanding: 1_250_000 }), {
+        kind: "recorded",
+        paidAmount: 1_000_000,
+        promise: saved,
+      }),
+    ).toEqual({
+      paidLine: "Pembayaran Rp1.000.000 sudah diterima. Terima kasih, Bu Rina.",
+      outstandingLine: "Sisa tagihan Rp1.250.000",
+      date: "Jumat, 20 November 2026",
+      amount: "Rp500.000",
+    });
+  });
+
+  it("has no paid line when nothing was paid, and promises all the rest", () => {
+    const view = promiseRecordedView(openView(), {
+      kind: "recorded",
+      paidAmount: null,
+      promise: promise({ promisedAmount: null }),
+    });
+    expect(view.paidLine).toBeNull();
+    expect(view.amount).toBe("Semua sisa tagihan");
+    expect(view.outstandingLine).toBe("Sisa tagihan Rp2.250.000");
+  });
+
+  it("leaves out what is left when nothing is", () => {
+    expect(
+      promiseRecordedView(openView({ outstanding: 0 }), {
+        kind: "recorded",
+        paidAmount: null,
+        promise: saved,
+      }).outstandingLine,
+    ).toBeNull();
   });
 });

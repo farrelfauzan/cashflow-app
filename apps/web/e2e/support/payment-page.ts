@@ -19,6 +19,7 @@ import type {
   Unit,
 } from "../../src/lib/api/generated/model";
 import { jakartaToday } from "../../src/lib/format/date";
+import { formatRupiah } from "../../src/lib/format/rupiah";
 import { findOrCreateProperty } from "./property-fixtures";
 import type { SeededStaff } from "./staff";
 
@@ -309,4 +310,13 @@ export function tenantClientAddress(
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return `198.${spec}.${(hash >>> 8) & 0xff}.${hash & 0xff}`;
+}
+
+// Bayar-Pilih: keeps "Bayar semua" and presses "Lanjut bayar Rp…", which opens how to pay it.
+export async function payAll(page: Page, outstanding: number): Promise<void> {
+  const next = page.getByRole("button", {
+    name: `Lanjut bayar ${formatRupiah(outstanding)}`,
+  });
+  await expectTouchTarget(next);
+  await next.click();
 }
