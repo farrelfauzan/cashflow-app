@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useLinkPaymentPageTelegram } from "@/lib/api/generated/payment-page/payment-page";
 
 import type { TelegramLinkState } from "./type";
 import { GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
-import { isTelegramDeepLink, telegramErrorView } from "./utils";
+import {
+  isTelegramDeepLink,
+  telegramErrorView,
+  telegramLinkDelay,
+  telegramLinkExpiresAt,
+} from "./utils";
 
 type UseTelegramLinkInput = {
   // The link's token: it goes only into the generated request's path.
@@ -26,7 +31,8 @@ type TelegramLink = {
 
 // "Hubungkan Telegram" (linkPaymentPageTelegram): one request at a time, never retried on its own
 // (a rate limit shares the page's budget). The answer's deep link is kept only in this state, to
-// be opened by the tenant; it is never logged.
+// be opened by the tenant; it is never logged. Once its code expires the card offers
+// "Hubungkan Telegram" again, which is what the bot tells a tenant with an expired code to press.
 export function useTelegramLink({
   token,
   onLinkGone,
@@ -36,8 +42,19 @@ export function useTelegramLink({
   const [alert, setAlert] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
 
+  const expiresAt = state.kind === "ready" ? state.expiresAt : null;
+  useEffect(() => {
+    if (expiresAt === null) return;
+    const timer = window.setTimeout(
+      () => setState({ kind: "idle" }),
+      telegramLinkDelay(expiresAt, Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [expiresAt]);
+
   function ask() {
     if (state.kind === "asking") return;
+    const askedAt = Date.now();
     setState({ kind: "asking" });
     setAlert(null);
     mutation.mutate(
@@ -45,7 +62,11 @@ export function useTelegramLink({
       {
         onSuccess: (answer) => {
           if (isTelegramDeepLink(answer.deepLink)) {
-            setState({ kind: "ready", deepLink: answer.deepLink });
+            setState({
+              kind: "ready",
+              deepLink: answer.deepLink,
+              expiresAt: telegramLinkExpiresAt(askedAt),
+            });
             return;
           }
           setState({ kind: "idle" });

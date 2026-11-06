@@ -102,6 +102,8 @@ import {
   remainderLabel,
   summaryRowLabel,
   isTelegramDeepLink,
+  telegramLinkDelay,
+  telegramLinkExpiresAt,
   telegramErrorView,
   telegramOfferView,
 } from "./utils";
@@ -2954,6 +2956,16 @@ describe("Telegram on Bayar-Pilih", () => {
     );
     expect(isTelegramDeepLink("javascript:alert(1)")).toBe(false);
     expect(isTelegramDeepLink("https://t.me/CashflowDemoBot")).toBe(false);
+  });
+
+  it("stops showing a deep link when its 10-minute code expires", () => {
+    const askedAt = Date.UTC(2026, 10, 7, 5, 0, 0);
+    const expiresAt = telegramLinkExpiresAt(askedAt);
+    expect(expiresAt - askedAt).toBe(10 * 60_000);
+    expect(telegramLinkDelay(expiresAt, askedAt + 1_000)).toBe(599_000);
+    expect(telegramLinkDelay(expiresAt, expiresAt)).toBe(0);
+    // A tab put to sleep past the expiry goes back at once when it wakes.
+    expect(telegramLinkDelay(expiresAt, expiresAt + 60_000)).toBe(0);
   });
 
   it("maps a refused link request", () => {

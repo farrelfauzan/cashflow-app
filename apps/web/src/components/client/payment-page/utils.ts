@@ -1693,6 +1693,8 @@ export const TELEGRAM_LINKED_TEXT =
   "Telegram terhubung. Pengingat berikutnya dikirim di sini.";
 
 const TELEGRAM_UNAVAILABLE_CODE = "telegram_unavailable";
+// The deep link's one-time code is valid 10 minutes (TelegramDeepLink in the contract).
+export const TELEGRAM_CODE_LIFETIME_MS = 10 * 60_000;
 // The bot's deep link, as the API answers it. Anything else is not opened.
 const TELEGRAM_DEEP_LINK =
   /^https:\/\/t\.me\/[A-Za-z0-9_]+\?start=[A-Za-z0-9_-]+$/;
@@ -1704,6 +1706,17 @@ export function telegramOfferView(page: PaymentPage): TelegramOfferView | null {
 // Only the bot's own https://t.me link is shown to open; the code in it is never logged.
 export function isTelegramDeepLink(link: string): boolean {
   return TELEGRAM_DEEP_LINK.test(link);
+}
+
+// When a deep link asked for at askedAt stops being shown. Counted from the moment the request was
+// sent, which is never after the API made the code, so the link never outlives it.
+export function telegramLinkExpiresAt(askedAt: number): number {
+  return askedAt + TELEGRAM_CODE_LIFETIME_MS;
+}
+
+// How long until the shown link goes back to "Hubungkan Telegram"; 0 once it has expired.
+export function telegramLinkDelay(expiresAt: number, now: number): number {
+  return Math.max(0, expiresAt - now);
 }
 
 export function telegramErrorView(error: unknown): TelegramErrorView {

@@ -60,10 +60,16 @@ function chatId(testInfo: TestInfo): number {
   return Number(`7${runId()}${projectDigit(testInfo)}${testInfo.retry}`);
 }
 
-async function openTelegramPage(page: Page, testInfo: TestInfo) {
+// A tenant of the test's own (digit: the test's digit in the tenant number) opens their page. With
+// clock, the page runs on Playwright's clock, so the test can move time forward.
+async function openTelegramPage(
+  page: Page,
+  testInfo: TestInfo,
+  { digit, clock = false }: { digit: number; clock?: boolean },
+) {
   const api = await staffApi(HENDRA, testInfo);
   const rented = await rentSinceLastMonth(api, testInfo, {
-    digit: 1,
+    digit,
     phonePrefix: "0815-5",
     price: 1_250_000,
     unitBase: "Kamar Telegram",
@@ -80,6 +86,7 @@ async function openTelegramPage(page: Page, testInfo: TestInfo) {
 
   const outside = trackOutsideRequests(page);
   const leaks = trackTokenLeaks(page, path, token);
+  if (clock) await page.clock.install();
   await page.goto(path);
   return { path, outside, leaks };
 }
@@ -109,7 +116,7 @@ async function pressStart(testInfo: TestInfo, deepLink: string) {
 test("Hubungkan Telegram gives a one-time link, and the page says when it is linked", async ({
   page,
 }, testInfo) => {
-  const fixture = await openTelegramPage(page, testInfo);
+  const fixture = await openTelegramPage(page, testInfo, { digit: 1 });
 
   // Bayar-Pilih: a quiet card under "Lanjut bayar", which stays the one primary.
   const card = page.getByRole("region", { name: CARD });
@@ -144,14 +151,53 @@ test("Hubungkan Telegram gives a one-time link, and the page says when it is lin
   await card.scrollIntoViewIfNeeded();
   await attachViewportScreenshot(page, testInfo, "payment-telegram-open");
 
-  // Start in Telegram; back on the page (a focus or a reload reads it again) it says so.
+  // Start in Telegram; back on the page, the tab turning visible again reads the page again
+  // (TanStack Query's focus refetch), with no reload, and the card says so.
   await pressStart(testInfo, deepLink);
-  await page.reload();
+  const reread: Promise<Response> = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname === `/api${fixture.path}`,
+  );
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event("visibilitychange")),
+  );
+  expect((await reread).status()).toBe(200);
   await expect(card).toContainText(LINKED_TEXT);
   await expect(card.getByRole("button")).toHaveCount(0);
   await expect(card.getByRole("link")).toHaveCount(0);
   await card.scrollIntoViewIfNeeded();
   await attachViewportScreenshot(page, testInfo, "payment-telegram-linked");
+
+  expect(fixture.outside).toEqual([]);
+  expect(fixture.leaks).toEqual([]);
+});
+
+test("an expired link goes back to Hubungkan Telegram, as the bot tells the tenant", async ({
+  page,
+}, testInfo) => {
+  const fixture = await openTelegramPage(page, testInfo, {
+    digit: 2,
+    clock: true,
+  });
+
+  const card = page.getByRole("region", { name: CARD });
+  const connect = card.getByRole("button", { name: "Hubungkan Telegram" });
+  await connect.click();
+  const open = card.getByRole("link", { name: "Buka Telegram" });
+  await expect(open).toBeVisible();
+
+  // Still shown just before the code's 10 minutes are up.
+  await page.clock.fastForward("09:30");
+  await expect(open).toBeVisible();
+
+  // The code expired: the link and its hint go, and "Hubungkan Telegram" asks for a new one.
+  await page.clock.fastForward("00:31");
+  await expect(open).toHaveCount(0);
+  await expect(card).not.toContainText(OPEN_HINT);
+  await expect(connect).toBeEnabled();
+  await connect.click();
+  await expect(open).toBeVisible();
 
   expect(fixture.outside).toEqual([]);
   expect(fixture.leaks).toEqual([]);
