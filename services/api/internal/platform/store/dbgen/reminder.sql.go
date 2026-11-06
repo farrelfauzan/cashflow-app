@@ -12,6 +12,119 @@ import (
 	"github.com/google/uuid"
 )
 
+const getBrokenPromiseDate = `-- name: GetBrokenPromiseDate :one
+SELECT v.promised_date
+FROM promise_version v
+WHERE v.organization_id = $1 AND v.promise_id = $2
+ORDER BY v.version DESC
+LIMIT 1
+`
+
+type GetBrokenPromiseDateParams struct {
+	OrganizationID uuid.UUID
+	PromiseID      uuid.UUID
+}
+
+// The promised date of a promise's newest version: the day it was broken on.
+func (q *Queries) GetBrokenPromiseDate(ctx context.Context, arg GetBrokenPromiseDateParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, getBrokenPromiseDate, arg.OrganizationID, arg.PromiseID)
+	var promised_date time.Time
+	err := row.Scan(&promised_date)
+	return promised_date, err
+}
+
+const getMessageRecipient = `-- name: GetMessageRecipient :one
+SELECT t.name, t.phone, o.display_name
+FROM tenant t
+JOIN organization o ON o.id = t.organization_id
+WHERE t.organization_id = $1 AND t.id = $2
+`
+
+type GetMessageRecipientParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type GetMessageRecipientRow struct {
+	Name        string
+	Phone       string
+	DisplayName string
+}
+
+// Who a tenant message goes to and the organization it names.
+func (q *Queries) GetMessageRecipient(ctx context.Context, arg GetMessageRecipientParams) (GetMessageRecipientRow, error) {
+	row := q.db.QueryRow(ctx, getMessageRecipient, arg.OrganizationID, arg.TenantID)
+	var i GetMessageRecipientRow
+	err := row.Scan(&i.Name, &i.Phone, &i.DisplayName)
+	return i, err
+}
+
+const getPromiseVersionState = `-- name: GetPromiseVersionState :one
+SELECT v.id, v.promise_id, v.tenant_id, v.promised_date, v.promised_amount, v.created_at,
+       p.status AS promise_status,
+       (v.version = (SELECT max(v2.version) FROM promise_version v2
+                     WHERE v2.organization_id = v.organization_id AND v2.promise_id = v.promise_id))::boolean AS latest
+FROM promise_version v
+JOIN payment_promise p ON p.organization_id = v.organization_id AND p.id = v.promise_id
+WHERE v.organization_id = $1 AND v.id = $2
+`
+
+type GetPromiseVersionStateParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetPromiseVersionStateRow struct {
+	ID             uuid.UUID
+	PromiseID      uuid.UUID
+	TenantID       uuid.UUID
+	PromisedDate   time.Time
+	PromisedAmount *int64
+	CreatedAt      time.Time
+	PromiseStatus  string
+	Latest         bool
+}
+
+// A promise version's terms with its promise's status and whether it is the promise's newest
+// version.
+func (q *Queries) GetPromiseVersionState(ctx context.Context, arg GetPromiseVersionStateParams) (GetPromiseVersionStateRow, error) {
+	row := q.db.QueryRow(ctx, getPromiseVersionState, arg.OrganizationID, arg.ID)
+	var i GetPromiseVersionStateRow
+	err := row.Scan(
+		&i.ID,
+		&i.PromiseID,
+		&i.TenantID,
+		&i.PromisedDate,
+		&i.PromisedAmount,
+		&i.CreatedAt,
+		&i.PromiseStatus,
+		&i.Latest,
+	)
+	return i, err
+}
+
+const insertPromiseConfirmation = `-- name: InsertPromiseConfirmation :exec
+INSERT INTO promise_confirmation (promise_version_id, organization_id, tenant_id, created_at)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertPromiseConfirmationParams struct {
+	PromiseVersionID uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	CreatedAt        time.Time
+}
+
+func (q *Queries) InsertPromiseConfirmation(ctx context.Context, arg InsertPromiseConfirmationParams) error {
+	_, err := q.db.Exec(ctx, insertPromiseConfirmation,
+		arg.PromiseVersionID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertReminder = `-- name: InsertReminder :exec
 INSERT INTO reminder (id, organization_id, tenant_id, run_day, promise_version_id, broken_promise_id, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -90,6 +203,115 @@ func (q *Queries) LastResolvedVisitAt(ctx context.Context, arg LastResolvedVisit
 	return resolved_at, err
 }
 
+const listInvoiceLinesFor = `-- name: ListInvoiceLinesFor :many
+SELECT invoice_id, label, amount
+FROM invoice_line
+WHERE organization_id = $1 AND invoice_id = ANY($2::uuid[])
+ORDER BY seq
+`
+
+type ListInvoiceLinesForParams struct {
+	OrganizationID uuid.UUID
+	InvoiceIds     []uuid.UUID
+}
+
+type ListInvoiceLinesForRow struct {
+	InvoiceID uuid.UUID
+	Label     string
+	Amount    int64
+}
+
+// The lines of the given invoices, in the order they were written.
+func (q *Queries) ListInvoiceLinesFor(ctx context.Context, arg ListInvoiceLinesForParams) ([]ListInvoiceLinesForRow, error) {
+	rows, err := q.db.Query(ctx, listInvoiceLinesFor, arg.OrganizationID, arg.InvoiceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInvoiceLinesForRow
+	for rows.Next() {
+		var i ListInvoiceLinesForRow
+		if err := rows.Scan(&i.InvoiceID, &i.Label, &i.Amount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingPromiseConfirmations = `-- name: ListPendingPromiseConfirmations :many
+SELECT promise_version_id
+FROM promise_confirmation
+WHERE organization_id = $1 AND status = 'pending' AND created_at < $2
+ORDER BY created_at, promise_version_id
+LIMIT $3
+`
+
+type ListPendingPromiseConfirmationsParams struct {
+	OrganizationID uuid.UUID
+	Before         time.Time
+	RowLimit       int32
+}
+
+func (q *Queries) ListPendingPromiseConfirmations(ctx context.Context, arg ListPendingPromiseConfirmationsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listPendingPromiseConfirmations, arg.OrganizationID, arg.Before, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var promise_version_id uuid.UUID
+		if err := rows.Scan(&promise_version_id); err != nil {
+			return nil, err
+		}
+		items = append(items, promise_version_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingReminders = `-- name: ListPendingReminders :many
+SELECT id
+FROM reminder
+WHERE organization_id = $1 AND status = 'pending' AND created_at < $2
+ORDER BY created_at, id
+LIMIT $3
+`
+
+type ListPendingRemindersParams struct {
+	OrganizationID uuid.UUID
+	Before         time.Time
+	RowLimit       int32
+}
+
+// Reminders still pending that were recorded before @before, oldest first: their send task was
+// lost or has not run yet.
+func (q *Queries) ListPendingReminders(ctx context.Context, arg ListPendingRemindersParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listPendingReminders, arg.OrganizationID, arg.Before, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecordedReminderStages = `-- name: ListRecordedReminderStages :many
 SELECT invoice_id, stage
 FROM reminder_invoice
@@ -116,6 +338,42 @@ func (q *Queries) ListRecordedReminderStages(ctx context.Context, arg ListRecord
 	var items []ListRecordedReminderStagesRow
 	for rows.Next() {
 		var i ListRecordedReminderStagesRow
+		if err := rows.Scan(&i.InvoiceID, &i.Stage); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReminderStages = `-- name: ListReminderStages :many
+SELECT invoice_id, stage
+FROM reminder_invoice
+WHERE organization_id = $1 AND reminder_id = $2
+`
+
+type ListReminderStagesParams struct {
+	OrganizationID uuid.UUID
+	ReminderID     uuid.UUID
+}
+
+type ListReminderStagesRow struct {
+	InvoiceID uuid.UUID
+	Stage     string
+}
+
+func (q *Queries) ListReminderStages(ctx context.Context, arg ListReminderStagesParams) ([]ListReminderStagesRow, error) {
+	rows, err := q.db.Query(ctx, listReminderStages, arg.OrganizationID, arg.ReminderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReminderStagesRow
+	for rows.Next() {
+		var i ListReminderStagesRow
 		if err := rows.Scan(&i.InvoiceID, &i.Stage); err != nil {
 			return nil, err
 		}
@@ -174,7 +432,7 @@ func (q *Queries) ListTenantBrokenPromisesSince(ctx context.Context, arg ListTen
 }
 
 const listTenantOwingInvoices = `-- name: ListTenantOwingInvoices :many
-SELECT invoice_id, due_date, outstanding
+SELECT invoice_id, period, due_date, billed, paid, outstanding
 FROM invoice_balance
 WHERE organization_id = $1 AND tenant_id = $2 AND outstanding > 0
 ORDER BY period, seq
@@ -187,7 +445,10 @@ type ListTenantOwingInvoicesParams struct {
 
 type ListTenantOwingInvoicesRow struct {
 	InvoiceID   uuid.UUID
+	Period      time.Time
 	DueDate     time.Time
+	Billed      int64
+	Paid        int64
 	Outstanding int64
 }
 
@@ -202,7 +463,14 @@ func (q *Queries) ListTenantOwingInvoices(ctx context.Context, arg ListTenantOwi
 	var items []ListTenantOwingInvoicesRow
 	for rows.Next() {
 		var i ListTenantOwingInvoicesRow
-		if err := rows.Scan(&i.InvoiceID, &i.DueDate, &i.Outstanding); err != nil {
+		if err := rows.Scan(
+			&i.InvoiceID,
+			&i.Period,
+			&i.DueDate,
+			&i.Billed,
+			&i.Paid,
+			&i.Outstanding,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -259,6 +527,130 @@ func (q *Queries) ListTenantsToRemind(ctx context.Context, arg ListTenantsToRemi
 	return items, nil
 }
 
+const lockPromiseConfirmation = `-- name: LockPromiseConfirmation :one
+SELECT promise_version_id, tenant_id, status, created_at
+FROM promise_confirmation
+WHERE organization_id = $1 AND promise_version_id = $2
+FOR UPDATE
+`
+
+type LockPromiseConfirmationParams struct {
+	OrganizationID   uuid.UUID
+	PromiseVersionID uuid.UUID
+}
+
+type LockPromiseConfirmationRow struct {
+	PromiseVersionID uuid.UUID
+	TenantID         uuid.UUID
+	Status           string
+	CreatedAt        time.Time
+}
+
+func (q *Queries) LockPromiseConfirmation(ctx context.Context, arg LockPromiseConfirmationParams) (LockPromiseConfirmationRow, error) {
+	row := q.db.QueryRow(ctx, lockPromiseConfirmation, arg.OrganizationID, arg.PromiseVersionID)
+	var i LockPromiseConfirmationRow
+	err := row.Scan(
+		&i.PromiseVersionID,
+		&i.TenantID,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lockReminder = `-- name: LockReminder :one
+
+SELECT id, tenant_id, run_day, promise_version_id, broken_promise_id, status
+FROM reminder
+WHERE organization_id = $1 AND id = $2
+FOR UPDATE
+`
+
+type LockReminderParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type LockReminderRow struct {
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	RunDay           time.Time
+	PromiseVersionID uuid.NullUUID
+	BrokenPromiseID  uuid.NullUUID
+	Status           string
+}
+
+// Sending (slice 4, S4-5) ---------------------------------------------------------------------
+// A reminder, locked until the sending transaction ends, so two deliveries of its task take turns
+// and the second sees what the first decided.
+func (q *Queries) LockReminder(ctx context.Context, arg LockReminderParams) (LockReminderRow, error) {
+	row := q.db.QueryRow(ctx, lockReminder, arg.OrganizationID, arg.ID)
+	var i LockReminderRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.RunDay,
+		&i.PromiseVersionID,
+		&i.BrokenPromiseID,
+		&i.Status,
+	)
+	return i, err
+}
+
+const markPromiseConfirmation = `-- name: MarkPromiseConfirmation :execrows
+UPDATE promise_confirmation
+SET status = $1, sent_at = $2
+WHERE organization_id = $3 AND promise_version_id = $4 AND status = 'pending'
+`
+
+type MarkPromiseConfirmationParams struct {
+	Status           string
+	SentAt           *time.Time
+	OrganizationID   uuid.UUID
+	PromiseVersionID uuid.UUID
+}
+
+func (q *Queries) MarkPromiseConfirmation(ctx context.Context, arg MarkPromiseConfirmationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markPromiseConfirmation,
+		arg.Status,
+		arg.SentAt,
+		arg.OrganizationID,
+		arg.PromiseVersionID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markReminder = `-- name: MarkReminder :execrows
+UPDATE reminder
+SET status = $1, sent_at = $2
+WHERE organization_id = $3 AND id = $4 AND status = 'pending'
+`
+
+type MarkReminderParams struct {
+	Status         string
+	SentAt         *time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Settles a pending reminder as sent (with sent_at) or skipped. A reminder already settled is
+// left as it is (0 rows).
+func (q *Queries) MarkReminder(ctx context.Context, arg MarkReminderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markReminder,
+		arg.Status,
+		arg.SentAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const promiseVersionReminded = `-- name: PromiseVersionReminded :one
 SELECT EXISTS (
     SELECT 1 FROM reminder
@@ -277,4 +669,23 @@ func (q *Queries) PromiseVersionReminded(ctx context.Context, arg PromiseVersion
 	var reminded bool
 	err := row.Scan(&reminded)
 	return reminded, err
+}
+
+const tenantHasActivePromise = `-- name: TenantHasActivePromise :one
+SELECT EXISTS (
+    SELECT 1 FROM payment_promise
+    WHERE organization_id = $1 AND tenant_id = $2 AND status = 'active'
+) AS active
+`
+
+type TenantHasActivePromiseParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+func (q *Queries) TenantHasActivePromise(ctx context.Context, arg TenantHasActivePromiseParams) (bool, error) {
+	row := q.db.QueryRow(ctx, tenantHasActivePromise, arg.OrganizationID, arg.TenantID)
+	var active bool
+	err := row.Scan(&active)
+	return active, err
 }

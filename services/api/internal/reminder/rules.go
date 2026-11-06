@@ -1,7 +1,8 @@
 // Package reminder decides, once a day per organization, what each tenant should be told about
 // their invoices and promises (phase B, slice 4, S4-4): the H-3, H0 and H+3 invoice reminders,
 // the H-1 of a promised date, the notice of a broken promise, and the H+7 karyawan visit. It
-// records the decisions as reminder rows; sending them is S4-5.
+// records the decisions as reminder rows, and Sender sends them (S4-5), along with the
+// confirmation of every saved promise version.
 //
 // The rules are the pure function Decide. Decider runs them for every tenant of an
 // organization, each in its own transaction under the tenant's allocation lock, and remindertask

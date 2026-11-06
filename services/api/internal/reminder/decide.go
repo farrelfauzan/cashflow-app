@@ -23,7 +23,8 @@ import (
 var ErrNothingToRecord = errors.New("reminder: nothing to record")
 
 // Decider records the day's reminder decisions of an organization's tenants (the
-// reminders:decide task). It sends nothing.
+// reminders:decide task). It sends nothing itself: once a tenant's reminder row commits, it
+// enqueues the row's reminder:send task (Sender.Send).
 //
 // Deciding is the platform's own work, like closing promises: it checks no member's permission
 // and writes no audit row; the reminder rows are the record.
@@ -31,11 +32,19 @@ type Decider struct {
 	store *store.Store
 	clock clock.Clock
 	log   *slog.Logger
+	sends SendQueue
 }
 
-// NewDecider returns a Decider. c decides today in Asia/Jakarta and the time rows are made.
-func NewDecider(st *store.Store, c clock.Clock, log *slog.Logger) *Decider {
-	return &Decider{store: st, clock: c, log: log}
+// SendQueue enqueues the reminder:send task of a recorded reminder. A task already queued counts
+// as enqueued.
+type SendQueue interface {
+	EnqueueSend(ctx context.Context, org, reminderID uuid.UUID) error
+}
+
+// NewDecider returns a Decider. c decides today in Asia/Jakarta and the time rows are made; sends
+// gets each reminder's send task once its row commits (nil enqueues nothing, for tests).
+func NewDecider(st *store.Store, c clock.Clock, log *slog.Logger, sends SendQueue) *Decider {
+	return &Decider{store: st, clock: c, log: log, sends: sends}
 }
 
 // Result counts what one DecideOrg run did.
@@ -73,12 +82,20 @@ func (d *Decider) DecideOrg(ctx context.Context, org uuid.UUID) (Result, error) 
 	res := Result{Tenants: len(tenants)}
 	var errs []error
 	for _, tenantID := range tenants {
-		dec, opened, err := d.decideTenant(ctx, org, tenantID, today)
+		dec, reminderID, opened, err := d.decideTenant(ctx, org, tenantID, today)
 		if err != nil {
 			res.Failed++
 			d.log.ErrorContext(ctx, "deciding reminders", "organization", org, "tenant", tenantID, "error", err)
 			errs = append(errs, fmt.Errorf("tenant %s: %w", tenantID, err))
 			continue
+		}
+		if reminderID != uuid.Nil && d.sends != nil {
+			// After the commit, so the task never runs before its row exists. A lost enqueue is
+			// not an error of the run: the sweep (reminders:sweep) enqueues it again.
+			if err := d.sends.EnqueueSend(ctx, org, reminderID); err != nil {
+				d.log.WarnContext(ctx, "enqueueing a reminder's send; the sweep retries it",
+					"organization", org, "reminder", reminderID, "error", err)
+			}
 		}
 		if dec.HasMessage() {
 			res.Reminders++
@@ -110,9 +127,11 @@ func brokenSince(today time.Time) time.Time {
 // The lock is the one payments take, so the run never decides on an invoice a payment is paying
 // meanwhile, and two runs for the same tenant (a retry and the next day's, say) take turns: the
 // second reads what the first recorded. The unique keys back that up: a stage, H-1 or notice
-// recorded twice fails the transaction instead of half-recording a message.
-func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, today time.Time) (Decision, bool, error) {
+// recorded twice fails the transaction instead of half-recording a message. It also returns the
+// reminder row's id, uuid.Nil when none was recorded.
+func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, today time.Time) (Decision, uuid.UUID, bool, error) {
 	var dec Decision
+	var reminderID uuid.UUID
 	var opened bool
 	err := d.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
@@ -126,7 +145,8 @@ func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, tod
 		dec = Decide(in)
 		now := d.clock.Now()
 		if dec.HasMessage() {
-			if err := record(ctx, q, org, tenantID, today, now, dec); err != nil {
+			reminderID, err = record(ctx, q, org, tenantID, today, now, dec)
+			if err != nil {
 				return err
 			}
 		}
@@ -142,9 +162,9 @@ func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, tod
 		return nil
 	})
 	if err != nil {
-		return Decision{}, false, err
+		return Decision{}, uuid.Nil, false, err
 	}
-	return dec, opened, nil
+	return dec, reminderID, opened, nil
 }
 
 // loadInput reads what the rules need about the tenant.
@@ -231,21 +251,21 @@ func loadActivePromise(ctx context.Context, q *dbgen.Queries, org, tenantID uuid
 	return nil
 }
 
-// record inserts one reminder row for the decision, decided on today, with its invoice stages. A
-// decision with nothing to tell is ErrNothingToRecord, and nothing is written.
-func record(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, today, now time.Time, dec Decision) error {
+// record inserts one reminder row for the decision, decided on today, with its invoice stages, and
+// returns its id. A decision with nothing to tell is ErrNothingToRecord, and nothing is written.
+func record(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, today, now time.Time, dec Decision) (uuid.UUID, error) {
 	if !dec.HasMessage() {
-		return ErrNothingToRecord
+		return uuid.Nil, ErrNothingToRecord
 	}
 	id := uuid.New()
 	if err := q.InsertReminder(ctx, dbgen.InsertReminderParams{
 		ID: id, OrganizationID: org, TenantID: tenantID, RunDay: today,
 		PromiseVersionID: nullID(dec.PromiseH1), BrokenPromiseID: nullID(dec.BrokenNotice), CreatedAt: now,
 	}); err != nil {
-		return fmt.Errorf("reminder: recording the reminder: %w", err)
+		return uuid.Nil, fmt.Errorf("reminder: recording the reminder: %w", err)
 	}
 	if len(dec.Stages) == 0 {
-		return nil
+		return id, nil
 	}
 	invoices := make([]uuid.UUID, len(dec.Stages))
 	stages := make([]string, len(dec.Stages))
@@ -255,9 +275,9 @@ func record(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, toda
 	if err := q.InsertReminderInvoices(ctx, dbgen.InsertReminderInvoicesParams{
 		OrganizationID: org, ReminderID: id, InvoiceIds: invoices, TenantID: tenantID, Stages: stages,
 	}); err != nil {
-		return fmt.Errorf("reminder: recording the invoice stages: %w", err)
+		return uuid.Nil, fmt.Errorf("reminder: recording the invoice stages: %w", err)
 	}
-	return nil
+	return id, nil
 }
 
 func nullID(id uuid.UUID) uuid.NullUUID { return uuid.NullUUID{UUID: id, Valid: id != uuid.Nil} }
