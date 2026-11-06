@@ -217,6 +217,13 @@ export type RecordedView = {
   amount: string;
 };
 
+// The chosen-amount card above the tabs: the amount formatted, and what stays owed (null when
+// it pays everything or when the QR's amount is not the chosen one).
+export type ChosenAmountView = {
+  amount: string;
+  remainderLine: string | null;
+};
+
 // What the amount field of "Bayar sebagian" holds, checked by comparison only.
 export type PartialAmountCheck =
   // Nothing (or 0) typed: no preview, no message, the primary waits.
@@ -302,8 +309,9 @@ export type PaymentTab = "qris" | "transfer";
 export type QrisCard =
   // Reading getPaymentStatus once on load, to resume a pending or checking QR.
   | { kind: "resuming" }
-  // No QR in this visit: "Bayar QRIS".
-  | { kind: "idle" }
+  // No QR in this visit: "Bayar QRIS". `paid`: this visit's QR was just paid (the page is read
+  // again), as opposed to a QR that is gone or was never made.
+  | { kind: "idle"; paid?: true }
   // createPaymentQris is running (up to about 20 seconds).
   // retried: the API was overloaded once and this is the one automatic retry.
   | { kind: "creating"; retried?: true }

@@ -32,7 +32,7 @@ import {
   choiceMode,
   choicePrimaryLabel,
   chooseFromEntry,
-  chosenRemainder,
+  chosenAmountView,
   editPromise,
   flowModeAfterCard,
   initialFlowMode,
@@ -196,8 +196,7 @@ export function PaymentFlow({
             <PaymentPageHeader header={partialHeader} />
             {card.kind !== "checking" && (
               <ChosenAmountCard
-                amount={formatRupiah(mode.amount)}
-                remainderLine={chosenRemainder(mode)}
+                {...chosenAmountView(mode, card)}
                 onChange={
                   canChangePartialAmount(card)
                     ? () => setMode(changePartialAmount(mode))

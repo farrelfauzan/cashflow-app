@@ -10,6 +10,7 @@ import type {
 } from "@/lib/api/generated/model";
 
 import type {
+  ChosenFlowMode,
   OpenPaymentPageView,
   PayFlowMode,
   PromiseDraft,
@@ -33,6 +34,7 @@ import {
   choiceMode,
   choicePrimaryLabel,
   chooseFromEntry,
+  chosenAmountView,
   chosenPromiseLine,
   chosenRemainder,
   chosenRemainderLine,
@@ -1013,7 +1015,7 @@ describe("qrisStep, createPaymentQris answers", () => {
     expect(
       answer(status({ status: "paid", amount: 700_000, expiresAt: at(-1) })),
     ).toEqual({
-      model: model({ kind: "idle" }),
+      model: model({ kind: "idle", paid: true }),
       ...NO_EFFECTS,
       refetchPage: true,
     });
@@ -1186,7 +1188,7 @@ describe("qrisStep, waiting after qris_busy", () => {
 
   it("reads the page again on paid", () => {
     expect(read(status({ status: "paid", amount: 5 }))).toEqual({
-      model: model({ kind: "idle" }),
+      model: model({ kind: "idle", paid: true }),
       ...NO_EFFECTS,
       refetchPage: true,
     });
@@ -1245,7 +1247,7 @@ describe("qrisStep, polling a QR of this visit", () => {
       name: "pending becomes paid: the page is read again",
       from: PENDING,
       answer: status({ status: "paid", amount: 2_250_000 }),
-      card: { kind: "idle" },
+      card: { kind: "idle", paid: true },
       refetchPage: true,
     },
     {
@@ -1288,7 +1290,7 @@ describe("qrisStep, polling a QR of this visit", () => {
       name: "checking becomes paid",
       from: CHECKING,
       answer: status({ status: "paid", amount: 2_250_000 }),
-      card: { kind: "idle" },
+      card: { kind: "idle", paid: true },
       refetchPage: true,
     },
     {
@@ -1410,7 +1412,7 @@ describe("qrisStep, Saya sudah bayar", () => {
     {
       name: "paid reads the page again",
       answer: status({ status: "paid", amount: 2_250_000 }),
-      card: { kind: "idle" },
+      card: { kind: "idle", paid: true },
       refetchPage: true,
     },
     {
@@ -1725,6 +1727,71 @@ describe("partial labels", () => {
   });
 });
 
+describe("chosenAmountView", () => {
+  const chosenMode = (
+    promise: PaymentPromise | null = null,
+  ): ChosenFlowMode => ({
+    kind: "chosen",
+    text: "1.000.000",
+    amount: 1_000_000,
+    outstandingAfter: 500_000,
+    promise,
+  });
+  const live = (amount: number): QrisCard => ({
+    kind: "pending",
+    amount,
+    expiresAt: "2026-11-06T12:15:00Z",
+  });
+
+  it("shows the chosen amount and what stays owed before any QR", () => {
+    expect(chosenAmountView(chosenMode(), { kind: "idle" })).toEqual({
+      amount: "Rp1.000.000",
+      remainderLine: "Sisa Rp500.000 tetap jadi tagihan.",
+    });
+  });
+
+  it("keeps the line while the QR is for the chosen amount", () => {
+    expect(chosenAmountView(chosenMode(), live(1_000_000))).toEqual({
+      amount: "Rp1.000.000",
+      remainderLine: "Sisa Rp500.000 tetap jadi tagihan.",
+    });
+    expect(
+      chosenAmountView(
+        chosenMode(promise({ promisedDate: "2026-12-01" })),
+        live(1_000_000),
+      ),
+    ).toEqual({
+      amount: "Rp1.000.000",
+      remainderLine: "Sisa Rp500.000 dijanjikan Selasa, 1 Desember 2026.",
+    });
+  });
+
+  it("shows the QR's amount and no stale line when a payment made the QR smaller", () => {
+    // Owed Rp1.500.000, chose Rp1.000.000; the QR expired, Rp800.000 cash was recorded, and the
+    // new QR is capped at the Rp700.000 still owed.
+    const view = { amount: "Rp700.000", remainderLine: null };
+    expect(chosenAmountView(chosenMode(), live(700_000))).toEqual(view);
+    expect(
+      chosenAmountView(chosenMode(), { kind: "expired", amount: 700_000 }),
+    ).toEqual(view);
+    expect(
+      chosenAmountView(
+        chosenMode(promise({ promisedDate: "2026-12-01" })),
+        live(700_000),
+      ),
+    ).toEqual(view);
+  });
+
+  it("falls back to the chosen amount when the QR's amount is unknown", () => {
+    expect(
+      chosenAmountView(chosenMode(), { kind: "expired", amount: null }),
+    ).toEqual({
+      amount: "Rp1.000.000",
+      remainderLine: "Sisa Rp500.000 tetap jadi tagihan.",
+    });
+  });
+});
+
 const PREVIEW: PaymentPreview = {
   amount: 1_000_000,
   outstandingBefore: 2_250_000,
@@ -1868,6 +1935,10 @@ const PAYING = {
 };
 
 const IDLE_MODEL: QrisModel = { ...INITIAL_QRIS_MODEL, card: { kind: "idle" } };
+const PAID_MODEL: QrisModel = {
+  ...INITIAL_QRIS_MODEL,
+  card: { kind: "idle", paid: true },
+};
 
 describe("Bayar-Pilih choices", () => {
   it("offers all three with QRIS and promise dates", () => {
@@ -2674,7 +2745,7 @@ describe("chosen amount modes", () => {
     { name: "creating", previous: { kind: "creating" } },
     { name: "waiting", previous: { kind: "waiting", until: 0 } },
   ])("returns to the choice when a $name QR ends paid", ({ previous }) => {
-    expect(flowModeAfterCard(chosen, previous, IDLE_MODEL)).toEqual(
+    expect(flowModeAfterCard(chosen, previous, PAID_MODEL)).toEqual(
       choiceMode("all"),
     );
   });
@@ -2684,12 +2755,30 @@ describe("chosen amount modes", () => {
       flowModeAfterCard(
         promised,
         { kind: "pending", amount: 999_000, expiresAt: "2026-11-06T10:00:00Z" },
-        IDLE_MODEL,
+        PAID_MODEL,
       ),
     ).toEqual({ kind: "recorded", paidAmount: 999_000, promise: saved });
     expect(
-      flowModeAfterCard(promised, { kind: "creating" }, IDLE_MODEL),
+      flowModeAfterCard(promised, { kind: "creating" }, PAID_MODEL),
     ).toEqual({ kind: "recorded", paidAmount: 1_000_000, promise: saved });
+  });
+
+  it("keeps the chosen amount when its QR is gone unpaid, so nothing is called paid", () => {
+    // Status "none" or a check's qris_not_found: idle, not paid, no alert.
+    const live: QrisCard = {
+      kind: "pending",
+      amount: 1_000_000,
+      expiresAt: "2026-11-06T10:00:00Z",
+    };
+    expect(flowModeAfterCard(promised, live, IDLE_MODEL)).toBe(promised);
+    expect(flowModeAfterCard(chosen, live, IDLE_MODEL)).toBe(chosen);
+    expect(
+      flowModeAfterCard(
+        chosen,
+        { kind: "checking", amount: 1_000_000, checkedAt: null },
+        IDLE_MODEL,
+      ),
+    ).toBe(chosen);
   });
 
   it("keeps the chosen amount when a create fails with an alert", () => {

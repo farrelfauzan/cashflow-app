@@ -29,6 +29,7 @@ import { z } from "zod";
 import type {
   ActivePromiseView,
   ChoiceOptionView,
+  ChosenAmountView,
   ChosenFlowMode,
   CopyStatus,
   OpenPaymentPageView,
@@ -644,7 +645,9 @@ function followQr(model: QrisModel, status: QrisStatus): QrisStep {
     case "checking":
       return step(withCard(model, checkingCard(status, fallback)));
     case "paid":
-      return step(withCard(model, { kind: "idle" }), { refetchPage: true });
+      return step(withCard(model, { kind: "idle", paid: true }), {
+        refetchPage: true,
+      });
     case "expired":
       return step(
         withCard(model, {
@@ -687,7 +690,9 @@ function statusRead(
         return step(withCard(model, checkingCard(status, null)));
       }
       if (status.status === "paid") {
-        return step(withCard(model, { kind: "idle" }), { refetchPage: true });
+        return step(withCard(model, { kind: "idle", paid: true }), {
+          refetchPage: true,
+        });
       }
       if (now >= card.until) {
         return step(withCard(model, { kind: "idle" }, QRIS_CREATE_FAILED_TEXT));
@@ -730,7 +735,9 @@ function created(model: QrisModel, status: QrisStatus): QrisStep {
     return step(withCard(model, checkingCard(status, null)));
   }
   if (status.status === "paid") {
-    return step(withCard(model, { kind: "idle" }), { refetchPage: true });
+    return step(withCard(model, { kind: "idle", paid: true }), {
+      refetchPage: true,
+    });
   }
   return step(withCard(model, { kind: "idle" }, QRIS_CREATE_FAILED_TEXT));
 }
@@ -792,7 +799,9 @@ function checked(model: QrisModel, status: QrisStatus): QrisStep {
     case "checking":
       return step(withCard(done, checkingCard(status, fallback)));
     case "paid":
-      return step(withCard(done, { kind: "idle" }), { refetchPage: true });
+      return step(withCard(done, { kind: "idle", paid: true }), {
+        refetchPage: true,
+      });
     case "expired":
       return step(
         withCard(done, { kind: "expired", amount: amountOf(status, fallback) }),
@@ -969,6 +978,28 @@ export function chosenRemainderLine(outstandingAfter: number): string | null {
   return outstandingAfter > 0
     ? `Sisa ${formatRupiah(outstandingAfter)} tetap jadi tagihan.`
     : null;
+}
+
+// The chosen-amount card: the amount of the QR once there is one, since a QR is capped at what is
+// owed when it is made (a payment recorded meanwhile makes the next QR smaller). The line under it
+// (what stays owed, or the promised rest) came from the preview of the chosen amount, so it shows
+// only while the QR's amount is that amount. Comparisons only.
+export function chosenAmountView(
+  mode: ChosenFlowMode,
+  card: QrisCard,
+): ChosenAmountView {
+  const chosen = mode.amount;
+  const qrAmount =
+    (card.kind === "pending" ||
+      card.kind === "checking" ||
+      card.kind === "expired") &&
+    card.amount !== null
+      ? card.amount
+      : chosen;
+  return {
+    amount: formatRupiah(qrAmount),
+    remainderLine: qrAmount === chosen ? chosenRemainder(mode) : null,
+  };
 }
 
 // The "Uang ini dipakai untuk" card, from the API's answer as is.
@@ -1234,10 +1265,11 @@ const QR_RESUMED: ReadonlySet<QrisCard["kind"]> = new Set([
 
 // After the card changes:
 // - a QR found on load (pending or being checked) skips the choice and shows the pay view;
-// - a chosen amount whose QR was paid (the card went back to idle without an alert, and the page
-//   is read again) shows Janji tercatat when its rest was promised, else the choice, so the
-//   tenant sees what is left. A failed create comes back to idle with an alert and keeps the
-//   chosen amount.
+// - a chosen amount whose QR was paid (the card went back to idle marked paid, and the page is
+//   read again) shows Janji tercatat when its rest was promised, else the choice, so the tenant
+//   sees what is left;
+// - a chosen amount whose QR is gone unpaid (status "none", a check's qris_not_found) or whose
+//   create failed (idle with an alert) stays, so "Bayar QRIS" makes a new QR for it.
 export function flowModeAfterCard(
   mode: PayFlowMode,
   previous: QrisCard,
@@ -1250,7 +1282,7 @@ export function flowModeAfterCard(
   }
   if (mode.kind !== "chosen") return mode;
   if (!QR_IN_FLIGHT.has(previous.kind)) return mode;
-  if (next.card.kind !== "idle" || next.alert !== null) return mode;
+  if (next.card.kind !== "idle" || next.card.paid !== true) return mode;
   if (mode.promise === null) return choiceMode("all");
   return {
     kind: "recorded",

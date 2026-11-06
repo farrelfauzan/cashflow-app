@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PARTIAL_CHANGE_TEXT, QRIS_AMOUNT_LABEL } from "./utils";
 
 type ChosenAmountCardProps = {
-  // The chosen amount, formatted.
+  // The amount, formatted: the QR's once there is one, else the chosen amount.
   amount: string;
   // "Sisa Rp1.250.000 tetap jadi tagihan."; null when the amount pays everything.
   remainderLine: string | null;
