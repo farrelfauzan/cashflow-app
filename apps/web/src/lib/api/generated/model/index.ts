@@ -122,6 +122,7 @@ export * from './tenantAccount';
 export * from './tenantArrears';
 export * from './tenantInput';
 export * from './tenantList';
+export * from './tenantOpenInvoice';
 export * from './termMonths';
 export * from './unit';
 export * from './unitInput';

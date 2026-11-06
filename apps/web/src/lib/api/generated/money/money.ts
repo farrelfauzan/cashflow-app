@@ -40,7 +40,8 @@ import type {
   MissingMeterReadingList,
   PaymentInput,
   PaymentResult,
-  TenantAccount
+  TenantAccount,
+  TenantOpenInvoice
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -428,6 +429,103 @@ export function useGetTenantAccount<TData = Awaited<ReturnType<typeof getTenantA
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = useGetTenantAccountQueryOptions(orgId,tenantId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * The tenant's invoices with something still owed (balance above 0), of any month, oldest period first, in the same order as the account. Paid and cancelled invoices are left out. It needs invoice:read only, so a member who may share a payment link but not read payments (the built-in Karyawan) can find the invoice to share. It is filtered like listInvoices: a member whose invoice:read is conditional sees only the invoices of leases they may read (a karyawan the leases they collect, a member limited to some properties the leases in their properties). A tenant the caller can see none of answers []. 404 not_found only when the tenant does not exist in the organization; 403 forbidden when invoice:read is denied outright, as listInvoices answers. Bounded per tenant (about one invoice per term), so it is a plain array.
+ * @summary A tenant's invoices still owed, of any month (needs invoice:read)
+ */
+export const listTenantOpenInvoices = (
+    orgId: string,
+    tenantId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<TenantOpenInvoice[]>(
+      {url: `/orgs/${orgId}/tenants/${tenantId}/open-invoices`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getListTenantOpenInvoicesQueryKey = (orgId: string,
+    tenantId: string,) =>
+    apiQueryKey({ orgId,tenantId }, { url: `/orgs/${orgId}/tenants/${tenantId}/open-invoices` });
+
+
+export const useListTenantOpenInvoicesQueryOptions = <TData = Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,tenantId }, { url: `/orgs/${orgId}/tenants/${tenantId}/open-invoices`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenantOpenInvoices>>> = ({ signal }) => listTenantOpenInvoices(orgId,tenantId, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && tenantId !== null && tenantId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTenantOpenInvoicesQueryResult = NonNullable<Awaited<ReturnType<typeof listTenantOpenInvoices>>>
+export type ListTenantOpenInvoicesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListTenantOpenInvoices<TData = Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTenantOpenInvoices>>,
+          TError,
+          Awaited<ReturnType<typeof listTenantOpenInvoices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTenantOpenInvoices<TData = Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTenantOpenInvoices>>,
+          TError,
+          Awaited<ReturnType<typeof listTenantOpenInvoices>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTenantOpenInvoices<TData = Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary A tenant's invoices still owed, of any month (needs invoice:read)
+ */
+
+export function useListTenantOpenInvoices<TData = Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantOpenInvoices>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListTenantOpenInvoicesQueryOptions(orgId,tenantId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
