@@ -3,8 +3,9 @@
 //
 // A promise belongs to the tenant, not to one invoice, and a tenant has at most one active
 // promise. Making a promise while one is active adds a version to it (an edit); every version is
-// kept. Each version covers the tenant's invoices still owing when it was made; closing a promise
-// (kept, partially kept, broken) and the reminders it silences come later in slice 4.
+// kept. Each version covers the tenant's invoices still owing when it was made. A promise closes
+// as kept the moment a payment keeps it, or with its outcome (kept, partially kept, broken) once
+// its promised day has ended (Closer); the reminders it silences come later in slice 4.
 //
 // The tenant-page entry point takes the link token, which is a secret: nothing here logs it,
 // stores it or puts it in an error.
@@ -203,11 +204,18 @@ func (s *Service) make(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, 
 		}
 	}
 
+	// The payments after this version are the tenant's with a higher seq than any they have now
+	// (see Progress). Every payment insert holds the tenant's lock taken above, so none is in
+	// flight with a lower seq.
+	mark, err := q.TenantPaymentSeqMark(ctx, dbgen.TenantPaymentSeqMarkParams{OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return Promise{}, fmt.Errorf("promise: reading the tenant's last payment: %w", err)
+	}
 	versionID := uuid.New()
 	v := dbgen.InsertPromiseVersionParams{
 		ID: versionID, OrganizationID: org, PromiseID: promiseID, TenantID: tenantID, Version: number,
 		Kind: in.Kind, PromisedDate: date, PromisedAmount: in.PromisedAmount, PayingNow: in.PayingNow,
-		OutstandingAt: acct.Outstanding, Source: by.source, CreatedAt: now,
+		OutstandingAt: acct.Outstanding, Source: by.source, CreatedAt: now, PaymentSeqMark: mark,
 	}
 	if in.Note != "" {
 		v.Note = &in.Note

@@ -13,13 +13,15 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 )
 
 // settle records the payment of attempt a, once, and marks the attempt paid. It runs inside tx,
 // scoped to org. The payment is keyed by the attempt's transaction id (unique per organization
 // and source), so a second settle of the same attempt, from the check, reconcile or the webhook,
-// records nothing new; it is allocated FIFO over the tenant's invoices only when it was inserted.
+// records nothing new; it is allocated FIFO over the tenant's invoices only when it was inserted,
+// and then closes the tenant's active promise as kept when it keeps it (promise.CloseIfKept).
 // The attempt's paid_amount is always the recorded payment's amount, so a payment recorded at
 // another amount than the attempt's flags the attempt (amount_mismatch).
 //
@@ -31,6 +33,11 @@ func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attem
 	q := dbgen.New(tx)
 	ref := a.TransactionID
 	now := s.clock.Now()
+	// The tenant's allocation lock before the insert, as billing.RecordPayment takes it: a promise
+	// version made meanwhile marks the tenant's last payment seq under it.
+	if err := billing.LockTenant(ctx, q, org, a.TenantID); err != nil {
+		return 0, false, fmt.Errorf("qris: locking the tenant of attempt %s: %w", a.ID, err)
+	}
 	pay, err := q.InsertPaymentIfNew(ctx, dbgen.InsertPaymentIfNewParams{
 		ID: uuid.New(), OrganizationID: org, TenantID: a.TenantID, Amount: paidAmount,
 		Method: billing.MethodQRIS, ReceivedAt: now, Source: billing.SourceQRIS, SourceRef: &ref,
@@ -44,6 +51,10 @@ func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attem
 		if err := s.audit.RecordSystemAction(ctx, tx, org, authz.ActionPaymentRecord,
 			authz.Resource{Type: "payment", ID: pay.ID.String()}); err != nil {
 			return 0, false, fmt.Errorf("qris: auditing the payment of attempt %s: %w", a.ID, err)
+		}
+		// A payment that keeps the tenant's active promise closes it as kept at once.
+		if _, err := promise.CloseIfKept(ctx, tx, org, a.TenantID, now); err != nil {
+			return 0, false, fmt.Errorf("qris: closing the promise kept by attempt %s: %w", a.ID, err)
 		}
 	case errors.Is(err, pgx.ErrNoRows):
 		// An earlier settle recorded it.

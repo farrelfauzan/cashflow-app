@@ -186,6 +186,20 @@ The account number is 5 to 34 digits, spaces or `-`. It prints what it stored; s
 replaces it. Each setting is in the organization's audit log as `settings:update` on
 `organization_bank_account/<organization id>`.
 
+### Set an organization's broken-promise threshold
+
+A tenant whose broken payment promises reach the organization's threshold (1 to 10, default 2;
+decision 41) gets a karyawan visit task when the worker's daily `promises:close` run (00:30
+Asia/Jakarta) closes a promise as broken. Until the settings screen exists, the platform operator
+sets it with `cmd/admin`, in any environment:
+
+```bash
+make admin ARGS='set-broken-promise-threshold -org <organization id> -n 3'
+```
+
+It applies from the next promise that closes broken and is in the organization's audit log as
+`settings:update` on `organization/<organization id>`.
+
 ### Login codes for end-to-end tests (development only)
 
 With `WHATSAPP_PROVIDER=devlog`, set `DEVLOG_FILE=/path/to/devlog.jsonl` and the API also appends
@@ -359,6 +373,10 @@ https://www.twilio.com/docs/api/errors.
   one, capped per tenant), "Saya sudah bayar", the status the payment page polls, the QR image,
   recording a paid QR once per transaction id, and the reconcile that asks AutoGoPay about pending
   attempts. `qristask` runs reconcile from the worker every 30 minutes.
+- `internal/promise`: tenants' payment promises: making and editing them, closing one as kept
+  when a payment keeps it, and closing the rest once their day has ended (kept, partially kept,
+  broken), with the broken_promises visit task. `promisetask` runs the close from the worker at
+  00:30 Asia/Jakarta.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.

@@ -30,8 +30,8 @@ const (
 	SourceAdmin      = "admin"
 )
 
-// Promise statuses as stored in payment_promise.status. Only active is set here; closing a promise
-// is slice 4's S4-3.
+// Promise statuses as stored in payment_promise.status. A promise is made active; Closer closes it
+// with one of the others (see Progress.Outcome).
 const (
 	StatusActive        = "active"
 	StatusKept          = "kept"

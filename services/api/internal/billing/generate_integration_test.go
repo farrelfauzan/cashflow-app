@@ -369,7 +369,7 @@ func TestGenerateInvoices(t *testing.T) {
 		setNow(env, 2026, 11, 10, 12, 0)
 
 		var logs bytes.Buffer
-		svc := billing.NewService(env.Store, env.Authz, env.Clock, slog.New(slog.NewJSONHandler(&logs, nil)))
+		svc := billing.NewService(env.Store, env.Authz, env.Clock, slog.New(slog.NewJSONHandler(&logs, nil)), env.Promises)
 		res, err := svc.GenerateOrg(ctx, w.org.ID)
 		require.NoError(t, err)
 		require.Equal(t, billing.Result{Leases: 2, Invoices: 1, Skipped: 1}, res)

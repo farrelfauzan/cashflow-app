@@ -5,3 +5,9 @@ RETURNING *;
 
 -- name: GetOrganization :one
 SELECT * FROM organization WHERE id = $1;
+
+-- name: GetBrokenPromiseThreshold :one
+SELECT broken_promise_threshold FROM organization WHERE id = @id;
+
+-- name: SetBrokenPromiseThreshold :execrows
+UPDATE organization SET broken_promise_threshold = @threshold WHERE id = @id;

@@ -162,10 +162,11 @@ type MeteredCharge struct {
 }
 
 type Organization struct {
-	ID          uuid.UUID
-	Name        string
-	DisplayName string
-	CreatedAt   time.Time
+	ID                     uuid.UUID
+	Name                   string
+	DisplayName            string
+	CreatedAt              time.Time
+	BrokenPromiseThreshold int16
 }
 
 type OrganizationBankAccount struct {
@@ -258,6 +259,7 @@ type PromiseVersion struct {
 	CreatedByStaffUserID uuid.NullUUID
 	PaymentLinkID        uuid.NullUUID
 	CreatedAt            time.Time
+	PaymentSeqMark       *int64
 }
 
 type Property struct {
@@ -361,4 +363,13 @@ type UnitPrice struct {
 	EffectiveFrom        time.Time
 	CreatedByStaffUserID uuid.NullUUID
 	CreatedAt            time.Time
+}
+
+type VisitTask struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	Reason         string
+	CreatedAt      time.Time
+	ResolvedAt     *time.Time
 }

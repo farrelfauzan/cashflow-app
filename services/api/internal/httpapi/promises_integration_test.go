@@ -277,6 +277,31 @@ func TestPromisesOverHTTP(t *testing.T) {
 		requireAPIError(t, resp, body, http.StatusTooManyRequests, "rate_limited", "")
 	})
 
+	// Version 3 promised Rp300.000 by 20 Nov. A payment recorded through the API that reaches it
+	// closes the promise as kept in the same request.
+	t.Run("a manual payment that keeps the promise closes it as kept", func(t *testing.T) {
+		pay := func(amount int64) {
+			t.Helper()
+			resp, body := admin.do(http.MethodPost, "/api/orgs/"+a.o.ID.String()+"/payments", map[string]any{
+				"requestId": uuid.New(), "tenantId": rina.tenantID, "amount": amount, "method": "cash", "receivedOn": "2026-11-02",
+			})
+			require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		}
+		latest := func() apigen.TenantPromise {
+			t.Helper()
+			resp, body := admin.do(http.MethodGet, promisesPath(a.o.ID, rina.tenantID), nil)
+			require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+			return decode[apigen.TenantPromiseList](t, body).Items[0]
+		}
+		pay(299_999)
+		require.Equal(t, apigen.PromiseStatusActive, latest().Status)
+		pay(1)
+		got := latest()
+		require.Equal(t, apigen.PromiseStatusKept, got.Status)
+		require.NotNil(t, got.ClosedAt)
+		require.True(t, env.Clock.Now().Equal(*got.ClosedAt))
+	})
+
 	t.Run("no token reaches the logs", func(t *testing.T) {
 		out := logs.String()
 		require.NotEmpty(t, out)

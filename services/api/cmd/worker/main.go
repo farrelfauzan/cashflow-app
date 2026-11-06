@@ -20,6 +20,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/queue"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise/promisetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 )
@@ -64,8 +66,9 @@ func run() error {
 	// Handlers and cron entries are registered here as each slice adds jobs.
 	mux := asynq.NewServeMux()
 	sched := queue.NewScheduler(cfg.RedisAddr, clock.Jakarta, log)
+	closer := promise.NewCloser(st, clk, log)
 	invoices := invoicetask.Worker{
-		Generator: billing.NewService(st, az, clk, log),
+		Generator: billing.NewService(st, az, clk, log, closer),
 		Orgs:      st,
 		Enqueuer:  invoicetask.NewClient(client),
 		Clock:     clk,
@@ -94,6 +97,16 @@ func run() error {
 		Log:        log,
 	}
 	if err := reconcile.Register(mux, sched); err != nil {
+		return err
+	}
+	promises := promisetask.Worker{
+		Closer:   closer,
+		Orgs:     st,
+		Enqueuer: promisetask.NewClient(client),
+		Clock:    clk,
+		Log:      log,
+	}
+	if err := promises.Register(mux, sched); err != nil {
 		return err
 	}
 
