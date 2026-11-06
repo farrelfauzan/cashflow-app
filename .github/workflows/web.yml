@@ -71,6 +71,14 @@ jobs:
       ALLOWED_ORIGINS: http://localhost:3000
       WHATSAPP_PROVIDER: devlog
       DEVLOG_FILE: /tmp/cashflow-e2e/devlog.jsonl
+      # The AutoGoPay stand-in (services/api/cmd/fakeautogopay, development only), for the API
+      # and the worker: QRIS codes are made and checked there, never at the real AutoGoPay.
+      AUTOGOPAY_BASE_URL: http://127.0.0.1:8091
+      # Both projects' QRIS tests run in parallel in one API, so more requests wait on the
+      # stand-in at once than the default of 3 allows (a request past it answers
+      # qris_unavailable). The pool grows with it, so the slots stay below the pool.
+      QRIS_MAX_CONCURRENT: "8"
+      DATABASE_MAX_CONNS: "20"
       # 127.0.0.1, not localhost: Node may resolve localhost to ::1 first.
       API_DEV_ORIGIN: http://127.0.0.1:8080
       API_INTERNAL_URL: http://127.0.0.1:8080
@@ -110,6 +118,19 @@ jobs:
           ./bin/migrate
           ./bin/admin seed-demo
           ./bin/admin generate-invoices
+      # seed-demo gives Griya Sejahtera a fake AutoGoPay key, so its payment pages offer QRIS,
+      # and e2e/payment-page-qris.spec.ts pays, expires and fails QRs through the stand-in's
+      # /_control routes. It keeps its QRs in memory, so it starts before the API and the worker.
+      - name: Start the AutoGoPay stand-in
+        run: |
+          mkdir -p "$E2E_DIR"
+          nohup make fake-autogopay > "$E2E_DIR/fake-autogopay.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS "$AUTOGOPAY_BASE_URL/_control/transactions" > /dev/null && exit 0
+            sleep 1
+          done
+          echo "The AutoGoPay stand-in did not start; see the api-log artifact."
+          exit 1
       - name: Start the API
         working-directory: services/api
         run: |
@@ -159,7 +180,7 @@ jobs:
           path: apps/web/playwright-report/
           retention-days: 7
       # Holds the devlog lines, login codes included: throwaway codes for this job's database.
-      # The worker's log goes in the same artifact.
+      # The worker's and the AutoGoPay stand-in's logs go in the same artifact.
       - name: Upload the API log
         if: failure()
         uses: actions/upload-artifact@v4
@@ -168,4 +189,5 @@ jobs:
           path: |
             /tmp/cashflow-e2e/api.log
             /tmp/cashflow-e2e/worker.log
+            /tmp/cashflow-e2e/fake-autogopay.log
           retention-days: 7

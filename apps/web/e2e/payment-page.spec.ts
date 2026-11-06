@@ -1,274 +1,63 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
-import {
-  expect,
-  request as playwrightRequest,
-  test,
-  type APIRequestContext,
-  type Locator,
-  type Page,
-  type TestInfo,
-} from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import type {
-  InvoiceList,
-  MeResponse,
-  PaymentLink,
-  PaymentPage,
-  PaymentResult,
-  Tenant,
-  TenantAccount,
-  Unit,
-} from "../src/lib/api/generated/model";
-import { formatMonthYear, jakartaToday } from "../src/lib/format/date";
+import type { InvoiceList } from "../src/lib/api/generated/model";
+import { formatMonthYear } from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
 import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { findOrCreateProperty } from "./support/property-fixtures";
-import { DIMAS, HENDRA, type SeededStaff } from "./support/staff";
+import {
+  BULANAN,
+  GRIYA,
+  GRIYA_BANK,
+  call,
+  expectTouchTarget,
+  firstOfMonth,
+  makeLink,
+  orgIdByName,
+  readPage,
+  recordCash,
+  rentSinceLastMonth,
+  tenantClientAddress,
+  staffApi,
+  thisMonthInvoiceId,
+  trackTokenLeaks,
+  type RentOptions,
+} from "./support/payment-page";
+import { DIMAS, HENDRA } from "./support/staff";
 
 // The tenant payment page /t/[token] (W15), read-only states, against the real API and its
 // worker. The tenant has no account: the page opens in a browser with no session at all, and
 // staff set up its data through the API with their own sessions. Pak Hendra is Admin of the
-// whole of Griya Sejahtera, which seed-demo gives a bank account; Pak Dimas is Admin of Kos
-// Bulanan Sejahtera, which has none. Every amount the page must show is read from the API.
-
-const GRIYA = "Griya Sejahtera";
-const BULANAN = "Kos Bulanan Sejahtera";
-// seed-demo's bank account for Griya Sejahtera (services/api/internal/demoseed/data.go).
-const GRIYA_BANK = {
-  bankName: "BCA",
-  accountNumber: "0123 456 789",
-  accountHolder: "Ani Rahmawati",
-};
+// whole of Griya Sejahtera, which seed-demo gives a bank account and QRIS (a fake AutoGoPay
+// key); Pak Dimas is Admin of Kos Bulanan Sejahtera, which has neither. Every amount the page
+// must show is read from the API. The QRIS states are in payment-page-qris.spec.ts.
 
 // Minimum body text per project, CLAUDE.md "UX rules".
 const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 
-// The tenant: no cookies, no storage.
-test.use({ storageState: { cookies: [], origins: [] } });
-
-function runId(): string {
-  const run = process.env.E2E_RUN_ID;
-  if (run === undefined || !/^\d{4}$/.test(run)) {
-    throw new Error("E2E_RUN_ID is set by playwright.config.ts");
-  }
-  return run;
+// This spec's tenants: tenant numbers 0814-8…, rooms "Kamar Bayar".
+function rent(digit: number): RentOptions {
+  return {
+    digit,
+    phonePrefix: "0814-8",
+    price: 1_100_000,
+    unitBase: "Kamar Bayar",
+  };
 }
 
-// A name no other run, project or retry uses.
-function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
-  const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
-  return `${base} ${runId()} ${project}${retry}`;
-}
-
-// A tenant number no other run, project, test or retry uses; 0814-8 is used by no other spec.
-function tenantNumber(testInfo: TestInfo, testDigit: number): string {
-  const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
-  return `0814-8${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
-}
-
-// "YYYY-MM-01" of this month and of last month, in Jakarta.
-function firstOfMonth(monthsAgo: number): string {
-  const [year = 0, month = 1] = jakartaToday(new Date()).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1 - monthsAgo, 1))
-    .toISOString()
-    .slice(0, 10);
-}
-
-// A staff member's API session, for setup only; the page itself never has one.
-async function staffApi(
-  staff: SeededStaff,
-  testInfo: TestInfo,
-): Promise<APIRequestContext> {
-  const api = await playwrightRequest.newContext({
-    baseURL: testInfo.project.use.baseURL,
-    storageState: staff.storageState,
-  });
-  return api;
-}
-
-async function call<T>(
-  api: APIRequestContext,
-  method: "GET" | "POST",
-  path: string,
-  want: number,
-  data?: object,
-): Promise<T> {
-  const response = await api.fetch(`/api${path}`, { method, data });
-  expect(response.status(), await response.text()).toBe(want);
-  return (await response.json()) as T;
-}
-
-async function orgIdByName(api: APIRequestContext, name: string) {
-  const me = await call<MeResponse>(api, "GET", "/me", 200);
-  const org = me.organizations.find((each) => each.name === name);
-  if (org === undefined) throw new Error(`not a member of ${name}`);
-  return org.id;
-}
-
-// The path of a new link for the invoice, /t/<token>, and its token.
-async function makeLink(
-  api: APIRequestContext,
-  orgId: string,
-  invoiceId: string,
-): Promise<{ path: string; token: string }> {
-  const link = await call<PaymentLink>(
-    api,
-    "POST",
-    `/orgs/${orgId}/invoices/${invoiceId}/payment-links`,
-    201,
-  );
-  const path = new URL(link.url, "http://localhost").pathname;
-  const token = /^\/t\/([A-Za-z0-9_-]{43})$/.exec(path)?.[1];
-  if (token === undefined) throw new Error("the link is not /t/<token>");
-  return { path, token };
-}
-
-type RentedTenant = {
-  orgId: string;
-  tenant: Tenant;
-  account: TenantAccount;
-  accountPath: string;
-};
-
-// A tenant of the test's own in Griya Sejahtera, renting a kos room monthly since the 1st of
-// last month: the API bills last month (now debt) and this month. Polled until the worker has
-// made both invoices.
-async function rentSinceLastMonth(
-  api: APIRequestContext,
-  testInfo: TestInfo,
-  digit: number,
-): Promise<RentedTenant> {
-  const orgId = await orgIdByName(api, GRIYA);
-  const tenant = await call<Tenant>(
-    api,
-    "POST",
-    `/orgs/${orgId}/tenants`,
-    201,
-    {
-      name: uniqueName(testInfo, "Bu Ratna Halaman Bayar"),
-      phone: tenantNumber(testInfo, digit),
-      note: "",
-    },
-  );
-  const property = await findOrCreateProperty(
-    { request: api },
-    orgId,
-    testInfo,
-    {
-      base: "Halaman Bayar",
-      kind: "kos",
-    },
-  );
-  const unit = await call<Unit>(
-    api,
-    "POST",
-    `/orgs/${orgId}/properties/${property.id}/units`,
-    201,
-    {
-      label: uniqueName(testInfo, `Kamar Bayar ${digit}`),
-      terms: [{ months: 1, price: 1_100_000 }],
-    },
-  );
-  await call(api, "POST", `/orgs/${orgId}/leases`, 201, {
-    tenantId: tenant.id,
-    unitId: unit.id,
-    startDate: firstOfMonth(1),
-    termMonths: 1,
-    depositAmount: 0,
-  });
-  const accountPath = `/orgs/${orgId}/tenants/${tenant.id}/account`;
-  let account = await call<TenantAccount>(api, "GET", accountPath, 200);
-  await expect
-    .poll(
-      async () => {
-        account = await call<TenantAccount>(api, "GET", accountPath, 200);
-        // Totals and invoices are separate reads: wait for both.
-        return (
-          account.invoices.length >= 2 &&
-          account.outstanding >=
-            account.invoices.reduce((sum, each) => sum + each.billed, 0)
-        );
-      },
-      { timeout: 20_000 },
-    )
-    .toBe(true);
-  return { orgId, tenant, account, accountPath };
-}
-
-async function recordCash(
-  api: APIRequestContext,
-  rented: RentedTenant,
-  amount: number,
-): Promise<void> {
-  await call<PaymentResult>(
-    api,
-    "POST",
-    `/orgs/${rented.orgId}/payments`,
-    201,
-    {
-      requestId: randomUUID(),
-      tenantId: rented.tenant.id,
-      amount,
-      method: "cash",
-      receivedOn: jakartaToday(new Date()),
-    },
-  );
-}
-
-function thisMonthInvoiceId(account: TenantAccount): string {
-  const month = firstOfMonth(0).slice(0, 7);
-  const invoice = account.invoices.find((each) =>
-    each.period.startsWith(month),
-  );
-  if (invoice === undefined) throw new Error("no invoice for this month");
-  return invoice.id;
-}
-
-// The page as the API gives it to the tenant: no session, like the browser.
-async function readPage(page: Page, path: string): Promise<PaymentPage> {
-  const response = await page.request.get(`/api${path}`);
-  expect(response.status()).toBe(200);
-  return (await response.json()) as PaymentPage;
-}
-
-// Every request the page makes that carries the token anywhere other than the two places it
-// belongs: the page document itself and its one API read. Paths are logged with the token
-// masked.
-function trackTokenLeaks(page: Page, path: string, token: string): string[] {
-  const leaks: string[] = [];
-  page.on("request", (request) => {
-    const url = new URL(request.url());
-    const isDocument =
-      request.resourceType() === "document" && url.pathname === path;
-    const isApiRead =
-      url.pathname === `/api${path}` && request.method() === "GET";
-    const where: string[] = [];
-    if (!isDocument && !isApiRead && request.url().includes(token)) {
-      where.push("url");
-    }
-    if ((request.headers()["referer"] ?? "").includes(token)) {
-      where.push("referer");
-    }
-    if ((request.postData() ?? "").includes(token)) where.push("body");
-    if (where.length > 0) {
-      leaks.push(
-        `${request.method()} ${url.pathname.replace(token, "<token>")} (${where.join(", ")})`,
-      );
-    }
-  });
-  return leaks;
-}
-
-async function expectTouchTarget(locator: Locator, min = 44) {
-  const box = await locator.boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(min);
-}
+// The tenant: no cookies, no storage, and a client address of the test's own (see
+// tenantClientAddress).
+test.use({
+  storageState: { cookies: [], origins: [] },
+  // Playwright reads the fixtures a fixture needs from this pattern; this one needs none.
+  extraHTTPHeaders: async ({}, provide, testInfo) => {
+    await provide({ "X-Forwarded-For": tenantClientAddress(testInfo, 18) });
+  },
+});
 
 async function fontSize(locator: Locator): Promise<number> {
   return locator.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
@@ -285,7 +74,7 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   page,
 }, testInfo) => {
   const api = await staffApi(HENDRA, testInfo);
-  const rented = await rentSinceLastMonth(api, testInfo, 1);
+  const rented = await rentSinceLastMonth(api, testInfo, rent(1));
   await recordCash(api, rented, 400_000);
   const { path, token } = await makeLink(
     api,
@@ -350,6 +139,29 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
     MIN_BODY_FONT_PX[testInfo.project.name] ?? 16,
   );
 
+  // Griya Sejahtera has QRIS: two tabs, QRIS first, with "Bayar QRIS" for the total as its
+  // one primary action. Bank transfer is the other tab.
+  const tabs = page.getByRole("tablist", { name: "Cara bayar" });
+  await expect(tabs).toBeVisible();
+  const qrisTab = tabs.getByRole("tab", { name: "QRIS", exact: true });
+  const transferTab = tabs.getByRole("tab", { name: "Transfer bank" });
+  await expect(qrisTab).toHaveAttribute("aria-selected", "true");
+  await expect(transferTab).toHaveAttribute("aria-selected", "false");
+  await expectTouchTarget(qrisTab);
+  await expectTouchTarget(transferTab);
+  const payQris = page.getByRole("button", {
+    name: `Bayar QRIS ${formatRupiah(expected.outstanding)}`,
+  });
+  await expect(payQris).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Transfer bank" })).toHaveCount(
+    0,
+  );
+
+  await transferTab.click();
+  await expect(transferTab).toHaveAttribute("aria-selected", "true");
+  await expect(payQris).toHaveCount(0);
+
   // The bank block, exactly as seed-demo set it.
   const transfer = page.getByRole("region", { name: "Transfer bank" });
   await expect(transfer.getByText("Transfer ke rekening")).toBeVisible();
@@ -378,7 +190,9 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   await expect(page.getByRole("button")).toHaveCount(1);
   await expectTouchTarget(copy);
   await copy.click();
-  await expect(page.getByRole("status")).toHaveText("Nomor rekening disalin");
+  await expect(transfer.getByRole("status")).toHaveText(
+    "Nomor rekening disalin",
+  );
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     GRIYA_BANK.accountNumber,
   );
@@ -397,7 +211,7 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
 
 test("shows Lunas once everything is paid", async ({ page }, testInfo) => {
   const api = await staffApi(HENDRA, testInfo);
-  const rented = await rentSinceLastMonth(api, testInfo, 2);
+  const rented = await rentSinceLastMonth(api, testInfo, rent(2));
   const invoiceId = thisMonthInvoiceId(rented.account);
   const { path } = await makeLink(api, rented.orgId, invoiceId);
   // Everything the API says the tenant owes, in one payment.
@@ -555,6 +369,9 @@ test("tells the tenant whom to contact when no bank account is set", async ({
     0,
   );
   await expect(page.getByRole("button")).toHaveCount(0);
+  // No QRIS set up: no tabs and no QRIS at all.
+  await expect(page.getByRole("tablist")).toHaveCount(0);
+  await expect(page.getByText("QRIS")).toHaveCount(0);
   await expect(
     page.getByText("Pembayaran QRIS segera tersedia.", { exact: true }),
   ).toHaveCount(0);
