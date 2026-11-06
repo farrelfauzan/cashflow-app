@@ -61,18 +61,27 @@ func (q *Queries) CountCoveredInvoicesOwing(ctx context.Context, arg CountCovere
 	return count, err
 }
 
-const countTenantBrokenPromises = `-- name: CountTenantBrokenPromises :one
-SELECT count(*) FROM payment_promise
-WHERE organization_id = $1 AND tenant_id = $2 AND status = 'broken'
+const countTenantBrokenPromisesSinceVisit = `-- name: CountTenantBrokenPromisesSinceVisit :one
+SELECT count(*) FROM payment_promise p
+WHERE p.organization_id = $1 AND p.tenant_id = $2 AND p.status = 'broken'
+  AND p.closed_at > coalesce((
+      SELECT max(v.resolved_at) FROM visit_task v
+      WHERE v.organization_id = p.organization_id AND v.tenant_id = p.tenant_id
+        AND v.reason = 'broken_promises' AND v.resolved_at IS NOT NULL
+  ), '-infinity'::timestamptz)
 `
 
-type CountTenantBrokenPromisesParams struct {
+type CountTenantBrokenPromisesSinceVisitParams struct {
 	OrganizationID uuid.UUID
 	TenantID       uuid.UUID
 }
 
-func (q *Queries) CountTenantBrokenPromises(ctx context.Context, arg CountTenantBrokenPromisesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countTenantBrokenPromises, arg.OrganizationID, arg.TenantID)
+// The tenant's broken promises closed after their last resolved broken_promises visit task (all of
+// them when none was resolved): a visit starts the count again, so another task needs the
+// threshold's number of new broken promises (decision 41.4). closed_at and resolved_at are both
+// set from the application's clock.
+func (q *Queries) CountTenantBrokenPromisesSinceVisit(ctx context.Context, arg CountTenantBrokenPromisesSinceVisitParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenantBrokenPromisesSinceVisit, arg.OrganizationID, arg.TenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

@@ -120,6 +120,15 @@ JOIN LATERAL (
 WHERE p.organization_id = @organization_id AND p.status = 'active' AND latest.promised_date < @today::date
 ORDER BY p.tenant_id;
 
--- name: CountTenantBrokenPromises :one
-SELECT count(*) FROM payment_promise
-WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND status = 'broken';
+-- name: CountTenantBrokenPromisesSinceVisit :one
+-- The tenant's broken promises closed after their last resolved broken_promises visit task (all of
+-- them when none was resolved): a visit starts the count again, so another task needs the
+-- threshold's number of new broken promises (decision 41.4). closed_at and resolved_at are both
+-- set from the application's clock.
+SELECT count(*) FROM payment_promise p
+WHERE p.organization_id = @organization_id AND p.tenant_id = @tenant_id AND p.status = 'broken'
+  AND p.closed_at > coalesce((
+      SELECT max(v.resolved_at) FROM visit_task v
+      WHERE v.organization_id = p.organization_id AND v.tenant_id = p.tenant_id
+        AND v.reason = 'broken_promises' AND v.resolved_at IS NOT NULL
+  ), '-infinity'::timestamptz);

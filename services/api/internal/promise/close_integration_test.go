@@ -265,6 +265,24 @@ func TestBrokenPromisesOpenOneVisitTask(t *testing.T) {
 		require.Equal(t, promise.CloseResult{Due: 1, Broken: 1}, breakOne(t, budi, 10))
 		require.Empty(t, w.openVisits(t, budi), "one broken and one partially kept")
 	})
+
+	t.Run("after the visit is resolved, the count starts again", func(t *testing.T) {
+		env.Clock.Set(wib(time.November, 12, 8, 0))
+		require.NoError(t, w.inTx(func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, "UPDATE visit_task SET resolved_at = $1 WHERE tenant_id = $2 AND resolved_at IS NULL",
+				env.Clock.Now(), rina.tenantID)
+			return err
+		}))
+		require.Empty(t, w.openVisits(t, rina))
+
+		require.Equal(t, promise.CloseResult{Due: 1, Broken: 1}, breakOne(t, rina, 12),
+			"one new broken promise since the visit is below the threshold")
+		require.Empty(t, w.openVisits(t, rina))
+
+		require.Equal(t, promise.CloseResult{Due: 1, Broken: 1, VisitTasks: 1}, breakOne(t, rina, 14),
+			"the second since the visit opens a new task")
+		require.Len(t, w.openVisits(t, rina), 1)
+	})
 }
 
 // TestCloseIsolation: closing one organization's promises never touches or shows another's.

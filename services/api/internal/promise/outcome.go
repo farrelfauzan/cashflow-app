@@ -21,8 +21,9 @@ type Progress struct {
 // A promise is kept once every invoice it covers owes nothing (paid, or cancelled by a
 // correction): nothing promised is left to pay. With a promised amount it is also kept once the
 // tenant paid at least the target since the version, the target being what they said they pay now
-// plus that amount. Otherwise some money since the version makes it partially kept and none makes
-// it broken.
+// plus that amount. Otherwise money since the version beyond what the tenant said they pay now
+// makes it partially kept; none beyond it makes it broken. Paying only the "paying now" part is
+// not progress on the promise: it was never part of the promised rest.
 //
 // It is evaluated at the end of the promised day and after every payment; a payment closes the
 // promise only when it is kept.
@@ -30,7 +31,7 @@ func (p Progress) Outcome() string {
 	if p.kept() {
 		return StatusKept
 	}
-	if p.Paid > 0 {
+	if p.Paid > p.PayingNow {
 		return StatusPartiallyKept
 	}
 	return StatusBroken

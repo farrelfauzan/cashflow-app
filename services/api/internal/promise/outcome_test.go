@@ -34,9 +34,29 @@ func TestOutcome(t *testing.T) {
 			want: promise.StatusPartiallyKept,
 		},
 		{
-			name: "only what was said to be paid now is partially kept",
+			name: "paying now, then nothing more by the date, is broken",
 			in:   promise.Progress{PayingNow: 200_000, PromisedAmount: amount(500_000), Paid: 200_000},
+			want: promise.StatusBroken,
+		},
+		{
+			name: "Rp1 paid now and nothing after is broken",
+			in:   promise.Progress{PayingNow: 1, PromisedAmount: amount(500_000), Paid: 1},
+			want: promise.StatusBroken,
+		},
+		{
+			name: "paying now, then less than the promised amount, is partially kept",
+			in:   promise.Progress{PayingNow: 200_000, PromisedAmount: amount(500_000), Paid: 450_000},
 			want: promise.StatusPartiallyKept,
+		},
+		{
+			name: "Rp1 beyond what was paid now is partially kept",
+			in:   promise.Progress{PayingNow: 200_000, PromisedAmount: amount(500_000), Paid: 200_001},
+			want: promise.StatusPartiallyKept,
+		},
+		{
+			name: "less than what was said to be paid now is broken",
+			in:   promise.Progress{PayingNow: 200_000, PromisedAmount: amount(500_000), Paid: 150_000},
+			want: promise.StatusBroken,
 		},
 		{
 			name: "an amount with nothing paid is broken",
@@ -68,6 +88,11 @@ func TestOutcome(t *testing.T) {
 			name: "no amount with a covered invoice still owing is partially kept when something was paid",
 			in:   promise.Progress{PayingNow: 100_000, Paid: 600_000},
 			want: promise.StatusPartiallyKept,
+		},
+		{
+			name: "no amount with only what was paid now is broken",
+			in:   promise.Progress{PayingNow: 100_000, Paid: 100_000},
+			want: promise.StatusBroken,
 		},
 		{
 			name: "no amount with nothing paid is broken",

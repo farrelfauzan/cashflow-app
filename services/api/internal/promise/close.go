@@ -176,11 +176,12 @@ func (c *Closer) closeDueTenant(ctx context.Context, org, tenantID uuid.UUID, to
 	return status, opened, nil
 }
 
-// openVisitIfThreshold opens the tenant's broken_promises visit task when their broken promises,
-// counted over all their promises, reach the organization's threshold. It reports whether it
+// openVisitIfThreshold opens the tenant's broken_promises visit task when their broken promises
+// since their last resolved broken_promises task (all of them when none was resolved) reach the
+// organization's threshold. It reports whether it
 // opened one; an open one already there is left as it is.
 func openVisitIfThreshold(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, now time.Time) (bool, error) {
-	broken, err := q.CountTenantBrokenPromises(ctx, dbgen.CountTenantBrokenPromisesParams{OrganizationID: org, TenantID: tenantID})
+	broken, err := q.CountTenantBrokenPromisesSinceVisit(ctx, dbgen.CountTenantBrokenPromisesSinceVisitParams{OrganizationID: org, TenantID: tenantID})
 	if err != nil {
 		return false, fmt.Errorf("promise: counting broken promises: %w", err)
 	}
