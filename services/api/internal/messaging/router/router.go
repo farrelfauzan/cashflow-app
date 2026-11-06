@@ -1,5 +1,5 @@
 // Package router is the messaging.Provider callers send through when the Telegram demo channel is
-// on (decision 42, MESSAGING_TELEGRAM=linked; config refuses it in production). A message for a
+// on (decision 42, TELEGRAM_MESSAGES=linked; config refuses it in production). A message for a
 // tenant whose chat is linked goes to that chat on Telegram; every other message (a tenant with
 // no live link, login codes, invitations) goes to the WhatsApp provider unchanged.
 //
