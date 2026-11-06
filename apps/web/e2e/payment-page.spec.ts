@@ -7,6 +7,7 @@ import { formatMonthYear } from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
 import {
   attachFullPageScreenshot,
+  attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
 import {
@@ -152,6 +153,7 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   await expect(
     choices.getByRole("radio", { name: /^Belum bisa bayar sekarang/ }),
   ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-choice");
   await payAll(page, expected.outstanding);
 
   // Griya Sejahtera has QRIS: two tabs, QRIS first, with "Bayar QRIS" for the total as its

@@ -351,6 +351,7 @@ test("Belum bisa bayar sekarang records a promise by a chosen date, and Ubah jan
       ),
     ),
   ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-promise-active");
   await page.getByRole("button", { name: "Ubah janji" }).click();
   await expect(page.getByLabel("Tanggal pelunasan")).toHaveValue(
     dates.earliest,
