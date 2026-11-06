@@ -20,6 +20,7 @@ export * from './collectorCandidateList';
 export * from './correction';
 export * from './correctionInput';
 export * from './correctionResult';
+export * from './createQrisRequest';
 export * from './dashboard';
 export * from './dashboardCorrection';
 export * from './error';
