@@ -141,7 +141,8 @@ loopback):
 - `GET /_control/transactions`: every QR, newest first (`transactionId`, `amount`, `status`,
   `createdAt`, `expiresAt`).
 - `POST /_control/pay` and `POST /_control/expire` with `{"transactionId"?}`: the QR is paid or
-  expires now; without an id, the newest pending QR.
+  expires now; without an id, the newest pending QR of any key, so tests that run in parallel
+  should name the id.
 - `POST /_control/fail-next` with `{"method": "generate" | "status" | "cancel", "amount"?}`: the
   next call of that method answers HTTP 503; with an amount, only a generate for it.
 - `POST /_control/reset`: forget every QR and queued failure.
