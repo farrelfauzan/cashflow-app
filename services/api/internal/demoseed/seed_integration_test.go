@@ -4,6 +4,7 @@ package demoseed_test
 
 import (
 	"context"
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
@@ -14,11 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 )
@@ -32,8 +35,18 @@ func deps(env *testenv.Env) demoseed.Deps {
 		PastProperties: property.NewService(env.Store, env.Authz, past),
 		PastTenants:    tenant.NewService(env.Store, env.Authz, past, env.Billing, nil),
 		PayLinks:       paylink.NewService(env.Store, env.Authz, env.Clock, ""),
+		AutoGoPay:      autogopay.NewService(env.Store, demoKeyring, env.Authz, env.Clock),
 	}
 }
+
+// demoKeyring encrypts the demo AutoGoPay key in these tests.
+var demoKeyring = func() *secret.Keyring {
+	k, err := secret.ParseKeyring("test:"+base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))), "")
+	if err != nil {
+		panic(err)
+	}
+	return k
+}()
 
 // tableState is what one organization's scope sees of one table: its row count and, when the
 // table has an id column, the sorted ids.
@@ -324,6 +337,35 @@ func TestSeedDemo(t *testing.T) {
 			require.NoError(t, err)
 			require.Nil(t, got)
 		}
+	})
+
+	t.Run("only Griya Sejahtera has QRIS, with the demo AutoGoPay key", func(t *testing.T) {
+		agp := autogopay.NewService(env.Store, demoKeyring, env.Authz, env.Clock)
+		key := func(org uuid.UUID) (secret.Value, error) {
+			var k secret.Value
+			err := env.Store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+				var err error
+				k, err = agp.APIKey(ctx, tx, org)
+				return err
+			})
+			return k, err
+		}
+		got, err := key(a.OrganizationID)
+		require.NoError(t, err)
+		require.Equal(t, demoseed.DemoAutoGoPayKey, got.Reveal())
+		for _, org := range []uuid.UUID{b.OrganizationID, c.OrganizationID} {
+			_, err := key(org)
+			require.ErrorIs(t, err, autogopay.ErrNoAccount)
+		}
+
+		// A key set by hand is kept when the seed runs again.
+		_, err = agp.SetAPIKey(ctx, a.OrganizationID, "agp-set-by-hand")
+		require.NoError(t, err)
+		_, err = demoseed.Run(ctx, deps(env), env.Clock)
+		require.NoError(t, err)
+		got, err = key(a.OrganizationID)
+		require.NoError(t, err)
+		require.Equal(t, "agp-set-by-hand", got.Reveal())
 	})
 
 	t.Run("Rina has two leases in A and a separate record in B", func(t *testing.T) {

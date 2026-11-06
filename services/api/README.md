@@ -136,6 +136,31 @@ seconds. At most `QRIS_MAX_CONCURRENT` (default 3) do so at once, below the pool
 `DATABASE_MAX_CONNS` (default 10); one more answers `qris_unavailable` at once, so a hanging
 AutoGoPay never stops the page and its bank transfer details from loading.
 
+### The AutoGoPay stand-in (development only)
+
+Locally and in the web's end-to-end tests nothing calls the real AutoGoPay. `make fake-autogopay`
+runs `cmd/fakeautogopay` on `127.0.0.1:8091` (`FAKE_AUTOGOPAY_ADDR` to change it): it answers
+AutoGoPay's `/qris/generate`, `/qris/status` and `/qris/cancel` with the real response shapes,
+accepts any key, and keeps its QRs in memory (they expire after 15 minutes, and a restart forgets
+them). The development `.env` already points the API and the worker at it
+(`AUTOGOPAY_BASE_URL`, above), so both see the same QRs. It refuses to start unless `APP_ENV=development`.
+
+`seed-demo` gives Griya Sejahtera a made-up key (`demoseed.DemoAutoGoPayKey`) that only the
+stand-in accepts, so its payment page offers QRIS; Kost Putri Anggrek has none and shows bank
+transfer only. A key already set, a real one included, is never replaced.
+
+Tests act like a tenant or an outage through its control routes (no authentication, so keep it on
+loopback):
+
+- `GET /_control/transactions`: every QR, newest first (`transactionId`, `amount`, `status`,
+  `createdAt`, `expiresAt`).
+- `POST /_control/pay` and `POST /_control/expire` with `{"transactionId"?}`: the QR is paid or
+  expires now; without an id, the newest pending QR of any key, so tests that run in parallel
+  should name the id.
+- `POST /_control/fail-next` with `{"method": "generate" | "status" | "cancel", "amount"?}`: the
+  next call of that method answers HTTP 503; with an amount, only a generate for it.
+- `POST /_control/reset`: forget every QR and queued failure.
+
 ### Set an organization's bank account
 
 The tenant payment page shows the organization's bank account for a manual transfer (decision
