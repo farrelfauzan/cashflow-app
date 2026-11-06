@@ -228,6 +228,8 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 		PastTenants: tenant.NewService(st, az, past, money, nil),
 		// Only sets the bank account; it mints no links, so it needs no web origin.
 		PayLinks: paylink.NewService(st, az, c, ""),
+		// Stores the demo AutoGoPay key, which works only against cmd/fakeautogopay.
+		AutoGoPay: autogopay.NewService(st, cn.keys, az, c),
 	}, c)
 	if err != nil {
 		return err
