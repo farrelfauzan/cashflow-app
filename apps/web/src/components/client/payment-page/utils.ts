@@ -28,6 +28,8 @@ import { z } from "zod";
 import type {
   ActivePromiseView,
   ChoiceOptionView,
+  TelegramErrorView,
+  TelegramOfferView,
   ChosenAmountView,
   ChosenFlowMode,
   CopyStatus,
@@ -263,6 +265,7 @@ function openView(page: PaymentPage): OpenPaymentPageView {
     outstanding: page.outstanding,
     promise: promiseOfferView(page),
     activePromise: activePromiseView(page.promise),
+    telegram: telegramOfferView(page),
   };
 }
 
@@ -1674,4 +1677,42 @@ export function promiseRecordedView(
     date: formatLongDate(mode.promise.promisedDate),
     amount: promiseAmountText(mode.promise.promisedAmount),
   };
+}
+
+// Telegram (decision 42): a demo channel, offered only where the environment has a bot. A linked
+// tenant gets reminders there instead of WhatsApp, and leaves with /stop in the bot.
+
+export const TELEGRAM_TITLE = "Pengingat lewat Telegram";
+export const TELEGRAM_TEXT =
+  "Terima pengingat tagihan di Telegram, bukan di WhatsApp.";
+export const TELEGRAM_LINK_TEXT = "Hubungkan Telegram";
+export const TELEGRAM_OPEN_TEXT = "Buka Telegram";
+export const TELEGRAM_OPEN_HINT =
+  "Tekan Start di Telegram. Link ini berlaku 10 menit.";
+export const TELEGRAM_LINKED_TEXT =
+  "Telegram terhubung. Pengingat berikutnya dikirim di sini.";
+
+const TELEGRAM_UNAVAILABLE_CODE = "telegram_unavailable";
+// The bot's deep link, as the API answers it. Anything else is not opened.
+const TELEGRAM_DEEP_LINK =
+  /^https:\/\/t\.me\/[A-Za-z0-9_]+\?start=[A-Za-z0-9_-]+$/;
+
+export function telegramOfferView(page: PaymentPage): TelegramOfferView | null {
+  return page.telegram.available ? { linked: page.telegram.linked } : null;
+}
+
+// Only the bot's own https://t.me link is shown to open; the code in it is never logged.
+export function isTelegramDeepLink(link: string): boolean {
+  return TELEGRAM_DEEP_LINK.test(link);
+}
+
+export function telegramErrorView(error: unknown): TelegramErrorView {
+  if (error instanceof ApiError && error.code === TELEGRAM_UNAVAILABLE_CODE) {
+    return { kind: "hidden" };
+  }
+  if (isLinkError(error)) return { kind: "link-gone" };
+  if (error instanceof ApiError && error.status === 429) {
+    return { kind: "alert", message: error.message };
+  }
+  return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
 }

@@ -74,6 +74,14 @@ jobs:
       # The AutoGoPay stand-in (services/api/cmd/fakeautogopay, development only), for the API
       # and the worker: QRIS codes are made and checked there, never at the real AutoGoPay.
       AUTOGOPAY_BASE_URL: http://127.0.0.1:8091
+      # A fake Telegram bot (decision 42, a demo channel), for the API, the worker and
+      # e2e/payment-page-telegram.spec.ts: deep links are made without calling Telegram, the spec
+      # posts the tenant's "Start" to /webhooks/telegram with this secret, and the bot's replies go
+      # to a closed local port and are dropped. Throwaway values for this job only.
+      TELEGRAM_BOT_TOKEN: "123456789:e2eOnlyFakeTelegramBotTokenNotReal_00"
+      TELEGRAM_BOT_USERNAME: CashflowE2eBot
+      TELEGRAM_WEBHOOK_SECRET: e2e-only-telegram-webhook-secret
+      TELEGRAM_API_BASE_URL: http://127.0.0.1:9
       # Both projects' QRIS tests run in parallel in one API, so more requests wait on the
       # stand-in at once than the default of 3 allows (a request past it answers
       # qris_unavailable). The pool grows with it, so the slots stay below the pool.
