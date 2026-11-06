@@ -66,6 +66,8 @@ const item = (over: Partial<InvoiceListItem> = {}): InvoiceListItem => ({
   overdueDays: 0,
   pastPlannedEnd: false,
   lines: [],
+  promise: null,
+  brokenPromises: 0,
   ...over,
 });
 

@@ -8,6 +8,7 @@
 export * from './accountInvoice';
 export * from './accountPayment';
 export * from './accountTotals';
+export * from './activePromise';
 export * from './bankAccount';
 export * from './capability';
 export * from './capabilityAccess';

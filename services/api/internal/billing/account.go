@@ -96,11 +96,14 @@ type Account struct {
 	Totals
 	Invoices []AccountInvoice // oldest period first, cancelled ones included
 	Payments []AccountPayment // oldest received first
+	// Promises is the tenant's payment promises as staff see them. Service.Account fills it;
+	// LoadAccountTx leaves it zero.
+	Promises TenantPromises
 }
 
-// Account returns a tenant's money account. It needs invoice:read and payment:read for the
-// whole organization, or through every lease the tenant has or had, since the totals span all
-// of them; a tenant with no lease needs the organization-wide grant.
+// Account returns a tenant's money account with their payment promises. It needs invoice:read
+// and payment:read for the whole organization, or through every lease the tenant has or had,
+// since the totals span all of them; a tenant with no lease needs the organization-wide grant.
 func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.UUID) (Account, error) {
 	var out Account
 	// One snapshot, so the totals and the invoices agree even while the worker commits one.
@@ -116,7 +119,12 @@ func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.
 				return err
 			}
 		}
-		out, err = loadAccount(ctx, q, p.OrganizationID, tenantID, tenant.Today(s.clock))
+		today := tenant.Today(s.clock)
+		if out, err = loadAccount(ctx, q, p.OrganizationID, tenantID, today); err != nil {
+			return err
+		}
+		// Rides on the reads above: the promise is part of what the tenant owes.
+		out.Promises, err = s.promises.TenantPromisesTx(ctx, tx, p.OrganizationID, tenantID, out.Outstanding, today)
 		return err
 	})
 	return out, err

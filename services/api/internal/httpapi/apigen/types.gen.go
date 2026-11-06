@@ -636,6 +636,40 @@ type AccountTotals struct {
 	Overdue int64 `json:"overdue"`
 }
 
+// ActivePromise The newest version of a tenant's active payment promise, as staff see it.
+type ActivePromise struct {
+	// CoveredInvoiceIds The invoices still owing when the newest version was made, oldest period first.
+	CoveredInvoiceIds []openapi_types.UUID `json:"coveredInvoiceIds"`
+
+	// CreatedAt When the newest version was saved.
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy The member who recorded it; null when the tenant made it on the payment page.
+	CreatedBy *StaffRef `json:"createdBy"`
+
+	// Id The promise's id (as in listTenantPromises).
+	Id openapi_types.UUID `json:"id"`
+
+	// Kind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+	Kind PromiseKind `json:"kind"`
+
+	// Note The member's note; null when there is none.
+	Note *string `json:"note"`
+
+	// PayingNow What the tenant said they pay right after saving.
+	PayingNow int64 `json:"payingNow"`
+
+	// PromisedAmount Rupiah promised by the date; null means everything owed after payingNow.
+	PromisedAmount *int64             `json:"promisedAmount"`
+	PromisedDate   openapi_types.Date `json:"promisedDate"`
+
+	// Source Where the version was made. karyawan is used from slice 6.
+	Source PromiseSource `json:"source"`
+
+	// Version The newest version's number, from 1; above 1 after an edit.
+	Version int `json:"version"`
+}
+
 // BankAccount Where to transfer by hand; the tenant writes their name in the transfer note.
 type BankAccount struct {
 	// AccountHolder Example: Suhwendi
@@ -1019,10 +1053,13 @@ type InvoiceList struct {
 
 // InvoiceListItem defines model for InvoiceListItem.
 type InvoiceListItem struct {
-	Amount  int64              `json:"amount"`
-	Billed  int64              `json:"billed"`
-	DueDate openapi_types.Date `json:"dueDate"`
-	Id      openapi_types.UUID `json:"id"`
+	Amount int64 `json:"amount"`
+	Billed int64 `json:"billed"`
+
+	// BrokenPromises How many of the tenant's promises closed broken, ever; 0 when none did.
+	BrokenPromises int                `json:"brokenPromises"`
+	DueDate        openapi_types.Date `json:"dueDate"`
+	Id             openapi_types.UUID `json:"id"`
 
 	// IssuedOn The day the invoice was made, Asia/Jakarta (terbit).
 	IssuedOn openapi_types.Date `json:"issuedOn"`
@@ -1041,8 +1078,11 @@ type InvoiceListItem struct {
 	PastPlannedEnd bool               `json:"pastPlannedEnd"`
 	Period         openapi_types.Date `json:"period"`
 	PeriodEnd      openapi_types.Date `json:"periodEnd"`
-	PropertyId     openapi_types.UUID `json:"propertyId"`
-	PropertyName   string             `json:"propertyName"`
+
+	// Promise The tenant's active payment promise when its newest version covers this invoice (the invoice still owed something when that version was made); null when the tenant has no active promise or it does not cover this invoice. Its coveredInvoiceIds list only the invoices the caller may see.
+	Promise      *ActivePromise     `json:"promise"`
+	PropertyId   openapi_types.UUID `json:"propertyId"`
+	PropertyName string             `json:"propertyName"`
 
 	// Status open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero. Whether an open or partial invoice is overdue follows from its dueDate (debt from the day after it, Asia/Jakarta).
 	Status     InvoiceStatus      `json:"status"`
@@ -1823,11 +1863,20 @@ type Tenant struct {
 
 // TenantAccount defines model for TenantAccount.
 type TenantAccount struct {
+	// ActivePromise The newest version of the tenant's active payment promise, or null when the tenant has none. It stays active until it is closed, even once everything is paid.
+	ActivePromise *ActivePromise `json:"activePromise"`
+
+	// BrokenPromises How many of the tenant's promises closed broken, ever; 0 when none did.
+	BrokenPromises int `json:"brokenPromises"`
+
 	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
 	Credit int64 `json:"credit"`
 
 	// Invoices Oldest period first, cancelled ones included.
 	Invoices []AccountInvoice `json:"invoices"`
+
+	// NextInvoiceDueDate The due date a with_next_invoice promise made now would take, the same value as the payment page's nextInvoiceDueDate. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest (or promiseDates is null).
+	NextInvoiceDueDate *openapi_types.Date `json:"nextInvoiceDueDate"`
 
 	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
 	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
@@ -1839,8 +1888,11 @@ type TenantAccount struct {
 	Overdue int64 `json:"overdue"`
 
 	// Payments Oldest received first.
-	Payments []AccountPayment   `json:"payments"`
-	TenantId openapi_types.UUID `json:"tenantId"`
+	Payments []AccountPayment `json:"payments"`
+
+	// PromiseDates The days a promise made now may name, exactly as the payment page gives them: for an edit of the active promise, no later than 60 days from its first version. Null when no promise can be made now: the tenant owes nothing, or the active promise has reached that bound.
+	PromiseDates *PromiseDates      `json:"promiseDates"`
+	TenantId     openapi_types.UUID `json:"tenantId"`
 }
 
 // TenantArrears A tenant who owes money after its due date.
