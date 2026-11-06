@@ -385,7 +385,7 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
 
   await expect(
     page.getByText("Pembayaran QRIS segera tersedia.", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByText("Halaman ini menunjukkan Lunas setelah pembayaran dicatat."),
   ).toBeVisible();
@@ -557,7 +557,7 @@ test("tells the tenant whom to contact when no bank account is set", async ({
   await expect(page.getByRole("button")).toHaveCount(0);
   await expect(
     page.getByText("Pembayaran QRIS segera tersedia.", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("the page is kept out of search engines and sends no referrer", async ({
