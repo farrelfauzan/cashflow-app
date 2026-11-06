@@ -68,7 +68,7 @@ fake-autogopay: ## Run the AutoGoPay stand-in on 127.0.0.1:8091 (development onl
 	cd $(API_DIR) && APP_ENV=development go run ./cmd/fakeautogopay
 
 .PHONY: telegram-poll
-telegram-poll: env ## Long-poll the development Telegram bot (development only; needs TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME in services/api/.env)
+telegram-poll: env ## Long-poll the development Telegram bot (development only; needs TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME and DATABASE_URL in services/api/.env)
 	$(WITH_ENV) go run ./cmd/telegrampoll
 
 .PHONY: admin

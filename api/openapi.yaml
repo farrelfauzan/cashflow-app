@@ -1523,8 +1523,9 @@ paths:
         No session: the token alone grants the page, and only for the link's own tenant. It shows
         who bills them, the tenant's name and the link's invoice (so a forwarded link is
         obvious), everything the tenant owes with the open invoices oldest first, the bank
-        account for a manual transfer, and the tenant's active payment promise with the dates a
-        new one may name (makePaymentPromise). Nothing else: no phone number, payment history,
+        account for a manual transfer, the tenant's active payment promise with the dates a
+        new one may name (makePaymentPromise), and whether the tenant can link or has linked
+        Telegram (linkPaymentPageTelegram). Nothing else: no phone number, payment history,
         staff name or note. A malformed, unknown or revoked token all answer the same 404. Limited per
         token and per client address (429 rate_limited). Responses carry Cache-Control: no-store
         and Referrer-Policy: no-referrer.
@@ -1885,6 +1886,49 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "409":
           description: "The tenant owes nothing, or nothing is left after payingNow (code promise_nothing_owed)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: "The link expired (code payment_link_expired)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /t/{token}/telegram:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The secret in the payment link. Never log it or send it anywhere else.
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+    post:
+      tags: [payment-page]
+      operationId: linkPaymentPageTelegram
+      summary: A one-time deep link to the Telegram bot, to get messages there (public; "Hubungkan Telegram")
+      description: >
+        Telegram is a demo channel (decision 42): development and staging, with test accounts.
+        No session: the token grants it, and link errors answer as for getPaymentPage. Answers
+        the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness, never
+        the link token or anything derived from it; it works once and for 10 minutes, and asking
+        again makes another without cancelling the first. Opening the link and pressing Start in
+        Telegram links that chat to the tenant (getPaymentPage then shows telegram.linked); a new
+        link replaces the tenant's older one, and /stop in the chat unlinks it. 404
+        telegram_unavailable when the environment has no bot, so the page hides the button
+        (getPaymentPage's telegram.available is false then). Limited per token and per client
+        address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control:
+        no-store and Referrer-Policy: no-referrer. The deep link holds the code: open it, never
+        log it or send it anywhere else.
+      security: []
+      responses:
+        "200":
+          description: The deep link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TelegramDeepLink" }
+        "404":
+          description: "No working link with this token (code payment_link_not_found), or no bot in this environment (code telegram_unavailable)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3333,8 +3377,9 @@ components:
 
     PaymentPage:
       type: object
-      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable, promise, promiseDates, nextInvoiceDueDate]
+      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable, promise, promiseDates, nextInvoiceDueDate, telegram]
       properties:
+        telegram: { $ref: "#/components/schemas/PaymentPageTelegram" }
         promise:
           description: >
             The tenant's active payment promise with its newest version's terms, or null when
@@ -3390,6 +3435,29 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/BankAccount"
+
+    PaymentPageTelegram:
+      type: object
+      required: [available, linked]
+      description: >
+        The Telegram demo channel (decision 42) on the payment page: "Hubungkan Telegram", or
+        "Terhubung" once linked.
+      properties:
+        available:
+          type: boolean
+          description: True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram.
+        linked:
+          type: boolean
+          description: True when the tenant has a live Telegram link in this organization. Always false when available is false.
+
+    TelegramDeepLink:
+      type: object
+      required: [deepLink]
+      properties:
+        deepLink:
+          type: string
+          description: https://t.me/<bot>?start=<code>, with a one-time code valid for 10 minutes.
+          example: https://t.me/cashflow_dev_bot?start=Xk3v9q2LrT7mWb8NcY1pZs4uHf6gJd0eKa5oVi2nQwE
 
     PromiseKind:
       type: string

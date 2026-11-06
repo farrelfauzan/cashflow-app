@@ -196,6 +196,29 @@ func (c *Client) Send(ctx context.Context, chatID int64, m messaging.Message) (m
 	return messaging.Receipt{ProviderMessageID: strconv.FormatInt(sent.MessageID, 10)}, nil
 }
 
+// SendText sends text to chatID as plain text (no parse_mode, so nothing in it is read as
+// markup), for the bot's own replies to commands, which are not templates. The receipt holds
+// Telegram's message_id. Like every error here, a failure never quotes the text or the chat id.
+func (c *Client) SendText(ctx context.Context, chatID int64, text string) (messaging.Receipt, error) {
+	if chatID == 0 {
+		return messaging.Receipt{}, errors.New("telegram: chat id is required")
+	}
+	if strings.TrimSpace(text) == "" {
+		return messaging.Receipt{}, errors.New("telegram: text is required")
+	}
+	if n := utf8.RuneCountInString(text); n > maxTextLength {
+		return messaging.Receipt{}, fmt.Errorf("telegram: text is %d characters, over sendMessage's %d", n, maxTextLength)
+	}
+	var sent sentMessage
+	if err := c.call(ctx, "sendMessage", sendMessageRequest{ChatID: chatID, Text: text}, &sent, c.timeout); err != nil {
+		return messaging.Receipt{}, err
+	}
+	if sent.MessageID == 0 {
+		return messaging.Receipt{}, errors.New("telegram: sendMessage answered without a message_id")
+	}
+	return messaging.Receipt{ProviderMessageID: strconv.FormatInt(sent.MessageID, 10)}, nil
+}
+
 type getUpdatesRequest struct {
 	Offset  int64 `json:"offset,omitempty"`
 	Timeout int   `json:"timeout"`

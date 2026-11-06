@@ -45,7 +45,10 @@ func (s *Server) getPaymentPage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, toAPIPaymentPage(page))
+	out := toAPIPaymentPage(page)
+	available := s.TelegramCodes != nil
+	out.Telegram = apigen.PaymentPageTelegram{Available: available, Linked: available && page.TelegramLinked}
+	s.writeJSON(w, http.StatusOK, out)
 }
 
 // getPaymentPreview tells the tenant page what paying an amount now would pay, oldest invoice

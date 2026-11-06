@@ -123,6 +123,39 @@ func (s *Store) LookupAutogopayWebhook(ctx context.Context, webhookID string) (u
 	return org, nil
 }
 
+// ErrTelegramLinkCodeNotFound means no Telegram linking code has the hash given to
+// LookupTelegramLinkCode.
+var ErrTelegramLinkCodeNotFound = errors.New("store: telegram link code not found")
+
+// LookupTelegramLinkCode maps the SHA-256 of a one-time Telegram linking code to the code's
+// organization and id, for a bot update that arrives with no session ("/start <code>", decision
+// 42). Like LookupPaymentLink it runs as the app role with no scope set, through
+// telegram_link_code_lookup(), which returns those two ids only; the caller then reads the code
+// inside WithOrgTx for that organization, which decides whether it was used or has expired. An
+// unknown hash returns ErrTelegramLinkCodeNotFound.
+func (s *Store) LookupTelegramLinkCode(ctx context.Context, codeHash []byte) (org, code uuid.UUID, err error) {
+	row, err := dbgen.New(s.pool).LookupTelegramLinkCode(ctx, codeHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, ErrTelegramLinkCodeNotFound
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("looking up telegram link code: %w", err)
+	}
+	return row.OrganizationID, row.CodeID, nil
+}
+
+// TelegramChatOrganizations lists the organizations where a Telegram chat has a live link, for the
+// bot's /stop, which arrives with no session. It runs as the app role with no scope set, through
+// telegram_chat_organizations(), which returns organization ids only; the caller unlinks the chat
+// inside WithOrgTx for each. A chat with no live link returns none.
+func (s *Store) TelegramChatOrganizations(ctx context.Context, chatID int64) ([]uuid.UUID, error) {
+	ids, err := dbgen.New(s.pool).TelegramChatOrganizations(ctx, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("listing a telegram chat's organizations: %w", err)
+	}
+	return ids, nil
+}
+
 // WithOrgTx runs fn in a transaction that is scoped to one organization. The transaction
 // commits when fn returns nil and rolls back otherwise.
 //

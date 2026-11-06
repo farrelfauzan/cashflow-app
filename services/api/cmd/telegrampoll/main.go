@@ -1,12 +1,12 @@
 // Command telegrampoll long-polls the development Telegram bot, development only. Telegram
 // delivers updates to a webhook on a public HTTPS address in staging and production; locally
 // this command asks getUpdates instead, so no tunnel is needed, and hands each update to the
-// same kind of handler the webhook will use. Today (TG-1) the handler only logs each update's
-// id and kind.
+// same handler the webhook uses (telegramlink): "/start <code>" from the payment page's
+// "Hubungkan Telegram" links a test tenant's chat, "/stop" unlinks it.
 //
-//	make telegram-poll        # reads TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME from services/api/.env
+//	make telegram-poll        # reads TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME and DATABASE_URL from services/api/.env
 //
-// It never logs the token, chat ids, phone numbers or message text.
+// It never logs the token, linking codes, chat ids, phone numbers or message text.
 package main
 
 import (
@@ -20,8 +20,11 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 )
 
 func main() {
@@ -60,7 +63,14 @@ func run() error {
 	}
 	log.Info("telegram poller started; development only", "bot_username", bot.Username, "bot_id", bot.ID)
 
-	err = telegram.Poll(ctx, client, telegram.LogHandler{Log: log}, log, telegram.PollConfig{})
+	st, err := store.Open(ctx, cfg.DatabaseURL, log, store.WithMaxConns(cfg.DatabaseMaxConns))
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	handler := telegramlink.NewHandler(st, client, clock.System(), log)
+
+	err = telegram.Poll(ctx, client, handler, log, telegram.PollConfig{})
 	switch {
 	case errors.Is(err, telegram.ErrConflict):
 		return fmt.Errorf("getUpdates is blocked: the bot has a webhook set, or another poller uses this token. "+

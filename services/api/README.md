@@ -345,7 +345,8 @@ Telegram is a demo channel only (decision 42), like the Twilio sandbox: it shows
 end in development and staging with test accounts, and the API and worker refuse any `TELEGRAM_*`
 setting in production. Staging will receive the bot's updates on a webhook; on a developer machine `make telegram-poll` runs `cmd/telegrampoll`,
 which asks Telegram for updates by long polling instead, so no public address or tunnel is
-needed. It refuses to start unless `APP_ENV=development` and a bot token is set.
+needed. It refuses to start unless `APP_ENV=development`, a bot token is set and `DATABASE_URL`
+reaches the database (it links and unlinks chats as the app role).
 
 1. In Telegram, open @BotFather, send `/newbot` and follow it. Use a development bot of your own,
    never the staging bot. BotFather answers with the bot's username and its token.
@@ -353,9 +354,11 @@ needed. It refuses to start unless `APP_ENV=development` and a bot token is set.
    username without the @). Never commit the token and never paste it in a chat, an issue or a
    pull request; if it leaks, revoke it in BotFather (`/revoke`) and set the new one.
 3. Run `make telegram-poll`. It checks the token with `getMe` and logs the bot's username and id,
-   then logs each update it receives by its id and kind (message, contact or other), never the
-   chat, phone number or text. Open the bot in Telegram and press Start to see one arrive.
-   Ctrl-C stops it.
+   then hands each update to the same handler the webhook uses (`internal/telegramlink`): on a
+   tenant's payment page, "Hubungkan Telegram" opens the bot with a one-time code (valid 10
+   minutes), and pressing Start links that chat to the tenant; `/stop` unlinks it. Each update is
+   logged by its id, kind, command and outcome, never the chat, the code or the text. Run the
+   API with the same `TELEGRAM_*` settings so the page offers the button. Ctrl-C stops it.
 
 If it stops with "getUpdates is blocked", the bot has a webhook set (Telegram allows either a
 webhook or polling, not both) or another poller is running with the same token. Delete the

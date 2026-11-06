@@ -150,6 +150,7 @@ function page(overrides: Partial<PaymentPage> = {}): PaymentPage {
     promise: null,
     promiseDates: { earliest: "2026-11-03", latest: "2027-01-01" },
     nextInvoiceDueDate: "2026-12-01",
+    telegram: { available: false, linked: false },
     ...overrides,
   };
 }
