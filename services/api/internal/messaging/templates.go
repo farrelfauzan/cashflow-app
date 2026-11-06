@@ -13,6 +13,23 @@ import (
 const (
 	TemplateLoginCode    = "login_code"
 	TemplateMemberInvite = "member_invite"
+
+	// Tenant reminders (slice 4, S4-5). Each names the organization (its display name) and the
+	// tenant, and carries one button whose link is a freshly minted payment link (decision 39).
+	TemplateInvoiceDueSoon  = "invoice_due_soon"  // H-3: one invoice, nothing else owed
+	TemplateInvoiceDueToday = "invoice_due_today" // H0: one invoice, nothing else owed
+	TemplateInvoiceOverdue  = "invoice_overdue"   // H+3: one invoice, nothing else owed
+	TemplateInvoiceRollover = "invoice_rollover"  // any stage while more than one invoice is owed
+	TemplatePromiseReminder = "promise_reminder"  // H-1 of a promised date
+	TemplatePromiseBroken   = "promise_broken"    // a promise's day passed without it being kept
+	TemplatePromiseRecorded = "promise_recorded"  // a promise (or an edit) was saved
+)
+
+// Button titles of the tenant messages.
+const (
+	ButtonPay           = "Bayar"
+	ButtonChangePromise = "Ubah janji"
+	ButtonNewPromise    = "Buat janji baru"
 )
 
 // Template is a message the app can send.
@@ -53,6 +70,77 @@ func init() {
 		Text: "Halo {{.name}},\n\n" +
 			"Anda diundang sebagai *{{.role}}* di *{{.organization}}* oleh {{.inviter}}.\n\n" +
 			"Masuk lewat tautan di bawah dengan nomor WhatsApp ini. Kode masuk akan dikirim ke WhatsApp Anda.",
+	})
+
+	registerTenantTemplates()
+}
+
+// registerTenantTemplates adds the tenant reminder and promise messages. Parameters are single
+// lines (WhatsApp Cloud API refuses a parameter with a line break), so the line breakdown and the
+// rollover sum are one line each: "Sewa Rp1.500.000, Listrik Rp120.000". Amounts are formatted
+// with Rupiah and dates with Date or Month before they are passed in.
+func registerTenantTemplates() {
+	// amount is what the invoice still owes; lines is its breakdown (Rincian), with what was
+	// already paid on it when anything was.
+	register(Template{
+		Name:   TemplateInvoiceDueSoon,
+		Params: []string{"name", "organization", "month", "amount", "lines", "due_date"},
+		Text: "Halo {{.name}},\n\n" +
+			"Tagihan sewa *{{.organization}}* untuk {{.month}} sebesar *{{.amount}}* jatuh tempo pada {{.due_date}}.\n\n" +
+			"Rincian: {{.lines}}\n\n" +
+			"Bayar lewat tautan di bawah. Terima kasih.",
+	})
+	register(Template{
+		Name:   TemplateInvoiceDueToday,
+		Params: []string{"name", "organization", "month", "amount", "lines"},
+		Text: "Halo {{.name}},\n\n" +
+			"Tagihan sewa *{{.organization}}* untuk {{.month}} sebesar *{{.amount}}* jatuh tempo hari ini.\n\n" +
+			"Rincian: {{.lines}}\n\n" +
+			"Bayar lewat tautan di bawah. Jika sudah membayar, abaikan pesan ini. Terima kasih.",
+	})
+	// days_late is a number of days, for example "3".
+	register(Template{
+		Name:   TemplateInvoiceOverdue,
+		Params: []string{"name", "organization", "month", "amount", "lines", "days_late"},
+		Text: "Halo {{.name}},\n\n" +
+			"Tagihan sewa *{{.organization}}* untuk {{.month}} sebesar *{{.amount}}* sudah lewat {{.days_late}} hari dari jatuh tempo.\n\n" +
+			"Rincian: {{.lines}}\n\n" +
+			"Bayar lewat tautan di bawah. Jika perlu waktu, Anda bisa membuat janji bayar di halaman yang sama. " +
+			"Jika sudah membayar, abaikan pesan ini.",
+	})
+	// summary is the sum's terms, for example "Tagihan Desember 2026 Rp700.000 + sisa November
+	// 2026 Rp200.000"; total is what they add up to, everything the tenant owes.
+	register(Template{
+		Name:   TemplateInvoiceRollover,
+		Params: []string{"name", "organization", "summary", "total"},
+		Text: "Halo {{.name}},\n\n" +
+			"Tagihan sewa *{{.organization}}*:\n" +
+			"{{.summary}} = *{{.total}}*\n\n" +
+			"Bayar lewat satu tautan di bawah; pembayaran melunasi tagihan terlama lebih dulu. " +
+			"Jika sudah membayar, abaikan pesan ini.",
+	})
+	// amount is the promised amount (Rupiah) or "seluruh sisa tagihan".
+	register(Template{
+		Name:   TemplatePromiseReminder,
+		Params: []string{"name", "organization", "amount", "date"},
+		Text: "Halo {{.name}},\n\n" +
+			"Mengingatkan janji bayar Anda ke *{{.organization}}*: {{.amount}} pada *{{.date}}*.\n\n" +
+			"Bayar atau ubah janji lewat tautan di bawah. Terima kasih.",
+	})
+	// date is the promised day that passed; total is everything the tenant still owes.
+	register(Template{
+		Name:   TemplatePromiseBroken,
+		Params: []string{"name", "organization", "date", "total"},
+		Text: "Halo {{.name}},\n\n" +
+			"Janji bayar Anda ke *{{.organization}}* pada {{.date}} belum terpenuhi. Tidak apa-apa, tidak ada denda.\n\n" +
+			"Sisa tagihan Anda *{{.total}}*. Silakan bayar, atau buat janji baru lewat tautan di bawah.",
+	})
+	register(Template{
+		Name:   TemplatePromiseRecorded,
+		Params: []string{"name", "organization", "amount", "date"},
+		Text: "Halo {{.name}},\n\n" +
+			"Janji bayar Anda ke *{{.organization}}* sudah tercatat: {{.amount}} pada *{{.date}}*.\n\n" +
+			"Untuk membayar atau mengubah janji, buka tautan di bawah. Terima kasih.",
 	})
 }
 

@@ -100,6 +100,20 @@ func (s *Service) Mint(ctx context.Context, p authz.Principal, invoiceID uuid.UU
 	return out, nil
 }
 
+// MintForPlatformTx makes a new link to an invoice inside tx, which must be scoped to org, for the
+// platform's own messages: reminders and promise confirmations (slice 4, S4-5). The link has no
+// creating member (created_by_staff_user_id NULL).
+//
+// It checks no member's permission and writes no audit row: sending a reminder is the platform's
+// own work, decided by the daily run rather than by a member, like closing promises
+// (promises:close) and deciding reminders (reminders:decide). The link only lets its holder see
+// and pay what the tenant owes, which the message tells them anyway. Errors are as for Mint
+// (ErrInvoiceNotFound, ErrInvoicePastWindow). URL holds the token: hand it to the provider and
+// nowhere else, and never log it.
+func (s *Service) MintForPlatformTx(ctx context.Context, tx pgx.Tx, org, invoiceID uuid.UUID) (Link, error) {
+	return s.mintInTx(ctx, tx, org, invoiceID, nil)
+}
+
 // mintInTx makes a new link to an invoice inside tx, scoped to org. It checks no permission: the
 // caller has (Mint), or the caller is the platform itself (reminders, createdBy nil).
 func (s *Service) mintInTx(ctx context.Context, tx pgx.Tx, org, invoiceID uuid.UUID, createdBy *uuid.UUID) (Link, error) {

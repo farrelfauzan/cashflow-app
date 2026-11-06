@@ -24,7 +24,7 @@ func TestRecordRefusesAnEmptyReminder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			now := time.Date(2026, 11, 13, 1, 0, 0, 0, time.UTC)
-			err := record(context.Background(), nil, uuid.New(), uuid.New(), now, now, tc.dec)
+			_, err := record(context.Background(), nil, uuid.New(), uuid.New(), now, now, tc.dec)
 			require.ErrorIs(t, err, ErrNothingToRecord)
 		})
 	}

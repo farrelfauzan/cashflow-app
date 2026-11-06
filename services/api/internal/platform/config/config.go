@@ -245,31 +245,50 @@ func (c API) validate() error {
 	if err := validWebOrigin(c.PublicWebOrigin, c.Env); err != nil {
 		return err
 	}
-	switch c.WhatsAppProvider {
+	return c.WhatsApp().validate()
+}
+
+// WhatsApp is the WhatsApp provider choice and its settings, as cmd/api and cmd/worker read them
+// (the API sends login codes and invitations, the worker reminders).
+type WhatsApp struct {
+	Env        string
+	Provider   string
+	DevlogFile string
+	GOWA       GOWA
+	Twilio     Twilio
+}
+
+// WhatsApp returns the API's WhatsApp settings.
+func (c API) WhatsApp() WhatsApp {
+	return WhatsApp{Env: c.Env, Provider: c.WhatsAppProvider, DevlogFile: c.DevlogFile, GOWA: c.GOWA, Twilio: c.Twilio}
+}
+
+func (w WhatsApp) validate() error {
+	switch w.Provider {
 	case "devlog":
-		if c.Env != "development" {
-			return fmt.Errorf("WHATSAPP_PROVIDER=devlog only runs in development; use gowa or twilio in %s", c.Env)
+		if w.Env != "development" {
+			return fmt.Errorf("WHATSAPP_PROVIDER=devlog only runs in development; use gowa or twilio in %s", w.Env)
 		}
 	case "gowa":
-		if c.GOWA.URL == "" || c.GOWA.Username == "" || c.GOWA.Password == "" {
+		if w.GOWA.URL == "" || w.GOWA.Username == "" || w.GOWA.Password == "" {
 			return errors.New("WHATSAPP_PROVIDER=gowa needs GOWA_URL, GOWA_USERNAME and GOWA_PASSWORD")
 		}
 	case "twilio":
 		// Only a Twilio sandbox is supported, and sandbox numbers differ per account, so the
 		// provider itself stays in development until a verified sender exists.
-		if c.Env != "development" {
-			return fmt.Errorf("WHATSAPP_PROVIDER=twilio only runs in development (a Twilio sandbox); use gowa in %s", c.Env)
+		if w.Env != "development" {
+			return fmt.Errorf("WHATSAPP_PROVIDER=twilio only runs in development (a Twilio sandbox); use gowa in %s", w.Env)
 		}
-		if err := c.Twilio.validate(); err != nil {
+		if err := w.Twilio.validate(); err != nil {
 			return err
 		}
 	case "cloudapi":
 		return errors.New("WHATSAPP_PROVIDER=cloudapi is not built yet; use gowa")
 	default:
-		return fmt.Errorf("WHATSAPP_PROVIDER must be gowa, twilio or devlog, got %q", c.WhatsAppProvider)
+		return fmt.Errorf("WHATSAPP_PROVIDER must be gowa, twilio or devlog, got %q", w.Provider)
 	}
 	// Login codes in a file are only acceptable on a developer's machine.
-	if c.DevlogFile != "" && (c.Env != "development" || c.WhatsAppProvider != "devlog") {
+	if w.DevlogFile != "" && (w.Env != "development" || w.Provider != "devlog") {
 		return errors.New("DEVLOG_FILE only works in development with WHATSAPP_PROVIDER=devlog; unset it")
 	}
 	return nil
@@ -316,8 +335,22 @@ type Worker struct {
 	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
 	// DatabaseMaxConns is DATABASE_MAX_CONNS, the size of the worker's connection pool.
 	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=20"`
+	// PublicWebOrigin is as in API: the base of the payment links in reminders.
+	PublicWebOrigin string `env:"PUBLIC_WEB_ORIGIN"`
+	// WhatsAppProvider, DevlogFile, GOWA and Twilio are as in API: the worker sends reminders and
+	// promise confirmations through the same provider as the API's login codes (though only
+	// devlog and twilio send them until slice 5's pacing, decision 41.6).
+	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
+	DevlogFile       string `env:"DEVLOG_FILE"`
+	GOWA             GOWA   `env:", prefix=GOWA_"`
+	Twilio           Twilio `env:", prefix=TWILIO_"`
 	// Telegram is as in API.
 	Telegram Telegram `env:", prefix=TELEGRAM_"`
+}
+
+// WhatsApp returns the worker's WhatsApp settings.
+func (c Worker) WhatsApp() WhatsApp {
+	return WhatsApp{Env: c.Env, Provider: c.WhatsAppProvider, DevlogFile: c.DevlogFile, GOWA: c.GOWA, Twilio: c.Twilio}
 }
 
 func (c Worker) validate() error {
@@ -333,7 +366,16 @@ func (c Worker) validate() error {
 	if c.DatabaseMaxConns < 2 {
 		return fmt.Errorf("DATABASE_MAX_CONNS must be at least 2, got %d", c.DatabaseMaxConns)
 	}
-	return c.Secrets.validate()
+	if err := c.Secrets.validate(); err != nil {
+		return err
+	}
+	if c.PublicWebOrigin == "" {
+		return fmt.Errorf("PUBLIC_WEB_ORIGIN is required in %s", c.Env)
+	}
+	if err := validWebOrigin(c.PublicWebOrigin, c.Env); err != nil {
+		return err
+	}
+	return c.WhatsApp().validate()
 }
 
 // validAutoGoPayURL checks AUTOGOPAY_BASE_URL: empty (AutoGoPay's own gateway), or an absolute
@@ -536,6 +578,9 @@ func loadWorker(ctx context.Context, l envconfig.Lookuper) (Worker, error) {
 	var c Worker
 	if err := process(ctx, l, &c); err != nil {
 		return Worker{}, fmt.Errorf("loading worker config: %w", err)
+	}
+	if c.PublicWebOrigin == "" && c.Env == "development" {
+		c.PublicWebOrigin = devWebOrigin
 	}
 	if err := c.validate(); err != nil {
 		return Worker{}, fmt.Errorf("loading worker config: %w", err)

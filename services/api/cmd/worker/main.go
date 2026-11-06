@@ -15,6 +15,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/provider"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
@@ -111,14 +113,36 @@ func run() error {
 	if err := promises.Register(mux, sched); err != nil {
 		return err
 	}
+	// Reminders and promise confirmations go out through the configured WhatsApp provider; until
+	// slice 5's pacing only devlog and twilio actually send them (decision 41.6).
+	msg, err := provider.New(cfg.WhatsApp(), log)
+	if err != nil {
+		return err
+	}
+	sendQueue := remindertask.NewSendClient(client)
 	reminders := remindertask.Worker{
-		Decider:  reminder.NewDecider(st, clk, log),
+		Decider:  reminder.NewDecider(st, clk, log, sendQueue),
 		Orgs:     st,
 		Enqueuer: remindertask.NewClient(client),
 		Clock:    clk,
 		Log:      log,
 	}
 	if err := reminders.Register(mux, sched); err != nil {
+		return err
+	}
+	if !reminder.SendsThrough(cfg.WhatsAppProvider) {
+		log.Warn("reminders are recorded but not sent until slice 5's pacing (decision 41.6)", "provider", cfg.WhatsAppProvider)
+	}
+	sending := remindertask.SendWorker{
+		Sender: reminder.NewSender(reminder.SenderDeps{
+			Store: st, Links: paylink.NewService(st, az, clk, cfg.PublicWebOrigin), Provider: msg,
+			ProviderName: cfg.WhatsAppProvider, Clock: clk, Log: log,
+		}),
+		Orgs:  st,
+		Queue: sendQueue,
+		Log:   log,
+	}
+	if err := sending.Register(mux, sched); err != nil {
 		return err
 	}
 

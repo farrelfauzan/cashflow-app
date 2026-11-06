@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -23,10 +22,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/provider"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
@@ -38,6 +34,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -68,7 +65,7 @@ func run() error {
 	}
 	log = log.With("service", "api", "env", cfg.Env)
 
-	msg, err := messenger(cfg, log)
+	msg, err := provider.New(cfg.WhatsApp(), log)
 	if err != nil {
 		return err
 	}
@@ -131,7 +128,11 @@ func run() error {
 		return err
 	}
 	webhooks := qris.NewWebhook(accounts, qristask.NewPaidClient(queueClient), log)
-	promises := promise.NewService(promise.Deps{Store: st, Links: payLinks, Tenants: billingSvc, Clock: clk})
+	// Each saved promise version enqueues its "janji tercatat" message; the worker sends it.
+	promises := promise.NewService(promise.Deps{
+		Store: st, Links: payLinks, Tenants: billingSvc, Clock: clk,
+		Confirms: remindertask.NewSendClient(queueClient), Log: log,
+	})
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,
@@ -157,36 +158,6 @@ func run() error {
 	}
 	log.Info("api starting", "addr", cfg.HTTPAddr)
 	return srv.Run(ctx, cfg.HTTPAddr)
-}
-
-// messenger builds the WhatsApp provider chosen in config: GOWA, Twilio, or in development the
-// log provider, which writes messages (login codes included) to the log instead of sending them.
-func messenger(cfg config.API, log *slog.Logger) (messaging.Provider, error) {
-	switch cfg.WhatsAppProvider {
-	case "gowa":
-		return gowa.New(gowa.Config{
-			BaseURL:  cfg.GOWA.URL,
-			Username: cfg.GOWA.Username,
-			Password: cfg.GOWA.Password,
-			DeviceID: cfg.GOWA.DeviceID,
-		})
-	case "twilio":
-		contentSIDs, err := cfg.Twilio.ContentSIDMap()
-		if err != nil {
-			return nil, err
-		}
-		return twilio.New(twilio.Config{
-			AccountSID:  cfg.Twilio.AccountSID,
-			AuthToken:   cfg.Twilio.AuthToken,
-			From:        cfg.Twilio.WhatsAppFrom,
-			ContentSIDs: contentSIDs,
-		})
-	case "devlog":
-		return devlog.New(log, cfg.DevlogFile), nil
-	default:
-		// config.LoadAPI has already rejected anything else.
-		return nil, errors.New("no WhatsApp provider configured")
-	}
 }
 
 func healthcheck() error {
