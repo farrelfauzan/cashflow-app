@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
 import type {
+  ActivePromise,
   InvoiceListItem,
   InvoiceListSummary,
   MissingMeterReading,
@@ -68,6 +69,21 @@ const item = (over: Partial<InvoiceListItem> = {}): InvoiceListItem => ({
   lines: [],
   promise: null,
   brokenPromises: 0,
+  ...over,
+});
+
+const activePromise = (over: Partial<ActivePromise> = {}): ActivePromise => ({
+  id: "6f0f9e2a-6a43-4c1e-9b0b-1d6f2b6d7a01",
+  version: 1,
+  kind: "specific_date",
+  promisedDate: "2026-12-12",
+  promisedAmount: null,
+  payingNow: 0,
+  source: "tenant_page",
+  note: null,
+  createdBy: null,
+  createdAt: "2026-11-25T03:00:00Z",
+  coveredInvoiceIds: [],
   ...over,
 });
 
@@ -348,6 +364,15 @@ describe("summaryTiles", () => {
     expect(owed?.notes).toEqual(["0 penyewa"]);
   });
 
+  it("says how many of the tenants who owe have a promise (board: 9 penyewa, 3 ada janji)", () => {
+    const [, owed] = summaryTiles(
+      summary({ tenantsOutstanding: 9, tenantsWithPromise: 3 }),
+      "2026-11",
+      "2026-11",
+    );
+    expect(owed?.notes).toEqual(["9 penyewa, 3 ada janji"]);
+  });
+
   it("names the month when it is not this one", () => {
     const [collected] = summaryTiles(
       summary({ billed: 0, paid: 0, outstanding: 0, tenantsOutstanding: 0 }),
@@ -431,6 +456,41 @@ describe("invoiceChips", () => {
     {
       name: "paid with overdueDays that is not trusted",
       over: { status: "paid", overdueDays: 5 },
+      want: [{ label: "Lunas", tone: "active" }],
+    },
+    {
+      name: "overdue under a promise, with broken ones before",
+      over: {
+        status: "open",
+        overdueDays: 12,
+        promise: activePromise({ promisedDate: "2026-12-12" }),
+        brokenPromises: 2,
+      },
+      want: [
+        { label: "Terlambat 12 hari", tone: "warning" },
+        { label: "Janji 12 Des", tone: "upcoming" },
+        { label: "Janji lewat 2×", tone: "warning" },
+      ],
+    },
+    {
+      name: "partly paid under a promise",
+      over: {
+        status: "partial",
+        promise: activePromise({ promisedDate: "2026-11-30" }),
+      },
+      want: [
+        { label: "Sebagian", tone: "neutral" },
+        { label: "Janji 30 Nov", tone: "upcoming" },
+      ],
+    },
+    {
+      name: "paid since the promise: no promise chips",
+      over: {
+        status: "paid",
+        outstanding: 0,
+        promise: activePromise(),
+        brokenPromises: 1,
+      },
       want: [{ label: "Lunas", tone: "active" }],
     },
   ];
