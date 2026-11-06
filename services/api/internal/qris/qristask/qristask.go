@@ -43,10 +43,15 @@ const (
 	paidRetries = 10
 )
 
-// PaidTaskID names the qris:paid task of a transaction: qris:paid:<transaction id>. AutoGoPay's
-// transaction ids are unique across organizations (qris_attempt.transaction_id is), so a repeated
-// webhook finds the first task still queued; the payment's unique key makes a later one harmless.
-func PaidTaskID(transactionID string) string { return TypePaid + ":" + transactionID }
+// PaidTaskID names the qris:paid task of an organization's transaction:
+// qris:paid:<organization>:<transaction id>. A repeated webhook finds the first task still queued;
+// the payment's unique key makes a later one harmless. The organization is part of the id because
+// the task id outlives the task (a task that is never retried stays archived): without it, one
+// organization could sign its own callback naming another organization's transaction id and take
+// that id, so the real organization's callback would be dropped as a duplicate.
+func PaidTaskID(org uuid.UUID, transactionID string) string {
+	return fmt.Sprintf("%s:%s:%s", TypePaid, org, transactionID)
+}
 
 type paidPayload struct {
 	OrganizationID uuid.UUID `json:"organizationId"`
@@ -67,12 +72,12 @@ func (c PaidClient) EnqueuePaid(ctx context.Context, org uuid.UUID, transactionI
 		return fmt.Errorf("encoding qris:paid payload: %w", err)
 	}
 	_, err = c.c.EnqueueContext(ctx, asynq.NewTask(TypePaid, body),
-		asynq.TaskID(PaidTaskID(transactionID)), asynq.Queue(queue.Default), asynq.MaxRetry(paidRetries))
+		asynq.TaskID(PaidTaskID(org, transactionID)), asynq.Queue(queue.Default), asynq.MaxRetry(paidRetries))
 	if errors.Is(err, asynq.ErrTaskIDConflict) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("enqueueing %s: %w", PaidTaskID(transactionID), err)
+		return fmt.Errorf("enqueueing %s: %w", PaidTaskID(org, transactionID), err)
 	}
 	return nil
 }

@@ -35,18 +35,25 @@ func (s *settler) SettlePaid(_ context.Context, org uuid.UUID, transactionID str
 
 func TestPaidTaskID(t *testing.T) {
 	t.Parallel()
+	orgA := uuid.MustParse("00000000-0000-4000-8000-00000000000a")
+	orgB := uuid.MustParse("00000000-0000-4000-8000-00000000000b")
 	tests := []struct {
 		name string
+		org  uuid.UUID
 		txID string
 		want string
 	}{
-		{"a uuid transaction id", "00000000-0000-4000-8000-0000000000a1", "qris:paid:00000000-0000-4000-8000-0000000000a1"},
-		{"another id gives another task id", "00000000-0000-4000-8000-0000000000a2", "qris:paid:00000000-0000-4000-8000-0000000000a2"},
+		{"a uuid transaction id", orgA, "00000000-0000-4000-8000-0000000000a1",
+			"qris:paid:00000000-0000-4000-8000-00000000000a:00000000-0000-4000-8000-0000000000a1"},
+		{"another id gives another task id", orgA, "00000000-0000-4000-8000-0000000000a2",
+			"qris:paid:00000000-0000-4000-8000-00000000000a:00000000-0000-4000-8000-0000000000a2"},
+		{"another organization naming the same transaction gets its own task id", orgB, "00000000-0000-4000-8000-0000000000a1",
+			"qris:paid:00000000-0000-4000-8000-00000000000b:00000000-0000-4000-8000-0000000000a1"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want, qristask.PaidTaskID(tc.txID))
+			require.Equal(t, tc.want, qristask.PaidTaskID(tc.org, tc.txID))
 		})
 	}
 }
