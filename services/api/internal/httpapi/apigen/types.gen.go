@@ -1538,7 +1538,7 @@ type PaymentPage struct {
 	// Promise The tenant's active payment promise with its newest version's terms, or null when there is none. It stays active until it is closed, even once everything is paid.
 	Promise *PaymentPromise `json:"promise"`
 
-	// PromiseDates The days a promise made now may name (specific_date); null when the tenant owes nothing.
+	// PromiseDates The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible).
 	PromiseDates *PromiseDates `json:"promiseDates"`
 
 	// QrisAvailable True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
@@ -1675,7 +1675,7 @@ type PromiseDates struct {
 	// Earliest Tomorrow.
 	Earliest openapi_types.Date `json:"earliest"`
 
-	// Latest 60 days from today.
+	// Latest 60 days from today; for an edit, 60 days from the promise's first version if that is sooner.
 	Latest openapi_types.Date `json:"latest"`
 }
 

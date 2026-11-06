@@ -11,6 +11,6 @@
 export interface PromiseDates {
   /** Tomorrow. */
   earliest: string;
-  /** 60 days from today. */
+  /** 60 days from today; for an edit, 60 days from the promise's first version if that is sooner. */
   latest: string;
 }

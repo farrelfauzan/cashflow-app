@@ -1840,7 +1840,10 @@ paths:
 
 
         specific_date takes promisedDate from tomorrow to 60 days ahead (Asia/Jakarta), the
-        bounds getPaymentPage gives as promiseDates. with_next_invoice takes no date: the server
+        bounds getPaymentPage gives as promiseDates. An edit may not go past 60 days from the
+        day the promise's first version was made, so editing never extends a promise beyond
+        that (decision 41); once that day is reached no edit is possible until the promise
+        closes. with_next_invoice takes no date: the server
         uses the next invoice's due date, which getPaymentPage gives as nextInvoiceDueDate (null
         when the tenant has none within the range, so the page does not offer it). Limited per
         token and per client address together with getPaymentPage (429 rate_limited). Responses
@@ -3291,7 +3294,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/PaymentPromise"
         promiseDates:
-          description: The days a promise made now may name (specific_date); null when the tenant owes nothing.
+          description: >
+            The days a promise made now may name (specific_date); for an edit of the active
+            promise, no later than 60 days from its first version. Null when the tenant owes
+            nothing, or when the active promise has reached that bound (no edit is possible).
           nullable: true
           allOf:
             - $ref: "#/components/schemas/PromiseDates"
@@ -3385,7 +3391,7 @@ components:
       description: The days a promise made today may name, both included (Asia/Jakarta).
       properties:
         earliest: { type: string, format: date, description: Tomorrow. }
-        latest: { type: string, format: date, description: 60 days from today. }
+        latest: { type: string, format: date, description: "60 days from today; for an edit, 60 days from the promise's first version if that is sooner." }
 
     MakePaymentPromiseRequest:
       type: object

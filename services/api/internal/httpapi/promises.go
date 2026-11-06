@@ -169,7 +169,7 @@ func promisePageFields(out *apigen.PaymentPage, st promise.PageState) {
 		ap := toAPIPaymentPromise(promise.StatusActive, *v)
 		out.Promise = &ap
 	}
-	if win := st.Window; win != nil {
+	if win := st.Window; win != nil && !win.Empty() {
 		out.PromiseDates = &apigen.PromiseDates{Earliest: date(win.Earliest), Latest: date(win.Latest)}
 		if due := win.NextDueInRange(); due != nil {
 			d := date(*due)

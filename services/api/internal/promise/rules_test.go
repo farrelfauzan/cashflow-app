@@ -204,3 +204,35 @@ func TestDecide(t *testing.T) {
 		})
 	}
 }
+
+func TestCappedFrom(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		today      time.Time
+		firstDay   time.Time
+		wantLatest time.Time
+		wantEmpty  bool
+	}{
+		{name: "a new promise made today keeps 60 days", today: day(2026, 11, 2), firstDay: day(2026, 11, 2), wantLatest: day(2027, 1, 1)},
+		{name: "an edit 24 days later ends at the first version's bound", today: day(2026, 11, 26), firstDay: day(2026, 11, 2), wantLatest: day(2027, 1, 1)},
+		{name: "the day before the bound leaves one day", today: day(2026, 12, 31), firstDay: day(2026, 11, 2), wantLatest: day(2027, 1, 1)},
+		{name: "on the bound no day is left", today: day(2027, 1, 1), firstDay: day(2026, 11, 2), wantLatest: day(2027, 1, 1), wantEmpty: true},
+		{name: "past the bound no day is left", today: day(2027, 2, 15), firstDay: day(2026, 11, 2), wantLatest: day(2027, 1, 1), wantEmpty: true},
+		{name: "across February in a common year", today: day(2027, 1, 20), firstDay: day(2027, 1, 10), wantLatest: day(2027, 3, 11)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			w := WindowOn(tc.today, []billing.LeaseDates{monthly(day(2026, 10, 1))}).CappedFrom(tc.firstDay)
+			require.Equal(t, tc.today.AddDate(0, 0, 1), w.Earliest)
+			require.Equal(t, tc.wantLatest, w.Latest)
+			require.Equal(t, tc.wantEmpty, w.Empty())
+			if tc.wantEmpty {
+				require.Nil(t, w.NextDueInRange(), "nothing is in an empty window")
+				_, err := Decide(Input{Kind: KindSpecificDate, PromisedDate: ptr(tc.today.AddDate(0, 0, 1))}, 100_000, w)
+				require.ErrorIs(t, err, ErrDateOutOfRange)
+			}
+		})
+	}
+}

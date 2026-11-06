@@ -180,24 +180,27 @@ func (s *Service) make(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, 
 	if err != nil {
 		return Promise{}, err
 	}
-	date, err := Decide(in, acct.Outstanding, WindowOn(today, leases))
-	if err != nil {
-		return Promise{}, err
-	}
-
+	window := WindowOn(today, leases)
 	promiseID, number := uuid.New(), int32(1)
 	active, err := q.GetActivePromise(ctx, dbgen.GetActivePromiseParams{OrganizationID: org, TenantID: tenantID})
 	switch {
 	case err == nil:
+		// An edit: the date stays within 60 days of the promise's first version.
 		promiseID, number = active.PromiseID, active.Version+1
-	case errors.Is(err, pgx.ErrNoRows):
+		window = window.CappedFrom(jakartaDay(active.PromiseCreatedAt))
+	case !errors.Is(err, pgx.ErrNoRows):
+		return Promise{}, fmt.Errorf("promise: loading the active promise: %w", err)
+	}
+	date, err := Decide(in, acct.Outstanding, window)
+	if err != nil {
+		return Promise{}, err
+	}
+	if number == 1 {
 		if err := q.InsertPaymentPromise(ctx, dbgen.InsertPaymentPromiseParams{
 			ID: promiseID, OrganizationID: org, TenantID: tenantID, CreatedAt: now,
 		}); err != nil {
 			return Promise{}, fmt.Errorf("promise: saving the promise: %w", err)
 		}
-	default:
-		return Promise{}, fmt.Errorf("promise: loading the active promise: %w", err)
 	}
 
 	versionID := uuid.New()
@@ -384,6 +387,12 @@ func LoadPageTx(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, outstan
 		return PageState{}, err
 	}
 	w := WindowOn(today, leases)
+	if out.Active != nil {
+		w = w.CappedFrom(jakartaDay(r.PromiseCreatedAt))
+	}
 	out.Window = &w
 	return out, nil
 }
+
+// jakartaDay is the calendar day of t in Asia/Jakarta, as midnight UTC like a date column.
+func jakartaDay(t time.Time) time.Time { return calendarDay(t.In(clock.Jakarta)) }

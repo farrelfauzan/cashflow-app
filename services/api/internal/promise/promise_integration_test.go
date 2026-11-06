@@ -215,8 +215,46 @@ func TestMakeFromLink(t *testing.T) {
 		require.Equal(t, day(2026, 12, 2), page.Promise.Active.PromisedDate)
 		require.NotNil(t, page.Promise.Window)
 		require.Equal(t, day(2026, 11, 27), page.Promise.Window.Earliest)
-		require.Equal(t, day(2027, 1, 25), page.Promise.Window.Latest)
+		require.Equal(t, day(2027, 1, 1), page.Promise.Window.Latest, "an edit stays within 60 days of the first version (2 Nov)")
 		require.Equal(t, ptr(day(2026, 12, 2)), page.Promise.Window.NextDueInRange())
+	})
+
+	// Decision 41: an active promise silences H+3 and H+7 for at most 60 days, so editing it
+	// never moves its date past 60 days from its first version.
+	t.Run("an edit cannot go past 60 days from the first version", func(t *testing.T) {
+		_, err := w.promises.MakeFromLink(ctx, rina.token, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: ptr(day(2027, 1, 2))})
+		var fe *promise.FieldError
+		require.ErrorAs(t, err, &fe)
+		require.ErrorIs(t, err, promise.ErrDateOutOfRange)
+		require.Equal(t, "promisedDate", fe.Field)
+
+		got := w.make(t, rina, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: ptr(day(2027, 1, 1))})
+		require.Equal(t, 3, got.Latest().Number)
+		require.Equal(t, day(2027, 1, 1), got.Latest().PromisedDate)
+
+		// On the bound itself no later day is left: the page offers no dates and an edit is refused.
+		// Rina's first link expired 30 days after its invoice was paid, so use a link of the
+		// invoice still open.
+		acct, err := env.Billing.Account(ctx, w.admin, rina.tenantID)
+		require.NoError(t, err)
+		var open uuid.UUID
+		for _, inv := range acct.Invoices {
+			if inv.Outstanding > 0 {
+				open = inv.ID
+				break
+			}
+		}
+		require.NotEqual(t, uuid.Nil, open)
+		link, err := w.links.Mint(ctx, w.admin, open)
+		require.NoError(t, err)
+		rina.token = strings.TrimPrefix(link.URL, webOrigin+"/t/")
+		env.Clock.Set(time.Date(2027, 1, 1, 9, 0, 0, 0, clock.Jakarta))
+		page, err := w.links.PublicPage(ctx, rina.token)
+		require.NoError(t, err)
+		require.NotNil(t, page.Promise.Window)
+		require.True(t, page.Promise.Window.Empty())
+		_, err = w.promises.MakeFromLink(ctx, rina.token, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: ptr(day(2027, 1, 2))})
+		require.ErrorIs(t, err, promise.ErrDateOutOfRange)
 	})
 }
 
