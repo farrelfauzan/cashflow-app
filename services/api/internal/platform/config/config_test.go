@@ -613,8 +613,10 @@ func TestTelegramSettings(t *testing.T) {
 		{name: "nothing set in production", env: env("production")},
 		{name: "a token in production is refused (demo channel)", env: env("production", bot...), wantErr: "Telegram is a demo channel"},
 		{name: "only a webhook secret in production is refused", env: env("production", "TELEGRAM_WEBHOOK_SECRET", webhookSecret), wantErr: "Telegram is a demo channel"},
-		{name: "token and username", env: env("staging", bot...), want: Telegram{BotToken: token, BotUsername: "CashflowDevBot"}},
-		{name: "username ending in lowercase bot", env: env("staging", "TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", "cashflow_dev_bot"),
+		{name: "token and username in development", env: env("development", bot...), want: Telegram{BotToken: token, BotUsername: "CashflowDevBot"}},
+		{name: "token and username in staging without a webhook secret", env: env("staging", bot...),
+			wantErr: "TELEGRAM_WEBHOOK_SECRET is required in staging"},
+		{name: "username ending in lowercase bot", env: env("development", "TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", "cashflow_dev_bot"),
 			want: Telegram{BotToken: token, BotUsername: "cashflow_dev_bot"}},
 		{name: "all four", env: env("staging", with("TELEGRAM_WEBHOOK_SECRET", webhookSecret, "TELEGRAM_API_BASE_URL", "https://api.telegram.org")...),
 			want: Telegram{BotToken: token, BotUsername: "CashflowDevBot", WebhookSecret: webhookSecret, APIBaseURL: "https://api.telegram.org"}},
@@ -682,18 +684,22 @@ func TestTelegramLogValueHidesSecrets(t *testing.T) {
 
 func TestLoadTelegramPoll(t *testing.T) {
 	token := "7000000001:" + strings.Repeat("AbCdEfGhIj", 4)
+	const db = "postgres://app@db/cashflow"
 	tests := []struct {
 		name    string
 		env     map[string]string
 		wantErr string
 	}{
-		{name: "development with a bot", env: map[string]string{"TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}},
-		{name: "no token", env: map[string]string{}, wantErr: "needs TELEGRAM_BOT_TOKEN"},
-		{name: "token without username", env: map[string]string{"TELEGRAM_BOT_TOKEN": token}, wantErr: "TELEGRAM_BOT_USERNAME is required"},
-		{name: "malformed token", env: map[string]string{"TELEGRAM_BOT_TOKEN": "nope", "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}, wantErr: "TELEGRAM_BOT_TOKEN must be"},
-		{name: "refused in staging", env: map[string]string{"APP_ENV": "staging", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
+		{name: "development with a bot", env: map[string]string{"DATABASE_URL": db, "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}},
+		{name: "no token", env: map[string]string{"DATABASE_URL": db}, wantErr: "needs TELEGRAM_BOT_TOKEN"},
+		{name: "no database", env: map[string]string{"TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}, wantErr: "DATABASE_URL"},
+		{name: "a pool too small", env: map[string]string{"DATABASE_URL": db, "DATABASE_MAX_CONNS": "1", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
+			wantErr: "DATABASE_MAX_CONNS must be at least 2"},
+		{name: "token without username", env: map[string]string{"DATABASE_URL": db, "TELEGRAM_BOT_TOKEN": token}, wantErr: "TELEGRAM_BOT_USERNAME is required"},
+		{name: "malformed token", env: map[string]string{"DATABASE_URL": db, "TELEGRAM_BOT_TOKEN": "nope", "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}, wantErr: "TELEGRAM_BOT_TOKEN must be"},
+		{name: "refused in staging", env: map[string]string{"DATABASE_URL": db, "APP_ENV": "staging", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
 			wantErr: "only runs in development"},
-		{name: "refused in production", env: map[string]string{"APP_ENV": "production", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
+		{name: "refused in production", env: map[string]string{"DATABASE_URL": db, "APP_ENV": "production", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
 			wantErr: "only runs in development"},
 	}
 	for _, tc := range tests {
@@ -707,6 +713,8 @@ func TestLoadTelegramPoll(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, token, got.Telegram.BotToken)
+			require.Equal(t, db, got.DatabaseURL)
+			require.EqualValues(t, 4, got.DatabaseMaxConns)
 		})
 	}
 }

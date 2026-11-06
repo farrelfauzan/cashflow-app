@@ -422,14 +422,26 @@ func (t Telegram) validate(env string) error {
 	if t.WebhookSecret != "" && !telegramWebhookSecret.MatchString(t.WebhookSecret) {
 		return errors.New("TELEGRAM_WEBHOOK_SECRET must be 1 to 256 characters of A-Z, a-z, 0-9, _ and -")
 	}
-	return validBaseURL("TELEGRAM_API_BASE_URL", t.APIBaseURL, env, false)
+	if err := validBaseURL("TELEGRAM_API_BASE_URL", t.APIBaseURL, env, false); err != nil {
+		return err
+	}
+	// Staging receives the bot's updates only on the webhook, which needs its secret; without it
+	// the bot could send but never link anyone.
+	if env == "staging" && t.BotToken != "" && t.WebhookSecret == "" {
+		return errors.New("TELEGRAM_WEBHOOK_SECRET is required in staging when TELEGRAM_BOT_TOKEN is set")
+	}
+	return nil
 }
 
 // TelegramPoll is the configuration of cmd/telegrampoll, which long-polls the development bot.
-// It runs in development only and needs the bot token.
+// It runs in development only and needs the bot token and the database.
 type TelegramPoll struct {
 	Common
-	Telegram Telegram `env:", prefix=TELEGRAM_"`
+	// DatabaseURL is DATABASE_URL, the app role: the update handler links and unlinks chats.
+	DatabaseURL string `env:"DATABASE_URL, required"`
+	// DatabaseMaxConns is DATABASE_MAX_CONNS; the poller handles one update at a time.
+	DatabaseMaxConns int32    `env:"DATABASE_MAX_CONNS, default=4"`
+	Telegram         Telegram `env:", prefix=TELEGRAM_"`
 }
 
 func (c TelegramPoll) validate() error {
@@ -441,6 +453,9 @@ func (c TelegramPoll) validate() error {
 	}
 	if !c.Telegram.Enabled() {
 		return errors.New("the Telegram poller needs TELEGRAM_BOT_TOKEN (and TELEGRAM_BOT_USERNAME) in services/api/.env")
+	}
+	if c.DatabaseMaxConns < 2 {
+		return fmt.Errorf("DATABASE_MAX_CONNS must be at least 2, got %d", c.DatabaseMaxConns)
 	}
 	return c.Telegram.validate(c.Env)
 }

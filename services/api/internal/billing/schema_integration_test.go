@@ -621,15 +621,20 @@ func TestActiveOrganizationIDs(t *testing.T) {
 
 // TestActiveOrganizationIDsIsTheOnlySecurityDefiner guards the policies that let the migration role read
 // across organizations while a function's own setting is on: organization_list_ids
-// (app.list_org_ids, 00011_money.sql) and payment_link_lookup (app.payment_link_lookup,
-// 00017_payment_link.sql). Any role can turn a custom setting on for its own session, so every
-// SECURITY DEFINER function owned by the migration role could read under either setting. Today
-// there are two: active_organization_ids() reads organization ids only, and
-// payment_link_lookup(bytea) reads one link's organization and id by its token hash and touches
-// no other table, and autogopay_webhook_lookup(text) (00020, setting app.autogopay_webhook_lookup)
-// reads one AutoGoPay account's organization id by its webhook id. A new one must be reviewed
-// against all three policies, and this test says so. (Its
-// name predates the second function; 00011_money.sql refers to it by this name.)
+// (app.list_org_ids, 00011_money.sql), payment_link_lookup (app.payment_link_lookup,
+// 00017_payment_link.sql), autogopay_account_webhook_lookup (app.autogopay_webhook_lookup,
+// 00020_autogopay_webhook_lookup.sql), telegram_link_code_lookup (app.telegram_link_code_lookup)
+// and telegram_link_chat_organizations (app.telegram_chat_organizations, both
+// 00025_telegram_link.sql). Any role can turn a custom setting on for its own session, so every
+// SECURITY DEFINER function owned by the migration role could read under any of them. Today there
+// are five: active_organization_ids() reads organization ids only; payment_link_lookup(bytea)
+// reads one link's organization and id by its token hash; autogopay_webhook_lookup(text) reads one
+// AutoGoPay account's organization id by its webhook id; telegram_link_code_lookup(bytea) reads
+// one Telegram linking code's organization and id by its hash; and
+// telegram_chat_organizations(bigint) reads the organization ids where one Telegram chat has a
+// live link. Each touches only its own table. A new one must be reviewed against all five
+// policies, and this test says so. (Its name predates the second function; 00011_money.sql refers
+// to it by this name.)
 func TestActiveOrganizationIDsIsTheOnlySecurityDefiner(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.New(t)
@@ -645,8 +650,12 @@ func TestActiveOrganizationIDsIsTheOnlySecurityDefiner(t *testing.T) {
 	require.NoError(t, err)
 	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
-	require.Equal(t, []string{"active_organization_ids", "autogopay_webhook_lookup", "payment_link_lookup"}, names,
+	require.Equal(t, []string{
+		"active_organization_ids", "autogopay_webhook_lookup", "payment_link_lookup",
+		"telegram_chat_organizations", "telegram_link_code_lookup",
+	}, names,
 		"a new SECURITY DEFINER function must be checked against the organization_list_ids policy in 00011_money.sql, "+
-			"the payment_link_lookup policy in 00017_payment_link.sql and the autogopay_account_webhook_lookup policy "+
-			"in 00020_autogopay_webhook_lookup.sql")
+			"the payment_link_lookup policy in 00017_payment_link.sql, the autogopay_account_webhook_lookup policy "+
+			"in 00020_autogopay_webhook_lookup.sql and the telegram_link_code_lookup and "+
+			"telegram_link_chat_organizations policies in 00025_telegram_link.sql")
 }

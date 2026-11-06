@@ -345,6 +345,27 @@ type StaffUser struct {
 	CreatedAt time.Time
 }
 
+type TelegramLink struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	LinkCodeID     uuid.UUID
+	ChatID         int64
+	TelegramUserID int64
+	LinkedAt       time.Time
+	UnlinkedAt     *time.Time
+}
+
+type TelegramLinkCode struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	CodeHash       []byte
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
+	UsedAt         *time.Time
+}
+
 type Tenant struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

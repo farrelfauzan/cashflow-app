@@ -26,6 +26,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
@@ -38,6 +39,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -132,25 +134,33 @@ func run() error {
 	}
 	webhooks := qris.NewWebhook(accounts, qristask.NewPaidClient(queueClient), log)
 	promises := promise.NewService(promise.Deps{Store: st, Links: payLinks, Tenants: billingSvc, Clock: clk})
+	tgCodes, tgUpdates, err := newTelegram(cfg, st, payLinks, clk, log)
+	if err != nil {
+		return err
+	}
 
 	srv := httpapi.New(httpapi.Deps{
-		Log:            log,
-		DB:             st,
-		Auth:           authSvc,
-		Authz:          az,
-		Members:        members,
-		Properties:     props,
-		Tenants:        tenants,
-		Imports:        imports,
-		Billing:        billingSvc,
-		PayLinks:       payLinks,
-		QRIS:           qrisSvc,
-		Promises:       promises,
-		Webhooks:       webhooks,
-		PublicLimiter:  limiter,
-		CookieSecure:   cookieSecure,
-		AllowedOrigins: allowedOrigins,
-		DocsSpecPath:   docsSpecPath,
+		Log:           log,
+		DB:            st,
+		Auth:          authSvc,
+		Authz:         az,
+		Members:       members,
+		Properties:    props,
+		Tenants:       tenants,
+		Imports:       imports,
+		Billing:       billingSvc,
+		PayLinks:      payLinks,
+		QRIS:          qrisSvc,
+		Promises:      promises,
+		Webhooks:      webhooks,
+		TelegramCodes: tgCodes,
+		// A nil *Handler must stay a nil interface, so the route is not registered without a bot.
+		TelegramUpdates:       updateHandler(tgUpdates),
+		TelegramWebhookSecret: cfg.Telegram.WebhookSecret,
+		PublicLimiter:         limiter,
+		CookieSecure:          cookieSecure,
+		AllowedOrigins:        allowedOrigins,
+		DocsSpecPath:          docsSpecPath,
 	})
 	if docsSpecPath != "" {
 		log.Info("API docs at /docs", "spec", docsSpecPath)
@@ -187,6 +197,31 @@ func messenger(cfg config.API, log *slog.Logger) (messaging.Provider, error) {
 		// config.LoadAPI has already rejected anything else.
 		return nil, errors.New("no WhatsApp provider configured")
 	}
+}
+
+// newTelegram builds the Telegram demo channel (decision 42) when the environment has a bot: the
+// payment page's deep-link codes and the webhook's update handler. Without a bot both are nil, so
+// the page offers no Telegram and /webhooks/telegram does not exist. config.LoadAPI has already
+// refused a bot in production.
+func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, clk clock.Clock, log *slog.Logger) (*telegramlink.Codes, *telegramlink.Handler, error) {
+	if !cfg.Telegram.Enabled() {
+		return nil, nil, nil
+	}
+	bot, err := telegram.New(telegram.Config{Token: cfg.Telegram.BotToken, BaseURL: cfg.Telegram.APIBaseURL})
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Info("telegram demo channel on", "telegram", cfg.Telegram)
+	return telegramlink.NewCodes(st, links, clk, cfg.Telegram.BotUsername),
+		telegramlink.NewHandler(st, bot, clk, log), nil
+}
+
+// updateHandler turns a nil *telegramlink.Handler into a nil interface.
+func updateHandler(h *telegramlink.Handler) telegram.UpdateHandler {
+	if h == nil {
+		return nil
+	}
+	return h
 }
 
 func healthcheck() error {

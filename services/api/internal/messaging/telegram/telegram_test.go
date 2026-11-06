@@ -402,3 +402,58 @@ func requireNoLeak(t *testing.T, err error) {
 	require.NotContains(t, msg, "5550001112", "errors must never carry the chat id")
 	require.NotContains(t, msg, loginCode, "errors must never carry the message text")
 }
+
+func TestSendText(t *testing.T) {
+	t.Parallel()
+	const text = "Berhenti. Pesan tidak lagi dikirim ke Telegram."
+	var got struct {
+		path string
+		raw  map[string]any
+	}
+	c := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		got.path = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&got.raw)
+		_, _ = io.WriteString(w, sentBody)
+	})
+	receipt, err := c.SendText(t.Context(), chatID, text)
+	require.NoError(t, err)
+	require.Equal(t, "42", receipt.ProviderMessageID)
+	require.Equal(t, "/bot"+botToken+"/sendMessage", got.path)
+	require.Equal(t, map[string]any{"chat_id": float64(chatID), "text": text}, got.raw,
+		"only chat_id and text: no parse_mode, so the reply is never read as markup")
+}
+
+func TestSendTextRefusesBeforeCalling(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	c := newClient(t, func(http.ResponseWriter, *http.Request) { calls.Add(1) })
+	tests := []struct {
+		name   string
+		chatID int64
+		text   string
+	}{
+		{"no chat", 0, "Halo"},
+		{"empty text", chatID, "  "},
+		{"text over 4096 characters", chatID, strings.Repeat("é", 4097)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := c.SendText(t.Context(), tc.chatID, tc.text)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "éé")
+		})
+	}
+	require.Zero(t, calls.Load())
+}
+
+func TestSendTextErrorsKeepTheTokenOut(t *testing.T) {
+	t.Parallel()
+	c := newClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"ok":false,"error_code":403,"description":"Forbidden: bot was blocked by the user"}`)
+	})
+	_, err := c.SendText(t.Context(), chatID, "Terhubung.")
+	require.ErrorIs(t, err, messaging.ErrUndeliverable)
+	requireNoLeak(t, err)
+	require.NotContains(t, err.Error(), "Terhubung")
+}
