@@ -6,8 +6,19 @@
  */
 import type { BankAccount } from './bankAccount';
 import type { PaymentPageInvoice } from './paymentPageInvoice';
+import type { PaymentPromise } from './paymentPromise';
+import type { PromiseDates } from './promiseDates';
 
 export interface PaymentPage {
+  /** The tenant's active payment promise with its newest version's terms, or null when there is none. It stays active until it is closed, even once everything is paid. */
+  promise: PaymentPromise | null;
+  /** The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible). */
+  promiseDates: PromiseDates | null;
+  /**
+     * The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill, whether that invoice is already made or not: the next bill to fall due. The page labels the choice by this date, not by a month ("Bareng jatuh tempo berikutnya · 13 Nov 2026"): a late-entered lease's current period can be due in the month after the one it belongs to. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
+     * @nullable
+     */
+  nextInvoiceDueDate: string | null;
   /** True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that. */
   qrisAvailable: boolean;
   /** The organization's display name: who bills the tenant. */

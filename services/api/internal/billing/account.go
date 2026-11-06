@@ -131,6 +131,21 @@ func LoadAccountTx(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, toda
 	return loadAccount(ctx, dbgen.New(tx), org, tenantID, today)
 }
 
+// AuthorizeTenant checks action on a tenant inside tx, scoped to p's organization, the way
+// Account checks its reads: through every lease the tenant has or had, in the lease's property and
+// assigned to its collector, or with the organization-wide grant for a tenant with no lease. It is
+// for records that belong to the tenant as a whole, such as a payment promise. A missing tenant is
+// a *NotFoundError with no field. A denial is audited in its own transaction; an allowed sensitive
+// action is audited in tx.
+func (s *Service) AuthorizeTenant(ctx context.Context, tx pgx.Tx, p authz.Principal, tenantID uuid.UUID, action string) error {
+	leases, err := tenantLeases(ctx, dbgen.New(tx), p.OrganizationID, tenantID, "")
+	if err != nil {
+		return err
+	}
+	req := authz.Request{Action: action, Resource: authz.Resource{Type: "tenant", ID: tenantID.String()}}
+	return s.authorizeThroughLeases(ctx, tx, p, req, leases)
+}
+
 // leaseScope is a lease through which a member may act on its tenant's money.
 type leaseScope struct {
 	PropertyID      uuid.UUID

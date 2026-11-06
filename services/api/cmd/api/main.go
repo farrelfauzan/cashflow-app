@@ -33,6 +33,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/queue"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
@@ -129,6 +130,7 @@ func run() error {
 		return err
 	}
 	webhooks := qris.NewWebhook(accounts, qristask.NewPaidClient(queueClient), log)
+	promises := promise.NewService(promise.Deps{Store: st, Links: payLinks, Tenants: billingSvc, Clock: clk})
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,
@@ -142,6 +144,7 @@ func run() error {
 		Billing:        billingSvc,
 		PayLinks:       payLinks,
 		QRIS:           qrisSvc,
+		Promises:       promises,
 		Webhooks:       webhooks,
 		PublicLimiter:  limiter,
 		CookieSecure:   cookieSecure,

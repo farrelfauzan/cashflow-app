@@ -24,6 +24,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -114,6 +115,7 @@ func newLinkServerWith(t *testing.T, env *testenv.Env, logs io.Writer, gw *autog
 		Log: log, DB: env.Store, Auth: env.Auth, Authz: env.Authz, Members: env.Members,
 		Properties: env.Properties, Tenants: env.Tenants, Billing: env.Billing,
 		PayLinks: links,
+		Promises: promise.NewService(promise.Deps{Store: env.Store, Links: links, Tenants: env.Billing, Clock: env.Clock}),
 		QRIS: qris.NewService(qris.Deps{
 			Store: env.Store, Links: links, Clock: env.Clock, Gateway: gw, Keys: env.AutoGoPay,
 			Limiter: env.Limiter, Audit: env.Authz, Log: log,

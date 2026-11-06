@@ -152,6 +152,7 @@ func toAPIPaymentPage(p paylink.Page) apigen.PaymentPage {
 	if b := p.BankAccount; b != nil {
 		out.BankAccount = &apigen.BankAccount{BankName: b.BankName, AccountNumber: b.AccountNumber, AccountHolder: b.AccountHolder}
 	}
+	promisePageFields(&out, p.Promise)
 	return out
 }
 

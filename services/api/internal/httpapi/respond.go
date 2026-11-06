@@ -33,6 +33,9 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var invoicedPrice *property.InvoicedPriceError
 	var billingInput *billing.InputError
 	var billingMissing *billing.NotFoundError
+	if s.failPromise(w, err) {
+		return
+	}
 	switch {
 	case errors.As(err, &input):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", input.Message, input.Field)

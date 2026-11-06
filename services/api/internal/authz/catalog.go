@@ -38,6 +38,13 @@ const (
 	ActionPaymentRecord    = "payment:record"
 	ActionCorrectionCreate = "correction:create"
 
+	// ActionPromiseRead and ActionPromiseCreate are a tenant's payment promises: list them, and
+	// make one or edit the active one (an edit is a new version). Both are checked on the tenant,
+	// through each of its leases. A tenant makes their own through a payment link, which grants it
+	// without a principal.
+	ActionPromiseRead   = "promise:read"
+	ActionPromiseCreate = "promise:create"
+
 	ActionReportRead = "report:read"
 )
 
@@ -114,6 +121,7 @@ var sensitive = map[string]bool{
 	"payment:record":      true,
 	"payment:check":       true,
 	"correction:create":   true,
+	"promise:create":      true,
 	"cash:record":         true,
 	"cash:deposit":        true,
 	"payroll:check":       true,

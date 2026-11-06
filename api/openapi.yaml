@@ -1207,6 +1207,74 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/tenants/{tenantId}/promises:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [money]
+      operationId: listTenantPromises
+      summary: A tenant's payment promises, newest first, with every version (needs promise:read)
+      description: >
+        The tenant's promises ("Janji pelunasan"), newest first with the id breaking ties, each
+        with all its versions oldest first: an edit adds a version, nothing is overwritten. Each
+        version names the invoices it covers (those still owing when it was made). At most one
+        promise is active. Needs promise:read on the tenant, checked as getTenantAccount checks
+        its reads: a member limited to some properties needs it through every lease the tenant
+        has or had; otherwise 403. 404 not_found when the tenant does not exist in the
+        organization.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantPromiseList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [money]
+      operationId: makeTenantPromise
+      summary: Record a tenant's payment promise, or edit the active one (needs promise:create; audited)
+      description: >
+        The same rules as makePaymentPromise on the payment page, recorded by a member (source
+        admin) with an optional note. When the tenant has an active promise this adds its next
+        version (an edit); otherwise it makes a new promise. Needs promise:create on the tenant,
+        checked like listTenantPromises (403 otherwise); allowed and denied checks are audited.
+        The answer is the promise with all its versions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MakeTenantPromiseRequest" }
+      responses:
+        "200":
+          description: The promise, with the new version last
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantPromise" }
+        "400":
+          description: >
+            invalid_input (field kind, promisedDate, promisedAmount, payingNow or note);
+            promise_date_out_of_range (field promisedDate); promise_no_next_invoice (field kind);
+            promise_amount_above_outstanding (field payingNow or promisedAmount). A body that is
+            not the documented JSON, or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The tenant owes nothing, or nothing is left after payingNow (code promise_nothing_owed)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /orgs/{orgId}/dashboard:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -1449,9 +1517,10 @@ paths:
       description: >
         No session: the token alone grants the page, and only for the link's own tenant. It shows
         who bills them, the tenant's name and the link's invoice (so a forwarded link is
-        obvious), everything the tenant owes with the open invoices oldest first, and the bank
-        account for a manual transfer. Nothing else: no phone number, payment history, staff
-        name or note. A malformed, unknown or revoked token all answer the same 404. Limited per
+        obvious), everything the tenant owes with the open invoices oldest first, the bank
+        account for a manual transfer, and the tenant's active payment promise with the dates a
+        new one may name (makePaymentPromise). Nothing else: no phone number, payment history,
+        staff name or note. A malformed, unknown or revoked token all answer the same 404. Limited per
         token and per client address (429 rate_limited). Responses carry Cache-Control: no-store
         and Referrer-Policy: no-referrer.
       security: []
@@ -1739,6 +1808,78 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "409":
           description: "A QR is being made or checked right now (code qris_busy)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: "The link expired (code payment_link_expired)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /t/{token}/promise:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The secret in the payment link. Never log it or send it anywhere else.
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+    post:
+      tags: [payment-page]
+      operationId: makePaymentPromise
+      summary: The tenant promises to pay what is left (public; "Simpan janji")
+      description: >
+        No session: the token grants it, and link errors answer as for getPaymentPage. A promise
+        belongs to the tenant and covers every invoice still owing now, whichever of the tenant's
+        links is used. When the tenant has an active promise this adds its next version (an
+        edit, "Ubah janji"); otherwise it makes a new one. Saved before paying (decision 41.1):
+        payingNow is what the tenant pays right after saving ("Simpan janji, lalu bayar Rp X"),
+        so it is not part of the promised rest; empty promisedAmount means everything still owed
+        after it.
+
+
+        specific_date takes promisedDate from tomorrow to 60 days ahead (Asia/Jakarta), the
+        bounds getPaymentPage gives as promiseDates. An edit may not go past 60 days from the
+        day the promise's first version was made, so editing never extends a promise beyond
+        that (decision 41); once that day is reached no edit is possible until the promise
+        closes. with_next_invoice takes no date: the server
+        uses the next invoice's due date, which getPaymentPage gives as nextInvoiceDueDate (null
+        when the tenant has none within the range, so the page does not offer it). Limited per
+        token and per client address together with getPaymentPage (429 rate_limited). Responses
+        carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MakePaymentPromiseRequest" }
+      responses:
+        "200":
+          description: The active promise, its newest version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentPromise" }
+        "400":
+          description: >
+            invalid_input (field kind, promisedDate, promisedAmount or payingNow): no kind, a
+            missing promisedDate for specific_date or one sent for with_next_invoice, an amount
+            below its minimum. promise_date_out_of_range (field promisedDate): the date is not from
+            tomorrow to 60 days ahead, or the next invoice is due later than that.
+            promise_no_next_invoice (field kind): no lease will bill again.
+            promise_amount_above_outstanding (field payingNow or promisedAmount): payingNow is more
+            than the tenant owes, or promisedAmount more than what is left after it. A body that is
+            not the documented JSON, or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: "No working link with this token (code payment_link_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "The tenant owes nothing, or nothing is left after payingNow (code promise_nothing_owed)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3143,8 +3284,36 @@ components:
 
     PaymentPage:
       type: object
-      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable]
+      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable, promise, promiseDates, nextInvoiceDueDate]
       properties:
+        promise:
+          description: >
+            The tenant's active payment promise with its newest version's terms, or null when
+            there is none. It stays active until it is closed, even once everything is paid.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PaymentPromise"
+        promiseDates:
+          description: >
+            The days a promise made now may name (specific_date); for an edit of the active
+            promise, no later than 60 days from its first version. Null when the tenant owes
+            nothing, or when the active promise has reached that bound (no edit is possible).
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PromiseDates"
+        nextInvoiceDueDate:
+          type: string
+          format: date
+          nullable: true
+          description: >
+            The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"):
+            the earliest due date after today among the tenant's leases that will still bill,
+            whether that invoice is already made or not: the next bill to fall due. The page
+            labels the choice by this date, not by a month ("Bareng jatuh tempo berikutnya ·
+            13 Nov 2026"): a late-entered lease's current period can be due in the month after
+            the one it belongs to. Null when the tenant owes
+            nothing, no lease will bill again, or it is after promiseDates.latest; then the page
+            does not offer that choice.
         qrisAvailable:
           type: boolean
           description: >
@@ -3172,6 +3341,153 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/BankAccount"
+
+    PromiseKind:
+      type: string
+      enum: [specific_date, with_next_invoice]
+      description: >
+        specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the
+        next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+
+    PromiseStatus:
+      type: string
+      enum: [active, kept, partially_kept, broken]
+      description: A tenant has at most one active promise; the others are closed and never change again.
+
+    PromiseSource:
+      type: string
+      enum: [tenant_page, karyawan, admin]
+      # Explicit Go names, so these do not collide with RoleGrantRole's karyawan and admin.
+      x-enum-varnames: [PromiseFromTenantPage, PromiseFromKaryawan, PromiseFromAdmin]
+      description: Where the version was made. karyawan is used from slice 6.
+
+    PromiseDates:
+      type: object
+      required: [earliest, latest]
+      description: The days a promise made today may name, both included (Asia/Jakarta).
+      properties:
+        earliest: { type: string, format: date, description: Tomorrow. }
+        latest: { type: string, format: date, description: "60 days from today; for an edit, 60 days from the promise's first version if that is sooner." }
+
+    MakePaymentPromiseRequest:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { $ref: "#/components/schemas/PromiseKind" }
+        promisedDate:
+          type: string
+          format: date
+          description: Required for specific_date, from promiseDates.earliest to promiseDates.latest; never sent for with_next_invoice.
+        promisedAmount:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: >
+            Whole rupiah promised by the date, at most what is owed less payingNow. Missing or null
+            means everything still owed after payingNow.
+        payingNow:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: What the tenant pays right after saving ("lalu bayar Rp X"), at most what is owed; not part of the promise.
+
+    MakeTenantPromiseRequest:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { $ref: "#/components/schemas/PromiseKind" }
+        promisedDate:
+          type: string
+          format: date
+          description: Required for specific_date, from tomorrow to 60 days ahead (Asia/Jakarta); never sent for with_next_invoice.
+        promisedAmount:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: Whole rupiah promised by the date, at most what is owed less payingNow; missing or null means all of it.
+        payingNow:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: What the tenant pays right away, at most what is owed; not part of the promise.
+        note:
+          type: string
+          maxLength: 500
+          description: The member's note, at most 500 letters after trimming; blank means none.
+
+    PaymentPromise:
+      type: object
+      required: [status, version, kind, promisedDate, promisedAmount, payingNow, createdAt]
+      description: A tenant's promise as the payment page shows it, with its newest version's terms.
+      properties:
+        status: { $ref: "#/components/schemas/PromiseStatus" }
+        version: { type: integer, description: "The newest version's number, from 1; above 1 after an edit." }
+        kind: { $ref: "#/components/schemas/PromiseKind" }
+        promisedDate: { type: string, format: date }
+        promisedAmount:
+          type: integer
+          format: int64
+          nullable: true
+          description: Rupiah promised by the date; null means everything that was owed after payingNow.
+        payingNow: { type: integer, format: int64, description: What the tenant said they pay right after saving. }
+        createdAt: { type: string, format: date-time, description: When the newest version was saved. }
+
+    TenantPromiseVersion:
+      type: object
+      required: [version, kind, promisedDate, promisedAmount, payingNow, outstandingAt, source, note, createdBy, createdAt, coveredInvoiceIds]
+      properties:
+        version: { type: integer, description: From 1. }
+        kind: { $ref: "#/components/schemas/PromiseKind" }
+        promisedDate: { type: string, format: date }
+        promisedAmount:
+          type: integer
+          format: int64
+          nullable: true
+          description: Rupiah promised by the date; null means everything owed after payingNow.
+        payingNow: { type: integer, format: int64 }
+        outstandingAt: { type: integer, format: int64, description: What the tenant owed when this version was made. }
+        source: { $ref: "#/components/schemas/PromiseSource" }
+        note: { type: string, nullable: true }
+        createdBy:
+          description: The member who recorded it; null when the tenant made it on the payment page.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/StaffRef"
+        createdAt: { type: string, format: date-time }
+        coveredInvoiceIds:
+          type: array
+          description: The invoices still owing when it was made, oldest period first.
+          items: { type: string, format: uuid }
+
+    TenantPromise:
+      type: object
+      required: [id, tenantId, status, createdAt, closedAt, versions]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/PromiseStatus" }
+        createdAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time, nullable: true, description: When it stopped being active. }
+        versions:
+          type: array
+          description: Every version, oldest first; the last one holds the terms now.
+          items: { $ref: "#/components/schemas/TenantPromiseVersion" }
+
+    TenantPromiseList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/TenantPromise" }
 
     PaymentPreviewItem:
       type: object
