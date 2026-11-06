@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
@@ -51,18 +53,65 @@ type transaction struct {
 
 // Fake is an in-memory AutoGoPay. The zero value is not usable; call New.
 type Fake struct {
-	clock clock.Clock
+	clock     clock.Clock
+	randomIDs bool
 
 	mu    sync.Mutex
 	next  int
 	txs   map[string]*transaction
+	order []string // transaction ids, oldest first
 	calls []Call
 	fail  map[Method][]error
 }
 
+// Option changes a new Fake.
+type Option func(*Fake)
+
+// WithRandomIDs gives each QR a random UUID instead of a sequential one, so a fake that restarts
+// (the development stand-in, cmd/fakeautogopay) never repeats an id the database already holds.
+func WithRandomIDs() Option { return func(f *Fake) { f.randomIDs = true } }
+
 // New returns a fake that reads the time from clk.
-func New(clk clock.Clock) *Fake {
-	return &Fake{clock: clk, txs: map[string]*transaction{}, fail: map[Method][]error{}}
+func New(clk clock.Clock, opts ...Option) *Fake {
+	f := &Fake{clock: clk, txs: map[string]*transaction{}, fail: map[Method][]error{}}
+	for _, o := range opts {
+		o(f)
+	}
+	return f
+}
+
+// Transaction is a QR the fake made, as it stands now.
+type Transaction struct {
+	ID        string
+	Key       string
+	Amount    int64
+	Status    autogopay.TransactionStatus
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// Transactions returns every QR the fake made, newest first, with pending ones past their expiry
+// reported expired.
+func (f *Fake) Transactions() []Transaction {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]Transaction, 0, len(f.order))
+	for i := len(f.order) - 1; i >= 0; i-- {
+		tx := f.txs[f.order[i]]
+		f.expireIfDue(tx)
+		out = append(out, Transaction{
+			ID: tx.qris.TransactionID, Key: tx.key, Amount: tx.qris.Amount, Status: tx.status,
+			CreatedAt: tx.qris.CreatedAt, ExpiresAt: tx.qris.ExpiresAt,
+		})
+	}
+	return out
+}
+
+// Reset forgets every QR, call and queued failure.
+func (f *Fake) Reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.txs, f.order, f.calls, f.fail = map[string]*transaction{}, nil, nil, map[Method][]error{}
 }
 
 // Generate creates a pending QR valid for QRValidity, with a sequential UUID-shaped id.
@@ -82,8 +131,12 @@ func (f *Fake) Generate(_ context.Context, key secret.Value, amount int64) (auto
 	f.next++
 	// AutoGoPay reports times to the second in Asia/Jakarta.
 	now := f.clock.Now().In(clock.Jakarta).Truncate(time.Second)
+	id := fmt.Sprintf("00000000-0000-4000-8000-%012x", f.next)
+	if f.randomIDs {
+		id = uuid.NewString()
+	}
 	q := autogopay.QRIS{
-		TransactionID: fmt.Sprintf("00000000-0000-4000-8000-%012x", f.next),
+		TransactionID: id,
 		OrderID:       fmt.Sprintf("FAKE-ORDER-%d", f.next),
 		Amount:        amount,
 		QRString:      fmt.Sprintf("FAKE-QRIS-%d", f.next),
@@ -92,6 +145,7 @@ func (f *Fake) Generate(_ context.Context, key secret.Value, amount int64) (auto
 		ExpiresAt:     now.Add(QRValidity),
 	}
 	f.txs[q.TransactionID] = &transaction{qris: q, status: autogopay.StatusPending, key: key.Reveal()}
+	f.order = append(f.order, q.TransactionID)
 	return q, nil
 }
 

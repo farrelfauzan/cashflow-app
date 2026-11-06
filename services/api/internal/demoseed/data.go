@@ -128,7 +128,14 @@ type orgSpec struct {
 	// BankAccount is shown on the tenant payment page for a manual transfer (decision 38); nil
 	// leaves the organization without one, so the page's other state can be shown too.
 	BankAccount *paylink.BankAccount
+	// QRIS gives the organization DemoAutoGoPayKey, so its payment page offers QRIS against the
+	// AutoGoPay stand-in (cmd/fakeautogopay); false leaves it with bank transfer only.
+	QRIS bool
 }
+
+// DemoAutoGoPayKey is the made-up AutoGoPay key the demo seed stores for organizations with QRIS.
+// The real AutoGoPay refuses it; it works only against the stand-in, which accepts any key.
+const DemoAutoGoPayKey = "demo-not-a-real-autogopay-key"
 
 // payerSpec names tenants of the organization (by name, unique within it). Each must have a
 // running lease that starts before the organization's entry day, or a period already due, so the
@@ -189,6 +196,7 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			BankAccount: &paylink.BankAccount{
 				BankName: "BCA", AccountNumber: "0123 456 789", AccountHolder: "Ani Rahmawati",
 			},
+			QRIS: true,
 			Founders: []staffSpec{
 				{Phone: "0812-0001-0001", Name: "Bu Ani Rahmawati", Grants: orgWide(authz.RoleSupervisor)},
 				{Phone: "0812-0001-0002", Name: "Pak Budi Hartono", Grants: orgWide(authz.RoleAdmin)},
