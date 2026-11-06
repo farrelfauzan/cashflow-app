@@ -284,6 +284,39 @@ func TestSharingAnInvoice(t *testing.T) {
 	require.True(t, IsSensitive(ActionInvoiceShare), "minting and revoking links is audited")
 }
 
+// TestPromises checks promise:read and promise:create the way the promise service asks: the
+// tenant through one of its leases, in the lease's property, owned by the lease's collector.
+func TestPromises(t *testing.T) {
+	t.Parallel()
+	admin, karyawan, supervisor := principal(t, RoleAdmin), principal(t, RoleKaryawan), principal(t, RoleSupervisor)
+	tenantVia := func(collector uuid.UUID) Resource {
+		return Resource{Type: "tenant", ID: uuid.NewString(), PropertyID: uuid.New(), OwnerID: collector}
+	}
+	tests := []struct {
+		name   string
+		p      Principal
+		action string
+		res    Resource
+		want   bool
+	}{
+		{"admin makes a promise for any tenant", admin, ActionPromiseCreate, tenantVia(uuid.Nil), true},
+		{"admin reads promises", admin, ActionPromiseRead, tenantVia(uuid.Nil), true},
+		{"karyawan makes a promise for a tenant they collect from", karyawan, ActionPromiseCreate, tenantVia(karyawan.UserID), true},
+		{"karyawan may not make one for another collector's tenant", karyawan, ActionPromiseCreate, tenantVia(uuid.New()), false},
+		{"karyawan has no promise:read", karyawan, ActionPromiseRead, tenantVia(karyawan.UserID), false},
+		{"supervisor reads promises", supervisor, ActionPromiseRead, tenantVia(uuid.New()), true},
+		{"supervisor never makes one", supervisor, ActionPromiseCreate, tenantVia(supervisor.UserID), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, Evaluate(tc.p, Request{Action: tc.action, Resource: tc.res}).Allowed)
+		})
+	}
+	require.True(t, IsSensitive(ActionPromiseCreate), "a promise made by staff is audited")
+	require.False(t, IsSensitive(ActionPromiseRead))
+}
+
 func TestCapabilitiesCoverTheWholeCatalog(t *testing.T) {
 	caps := Capabilities(Principal{})
 	require.Len(t, caps, len(Actions()))

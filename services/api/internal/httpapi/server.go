@@ -20,6 +20,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
@@ -54,6 +55,8 @@ type Deps struct {
 	PayLinks *paylink.Service
 	// QRIS makes, reads and checks the tenant's QRIS attempts behind a payment link.
 	QRIS *qris.Service
+	// Promises makes and lists tenants' payment promises, from the payment page and for members.
+	Promises *promise.Service
 	// Webhooks handles AutoGoPay's callbacks.
 	Webhooks *qris.Webhook
 	// PublicLimiter rate-limits the public payment page per token and per client address.
@@ -106,6 +109,7 @@ func New(d Deps) *Server {
 		r.With(publicPageHeaders).Get("/t/{token}/qris.png", s.getPaymentQRImage)
 		r.With(publicPageHeaders).Post("/t/{token}/qris", s.createPaymentQris)
 		r.With(publicPageHeaders).Post("/t/{token}/check", s.checkPaymentQris)
+		r.With(publicPageHeaders).Post("/t/{token}/promise", s.makePaymentPromise)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireSession)
@@ -136,6 +140,8 @@ func New(d Deps) *Server {
 				r.Put("/tenants/{tenantID}", s.updateTenant)
 				r.Get("/tenants/{tenantID}/account", s.getTenantAccount)
 				r.Get("/tenants/{tenantID}/open-invoices", s.listTenantOpenInvoices)
+				r.Get("/tenants/{tenantID}/promises", s.listTenantPromises)
+				r.Post("/tenants/{tenantID}/promises", s.makeTenantPromise)
 				r.Get("/dashboard", s.getDashboard)
 				r.Get("/invoices", s.listInvoices)
 				r.Post("/payments", s.recordPayment)

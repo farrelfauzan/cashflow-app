@@ -225,6 +225,41 @@ type PaymentLink struct {
 	RevokedAt            *time.Time
 }
 
+type PaymentPromise struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	LeaseID        uuid.NullUUID
+	Status         string
+	CreatedAt      time.Time
+	ClosedAt       *time.Time
+}
+
+type PromiseCoveredInvoice struct {
+	OrganizationID   uuid.UUID
+	PromiseVersionID uuid.UUID
+	InvoiceID        uuid.UUID
+	TenantID         uuid.UUID
+}
+
+type PromiseVersion struct {
+	ID                   uuid.UUID
+	OrganizationID       uuid.UUID
+	PromiseID            uuid.UUID
+	TenantID             uuid.UUID
+	Version              int32
+	Kind                 string
+	PromisedDate         time.Time
+	PromisedAmount       *int64
+	PayingNow            int64
+	OutstandingAt        int64
+	Source               string
+	Note                 *string
+	CreatedByStaffUserID uuid.NullUUID
+	PaymentLinkID        uuid.NullUUID
+	CreatedAt            time.Time
+}
+
 type Property struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

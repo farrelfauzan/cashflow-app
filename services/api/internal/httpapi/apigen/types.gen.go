@@ -240,6 +240,69 @@ func (e PaymentMethod) Valid() bool {
 	}
 }
 
+// Defines values for PromiseKind.
+const (
+	SpecificDate    PromiseKind = "specific_date"
+	WithNextInvoice PromiseKind = "with_next_invoice"
+)
+
+// Valid indicates whether the value is a known member of the PromiseKind enum.
+func (e PromiseKind) Valid() bool {
+	switch e {
+	case SpecificDate:
+		return true
+	case WithNextInvoice:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PromiseSource.
+const (
+	PromiseFromAdmin      PromiseSource = "admin"
+	PromiseFromKaryawan   PromiseSource = "karyawan"
+	PromiseFromTenantPage PromiseSource = "tenant_page"
+)
+
+// Valid indicates whether the value is a known member of the PromiseSource enum.
+func (e PromiseSource) Valid() bool {
+	switch e {
+	case PromiseFromAdmin:
+		return true
+	case PromiseFromKaryawan:
+		return true
+	case PromiseFromTenantPage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PromiseStatus.
+const (
+	PromiseStatusActive        PromiseStatus = "active"
+	PromiseStatusBroken        PromiseStatus = "broken"
+	PromiseStatusKept          PromiseStatus = "kept"
+	PromiseStatusPartiallyKept PromiseStatus = "partially_kept"
+)
+
+// Valid indicates whether the value is a known member of the PromiseStatus enum.
+func (e PromiseStatus) Valid() bool {
+	switch e {
+	case PromiseStatusActive:
+		return true
+	case PromiseStatusBroken:
+		return true
+	case PromiseStatusKept:
+		return true
+	case PromiseStatusPartiallyKept:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PropertyKind.
 const (
 	Kontrakan PropertyKind = "kontrakan"
@@ -1168,6 +1231,39 @@ type LoginCodeVerify struct {
 	Phone string `json:"phone"`
 }
 
+// MakePaymentPromiseRequest defines model for MakePaymentPromiseRequest.
+type MakePaymentPromiseRequest struct {
+	// Kind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+	Kind PromiseKind `json:"kind"`
+
+	// PayingNow What the tenant pays right after saving ("lalu bayar Rp X"), at most what is owed; not part of the promise.
+	PayingNow *int64 `json:"payingNow,omitempty"`
+
+	// PromisedAmount Whole rupiah promised by the date, at most what is owed less payingNow. Missing or null means everything still owed after payingNow.
+	PromisedAmount *int64 `json:"promisedAmount,omitempty"`
+
+	// PromisedDate Required for specific_date, from promiseDates.earliest to promiseDates.latest; never sent for with_next_invoice.
+	PromisedDate *openapi_types.Date `json:"promisedDate,omitempty"`
+}
+
+// MakeTenantPromiseRequest defines model for MakeTenantPromiseRequest.
+type MakeTenantPromiseRequest struct {
+	// Kind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+	Kind PromiseKind `json:"kind"`
+
+	// Note The member's note, at most 500 letters after trimming; blank means none.
+	Note *string `json:"note,omitempty"`
+
+	// PayingNow What the tenant pays right away, at most what is owed; not part of the promise.
+	PayingNow *int64 `json:"payingNow,omitempty"`
+
+	// PromisedAmount Whole rupiah promised by the date, at most what is owed less payingNow; missing or null means all of it.
+	PromisedAmount *int64 `json:"promisedAmount,omitempty"`
+
+	// PromisedDate Required for specific_date, from tomorrow to 60 days ahead (Asia/Jakarta); never sent for with_next_invoice.
+	PromisedDate *openapi_types.Date `json:"promisedDate,omitempty"`
+}
+
 // MeResponse defines model for MeResponse.
 type MeResponse struct {
 	Organizations []Organization `json:"organizations"`
@@ -1424,6 +1520,9 @@ type PaymentPage struct {
 	// Invoice The invoice the link was sent for, whatever its state.
 	Invoice PaymentPageInvoice `json:"invoice"`
 
+	// NextInvoiceDueDate The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
+	NextInvoiceDueDate *openapi_types.Date `json:"nextInvoiceDueDate"`
+
 	// OpenInvoices The invoices that still owe something, oldest period first. Empty when paid.
 	OpenInvoices []PaymentPageInvoice `json:"openInvoices"`
 
@@ -1435,6 +1534,12 @@ type PaymentPage struct {
 
 	// Paid True when the tenant owes nothing.
 	Paid bool `json:"paid"`
+
+	// Promise The tenant's active payment promise with its newest version's terms, or null when there is none. It stays active until it is closed, even once everything is paid.
+	Promise *PaymentPromise `json:"promise"`
+
+	// PromiseDates The days a promise made now may name (specific_date); null when the tenant owes nothing.
+	PromiseDates *PromiseDates `json:"promiseDates"`
 
 	// QrisAvailable True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
 	QrisAvailable bool   `json:"qrisAvailable"`
@@ -1473,6 +1578,28 @@ type PaymentPageLine struct {
 	Label string `json:"label"`
 }
 
+// PaymentPromise A tenant's promise as the payment page shows it, with its newest version's terms.
+type PaymentPromise struct {
+	// CreatedAt When the newest version was saved.
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Kind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+	Kind PromiseKind `json:"kind"`
+
+	// PayingNow What the tenant said they pay right after saving.
+	PayingNow int64 `json:"payingNow"`
+
+	// PromisedAmount Rupiah promised by the date; null means everything that was owed after payingNow.
+	PromisedAmount *int64             `json:"promisedAmount"`
+	PromisedDate   openapi_types.Date `json:"promisedDate"`
+
+	// Status A tenant has at most one active promise; the others are closed and never change again.
+	Status PromiseStatus `json:"status"`
+
+	// Version The newest version's number, from 1; above 1 after an edit.
+	Version int `json:"version"`
+}
+
 // PaymentResult defines model for PaymentResult.
 type PaymentResult struct {
 	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
@@ -1491,6 +1618,24 @@ type PaymentResult struct {
 	Paid    []PaidInvoice  `json:"paid"`
 	Payment AccountPayment `json:"payment"`
 }
+
+// PromiseDates The days a promise made today may name, both included (Asia/Jakarta).
+type PromiseDates struct {
+	// Earliest Tomorrow.
+	Earliest openapi_types.Date `json:"earliest"`
+
+	// Latest 60 days from today.
+	Latest openapi_types.Date `json:"latest"`
+}
+
+// PromiseKind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+type PromiseKind string
+
+// PromiseSource Where the version was made. karyawan is used from slice 6.
+type PromiseSource string
+
+// PromiseStatus A tenant has at most one active promise; the others are closed and never change again.
+type PromiseStatus string
 
 // Property defines model for Property.
 type Property struct {
@@ -1704,6 +1849,61 @@ type TenantOpenInvoice struct {
 	PeriodEnd    openapi_types.Date `json:"periodEnd"`
 	PropertyName string             `json:"propertyName"`
 	UnitLabel    string             `json:"unitLabel"`
+}
+
+// TenantPromise defines model for TenantPromise.
+type TenantPromise struct {
+	// ClosedAt When it stopped being active.
+	ClosedAt  *time.Time         `json:"closedAt"`
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// Status A tenant has at most one active promise; the others are closed and never change again.
+	Status   PromiseStatus      `json:"status"`
+	TenantId openapi_types.UUID `json:"tenantId"`
+
+	// Versions Every version, oldest first; the last one holds the terms now.
+	Versions []TenantPromiseVersion `json:"versions"`
+}
+
+// TenantPromiseList defines model for TenantPromiseList.
+type TenantPromiseList struct {
+	Items []TenantPromise `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// TenantPromiseVersion defines model for TenantPromiseVersion.
+type TenantPromiseVersion struct {
+	// CoveredInvoiceIds The invoices still owing when it was made, oldest period first.
+	CoveredInvoiceIds []openapi_types.UUID `json:"coveredInvoiceIds"`
+	CreatedAt         time.Time            `json:"createdAt"`
+
+	// CreatedBy The member who recorded it; null when the tenant made it on the payment page.
+	CreatedBy *StaffRef `json:"createdBy"`
+
+	// Kind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+	Kind PromiseKind `json:"kind"`
+	Note *string     `json:"note"`
+
+	// OutstandingAt What the tenant owed when this version was made.
+	OutstandingAt int64 `json:"outstandingAt"`
+	PayingNow     int64 `json:"payingNow"`
+
+	// PromisedAmount Rupiah promised by the date; null means everything owed after payingNow.
+	PromisedAmount *int64             `json:"promisedAmount"`
+	PromisedDate   openapi_types.Date `json:"promisedDate"`
+
+	// Source Where the version was made. karyawan is used from slice 6.
+	Source PromiseSource `json:"source"`
+
+	// Version From 1.
+	Version int `json:"version"`
 }
 
 // TermMonths A billing term in months. The lease is billed once per term, in advance. The standard terms are 1, 3, 6 and 12 (decision 32); any other value is the unit's one custom term, 2 to 60 months (decision 33).
@@ -2012,6 +2212,13 @@ type ListTenantsParamsStatus string
 // ListTenantsParamsSort defines parameters for ListTenants.
 type ListTenantsParamsSort string
 
+// ListTenantPromisesParams defines parameters for ListTenantPromises.
+type ListTenantPromisesParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.
 type RequestLoginCodeJSONRequestBody = LoginCodeRequest
 
@@ -2069,11 +2276,17 @@ type CreateTenantJSONRequestBody = TenantInput
 // UpdateTenantJSONRequestBody defines body for UpdateTenant for application/json ContentType.
 type UpdateTenantJSONRequestBody = TenantInput
 
+// MakeTenantPromiseJSONRequestBody defines body for MakeTenantPromise for application/json ContentType.
+type MakeTenantPromiseJSONRequestBody = MakeTenantPromiseRequest
+
 // UpdateUnitJSONRequestBody defines body for UpdateUnit for application/json ContentType.
 type UpdateUnitJSONRequestBody = UnitInput
 
 // CreateUnitPriceJSONRequestBody defines body for CreateUnitPrice for application/json ContentType.
 type CreateUnitPriceJSONRequestBody = UnitPriceInput
+
+// MakePaymentPromiseJSONRequestBody defines body for MakePaymentPromise for application/json ContentType.
+type MakePaymentPromiseJSONRequestBody = MakePaymentPromiseRequest
 
 // CreatePaymentQrisJSONRequestBody defines body for CreatePaymentQris for application/json ContentType.
 type CreatePaymentQrisJSONRequestBody = CreateQrisRequest

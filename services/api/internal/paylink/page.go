@@ -11,6 +11,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
@@ -36,6 +37,9 @@ type Page struct {
 	// QRISAvailable is true when the organization has an AutoGoPay account, so the page offers
 	// QRIS. It says nothing about whether AutoGoPay is up right now.
 	QRISAvailable bool
+	// Promise is the tenant's active payment promise and what a promise made now may say
+	// ("Janji pelunasan"), read in the same snapshot.
+	Promise promise.PageState
 }
 
 // PageInvoice is one invoice as the tenant sees it.
@@ -121,7 +125,12 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 	if err != nil {
 		return Page{}, fmt.Errorf("paylink: loading the tenant: %w", err)
 	}
-	acct, err := billing.LoadAccountTx(ctx, tx, org, tenantID, tenant.Today(s.clock))
+	today := tenant.Today(s.clock)
+	acct, err := billing.LoadAccountTx(ctx, tx, org, tenantID, today)
+	if err != nil {
+		return Page{}, err
+	}
+	promises, err := promise.LoadPageTx(ctx, tx, org, tenantID, acct.Outstanding, today)
 	if err != nil {
 		return Page{}, err
 	}
@@ -143,6 +152,7 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 		OpenInvoices:     []PageInvoice{},
 		BankAccount:      bank,
 		QRISAvailable:    qrisAvailable,
+		Promise:          promises,
 	}
 	found := false
 	for _, inv := range acct.Invoices {

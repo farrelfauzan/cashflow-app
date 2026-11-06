@@ -306,3 +306,82 @@ func TestNextInvoiceOf(t *testing.T) {
 		})
 	}
 }
+
+func TestNextDueAfter(t *testing.T) {
+	t.Parallel()
+	monthly := func(start, entered time.Time) billing.LeaseDates {
+		return billing.LeaseDates{Start: start, EnteredOn: entered, BilledFrom: start, TermMonths: 1}
+	}
+	withPlannedEnd := func(l billing.LeaseDates, end time.Time) billing.LeaseDates {
+		l.PlannedEnd = &end
+		return l
+	}
+	tests := []struct {
+		name   string
+		lease  billing.LeaseDates
+		today  time.Time
+		want   time.Time
+		wantOK bool
+	}{
+		{
+			name: "the next anniversary of a monthly lease", lease: monthly(d(2026, 10, 15), d(2026, 10, 15)),
+			today: d(2026, 11, 2), want: d(2026, 11, 15), wantOK: true,
+		},
+		{
+			name: "a period due today is not after today", lease: monthly(d(2026, 10, 15), d(2026, 10, 15)),
+			today: d(2026, 11, 15), want: d(2026, 12, 15), wantOK: true,
+		},
+		{
+			name: "a start on the 31st is due on the last day of a shorter month", lease: monthly(d(2026, 1, 31), d(2026, 1, 31)),
+			today: d(2026, 2, 1), want: d(2026, 2, 28), wantOK: true,
+		},
+		{
+			name: "and on the 31st again after it", lease: monthly(d(2026, 1, 31), d(2026, 1, 31)),
+			today: d(2026, 2, 28), want: d(2026, 3, 31), wantOK: true,
+		},
+		{
+			name: "a booking not started yet is due on its start date", lease: monthly(d(2026, 12, 1), d(2026, 11, 1)),
+			today: d(2026, 11, 2), want: d(2026, 12, 1), wantOK: true,
+		},
+		{
+			name:  "a lease entered late: the running period is due 7 days after entry, before the next anniversary",
+			lease: monthly(d(2026, 9, 15), d(2026, 11, 10)),
+			today: d(2026, 11, 10), want: d(2026, 11, 15), wantOK: true,
+		},
+		{
+			name:  "a lease entered late: the running period's grace ends after the next period starts",
+			lease: monthly(d(2026, 9, 12), d(2026, 11, 10)),
+			today: d(2026, 11, 13), want: d(2026, 11, 17), wantOK: true,
+		},
+		{
+			name: "a 3-month term", lease: billing.LeaseDates{Start: d(2026, 10, 15), EnteredOn: d(2026, 10, 15), BilledFrom: d(2026, 10, 15), TermMonths: 3},
+			today: d(2026, 11, 2), want: d(2027, 1, 15), wantOK: true,
+		},
+		{
+			name: "a period starting on the planned end date is still billed", lease: withPlannedEnd(monthly(d(2026, 10, 15), d(2026, 10, 15)), d(2026, 11, 15)),
+			today: d(2026, 11, 2), want: d(2026, 11, 15), wantOK: true,
+		},
+		{
+			name: "none when the next period starts after the planned end date", lease: withPlannedEnd(monthly(d(2026, 10, 15), d(2026, 10, 15)), d(2026, 11, 14)),
+			today: d(2026, 11, 2), wantOK: false,
+		},
+		{
+			name: "none for a lease that has ended", lease: func() billing.LeaseDates {
+				l := monthly(d(2026, 10, 15), d(2026, 10, 15))
+				l.End = ptr(d(2026, 11, 20))
+				return l
+			}(),
+			today: d(2026, 11, 2), wantOK: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := billing.NextDueAfter(tc.lease, tc.today)
+			require.Equal(t, tc.wantOK, ok)
+			if tc.wantOK {
+				require.Equal(t, tc.want, got)
+			}
+		})
+	}
+}

@@ -53,6 +53,42 @@ func DuePeriods(l LeaseDates, today time.Time) []tenant.Period {
 	}
 }
 
+// NextDueAfter returns the earliest due date strictly after today among the lease's billed
+// periods (from BilledFrom on, none starting after the planned end date), whether or not that
+// period has an invoice yet, and false when there is none: the lease has ended (its End is set),
+// or every period after today starts after the planned end date.
+//
+// Due dates are not in period order for a lease entered late: its current period on the entry
+// day is due 7 days after it, which can be after the next period's first day. So it scans every
+// period up to the first that starts after today; from there on a period is due on its first day.
+func NextDueAfter(l LeaseDates, today time.Time) (time.Time, bool) {
+	if l.End != nil {
+		return time.Time{}, false
+	}
+	last, bills := lastBilledStart(l)
+	if !bills {
+		return time.Time{}, false
+	}
+	var best time.Time
+	found := false
+	// A guess one period before the one running today, so a lease that started years ago does
+	// not scan from its start; periods before it are due on or before today.
+	from := max(firstBilledIndex(l), tenant.PeriodIndex(l.Start, l.TermMonths, l.EnteredOn)-1, 0)
+	for n := from; ; n++ {
+		p := tenant.PeriodAt(l.Start, l.EnteredOn, l.TermMonths, n)
+		if last != nil && p.From.After(*last) {
+			break
+		}
+		if p.Due.After(today) && (!found || p.Due.Before(best)) {
+			best, found = p.Due, true
+		}
+		if p.From.After(today) {
+			break // due on its first day, as is every later period
+		}
+	}
+	return best, found
+}
+
 // lastBilledStart returns the last day a period of the lease may start on and still be billed:
 // the planned end date or the end date, whichever is earlier, or nil for no limit. bills is false
 // for a lease ended on its own start date, a cancelled booking, which bills nothing (decisions 17
