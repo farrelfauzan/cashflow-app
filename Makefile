@@ -63,6 +63,10 @@ api-run: env ## Run the API
 worker-run: env ## Run the worker
 	$(WITH_ENV) go run ./cmd/worker
 
+.PHONY: fake-autogopay
+fake-autogopay: ## Run the AutoGoPay stand-in on 127.0.0.1:8091 (development only; the development .env points the API and worker at it)
+	cd $(API_DIR) && APP_ENV=development go run ./cmd/fakeautogopay
+
 .PHONY: admin
 admin: env ## Run the operator tool, e.g. make admin ARGS='create-org -name ... -member ...'
 	$(WITH_ENV) go run ./cmd/admin $(ARGS)

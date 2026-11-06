@@ -342,6 +342,41 @@ func validAutoGoPayURL(raw, env string) error {
 	return nil
 }
 
+// FakeAutoGoPay is the configuration of cmd/fakeautogopay, the AutoGoPay stand-in for local runs
+// and the web's end-to-end tests. It runs in development only.
+type FakeAutoGoPay struct {
+	Common
+	// Addr is FAKE_AUTOGOPAY_ADDR, where the stand-in listens; loopback by default, since its
+	// control routes have no authentication.
+	Addr string `env:"FAKE_AUTOGOPAY_ADDR, default=127.0.0.1:8091"`
+}
+
+func (c FakeAutoGoPay) validate() error {
+	if err := c.Common.validate(); err != nil {
+		return err
+	}
+	if c.Env != "development" {
+		return fmt.Errorf("the AutoGoPay stand-in only runs in development, not %s", c.Env)
+	}
+	return nil
+}
+
+// LoadFakeAutoGoPay reads the stand-in's configuration from the process environment.
+func LoadFakeAutoGoPay(ctx context.Context) (FakeAutoGoPay, error) {
+	return loadFakeAutoGoPay(ctx, envconfig.OsLookuper())
+}
+
+func loadFakeAutoGoPay(ctx context.Context, l envconfig.Lookuper) (FakeAutoGoPay, error) {
+	var c FakeAutoGoPay
+	if err := process(ctx, l, &c); err != nil {
+		return FakeAutoGoPay{}, fmt.Errorf("loading fake AutoGoPay config: %w", err)
+	}
+	if err := c.validate(); err != nil {
+		return FakeAutoGoPay{}, fmt.Errorf("loading fake AutoGoPay config: %w", err)
+	}
+	return c, nil
+}
+
 // Migrate is the configuration of cmd/migrate. It connects as the owner role, never as the
 // role the API uses, so the API cannot change the schema or bypass row-level security.
 type Migrate struct {
