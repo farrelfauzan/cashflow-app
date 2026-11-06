@@ -1639,6 +1639,10 @@ paths:
             offer bank transfer. Or too many payments are waiting on AutoGoPay right now (code
             qris_overloaded, with Retry-After in seconds): nothing reached AutoGoPay, so the page
             may try once more after Retry-After before it offers bank transfer.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying once more. Sent with qris_overloaded only.
+              schema: { type: integer, example: 5 }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
