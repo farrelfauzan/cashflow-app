@@ -5,6 +5,7 @@ package reminder_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"log/slog"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/messagingtest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
@@ -73,8 +75,8 @@ type sending struct {
 
 // newSending wires a Sender for w through provider (a messagingtest.Fake when nil) as if
 // WHATSAPP_PROVIDER were providerName, and gives w a decider and promise service that enqueue
-// into its queue.
-func newSending(t *testing.T, w *world, providerName string, provider messaging.Provider) *sending {
+// into its queue. Each option adjusts the Sender's deps before it is built (withTelegramLinked).
+func newSending(t *testing.T, w *world, providerName string, provider messaging.Provider, opts ...func(*reminder.SenderDeps)) *sending {
 	t.Helper()
 	s := &sending{fake: &messagingtest.Fake{}, queue: &queued{}, logs: &logBuffer{}}
 	if provider == nil {
@@ -82,9 +84,13 @@ func newSending(t *testing.T, w *world, providerName string, provider messaging.
 	}
 	log := slog.New(slog.NewJSONHandler(s.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	links := paylink.NewService(w.env.Store, w.env.Authz, w.env.Clock, "https://app.test")
-	s.sender = reminder.NewSender(reminder.SenderDeps{
+	deps := reminder.SenderDeps{
 		Store: w.env.Store, Links: links, Provider: provider, ProviderName: providerName, Clock: w.env.Clock, Log: log,
-	})
+	}
+	for _, opt := range opts {
+		opt(&deps)
+	}
+	s.sender = reminder.NewSender(deps)
 	w.decider = reminder.NewDecider(w.env.Store, w.env.Clock, log, s.queue)
 	w.promises = promise.NewService(promise.Deps{
 		Store: w.env.Store, Links: links, Tenants: w.env.Billing, Clock: w.env.Clock, Confirms: s.queue, Log: log,
@@ -211,6 +217,7 @@ func TestSendInvoiceReminders(t *testing.T) {
 		m := sent[0]
 		require.Equal(t, messaging.TemplateInvoiceDueSoon, m.Template)
 		require.Equal(t, w.org.ID, m.OrganizationID)
+		require.Equal(t, rina, m.TenantID, "the router needs the tenant to find a linked chat")
 		require.Equal(t, w.phone(t, rina), m.To)
 		require.Equal(t, "Rina Wulandari", m.Params["name"])
 		require.Equal(t, "Griya Sejahtera", m.Params["organization"])
@@ -274,6 +281,7 @@ func TestSendInvoiceReminders(t *testing.T) {
 		require.Len(t, s.fake.Sent(), 3)
 	})
 
+	requireTenantIDs(t, s.fake.Sent())
 	s.requireNoLink(t, s.fake.Sent()...)
 }
 
@@ -313,6 +321,7 @@ func TestSendPromiseMessages(t *testing.T) {
 		require.Len(t, sent, 1)
 		m := sent[0]
 		require.Equal(t, messaging.TemplatePromiseRecorded, m.Template)
+		require.Equal(t, dewi, m.TenantID, "the router needs the tenant to find a linked chat")
 		require.Equal(t, w.phone(t, dewi), m.To)
 		require.Equal(t, messaging.AllOutstanding, m.Params["amount"])
 		require.Equal(t, "12 November 2026", m.Params["date"])
@@ -377,6 +386,7 @@ func TestSendPromiseMessages(t *testing.T) {
 		require.Len(t, s.fake.Sent(), 4)
 	})
 
+	requireTenantIDs(t, s.fake.Sent())
 	s.requireNoLink(t, s.fake.Sent()...)
 }
 
@@ -410,6 +420,115 @@ func TestSendGuardHoldsBackGowa(t *testing.T) {
 	require.Empty(t, s.fake.Sent())
 	require.Equal(t, links, w.links(t), "no link is minted for a message held back")
 	require.Contains(t, s.logs.String(), "pacing guard")
+}
+
+// requireTenantIDs checks that every message names its tenant, so the router can find a linked
+// Telegram chat (decision 42).
+func requireTenantIDs(t *testing.T, msgs []messaging.Message) {
+	t.Helper()
+	require.NotEmpty(t, msgs)
+	for _, m := range msgs {
+		require.NotEqual(t, uuid.Nil, m.TenantID, m.Template)
+	}
+}
+
+// withTelegramLinked is TELEGRAM_MESSAGES=linked for newSending.
+func withTelegramLinked(d *reminder.SenderDeps) { d.TelegramLinked = true }
+
+// linkTelegram gives the tenant a live Telegram link to chatID, made from a used one-time code,
+// as the bot's /start does.
+func (w *world) linkTelegram(t *testing.T, tenantID uuid.UUID, chatID int64) {
+	t.Helper()
+	now := w.env.Clock.Now()
+	codeID := uuid.New()
+	sum := sha256.Sum256([]byte(codeID.String()))
+	require.NoError(t, w.inTx(func(ctx context.Context, tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		if err := q.InsertTelegramLinkCode(ctx, dbgen.InsertTelegramLinkCodeParams{
+			ID: codeID, OrganizationID: w.org.ID, TenantID: tenantID, CodeHash: sum[:],
+			CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+		}); err != nil {
+			return err
+		}
+		if _, err := q.UseTelegramLinkCode(ctx, dbgen.UseTelegramLinkCodeParams{UsedAt: &now, OrganizationID: w.org.ID, ID: codeID}); err != nil {
+			return err
+		}
+		return q.InsertTelegramLink(ctx, dbgen.InsertTelegramLinkParams{
+			ID: uuid.New(), OrganizationID: w.org.ID, TenantID: tenantID, LinkCodeID: codeID,
+			ChatID: chatID, TelegramUserID: chatID, LinkedAt: now,
+		})
+	}))
+}
+
+// TestSendGuardLetsLinkedTelegramThrough: with gowa configured and TELEGRAM_MESSAGES=linked, a
+// tenant with a live Telegram link gets the reminder and confirmation (with a fresh pay link),
+// since the guard is about the shared WhatsApp number; a tenant without a link is still held.
+// With TELEGRAM_MESSAGES=off, a linked tenant is held like any other (decision 42).
+func TestSendGuardLetsLinkedTelegramThrough(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t)
+	env.Clock.Set(wib(time.November, 2, 9, 0))
+	w := newWorld(t, env, "Griya Sejahtera", "0812984")
+	due := day(2026, 11, 10)
+	rina := w.renter(t, "Rina Wulandari", due)
+	budi := w.renter(t, "Budi Santoso", due)
+	w.linkTelegram(t, rina, 5550009001)
+	env.Clock.Set(wib(time.November, 3, 9, 0))
+	w.generate(t)
+	rinaInv := w.invoices(t, rina)
+
+	t.Run("linked on: the linked tenant is sent, the other held", func(t *testing.T) {
+		s := newSending(t, w, "gowa", nil, withTelegramLinked)
+		w.decide(t, wib(time.November, 7, 8, 0))
+		rinaRem, budiRem := w.reminders(t, rina)[0].ID, w.reminders(t, budi)[0].ID
+		links := w.links(t)
+
+		env.Clock.Set(wib(time.November, 7, 8, 2))
+		require.Equal(t, reminder.OutcomeSent, send(t, s, w, rinaRem))
+		sent := s.fake.Sent()
+		require.Len(t, sent, 1)
+		m := sent[0]
+		require.Equal(t, rina, m.TenantID)
+		require.Equal(t, messaging.TemplateInvoiceDueSoon, m.Template)
+		w.requireFreshLink(t, m, messaging.ButtonPay, rinaInv[0])
+		require.Equal(t, links+1, w.links(t))
+		st, at := w.status(t, rinaRem)
+		require.Equal(t, reminder.StatusSent, st)
+		require.NotNil(t, at)
+
+		require.Equal(t, reminder.OutcomeHeld, send(t, s, w, budiRem))
+		st, _ = w.status(t, budiRem)
+		require.Equal(t, reminder.StatusSkipped, st)
+		require.Len(t, s.fake.Sent(), 1, "nothing is sent for the tenant without a link")
+		require.Equal(t, links+1, w.links(t), "and no link is minted for it")
+
+		env.Clock.Set(wib(time.November, 7, 9, 0))
+		p := w.promise(t, rina, day(2026, 11, 12))
+		out, err := s.sender.Confirm(ctx, w.org.ID, p.Latest().ID)
+		require.NoError(t, err)
+		require.Equal(t, reminder.OutcomeSent, out)
+		require.Equal(t, reminder.StatusSent, w.confirmationStatus(t, p.Latest().ID))
+		sent = s.fake.Sent()
+		require.Len(t, sent, 2)
+		require.Equal(t, rina, sent[1].TenantID)
+		w.requireFreshLink(t, sent[1], messaging.ButtonChangePromise, rinaInv[0])
+		s.requireNoLink(t, sent...)
+	})
+
+	t.Run("linked off: a linked tenant is held", func(t *testing.T) {
+		s := newSending(t, w, "gowa", nil)
+		w.decide(t, wib(time.November, 10, 8, 0))
+		got := w.reminders(t, rina)
+		rem := got[len(got)-1].ID
+		links := w.links(t)
+
+		env.Clock.Set(wib(time.November, 10, 8, 2))
+		require.Equal(t, reminder.OutcomeHeld, send(t, s, w, rem))
+		st, _ := w.status(t, rem)
+		require.Equal(t, reminder.StatusSkipped, st)
+		require.Empty(t, s.fake.Sent())
+		require.Equal(t, links, w.links(t))
+	})
 }
 
 // failingProvider records every message it is asked to send, with the reminder's status at that

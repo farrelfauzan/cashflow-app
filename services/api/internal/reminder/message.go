@@ -30,6 +30,7 @@ type Line struct {
 
 // Recipient is who a tenant message goes to and the organization it names.
 type Recipient struct {
+	TenantID     uuid.UUID
 	Name         string
 	Phone        string
 	Organization string // the organization's display name

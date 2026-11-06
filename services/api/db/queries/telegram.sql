@@ -60,3 +60,16 @@ SELECT EXISTS (
     SELECT 1 FROM telegram_link
     WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND unlinked_at IS NULL
 ) AS linked;
+
+-- name: GetTenantTelegramChat :one
+-- The chat of the tenant's live link, for the router (TG-3).
+SELECT chat_id
+FROM telegram_link
+WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND unlinked_at IS NULL;
+
+-- name: UnlinkUndeliverableTelegramChat :execrows
+-- Ends the tenant's live link in that one chat after Telegram refused a send to it (the bot was
+-- blocked, the chat is gone). A link made in another chat since is left alone.
+UPDATE telegram_link SET unlinked_at = @unlinked_at
+WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND chat_id = @chat_id
+    AND unlinked_at IS NULL;
