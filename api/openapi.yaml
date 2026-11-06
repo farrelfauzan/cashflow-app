@@ -3307,9 +3307,13 @@ components:
           nullable: true
           description: >
             The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"):
-            the earliest due date after today among the tenant's leases that will still bill. Null
-            when the tenant owes nothing, no lease will bill again, or it is after
-            promiseDates.latest; then the page does not offer that choice.
+            the earliest due date after today among the tenant's leases that will still bill,
+            whether that invoice is already made or not: the next bill to fall due. The page
+            labels the choice by this date, not by a month ("Bareng jatuh tempo berikutnya ·
+            13 Nov 2026"): a late-entered lease's current period can be due in the month after
+            the one it belongs to. Null when the tenant owes
+            nothing, no lease will bill again, or it is after promiseDates.latest; then the page
+            does not offer that choice.
         qrisAvailable:
           type: boolean
           description: >
@@ -3337,34 +3341,6 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/BankAccount"
-
-    PaymentPreviewItem:
-      type: object
-      required: [invoiceId, kind, unitLabel, propertyName, period, periodEnd, dueDate, balance, applied, balanceAfter, paidInFull]
-      properties:
-        invoiceId: { type: string, format: uuid }
-        kind: { $ref: "#/components/schemas/InvoiceKind" }
-        unitLabel: { type: string, example: Kamar 11 }
-        propertyName: { type: string, example: Kos Melati }
-        period: { type: string, format: date }
-        periodEnd: { type: string, format: date }
-        dueDate: { type: string, format: date }
-        balance: { type: integer, format: int64, example: 1250000, description: "What the invoice owes now, before this amount." }
-        applied: { type: integer, format: int64, example: 250000, description: "What the amount would pay on it; always above 0." }
-        balanceAfter: { type: integer, format: int64, example: 1000000, description: "What it would still owe; balance minus applied." }
-        paidInFull: { type: boolean, description: True when the amount pays what the invoice owes ("Lunas"). }
-
-    PaymentPreview:
-      type: object
-      required: [amount, outstandingBefore, outstandingAfter, items]
-      properties:
-        amount: { type: integer, format: int64, example: 1000000, description: "The amount previewed, as asked." }
-        outstandingBefore: { type: integer, format: int64, description: "What the tenant owes now over all their invoices." }
-        outstandingAfter: { type: integer, format: int64, description: "What they would still owe after paying amount." }
-        items:
-          type: array
-          description: The invoices the amount reaches, oldest period first; the last may be paid in part.
-          items: { $ref: "#/components/schemas/PaymentPreviewItem" }
 
     PromiseKind:
       type: string
@@ -3512,6 +3488,34 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/TenantPromise" }
+
+    PaymentPreviewItem:
+      type: object
+      required: [invoiceId, kind, unitLabel, propertyName, period, periodEnd, dueDate, balance, applied, balanceAfter, paidInFull]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
+        unitLabel: { type: string, example: Kamar 11 }
+        propertyName: { type: string, example: Kos Melati }
+        period: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        balance: { type: integer, format: int64, example: 1250000, description: "What the invoice owes now, before this amount." }
+        applied: { type: integer, format: int64, example: 250000, description: "What the amount would pay on it; always above 0." }
+        balanceAfter: { type: integer, format: int64, example: 1000000, description: "What it would still owe; balance minus applied." }
+        paidInFull: { type: boolean, description: True when the amount pays what the invoice owes ("Lunas"). }
+
+    PaymentPreview:
+      type: object
+      required: [amount, outstandingBefore, outstandingAfter, items]
+      properties:
+        amount: { type: integer, format: int64, example: 1000000, description: "The amount previewed, as asked." }
+        outstandingBefore: { type: integer, format: int64, description: "What the tenant owes now over all their invoices." }
+        outstandingAfter: { type: integer, format: int64, description: "What they would still owe after paying amount." }
+        items:
+          type: array
+          description: The invoices the amount reaches, oldest period first; the last may be paid in part.
+          items: { $ref: "#/components/schemas/PaymentPreviewItem" }
 
     CreateQrisRequest:
       type: object

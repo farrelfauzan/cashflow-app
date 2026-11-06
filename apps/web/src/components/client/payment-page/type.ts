@@ -395,3 +395,9 @@ export type MakePromise = {
   // A save is running: the primary is disabled.
   pending: boolean;
 };
+
+// One app's note in the "Cara bayar" guide: where that app keeps paying from a saved QR image.
+export type QrisGuideApp = {
+  name: string;
+  steps: string;
+};
