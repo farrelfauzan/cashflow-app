@@ -45,7 +45,7 @@ func run() error {
 	}
 	log = log.With("service", "worker", "env", cfg.Env)
 
-	st, err := store.Open(ctx, cfg.DatabaseURL, log)
+	st, err := store.Open(ctx, cfg.DatabaseURL, log, store.WithMaxConns(cfg.DatabaseMaxConns))
 	if err != nil {
 		return err
 	}

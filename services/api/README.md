@@ -129,6 +129,11 @@ key answers the payment page's "Bayar QRIS" with `qris_unavailable` (bank transf
 reaches AutoGoPay. With a real key, every QR made locally is a real QR on that account: AutoGoPay
 can block an account that makes QRs in a loop, so make them by hand only.
 
+A payment page request that waits on AutoGoPay holds a database connection for up to about 20
+seconds. At most `QRIS_MAX_CONCURRENT` (default 3) do so at once, below the pool's
+`DATABASE_MAX_CONNS` (default 10); one more answers `qris_unavailable` at once, so a hanging
+AutoGoPay never stops the page and its bank transfer details from loading.
+
 ### Set an organization's bank account
 
 The tenant payment page shows the organization's bank account for a manual transfer (decision

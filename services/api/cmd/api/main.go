@@ -71,7 +71,7 @@ func run() error {
 		return err
 	}
 
-	st, err := store.Open(ctx, cfg.DatabaseURL, log)
+	st, err := store.Open(ctx, cfg.DatabaseURL, log, store.WithMaxConns(cfg.DatabaseMaxConns))
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func run() error {
 	})
 
 	payLinks := paylink.NewService(st, az, clk, cfg.PublicWebOrigin)
-	qrisSvc, err := newQRIS(cfg.Secrets, cfg.AutoGoPayBaseURL, st, payLinks, az, limiter, clk, log)
+	qrisSvc, err := newQRIS(cfg, st, payLinks, az, limiter, clk, log)
 	if err != nil {
 		return err
 	}
@@ -212,18 +212,19 @@ func healthcheck() error {
 
 // newQRIS builds the QRIS service: AutoGoPay's client, the organizations' keys decrypted with the
 // secrets keyring, and the Redis counters that cap generates and checks per tenant.
-func newQRIS(secrets config.Secrets, baseURL string, st *store.Store, links qris.LinkOpener, az *authz.Service,
+func newQRIS(cfg config.API, st *store.Store, links qris.LinkOpener, az *authz.Service,
 	limiter qris.Limiter, clk clock.Clock, log *slog.Logger) (*qris.Service, error) {
-	keys, err := secrets.Keyring()
+	keys, err := cfg.Secrets.Keyring()
 	if err != nil {
 		return nil, err
 	}
-	gateway, err := autogopay.NewClient(autogopay.Config{BaseURL: baseURL})
+	gateway, err := autogopay.NewClient(autogopay.Config{BaseURL: cfg.AutoGoPayBaseURL})
 	if err != nil {
 		return nil, err
 	}
 	return qris.NewService(qris.Deps{
 		Store: st, Links: links, Clock: clk, Gateway: gateway,
 		Keys: autogopay.NewService(st, keys, az, clk), Limiter: limiter, Audit: az, Log: log,
+		MaxConcurrentCalls: cfg.QRISMaxConcurrent,
 	}), nil
 }
