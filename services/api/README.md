@@ -123,7 +123,9 @@ Setting the key again replaces it and keeps the same path. Each setting is in th
 audit log as `settings:update` on `autogopay_account/<organization id>`.
 
 The API and the worker call AutoGoPay at `AUTOGOPAY_BASE_URL`, by default its gateway
-(`https://v1-gateway.autogopay.site`); outside development it must be https. Tests never call it:
+(`https://v1-gateway.autogopay.site`); outside development it must be https. The development
+`.env` (from `.env.example`, and added by `make env` to an older one) points it at the local
+stand-in, `http://127.0.0.1:8091` (`make fake-autogopay`), so nothing local reaches AutoGoPay. Tests never call it:
 they use the fake in `internal/autogopay/autogopaytest`. In development an organization without a
 key answers the payment page's "Bayar QRIS" with `qris_unavailable` (bank transfer), and nothing
 reaches AutoGoPay. With a real key, every QR made locally is a real QR on that account: AutoGoPay
