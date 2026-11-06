@@ -464,3 +464,48 @@ func TestEnvExampleSecretsKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dev-only", ring.CurrentKeyID())
 }
+
+func TestAutoGoPayBaseURL(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+		"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
+		"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+	}
+	env := func(appEnv, url string) map[string]string {
+		m := map[string]string{"APP_ENV": appEnv, "AUTOGOPAY_BASE_URL": url}
+		for k, v := range base {
+			m[k] = v
+		}
+		return m
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "empty uses AutoGoPay's gateway", env: env("production", "")},
+		{name: "https in production", env: env("production", "https://v1-gateway.autogopay.site")},
+		{name: "a trailing slash", env: env("production", "https://v1-gateway.autogopay.site/")},
+		{name: "a local stub over http in development", env: env("development", "http://localhost:9090")},
+		{name: "http outside development", env: env("staging", "http://gateway.test"), wantErr: "must use https in staging"},
+		{name: "a path", env: env("production", "https://gateway.test/v1"), wantErr: "no path"},
+		{name: "credentials", env: env("production", "https://u:p@gateway.test"), wantErr: "no path"},
+		{name: "a query", env: env("production", "https://gateway.test?x=1"), wantErr: "no path"},
+		{name: "not absolute", env: env("production", "gateway.test"), wantErr: "no path"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, apiErr := loadAPI(context.Background(), envconfig.MapLookuper(tc.env))
+			_, workerErr := loadWorker(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, apiErr, tc.wantErr)
+				require.ErrorContains(t, workerErr, tc.wantErr)
+				return
+			}
+			require.NoError(t, apiErr)
+			require.NoError(t, workerErr)
+			require.Equal(t, tc.env["AUTOGOPAY_BASE_URL"], got.AutoGoPayBaseURL)
+		})
+	}
+}

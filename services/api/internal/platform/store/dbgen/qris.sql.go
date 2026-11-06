@@ -12,6 +12,34 @@ import (
 	"github.com/google/uuid"
 )
 
+const closeQrisAttempt = `-- name: CloseQrisAttempt :execrows
+UPDATE qris_attempt
+SET status = $1, closed_at = $2
+WHERE organization_id = $3 AND id = $4 AND status = 'pending'
+`
+
+type CloseQrisAttemptParams struct {
+	Status         string
+	ClosedAt       *time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Closes a pending attempt as expired or cancelled. An attempt that is no longer pending is left
+// alone and counts no row.
+func (q *Queries) CloseQrisAttempt(ctx context.Context, arg CloseQrisAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, closeQrisAttempt,
+		arg.Status,
+		arg.ClosedAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getInvoicePlace = `-- name: GetInvoicePlace :one
 SELECT u.label AS unit_label, p.name AS property_name
 FROM invoice i
@@ -40,7 +68,8 @@ func (q *Queries) GetInvoicePlace(ctx context.Context, arg GetInvoicePlaceParams
 }
 
 const getLatestQrisAttempt = `-- name: GetLatestQrisAttempt :one
-SELECT id, payment_link_id, amount, qr_string, status, expires_at, created_at, closed_at, check_requested_at
+SELECT id, organization_id, tenant_id, payment_link_id, amount, transaction_id, qr_string, status,
+       expires_at, created_at, closed_at, check_requested_at
 FROM qris_attempt
 WHERE organization_id = $1 AND tenant_id = $2
 ORDER BY created_at DESC, id DESC
@@ -54,8 +83,11 @@ type GetLatestQrisAttemptParams struct {
 
 type GetLatestQrisAttemptRow struct {
 	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
 	PaymentLinkID    uuid.UUID
 	Amount           int64
+	TransactionID    string
 	QrString         string
 	Status           string
 	ExpiresAt        time.Time
@@ -70,8 +102,58 @@ func (q *Queries) GetLatestQrisAttempt(ctx context.Context, arg GetLatestQrisAtt
 	var i GetLatestQrisAttemptRow
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
 		&i.PaymentLinkID,
 		&i.Amount,
+		&i.TransactionID,
+		&i.QrString,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.ClosedAt,
+		&i.CheckRequestedAt,
+	)
+	return i, err
+}
+
+const getQrisAttempt = `-- name: GetQrisAttempt :one
+SELECT id, organization_id, tenant_id, payment_link_id, amount, transaction_id, qr_string, status,
+       expires_at, created_at, closed_at, check_requested_at
+FROM qris_attempt
+WHERE organization_id = $1 AND id = $2
+`
+
+type GetQrisAttemptParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetQrisAttemptRow struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	PaymentLinkID    uuid.UUID
+	Amount           int64
+	TransactionID    string
+	QrString         string
+	Status           string
+	ExpiresAt        time.Time
+	CreatedAt        time.Time
+	ClosedAt         *time.Time
+	CheckRequestedAt *time.Time
+}
+
+func (q *Queries) GetQrisAttempt(ctx context.Context, arg GetQrisAttemptParams) (GetQrisAttemptRow, error) {
+	row := q.db.QueryRow(ctx, getQrisAttempt, arg.OrganizationID, arg.ID)
+	var i GetQrisAttemptRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.PaymentLinkID,
+		&i.Amount,
+		&i.TransactionID,
 		&i.QrString,
 		&i.Status,
 		&i.ExpiresAt,
@@ -86,10 +168,11 @@ const insertQrisAttempt = `-- name: InsertQrisAttempt :exec
 
 INSERT INTO qris_attempt (
     id, organization_id, tenant_id, payment_link_id, amount, transaction_id, order_id, qr_string,
-    status, expires_at, created_at, closed_at, check_requested_at
+    status, expires_at, created_at, closed_at, check_requested_at, paid_amount
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13
+    $9, $10, $11, $12, $13,
+    $14
 )
 `
 
@@ -107,6 +190,7 @@ type InsertQrisAttemptParams struct {
 	CreatedAt        time.Time
 	ClosedAt         *time.Time
 	CheckRequestedAt *time.Time
+	PaidAmount       *int64
 }
 
 // QRIS attempts (slice 3, S3-5).
@@ -125,6 +209,113 @@ func (q *Queries) InsertQrisAttempt(ctx context.Context, arg InsertQrisAttemptPa
 		arg.CreatedAt,
 		arg.ClosedAt,
 		arg.CheckRequestedAt,
+		arg.PaidAmount,
 	)
 	return err
+}
+
+const listQrisAttemptsToReconcile = `-- name: ListQrisAttemptsToReconcile :many
+SELECT id, tenant_id
+FROM qris_attempt
+WHERE organization_id = $1 AND status = 'pending'
+  AND (expires_at <= $2 OR check_requested_at IS NOT NULL)
+ORDER BY created_at, id
+LIMIT $3
+`
+
+type ListQrisAttemptsToReconcileParams struct {
+	OrganizationID uuid.UUID
+	Now            time.Time
+	MaxRows        int32
+}
+
+type ListQrisAttemptsToReconcileRow struct {
+	ID       uuid.UUID
+	TenantID uuid.UUID
+}
+
+// The pending attempts reconcile asks AutoGoPay about: those past their expiry, and those the
+// tenant said they paid. Oldest first, at most @max_rows.
+func (q *Queries) ListQrisAttemptsToReconcile(ctx context.Context, arg ListQrisAttemptsToReconcileParams) ([]ListQrisAttemptsToReconcileRow, error) {
+	rows, err := q.db.Query(ctx, listQrisAttemptsToReconcile, arg.OrganizationID, arg.Now, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListQrisAttemptsToReconcileRow
+	for rows.Next() {
+		var i ListQrisAttemptsToReconcileRow
+		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markQrisAttemptPaid = `-- name: MarkQrisAttemptPaid :execrows
+UPDATE qris_attempt
+SET status = 'paid', paid_amount = $1, closed_at = COALESCE(closed_at, $2)
+WHERE organization_id = $3 AND id = $4 AND status <> 'paid'
+`
+
+type MarkQrisAttemptPaidParams struct {
+	PaidAmount     *int64
+	Now            *time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Marks an attempt paid at paid_amount. A pending attempt closes now; an expired or cancelled one
+// keeps the time it closed. An attempt already paid is left alone and counts no row.
+func (q *Queries) MarkQrisAttemptPaid(ctx context.Context, arg MarkQrisAttemptPaidParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markQrisAttemptPaid,
+		arg.PaidAmount,
+		arg.Now,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const requestQrisCheck = `-- name: RequestQrisCheck :execrows
+UPDATE qris_attempt
+SET check_requested_at = $1
+WHERE organization_id = $2 AND id = $3 AND status = 'pending' AND check_requested_at IS NULL
+`
+
+type RequestQrisCheckParams struct {
+	Now            *time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Records that the tenant said they paid a pending attempt. The first time stands.
+func (q *Queries) RequestQrisCheck(ctx context.Context, arg RequestQrisCheckParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requestQrisCheck, arg.Now, arg.OrganizationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const tryLockTenantQris = `-- name: TryLockTenantQris :one
+SELECT pg_try_advisory_xact_lock(hashtextextended('qris_attempt:' || CAST($1 AS uuid)::text, 0)) AS locked
+`
+
+// Takes the tenant's QRIS lock for the rest of the transaction, or answers false at once when
+// another transaction holds it. Making, checking and reconciling a tenant's QR take it, so two of
+// them never call AutoGoPay about the same tenant at the same time. The key is a hash: two
+// tenants that collide only wait on each other.
+func (q *Queries) TryLockTenantQris(ctx context.Context, tenantID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, tryLockTenantQris, tenantID)
+	var locked bool
+	err := row.Scan(&locked)
+	return locked, err
 }

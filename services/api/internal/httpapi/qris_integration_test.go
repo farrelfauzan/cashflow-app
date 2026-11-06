@@ -78,6 +78,9 @@ func (lo *linkOrg) insertAttempt(t *testing.T, r qrisRenter, s attemptState) dbg
 	if s.status != qris.AttemptPending {
 		p.ClosedAt = &now
 	}
+	if s.status == qris.AttemptPaid {
+		p.PaidAmount = &p.Amount
+	}
 	if s.checkAsked {
 		p.CheckRequestedAt = &now
 	}

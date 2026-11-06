@@ -64,6 +64,9 @@ type API struct {
 	// AuthSecret keys the HMAC of login codes. At least 32 bytes, random, never committed.
 	AuthSecret string  `env:"AUTH_SECRET, required"`
 	Secrets    Secrets `env:", prefix=SECRETS_"`
+	// AutoGoPayBaseURL is AUTOGOPAY_BASE_URL, AutoGoPay's gateway; empty uses
+	// autogopay.DefaultBaseURL. It must be https outside development.
+	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
 	// AllowedOrigins is a comma-separated list of browser origins allowed to send
 	// state-changing requests.
 	AllowedOrigins string `env:"ALLOWED_ORIGINS, default=http://localhost:3000"`
@@ -209,6 +212,9 @@ func (c API) validate() error {
 	if err := c.Secrets.validate(); err != nil {
 		return err
 	}
+	if err := validAutoGoPayURL(c.AutoGoPayBaseURL, c.Env); err != nil {
+		return err
+	}
 	if len(c.AuthSecret) < 32 {
 		return fmt.Errorf("AUTH_SECRET must be at least 32 bytes, got %d", len(c.AuthSecret))
 	}
@@ -285,13 +291,36 @@ type Worker struct {
 	DatabaseURL string  `env:"DATABASE_URL, required"`
 	RedisAddr   string  `env:"REDIS_ADDR, default=localhost:6379"`
 	Secrets     Secrets `env:", prefix=SECRETS_"`
+	// AutoGoPayBaseURL is as in API: reconcile asks AutoGoPay about pending QRs.
+	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
 }
 
 func (c Worker) validate() error {
 	if err := c.Common.validate(); err != nil {
 		return err
 	}
+	if err := validAutoGoPayURL(c.AutoGoPayBaseURL, c.Env); err != nil {
+		return err
+	}
 	return c.Secrets.validate()
+}
+
+// validAutoGoPayURL checks AUTOGOPAY_BASE_URL: empty (AutoGoPay's own gateway), or an absolute
+// URL with no path, query or credentials, https outside development. The organization's key is
+// sent to it.
+func validAutoGoPayURL(raw, env string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
+		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("AUTOGOPAY_BASE_URL must be an absolute http(s) URL with no path, got %q", raw)
+	}
+	if env != "development" && u.Scheme != "https" {
+		return fmt.Errorf("AUTOGOPAY_BASE_URL must use https in %s", env)
+	}
+	return nil
 }
 
 // Migrate is the configuration of cmd/migrate. It connects as the owner role, never as the

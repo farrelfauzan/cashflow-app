@@ -229,7 +229,7 @@ func TestQrisAttemptSchema(t *testing.T) {
 				p := a.attempt(r)
 				require.NoError(t, a.insert(p))
 				require.NoError(t, a.exec("UPDATE qris_attempt SET status = $2, closed_at = now() WHERE id = $1", p.ID, from))
-				require.NoError(t, a.exec("UPDATE qris_attempt SET status = 'paid' WHERE id = $1", p.ID))
+				require.NoError(t, a.exec("UPDATE qris_attempt SET status = 'paid', paid_amount = amount WHERE id = $1", p.ID))
 				for _, stmt := range []string{
 					"UPDATE qris_attempt SET status = 'expired' WHERE id = $1",
 					"UPDATE qris_attempt SET check_requested_at = now() WHERE id = $1",

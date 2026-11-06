@@ -706,6 +706,14 @@ type CorrectionResult struct {
 	TenantId openapi_types.UUID `json:"tenantId"`
 }
 
+// CreateQrisRequest defines model for CreateQrisRequest.
+type CreateQrisRequest struct {
+	// Amount Whole rupiah to pay with this QR. Errors use field amount.
+	//
+	// Example: 700000
+	Amount int64 `json:"amount"`
+}
+
 // Dashboard defines model for Dashboard.
 type Dashboard struct {
 	// Arrears Up to 10 tenants in arrears, the oldest debt first, then the most owed. Penagihan with status=overdue lists them all.
@@ -2060,3 +2068,6 @@ type UpdateUnitJSONRequestBody = UnitInput
 
 // CreateUnitPriceJSONRequestBody defines body for CreateUnitPrice for application/json ContentType.
 type CreateUnitPriceJSONRequestBody = UnitPriceInput
+
+// CreatePaymentQrisJSONRequestBody defines body for CreatePaymentQris for application/json ContentType.
+type CreatePaymentQrisJSONRequestBody = CreateQrisRequest
