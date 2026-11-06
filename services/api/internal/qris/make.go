@@ -45,8 +45,9 @@ const (
 // shows the previous QR was paid meanwhile, the payment is recorded and no new QR is made: the
 // answer is StatusPaid and the page reloads what is left to pay.
 //
-// Generates per tenant are capped (ErrGenerateLimit) and never retried. Any AutoGoPay failure is
-// ErrUnavailable: the page offers bank transfer. A QR generated but not recorded (the answer was
+// Generates per tenant are capped (ErrGenerateLimit, counted before the live QR is cancelled, so
+// it stays payable) and never retried. Any AutoGoPay failure is ErrUnavailable: the page offers
+// bank transfer. So is a call that finds MaxConcurrentCalls already waiting on AutoGoPay. A QR generated but not recorded (the answer was
 // unusable, or saving it failed) is cancelled once.
 //
 // Once a request reaches AutoGoPay, what AutoGoPay answered is recorded even if the tenant's
@@ -67,11 +68,17 @@ func (s *Service) MakeQR(ctx context.Context, token string, amount int64) (Publi
 	defer cancel()
 
 	var (
-		out    PublicView
-		key    secret.Value
-		made   string // the transaction id of a QR AutoGoPay made, until its attempt is saved
-		answer error  // the error to answer once what was learnt is committed
+		out     PublicView
+		key     secret.Value
+		made    string // the transaction id of a QR AutoGoPay made, until its attempt is saved
+		answer  error  // the error to answer once what was learnt is committed
+		entered bool   // this call holds a place among those waiting on AutoGoPay
 	)
+	defer func() {
+		if entered {
+			s.leaveGateway()
+		}
+	}()
 	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		out, made, answer = PublicView{}, "", nil
 		tenantID, _, err := s.links.OpenLink(ctx, tx, org, linkID)
@@ -95,8 +102,23 @@ func (s *Service) MakeQR(ctx context.Context, token string, amount int64) (Publi
 			out = view(a, now)
 			return nil
 		}
+		// From here this transaction waits on AutoGoPay while it holds a connection.
+		if !s.enterGateway() {
+			s.log.WarnContext(ctx, "too many QRIS requests waiting on AutoGoPay; answering unavailable", "organization", org)
+			return fmt.Errorf("%w: too many requests waiting on AutoGoPay", ErrUnavailable)
+		}
+		entered = true
 		if key, err = s.apiKey(ctx, tx, org); err != nil {
 			return err
+		}
+		// The cap is counted before the live QR is touched, so a tenant at the cap keeps a QR they
+		// can still pay.
+		ok, err := s.limiter.Allow(ctx, generateLimitKey(org, tenantID), MaxGeneratesPerDay, GenerateWindow)
+		if err != nil {
+			return fmt.Errorf("qris: counting generates: %w", err)
+		}
+		if !ok {
+			return ErrGenerateLimit
 		}
 		if step == stepReplace {
 			o, err := s.ask(ctx, key, org, a, true, now)
@@ -110,14 +132,6 @@ func (s *Service) MakeQR(ctx context.Context, token string, amount int64) (Publi
 				out = view(a, now)
 				return nil
 			}
-		}
-		ok, err := s.limiter.Allow(ctx, generateLimitKey(org, tenantID), MaxGeneratesPerDay, GenerateWindow)
-		if err != nil {
-			return fmt.Errorf("qris: counting generates: %w", err)
-		}
-		if !ok {
-			answer = ErrGenerateLimit // the previous QR's close still commits
-			return nil
 		}
 		qr, err := s.gateway.Generate(ctx, key, amount)
 		made = qr.TransactionID // ErrBadResponse may still name the QR it made

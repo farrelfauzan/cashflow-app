@@ -162,6 +162,11 @@ type Deps struct {
 	Limiter Limiter
 	Audit   Auditor
 	Log     *slog.Logger
+	// MaxConcurrentCalls bounds how many MakeQR and Check calls may wait on AutoGoPay at once.
+	// Each holds a database connection while it waits, so the API sets it below its pool size:
+	// a slow AutoGoPay then never takes every connection, and the payment page with its bank
+	// transfer fallback keeps loading. 0 means no bound (tests, the worker).
+	MaxConcurrentCalls int
 }
 
 // Service makes, reads, checks and settles a tenant's QRIS attempts.
@@ -174,6 +179,8 @@ type Service struct {
 	limiter Limiter
 	audit   Auditor
 	log     *slog.Logger
+	// gate holds one token per call waiting on AutoGoPay; nil when unbounded.
+	gate chan struct{}
 }
 
 // NewService returns a Service.
@@ -182,9 +189,33 @@ func NewService(d Deps) *Service {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Service{
+	s := &Service{
 		store: d.Store, links: d.Links, clock: d.Clock, gateway: d.Gateway, keys: d.Keys,
 		limiter: d.Limiter, audit: d.Audit, log: log,
+	}
+	if d.MaxConcurrentCalls > 0 {
+		s.gate = make(chan struct{}, d.MaxConcurrentCalls)
+	}
+	return s
+}
+
+// enterGateway takes a place among the calls waiting on AutoGoPay, without waiting for one: false
+// means MaxConcurrentCalls are already waiting. A true answer must be paired with leaveGateway.
+func (s *Service) enterGateway() bool {
+	if s.gate == nil {
+		return true
+	}
+	select {
+	case s.gate <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) leaveGateway() {
+	if s.gate != nil {
+		<-s.gate
 	}
 }
 

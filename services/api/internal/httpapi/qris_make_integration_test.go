@@ -439,8 +439,8 @@ func TestQrisMakeAndCheckOverHTTP(t *testing.T) {
 
 		resp, body = getPublic(t, srv.URL, "/api/t/"+r.token+"/status", c.freshIP())
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
-		require.Equal(t, apigen.QrisStatusStatusExpired, decode[apigen.QrisStatus](t, body).Status,
-			"the QR that was in the way was cancelled, and that commits")
+		require.Equal(t, apigen.QrisStatusStatusPending, decode[apigen.QrisStatus](t, body).Status,
+			"at the cap the live QR is not touched, so the tenant can still pay it")
 
 		env.Clock.Advance(qris.GenerateWindow + time.Minute)
 		resp, body = c.post(t, r.token, "/qris", amountBody(600_000))

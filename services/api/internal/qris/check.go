@@ -24,7 +24,8 @@ const (
 // asked about it once: paid records the payment, expired or cancelled closes it, still pending
 // leaves it for reconcile. An AutoGoPay failure, or too many checks, only skips the read: the
 // tenant sees "Sedang dicek" and reconcile resolves it. An attempt that is no longer pending is
-// answered as it is. No attempt is ErrNoAttempt.
+// answered as it is. No attempt is ErrNoAttempt. When MaxConcurrentCalls are already waiting on
+// AutoGoPay the read is skipped too.
 func (s *Service) Check(ctx context.Context, token string) (PublicView, error) {
 	org, linkID, err := s.links.Resolve(ctx, token)
 	if err != nil {
@@ -34,6 +35,12 @@ func (s *Service) Check(ctx context.Context, token string) (PublicView, error) {
 	defer cancel()
 
 	var out PublicView
+	entered := false // this call holds a place among those waiting on AutoGoPay
+	defer func() {
+		if entered {
+			s.leaveGateway()
+		}
+	}()
 	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		tenantID, _, err := s.links.OpenLink(ctx, tx, org, linkID)
 		if err != nil {
@@ -62,6 +69,11 @@ func (s *Service) Check(ctx context.Context, token string) (PublicView, error) {
 			a.CheckRequestedAt = &now
 		}
 		out = view(a, now)
+		if !s.enterGateway() {
+			s.log.WarnContext(ctx, "too many QRIS requests waiting on AutoGoPay; leaving the check to reconcile", "organization", org)
+			return nil
+		}
+		entered = true
 		if err := s.checkNow(ctx, tx, org, tenantID, a, now); err != nil {
 			return err
 		}

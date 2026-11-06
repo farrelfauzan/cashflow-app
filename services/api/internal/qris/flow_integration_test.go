@@ -19,6 +19,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 )
@@ -445,16 +446,41 @@ func TestMakeQR(t *testing.T) {
 		env.Clock.Advance(time.Second)
 		_, err = f.svc.MakeQR(ctx, r.token, 500_000)
 		require.ErrorIs(t, err, qris.ErrGenerateLimit)
-		require.Equal(t, []autogopaytest.Call{f.cancel(last.TransactionID)}, f.callsSince(mark), "no generate")
+		require.Empty(t, f.callsSince(mark), "at the cap, another amount reaches AutoGoPay not at all")
 		all := f.attempts(t, r)
-		require.Equal(t, qris.AttemptCancelled, byTransaction(t, all, last.TransactionID).Status, "the cancel still commits")
-		require.Zero(t, pendingCount(all))
+		require.Equal(t, qris.AttemptPending, byTransaction(t, all, last.TransactionID).Status, "the live QR stays payable")
+		require.Equal(t, 1, pendingCount(all))
 
-		mark = len(f.calls())
-		_, err = f.svc.MakeQR(ctx, r.token, 500_000)
-		require.ErrorIs(t, err, qris.ErrGenerateLimit)
+		v := f.makeQR(t, r, 400_000)
+		require.Equal(t, qris.StatusPending, v.Status, "the same amount still reuses the live QR at the cap")
 		require.Empty(t, f.callsSince(mark))
-		require.Len(t, f.attempts(t, r), len(all))
+	})
+
+	t.Run("a QR paid after the debt was settled another way becomes credit", func(t *testing.T) {
+		r := f.rent(t, "Hendra Gunawan")
+		f.makeQR(t, r, 700_000)
+		a := f.only(t, r)
+		_, err := env.Billing.RecordPayment(context.Background(), f.admin, billing.PaymentInput{
+			RequestID: uuid.New(), TenantID: r.tenantID, Amount: 700_000,
+			Method: billing.MethodCash, ReceivedOn: tenant.Today(env.Clock),
+		})
+		require.NoError(t, err)
+		require.NoError(t, f.fake.Pay(a.TransactionID))
+
+		require.Equal(t, qris.StatusPaid, f.check(t, r).Status)
+		var qrisPays []paymentRow
+		for _, p := range f.payments(t, r) {
+			if p.Source == billing.SourceQRIS {
+				qrisPays = append(qrisPays, p)
+			}
+		}
+		require.Len(t, qrisPays, 1)
+		require.Equal(t, int64(700_000), qrisPays[0].Amount)
+		require.Equal(t, a.TransactionID, *qrisPays[0].SourceRef)
+		require.Zero(t, qrisPays[0].Allocated, "nothing was left to pay")
+		acct := f.account(t, r)
+		require.Zero(t, acct.Outstanding)
+		require.Equal(t, int64(700_000), acct.Credit, "the second payment is credit, not lost and not refunded")
 	})
 
 	t.Run("a generate failure makes no attempt", func(t *testing.T) {
@@ -937,4 +963,57 @@ func TestLatestAttemptTie(t *testing.T) {
 	require.NoError(t, err, "the live QR for the same amount is reused")
 	require.Equal(t, qris.StatusPending, v.Status)
 	require.Empty(t, f.callsSince(before))
+}
+
+// hangingGateway is the fake with a Generate that waits until release is closed, as when
+// AutoGoPay hangs. entered says a call is waiting.
+type hangingGateway struct {
+	*autogopaytest.Fake
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *hangingGateway) Generate(ctx context.Context, key secret.Value, amount int64) (autogopay.QRIS, error) {
+	g.entered <- struct{}{}
+	<-g.release
+	return g.Fake.Generate(ctx, key, amount)
+}
+
+// A hanging AutoGoPay holds at most MaxConcurrentCalls connections: the next QR request answers
+// unavailable at once, a check leaves the read to reconcile, and the payment page, with its bank
+// transfer fallback, still loads.
+func TestAutoGoPayHangIsBounded(t *testing.T) {
+	s := newSuite(t)
+	f := s.newFlow(t, true)
+	ctx := context.Background()
+	gw := &hangingGateway{Fake: s.fake, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	bounded := qris.NewService(qris.Deps{
+		Store: s.env.Store, Links: f.links, Clock: s.env.Clock, Gateway: gw, Keys: s.env.AutoGoPay,
+		Limiter: s.env.Limiter, Audit: s.env.Authz, MaxConcurrentCalls: 1,
+	})
+	waiting, refused, checked := f.rent(t, "Rina Wulandari"), f.rent(t, "Budi Santoso"), f.rent(t, "Dewi Lestari")
+	f.makeQR(t, checked, 700_000) // made before the hang
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := bounded.MakeQR(ctx, waiting.token, 700_000)
+		done <- err
+	}()
+	<-gw.entered
+	before := len(f.calls())
+
+	_, err := bounded.MakeQR(ctx, refused.token, 700_000)
+	require.ErrorIs(t, err, qris.ErrUnavailable)
+	v, err := bounded.Check(ctx, checked.token)
+	require.NoError(t, err)
+	require.Equal(t, qris.StatusChecking, v.Status, "the check is recorded; reconcile reads it")
+	require.Empty(t, f.callsSince(before), "nothing else reached AutoGoPay")
+	page, err := f.links.PublicPage(ctx, refused.token)
+	require.NoError(t, err, "the page still loads")
+	require.Equal(t, int64(700_000), page.Outstanding)
+
+	close(gw.release)
+	require.NoError(t, <-done)
+	_, err = bounded.MakeQR(ctx, refused.token, 700_000)
+	require.NoError(t, err, "once AutoGoPay answers, the place is free again")
 }

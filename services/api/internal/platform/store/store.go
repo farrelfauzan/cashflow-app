@@ -28,12 +28,24 @@ type Store struct {
 	log  *slog.Logger
 }
 
+// Option changes how Open builds the pool.
+type Option func(*pgxpool.Config)
+
+// WithMaxConns sets the pool's size. Without it pgx picks the larger of 4 and the number of CPUs,
+// which on a small server is 4.
+func WithMaxConns(n int32) Option {
+	return func(c *pgxpool.Config) { c.MaxConns = n }
+}
+
 // Open connects to PostgreSQL and checks the connection. Use the app role's URL, never the
 // owner role's.
-func Open(ctx context.Context, url string, log *slog.Logger) (*Store, error) {
+func Open(ctx context.Context, url string, log *slog.Logger, opts ...Option) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parsing database url: %w", err)
+	}
+	for _, o := range opts {
+		o(cfg)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -45,6 +57,9 @@ func Open(ctx context.Context, url string, log *slog.Logger) (*Store, error) {
 	}
 	return &Store{pool: pool, log: log}, nil
 }
+
+// MaxConns is the pool's size.
+func (s *Store) MaxConns() int32 { return s.pool.Config().MaxConns }
 
 // Close releases every connection.
 func (s *Store) Close() { s.pool.Close() }
