@@ -40,6 +40,8 @@ type PromiseFormProps = {
   paying: PromisePaying | null;
   // "Ubah janji": the primary reads "Simpan perubahan".
   editing: boolean;
+  // The tenant's active promise, which saving replaces; null when there is none.
+  active: PaymentPromise | null;
   // The fields as they open: empty, or the active promise's.
   initial: PromiseDraft;
   token: string;
@@ -57,6 +59,7 @@ export function PromiseForm({
   offer,
   paying,
   editing,
+  active,
   initial,
   token,
   refetchPage,
@@ -65,7 +68,7 @@ export function PromiseForm({
   onBack,
 }: PromiseFormProps) {
   const { save, pending } = useMakePromise({ token, refetchPage, onLinkGone });
-  const formView = promiseFormView(offer, paying, editing);
+  const formView = promiseFormView(offer, paying, editing, active);
   const { form, showApiError, alert } = useApiForm({
     schema: promiseSchema(offer, paying),
     defaultValues: initial,
@@ -98,6 +101,11 @@ export function PromiseForm({
       className="flex flex-1 flex-col gap-4 md:gap-5"
     >
       <PaymentPageHeader header={header} />
+      {formView.replacesLine !== null && (
+        <p className="text-sm font-semibold text-warning md:text-base">
+          {formView.replacesLine}
+        </p>
+      )}
       <p className="text-sm font-semibold md:text-base">{formView.subline}</p>
       <Controller
         control={form.control}

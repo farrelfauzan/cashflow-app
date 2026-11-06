@@ -352,10 +352,28 @@ test("Belum bisa bayar sekarang records a promise by a chosen date, and Ubah jan
     ),
   ).toBeVisible();
   await attachViewportScreenshot(page, testInfo, "payment-promise-active");
+
+  // A new promise from the choice replaces the active one, and the form says so.
+  const replaces = page.getByText(
+    /^Janji sebelumnya .+, Rp500\.000 akan diganti\.$/,
+  );
+  await choose(page, /^Belum bisa bayar sekarang/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Kapan sisanya dilunasi?" }),
+  ).toBeVisible();
+  await expect(replaces).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Simpan janji", exact: true }),
+  ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-promise-replace");
+  await page.getByRole("button", { name: "Kembali" }).click();
+
+  // Ubah janji starts from the promise itself, so it needs no such line.
   await page.getByRole("button", { name: "Ubah janji" }).click();
   await expect(page.getByLabel("Tanggal pelunasan")).toHaveValue(
     dates.earliest,
   );
+  await expect(replaces).toHaveCount(0);
   await page.getByRole("radio", { name: /^Bareng tagihan/ }).check();
   await page.getByLabel("Nominal janji (boleh dikosongkan)").fill("");
   await page.getByRole("button", { name: "Simpan perubahan" }).click();

@@ -168,6 +168,9 @@ export type RecordedFlowMode = Extract<PayFlowMode, { kind: "recorded" }>;
 
 // The Janji screen, from the page and what is paid now.
 export type PromiseFormView = {
+  // "Janji sebelumnya 1 Des 2026, semua sisa tagihan akan diganti." when saving replaces an active
+  // promise from a new form; null otherwise (no active promise, or "Ubah janji").
+  replacesLine: string | null;
   // "Sisa setelah bayar hari ini: Rp1.250.000", or "Total tagihan Rp2.250.000".
   subline: string;
   // "Bareng tagihan Desember" (when offered) and "Pilih tanggal sendiri".

@@ -1416,10 +1416,22 @@ export function backFromPromise(mode: PayFlowMode): PayFlowMode {
   return mode.kind === "promise" ? mode.back : mode;
 }
 
+// "Janji sebelumnya 1 Des 2026, semua sisa tagihan akan diganti.": a new promise adds a version to
+// the active one, so a form that does not start from it says so.
+export function promiseReplacesLine(promise: PaymentPromise): string {
+  const amount =
+    promise.promisedAmount === null
+      ? PROMISE_ALL_REST_TEXT.toLowerCase()
+      : formatRupiah(promise.promisedAmount);
+  return `Janji sebelumnya ${formatDate(promise.promisedDate)}, ${amount} akan diganti.`;
+}
+
+// The Janji screen. `active`: the tenant's active promise, which saving replaces.
 export function promiseFormView(
   offer: PromiseOfferView,
   paying: PromisePaying | null,
   editing: boolean,
+  active: PaymentPromise | null,
 ): PromiseFormView {
   const kindOptions: ChoiceOptionView[] = [];
   if (offer.nextInvoiceDueDate !== null) {
@@ -1435,6 +1447,8 @@ export function promiseFormView(
     sub: `Paling lambat ${formatDate(offer.latest)}, tanpa denda`,
   });
   return {
+    replacesLine:
+      active !== null && !editing ? promiseReplacesLine(active) : null,
     subline:
       paying === null
         ? `${TOTAL_LABEL} ${formatRupiah(offer.outstanding)}`

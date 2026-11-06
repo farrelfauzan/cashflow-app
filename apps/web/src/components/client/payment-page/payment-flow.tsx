@@ -172,6 +172,7 @@ export function PaymentFlow({
             offer={view.promise}
             paying={mode.paying}
             editing={mode.editing}
+            active={view.activePromise?.promise ?? null}
             initial={mode.draft}
             token={token}
             refetchPage={refetchPage}

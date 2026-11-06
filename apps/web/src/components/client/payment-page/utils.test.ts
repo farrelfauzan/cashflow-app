@@ -2205,7 +2205,8 @@ describe("the promise offer and the active promise", () => {
 
 describe("the Janji screen", () => {
   it("offers Bareng tagihan with the next due date, then Pilih tanggal sendiri", () => {
-    expect(promiseFormView(OFFER, null, false)).toEqual({
+    expect(promiseFormView(OFFER, null, false, null)).toEqual({
+      replacesLine: null,
       subline: "Total tagihan Rp2.250.000",
       kindOptions: [
         {
@@ -2228,23 +2229,40 @@ describe("the Janji screen", () => {
 
   it("hides Bareng tagihan without a next due date", () => {
     expect(
-      promiseFormView(NO_NEXT_OFFER, null, false).kindOptions.map(
+      promiseFormView(NO_NEXT_OFFER, null, false, null).kindOptions.map(
         (o) => o.value,
       ),
     ).toEqual(["specific_date"]);
   });
 
   it("speaks of the rest after paying now", () => {
-    const view = promiseFormView(OFFER, PAYING, false);
+    const view = promiseFormView(OFFER, PAYING, false, null);
     expect(view.subline).toBe("Sisa setelah bayar hari ini: Rp1.250.000");
     expect(view.amountHint).toBe("Kosongkan untuk semua sisa, Rp1.250.000.");
     expect(view.primaryLabel).toBe("Simpan janji, lalu bayar Rp1.000.000");
   });
 
   it("saves changes when editing", () => {
-    expect(promiseFormView(OFFER, null, true).primaryLabel).toBe(
+    expect(promiseFormView(OFFER, null, true, null).primaryLabel).toBe(
       "Simpan perubahan",
     );
+  });
+
+  it("says a new form replaces the active promise, but not on Ubah janji", () => {
+    const all = promise({ promisedDate: "2026-12-01", promisedAmount: null });
+    expect(promiseFormView(OFFER, null, false, all).replacesLine).toBe(
+      "Janji sebelumnya 1 Des 2026, semua sisa tagihan akan diganti.",
+    );
+    expect(
+      promiseFormView(
+        OFFER,
+        PAYING,
+        false,
+        promise({ promisedDate: "2026-12-01", promisedAmount: 500_000 }),
+      ).replacesLine,
+    ).toBe("Janji sebelumnya 1 Des 2026, Rp500.000 akan diganti.");
+    expect(promiseFormView(OFFER, null, true, all).replacesLine).toBeNull();
+    expect(promiseFormView(OFFER, null, false, null).replacesLine).toBeNull();
   });
 
   it("defaults to Bareng tagihan when offered, else Pilih tanggal sendiri", () => {
