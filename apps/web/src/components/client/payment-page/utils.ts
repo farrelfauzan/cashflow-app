@@ -316,7 +316,7 @@ export const QRIS_GUIDE_STEPS: readonly string[] = [
   `Ketuk "${QRIS_DOWNLOAD_TEXT}". Bisa juga ambil tangkapan layar, asal seluruh kotak QR ikut.`,
   "Buka aplikasi bank atau e-wallet, lalu pilih menu QRIS atau Scan.",
   'Ketuk ikon galeri atau "Upload QR", lalu pilih gambar QR tadi.',
-  "Pastikan jumlahnya sama dengan di halaman ini, lalu bayar dengan PIN Anda.",
+  "Pastikan jumlahnya sama dengan di halaman ini, lalu konfirmasi pembayarannya di aplikasi.",
   `Kembali ke halaman ini. Kalau belum Lunas, ketuk "${QRIS_PAID_CLAIM_TEXT}".`,
 ];
 export const QRIS_GUIDE_IPHONE_NOTE =
