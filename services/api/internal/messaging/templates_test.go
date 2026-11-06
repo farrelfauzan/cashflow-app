@@ -70,3 +70,114 @@ func TestEveryTemplateRendersWithItsOwnParameters(t *testing.T) {
 		require.NoError(t, err, name)
 	}
 }
+
+// tenantMessages are a tenant message of each reminder and promise template with its parameters,
+// as the reminder sender fills them.
+func tenantMessages() map[string]Message {
+	pay := []Button{{Title: ButtonPay, Payload: "invoice", URL: "https://app.example.id/t/tok"}}
+	change := []Button{{Title: ButtonChangePromise, Payload: "promise", URL: "https://app.example.id/t/tok"}}
+	return map[string]Message{
+		TemplateInvoiceDueSoon: {Template: TemplateInvoiceDueSoon, Buttons: pay, Params: map[string]string{
+			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "month": "Desember 2026", "amount": "Rp1.620.000",
+			"lines": "Sewa Kamar 3 Rp1.500.000, Listrik November Rp120.000", "due_date": "10 Desember 2026",
+		}},
+		TemplateInvoiceDueToday: {Template: TemplateInvoiceDueToday, Buttons: pay, Params: map[string]string{
+			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "month": "Desember 2026", "amount": "Rp1.620.000",
+			"lines": "Sewa Kamar 3 Rp1.500.000, Listrik November Rp120.000",
+		}},
+		TemplateInvoiceOverdue: {Template: TemplateInvoiceOverdue, Buttons: pay, Params: map[string]string{
+			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "month": "Desember 2026", "amount": "Rp620.000",
+			"lines": "Sewa Kamar 3 Rp1.500.000, Listrik November Rp120.000, sudah dibayar Rp1.000.000", "days_late": "3",
+		}},
+		TemplateInvoiceRollover: {Template: TemplateInvoiceRollover, Buttons: pay, Params: map[string]string{
+			"name": "Rina Wulandari", "organization": "Griya Sejahtera",
+			"summary": "Tagihan Desember 2026 Rp1.500.000 + sisa November 2026 Rp200.000", "total": "Rp1.700.000",
+		}},
+		TemplatePromiseReminder: {Template: TemplatePromiseReminder, Buttons: change, Params: map[string]string{
+			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "amount": AllOutstanding, "date": "20 November 2026",
+		}},
+		TemplatePromiseBroken: {Template: TemplatePromiseBroken, Buttons: []Button{{Title: ButtonNewPromise, Payload: "promise", URL: "https://app.example.id/t/tok"}},
+			Params: map[string]string{"name": "Rina Wulandari", "organization": "Griya Sejahtera", "date": "20 November 2026", "total": "Rp700.000"}},
+		TemplatePromiseRecorded: {Template: TemplatePromiseRecorded, Buttons: change, Params: map[string]string{
+			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "amount": "Rp500.000", "date": "20 November 2026",
+		}},
+	}
+}
+
+func TestRenderTenantMessages(t *testing.T) {
+	t.Parallel()
+	want := map[string]string{
+		TemplateInvoiceDueSoon: "Halo Rina Wulandari,\n\n" +
+			"Tagihan sewa *Griya Sejahtera* untuk Desember 2026 sebesar *Rp1.620.000* jatuh tempo pada 10 Desember 2026.\n\n" +
+			"Rincian: Sewa Kamar 3 Rp1.500.000, Listrik November Rp120.000\n\n" +
+			"Bayar lewat tautan di bawah. Terima kasih.\n\nBayar:\nhttps://app.example.id/t/tok",
+		TemplateInvoiceDueToday: "Halo Rina Wulandari,\n\n" +
+			"Tagihan sewa *Griya Sejahtera* untuk Desember 2026 sebesar *Rp1.620.000* jatuh tempo hari ini.\n\n" +
+			"Rincian: Sewa Kamar 3 Rp1.500.000, Listrik November Rp120.000\n\n" +
+			"Bayar lewat tautan di bawah. Jika sudah membayar, abaikan pesan ini. Terima kasih.\n\nBayar:\nhttps://app.example.id/t/tok",
+		TemplateInvoiceOverdue: "Halo Rina Wulandari,\n\n" +
+			"Tagihan sewa *Griya Sejahtera* untuk Desember 2026 sebesar *Rp620.000* sudah lewat 3 hari dari jatuh tempo.\n\n" +
+			"Rincian: Sewa Kamar 3 Rp1.500.000, Listrik November Rp120.000, sudah dibayar Rp1.000.000\n\n" +
+			"Bayar lewat tautan di bawah. Jika perlu waktu, Anda bisa membuat janji bayar di halaman yang sama. " +
+			"Jika sudah membayar, abaikan pesan ini.\n\nBayar:\nhttps://app.example.id/t/tok",
+		TemplateInvoiceRollover: "Halo Rina Wulandari,\n\n" +
+			"Tagihan sewa *Griya Sejahtera*:\n" +
+			"Tagihan Desember 2026 Rp1.500.000 + sisa November 2026 Rp200.000 = *Rp1.700.000*\n\n" +
+			"Bayar lewat satu tautan di bawah; pembayaran melunasi tagihan terlama lebih dulu. " +
+			"Jika sudah membayar, abaikan pesan ini.\n\nBayar:\nhttps://app.example.id/t/tok",
+		TemplatePromiseReminder: "Halo Rina Wulandari,\n\n" +
+			"Mengingatkan janji bayar Anda ke *Griya Sejahtera*: seluruh sisa tagihan pada *20 November 2026*.\n\n" +
+			"Bayar atau ubah janji lewat tautan di bawah. Terima kasih.\n\nUbah janji:\nhttps://app.example.id/t/tok",
+		TemplatePromiseBroken: "Halo Rina Wulandari,\n\n" +
+			"Janji bayar Anda ke *Griya Sejahtera* pada 20 November 2026 belum terpenuhi. Tidak apa-apa, tidak ada denda.\n\n" +
+			"Sisa tagihan Anda *Rp700.000*. Silakan bayar, atau buat janji baru lewat tautan di bawah.\n\nBuat janji baru:\nhttps://app.example.id/t/tok",
+		TemplatePromiseRecorded: "Halo Rina Wulandari,\n\n" +
+			"Janji bayar Anda ke *Griya Sejahtera* sudah tercatat: Rp500.000 pada *20 November 2026*.\n\n" +
+			"Untuk membayar atau mengubah janji, buka tautan di bawah. Terima kasih.\n\nUbah janji:\nhttps://app.example.id/t/tok",
+	}
+	msgs := tenantMessages()
+	require.Len(t, msgs, len(want))
+	for name, m := range msgs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			text, err := Render(m)
+			require.NoError(t, err)
+			require.Equal(t, want[name], text)
+			require.Contains(t, text, "Griya Sejahtera", "every tenant message names the organization")
+		})
+	}
+}
+
+// TestTenantTemplatesRefuseMistakes: each tenant template refuses a missing parameter, an extra
+// one, and a button without a link; no parameter holds a line break (the Cloud API refuses one).
+func TestTenantTemplatesRefuseMistakes(t *testing.T) {
+	t.Parallel()
+	for name, m := range tenantMessages() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tpl, ok := Lookup(name)
+			require.True(t, ok)
+			require.Equal(t, len(tpl.Params), len(m.Params), "the sample fills every parameter")
+			for _, p := range tpl.Params {
+				require.NotContains(t, m.Params[p], "\n")
+				missing := Message{Template: name, Buttons: m.Buttons, Params: map[string]string{}}
+				for k, v := range m.Params {
+					if k != p {
+						missing.Params[k] = v
+					}
+				}
+				_, err := Render(missing)
+				require.ErrorContains(t, err, "needs parameter", "without %s", p)
+			}
+			extra := Message{Template: name, Buttons: m.Buttons, Params: map[string]string{"link": "https://app.example.id/t/tok"}}
+			for k, v := range m.Params {
+				extra.Params[k] = v
+			}
+			_, err := Render(extra)
+			require.ErrorContains(t, err, "has no parameter")
+			noLink := Message{Template: name, Params: m.Params, Buttons: []Button{{Title: ButtonPay, Payload: "invoice"}}}
+			_, err = Render(noLink)
+			require.ErrorContains(t, err, "has no link")
+		})
+	}
+}

@@ -1,8 +1,9 @@
 // Package remindertask decides reminders through the queue (phase B, slice 4): every day at 08:00
 // Asia/Jakarta (decision 41.6) the scheduler enqueues one reminders:decide task per organization,
 // and the worker records what that organization's tenants should be told today
-// (reminder.Decider.DecideOrg). It sends nothing; sending is S4-5. The rules live in package
-// reminder; this package only moves organization ids between the scheduler and the worker.
+// (reminder.Decider.DecideOrg), enqueueing each recorded reminder's reminder:send task (send.go).
+// The rules live in package reminder; this package only moves ids between the scheduler, the
+// queue and the worker.
 //
 // A task carries the organization id and nothing else. Its id names the organization and the day,
 // so a run still queued keeps a duplicate out; deciding itself is idempotent (every stage, H-1 and

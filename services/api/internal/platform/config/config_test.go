@@ -350,7 +350,47 @@ func TestLoadWorker(t *testing.T) {
 				RedisAddr:        "localhost:6379",
 				Secrets:          Secrets{Key: testKey},
 				DatabaseMaxConns: 20,
+				PublicWebOrigin:  "http://localhost:3000",
+				WhatsAppProvider: "devlog",
 			},
+		},
+		{
+			name: "the worker sends through the configured provider",
+			env: map[string]string{
+				"APP_ENV": "production", "DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey,
+				"PUBLIC_WEB_ORIGIN": "https://app.example.id", "WHATSAPP_PROVIDER": "gowa",
+				"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "cashflow", "GOWA_PASSWORD": "gowa-secret",
+			},
+			want: Worker{
+				Common:           Common{Env: "production", LogLevel: "info"},
+				DatabaseURL:      "postgres://app@db/cashflow",
+				RedisAddr:        "localhost:6379",
+				Secrets:          Secrets{Key: testKey},
+				DatabaseMaxConns: 20,
+				PublicWebOrigin:  "https://app.example.id",
+				WhatsAppProvider: "gowa",
+				GOWA:             GOWA{URL: "http://gowa:3000", Username: "cashflow", Password: "gowa-secret"},
+			},
+		},
+		{
+			name:    "a payment link origin is required outside development",
+			env:     map[string]string{"APP_ENV": "staging", "DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey},
+			wantErr: "PUBLIC_WEB_ORIGIN is required",
+		},
+		{
+			name: "devlog is refused outside development",
+			env: map[string]string{
+				"APP_ENV": "staging", "DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey,
+				"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+			},
+			wantErr: "WHATSAPP_PROVIDER=devlog only runs in development",
+		},
+		{
+			name: "gowa needs its settings",
+			env: map[string]string{
+				"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey, "WHATSAPP_PROVIDER": "gowa",
+			},
+			wantErr: "GOWA_URL",
 		},
 		{
 			name:    "missing database url is rejected",

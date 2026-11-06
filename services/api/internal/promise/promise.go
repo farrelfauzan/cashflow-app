@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -75,6 +76,12 @@ type TenantAuthorizer interface {
 	AuthorizeTenant(ctx context.Context, tx pgx.Tx, p authz.Principal, tenantID uuid.UUID, action string) error
 }
 
+// ConfirmQueue enqueues the promise:confirm task that sends a saved version's "janji tercatat"
+// confirmation to the tenant (slice 4, S4-5). A task already queued counts as enqueued.
+type ConfirmQueue interface {
+	EnqueueConfirm(ctx context.Context, org, versionID uuid.UUID) error
+}
+
 // Deps are what the service needs.
 type Deps struct {
 	Store   *store.Store
@@ -82,19 +89,44 @@ type Deps struct {
 	Tenants TenantAuthorizer
 	// Clock decides today in Asia/Jakarta.
 	Clock clock.Clock
+	// Confirms gets each saved version's confirmation task once the version commits; nil
+	// enqueues nothing (the sweep still finds the pending confirmation).
+	Confirms ConfirmQueue
+	// Log records a failed enqueue; nil discards it.
+	Log *slog.Logger
 }
 
 // Service makes and lists payment promises.
 type Service struct {
-	store   *store.Store
-	links   LinkOpener
-	tenants TenantAuthorizer
-	clock   clock.Clock
+	store    *store.Store
+	links    LinkOpener
+	tenants  TenantAuthorizer
+	clock    clock.Clock
+	confirms ConfirmQueue
+	log      *slog.Logger
 }
 
 // NewService returns a Service.
 func NewService(d Deps) *Service {
-	return &Service{store: d.Store, links: d.Links, tenants: d.Tenants, clock: d.Clock}
+	log := d.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &Service{store: d.Store, links: d.Links, tenants: d.Tenants, clock: d.Clock, confirms: d.Confirms, log: log}
+}
+
+// confirm enqueues the confirmation of a version that has committed. A failure is logged, not
+// returned: the promise is saved, and the sweep (reminders:sweep) enqueues a confirmation still
+// pending after a lost enqueue.
+func (s *Service) confirm(ctx context.Context, org uuid.UUID, p Promise) {
+	if s.confirms == nil {
+		return
+	}
+	v := p.Latest()
+	if err := s.confirms.EnqueueConfirm(ctx, org, v.ID); err != nil {
+		s.log.WarnContext(ctx, "enqueueing a promise confirmation; the sweep retries it",
+			"organization", org, "promiseVersion", v.ID, "error", err)
+	}
 }
 
 // author is who makes a version.
@@ -130,6 +162,7 @@ func (s *Service) MakeFromLink(ctx context.Context, token string, in Input) (Pro
 	if err != nil {
 		return Promise{}, err
 	}
+	s.confirm(ctx, org, out)
 	return out, nil
 }
 
@@ -152,6 +185,7 @@ func (s *Service) MakeForTenant(ctx context.Context, p authz.Principal, tenantID
 	if err != nil {
 		return Promise{}, err
 	}
+	s.confirm(ctx, p.OrganizationID, out)
 	return out, nil
 }
 
@@ -239,6 +273,12 @@ func (s *Service) make(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, 
 		OrganizationID: org, PromiseVersionID: versionID, InvoiceIds: covered, TenantID: tenantID,
 	}); err != nil {
 		return Promise{}, fmt.Errorf("promise: saving the covered invoices: %w", err)
+	}
+	// The tenant's "janji tercatat" message, sent by promise:confirm once this commits (S4-5).
+	if err := q.InsertPromiseConfirmation(ctx, dbgen.InsertPromiseConfirmationParams{
+		PromiseVersionID: versionID, OrganizationID: org, TenantID: tenantID, CreatedAt: now,
+	}); err != nil {
+		return Promise{}, fmt.Errorf("promise: saving the version's confirmation: %w", err)
 	}
 
 	head := dbgen.ListTenantPromisePageRow{ID: promiseID, Status: StatusActive, CreatedAt: now}

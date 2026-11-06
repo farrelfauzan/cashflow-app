@@ -43,7 +43,7 @@ func newWorld(t *testing.T, env *testenv.Env, name, prefix string) *world {
 	w := &world{env: env, org: env.CreateOrg(t, name, prefix), prefix: prefix}
 	links := paylink.NewService(env.Store, env.Authz, env.Clock, "https://app.test")
 	w.promises = promise.NewService(promise.Deps{Store: env.Store, Links: links, Tenants: env.Billing, Clock: env.Clock})
-	w.decider = reminder.NewDecider(env.Store, env.Clock, env.Log)
+	w.decider = reminder.NewDecider(env.Store, env.Clock, env.Log, nil)
 	w.admin = env.Principal(t, w.org.ID, w.org.Admin.UserID)
 	var err error
 	w.kos, err = env.Properties.Create(context.Background(), w.admin, property.PropertyInput{Name: "Kos Melati " + prefix, Kind: property.KindKos})
