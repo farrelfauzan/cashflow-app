@@ -405,9 +405,9 @@ The WA message links to OUR page. The QR is created only when the tenant opens i
   Task `qris-reconcile` every 30 min + nightly checks pending attempts against `/qris/status`.
 - One QR is at most Rp10 juta (AutoGoPay's limit) and at most what the tenant owes; the API
   refuses more (`qris_amount_above_limit`, `qris_amount_above_outstanding`), so a QR never
-  overpays (decision 40). QRIS in parts arrives in slice 4 (W16 "QRIS bayar sebagian"); until
-  then the payment page offers QRIS only while the total outstanding is at most Rp10 juta, and
-  bank transfer above it.
+  overpays (decision 40). When the tenant owes more than Rp10 juta, the payment page offers a QR
+  of Rp10.000.000 and says the rest is paid by a next QR or bank transfer; bank transfer stays
+  available. Choosing any partial amount comes in slice 4 (W16 "QRIS bayar sebagian").
 
 ### Bank transfer
 Manual instructions for now (decision 38). The payment page shows the organization's bank
@@ -416,8 +416,8 @@ note. The admin records the transfer as a manual payment, so FIFO and credit app
 The tenant's "Kirim bukti transfer" photo arrives in slice 6 with uploads, the malware scan and
 the "Antrean cek" queue. `BankTransferProvider` stays for a later adapter: a static open-amount
 VA per tenant (auto-matched) or bank-mutation polling, where unmatched transfers go to
-"Antrean cek". Until QRIS in parts arrives in slice 4, bank transfer is how a tenant pays a
-total outstanding above Rp10 juta.
+"Antrean cek". Bank transfer is always offered; for a total above Rp10 juta it pays everything
+at once, where QRIS takes at most Rp10 juta per QR.
 
 ## Negative cases (each must be handled AND tested)
 
