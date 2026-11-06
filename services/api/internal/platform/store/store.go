@@ -105,6 +105,24 @@ func (s *Store) LookupPaymentLink(ctx context.Context, tokenHash []byte) (org, l
 	return row.OrganizationID, row.LinkID, nil
 }
 
+// ErrWebhookNotFound means no AutoGoPay account has the webhook id given to LookupAutogopayWebhook.
+var ErrWebhookNotFound = errors.New("store: webhook not found")
+
+// LookupAutogopayWebhook maps the id in an AutoGoPay webhook URL to its account's organization,
+// for a callback that arrives with no session (decision 39). Like LookupPaymentLink it runs as the
+// app role with no scope set, through autogopay_webhook_lookup(), which returns the organization id
+// only; the caller reads the key inside WithOrgTx for it. An unknown id returns ErrWebhookNotFound.
+func (s *Store) LookupAutogopayWebhook(ctx context.Context, webhookID string) (uuid.UUID, error) {
+	org, err := dbgen.New(s.pool).LookupAutogopayWebhook(ctx, webhookID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, ErrWebhookNotFound
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("looking up webhook: %w", err)
+	}
+	return org, nil
+}
+
 // WithOrgTx runs fn in a transaction that is scoped to one organization. The transaction
 // commits when fn returns nil and rolls back otherwise.
 //

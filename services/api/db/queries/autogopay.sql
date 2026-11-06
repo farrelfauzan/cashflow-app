@@ -20,3 +20,8 @@ SELECT * FROM autogopay_account WHERE organization_id = @organization_id;
 -- name: HasAutogopayAccount :one
 -- Whether the organization has an AutoGoPay account, so the payment page knows QRIS is offered.
 SELECT EXISTS (SELECT 1 FROM autogopay_account WHERE organization_id = @organization_id) AS has_account;
+
+-- name: LookupAutogopayWebhook :one
+-- Maps a webhook id to its account's organization, with no organization scope, through the
+-- SECURITY DEFINER function autogopay_webhook_lookup. No row when no account has that id.
+SELECT w.organization_id::uuid AS organization_id FROM autogopay_webhook_lookup(@webhook_id::text) AS w;

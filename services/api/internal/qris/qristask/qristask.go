@@ -35,7 +35,57 @@ const (
 	ReconcileCron = "*/30 * * * *"
 	// slot is the period one run covers, which names its tasks.
 	slot = 30 * time.Minute
+
+	// TypePaid records a QR AutoGoPay's webhook reported paid (qris.Service.SettlePaid).
+	TypePaid = "qris:paid"
+	// paidRetries bounds the retries of a qris:paid task that failed on our side (the database);
+	// reconcile records the payment anyway if they all fail.
+	paidRetries = 10
 )
+
+// PaidTaskID names the qris:paid task of an organization's transaction:
+// qris:paid:<organization>:<transaction id>. A repeated webhook finds the first task still queued;
+// the payment's unique key makes a later one harmless. The organization is part of the id because
+// the task id outlives the task (a task that is never retried stays archived): without it, one
+// organization could sign its own callback naming another organization's transaction id and take
+// that id, so the real organization's callback would be dropped as a duplicate.
+func PaidTaskID(org uuid.UUID, transactionID string) string {
+	return fmt.Sprintf("%s:%s:%s", TypePaid, org, transactionID)
+}
+
+type paidPayload struct {
+	OrganizationID uuid.UUID `json:"organizationId"`
+	TransactionID  string    `json:"transactionId"`
+	Amount         int64     `json:"amount"`
+}
+
+// PaidClient implements qris.PaidQueue on asynq.
+type PaidClient struct{ c *asynq.Client }
+
+// NewPaidClient returns a qris.PaidQueue that uses c.
+func NewPaidClient(c *asynq.Client) PaidClient { return PaidClient{c: c} }
+
+// EnqueuePaid implements qris.PaidQueue.
+func (c PaidClient) EnqueuePaid(ctx context.Context, org uuid.UUID, transactionID string, amount int64) error {
+	body, err := json.Marshal(paidPayload{OrganizationID: org, TransactionID: transactionID, Amount: amount})
+	if err != nil {
+		return fmt.Errorf("encoding qris:paid payload: %w", err)
+	}
+	_, err = c.c.EnqueueContext(ctx, asynq.NewTask(TypePaid, body),
+		asynq.TaskID(PaidTaskID(org, transactionID)), asynq.Queue(queue.Default), asynq.MaxRetry(paidRetries))
+	if errors.Is(err, asynq.ErrTaskIDConflict) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("enqueueing %s: %w", PaidTaskID(org, transactionID), err)
+	}
+	return nil
+}
+
+// Settler records a paid QR. qris.Service implements it.
+type Settler interface {
+	SettlePaid(ctx context.Context, org uuid.UUID, transactionID string, paidAmount int64) error
+}
 
 // TaskID names an organization's reconcile task for the half hour that holds at:
 // qris:reconcile:<org>:<YYYY-MM-DDTHH:MM> in Asia/Jakarta.
@@ -116,6 +166,7 @@ func EnqueueAll(ctx context.Context, orgs OrgLister, enq Enqueuer, at time.Time)
 // Worker holds what the worker's handlers need.
 type Worker struct {
 	Reconciler Reconciler
+	Settler    Settler
 	Orgs       OrgLister
 	Enqueuer   Enqueuer
 	Clock      clock.Clock
@@ -127,6 +178,7 @@ type Worker struct {
 func (w Worker) Register(mux *asynq.ServeMux, sched *asynq.Scheduler) error {
 	mux.HandleFunc(TypeReconcile, w.HandleReconcile)
 	mux.HandleFunc(TypeReconcileAll, w.HandleReconcileAll)
+	mux.HandleFunc(TypePaid, w.HandlePaid)
 	if _, err := sched.Register(ReconcileCron, asynq.NewTask(TypeReconcileAll, nil),
 		asynq.Queue(queue.Default), asynq.MaxRetry(0)); err != nil {
 		return fmt.Errorf("scheduling QRIS reconcile: %w", err)
@@ -158,5 +210,26 @@ func (w Worker) HandleReconcileAll(ctx context.Context, _ *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("enqueueing QRIS reconcile: %w", err)
 	}
+	return nil
+}
+
+// HandlePaid records one paid QR. A payload that is not a paid transaction, or a transaction the
+// organization has no attempt for, is never retried: the second is logged as an error for an
+// operator, since money may have arrived for a QR we never saved.
+func (w Worker) HandlePaid(ctx context.Context, t *asynq.Task) error {
+	var p paidPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil || p.OrganizationID == uuid.Nil || p.TransactionID == "" || p.Amount <= 0 {
+		return fmt.Errorf("qris:paid without an organization, transaction and amount: %w", asynq.SkipRetry)
+	}
+	err := w.Settler.SettlePaid(ctx, p.OrganizationID, p.TransactionID, p.Amount)
+	if errors.Is(err, qris.ErrUnknownTransaction) {
+		w.Log.ErrorContext(ctx, "AutoGoPay reported a QR paid that has no attempt; check the AutoGoPay dashboard",
+			"organization", p.OrganizationID, "transaction", p.TransactionID, "amount", p.Amount)
+		return fmt.Errorf("recording QR %s: %w: %w", p.TransactionID, err, asynq.SkipRetry)
+	}
+	if err != nil {
+		return fmt.Errorf("recording QR %s for organization %s: %w", p.TransactionID, p.OrganizationID, err)
+	}
+	w.Log.InfoContext(ctx, "QRIS payment recorded", "organization", p.OrganizationID, "transaction", p.TransactionID)
 	return nil
 }

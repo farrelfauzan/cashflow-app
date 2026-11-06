@@ -19,7 +19,8 @@ func (s *Service) SettleForTest(ctx context.Context, org, attemptID uuid.UUID, p
 			return err
 		}
 		a := &Attempt{ID: row.ID, TenantID: row.TenantID, TransactionID: row.TransactionID, Amount: row.Amount, Status: row.Status}
-		return s.settle(ctx, tx, org, a, paidAmount)
+		_, _, err = s.settle(ctx, tx, org, a, paidAmount)
+		return err
 	})
 }
 
