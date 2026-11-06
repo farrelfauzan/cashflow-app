@@ -55,6 +55,16 @@ const EXPIRED_TEXT =
 const EXPIRED_NOTE = "Belum ada pembayaran yang masuk dari QR ini.";
 const UNAVAILABLE_TEXT =
   "QRIS sedang gangguan. Pakai transfer bank dulu; tagihan tetap berjalan seperti biasa.";
+const GUIDE_TITLE = "Cara bayar pakai QR yang diunduh";
+const GUIDE_STEPS = [
+  'Ketuk "Unduh QR". Bisa juga ambil tangkapan layar, asal seluruh kotak QR ikut.',
+  "Buka aplikasi bank atau e-wallet, lalu pilih menu QRIS atau Scan.",
+  'Ketuk ikon galeri atau "Upload QR", lalu pilih gambar QR tadi.',
+  "Pastikan jumlahnya sama dengan di halaman ini, lalu konfirmasi pembayarannya di aplikasi.",
+  'Kembali ke halaman ini. Kalau belum Lunas, ketuk "Saya sudah bayar".',
+];
+const GUIDE_FALLBACK =
+  "Tidak ada pilihan galeri? Scan QR ini dengan kamera dari HP lain, atau bayar lewat Transfer bank.";
 const LIMIT_NOTE =
   "QRIS paling banyak Rp10.000.000 sekali bayar. Sisanya bayar dengan QR berikutnya atau transfer bank.";
 
@@ -246,9 +256,36 @@ test("Bayar QRIS shows a live QR to scan or download", async ({
   await expect(page.getByRole("button", { name: "Buat QR baru" })).toHaveCount(
     0,
   );
-  await expect(page.getByRole("button")).toHaveCount(1);
+  // "Saya sudah bayar" and the closed guide's toggle are the only buttons.
+  await expect(page.getByRole("button")).toHaveCount(2);
 
   await attachViewportScreenshot(page, testInfo, "payment-qris-live");
+
+  // "Cara bayar pakai QR yang diunduh": closed at first, so "Unduh QR" stays the one primary
+  // action; open, the steps, the per-app notes and the way out when an app has no gallery.
+  const guide = page.getByRole("button", { name: GUIDE_TITLE });
+  await expect(guide).toHaveAttribute("aria-expanded", "false");
+  await expectTouchTarget(guide);
+  await expect(page.getByText(GUIDE_FALLBACK)).toHaveCount(0);
+  await guide.evaluate((element) => element.scrollIntoView({ block: "end" }));
+  await attachViewportScreenshot(page, testInfo, "payment-qris-guide-closed");
+  await guide.click();
+  await expect(guide).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page
+      .getByRole("list")
+      .filter({ hasText: "Unduh QR" })
+      .getByRole("listitem"),
+  ).toHaveText(GUIDE_STEPS);
+  for (const app of ["myBCA", "Livin' by Mandiri", "GoPay", "Aplikasi lain"]) {
+    await expect(page.getByRole("term").filter({ hasText: app })).toBeVisible();
+  }
+  await expect(page.getByText(GUIDE_FALLBACK)).toBeVisible();
+  await guide.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await attachViewportScreenshot(page, testInfo, "payment-qris-guide");
+
+  await guide.click();
+  await expect(page.getByText(GUIDE_FALLBACK)).toHaveCount(0);
   await finish(fixture);
 });
 

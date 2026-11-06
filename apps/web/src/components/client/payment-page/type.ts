@@ -254,3 +254,9 @@ export type Countdown = {
   // Whole seconds left, never below 0.
   seconds: number;
 };
+
+// One app's note in the "Cara bayar" guide: where that app keeps paying from a saved QR image.
+export type QrisGuideApp = {
+  name: string;
+  steps: string;
+};
