@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 
 import { QrisAmountRow } from "./qris-amount-row";
 import { QrisImage } from "./qris-image";
+import { QrisPayGuide } from "./qris-pay-guide";
 import { useCountdown } from "./use-countdown";
 import {
   QRIS_DOWNLOAD_TEXT,
@@ -33,7 +34,8 @@ type QrisLiveProps = {
 };
 
 // A QR that can be paid (board "Bayar QRIS"): the image, the time left, "Unduh QR" as the one
-// primary action, then "Saya sudah bayar" and, in the last two minutes, "Buat QR baru".
+// primary action, then "Saya sudah bayar" and, in the last two minutes, "Buat QR baru", and the
+// closed "Cara bayar" guide.
 export function QrisLive({
   imageUrl,
   imageAlt,
@@ -96,6 +98,7 @@ export function QrisLive({
           </Button>
         )}
       </div>
+      <QrisPayGuide />
     </>
   );
 }
