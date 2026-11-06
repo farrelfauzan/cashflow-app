@@ -137,6 +137,22 @@ func WindowOn(today time.Time, leases []billing.LeaseDates) Window {
 	return w
 }
 
+// CappedFrom bounds an edit of an active promise: no version may say a date more than
+// MaxDaysAhead days after firstDay, the day (Asia/Jakarta, midnight UTC) its first version was
+// made. Without it every "Ubah janji" would restart the window and one promise could keep H+3 and
+// H+7 silent for ever; decision 41 says an active promise silences them for at most 60 days. Once
+// the bound is reached the window is Empty and only a new promise, after this one closes, can be
+// made.
+func (w Window) CappedFrom(firstDay time.Time) Window {
+	if limit := firstDay.AddDate(0, 0, MaxDaysAhead); limit.Before(w.Latest) {
+		w.Latest = limit
+	}
+	return w
+}
+
+// Empty is true when no date is allowed: an active promise already reached its bound.
+func (w Window) Empty() bool { return w.Latest.Before(w.Earliest) }
+
 // NextDueInRange is NextDue when a promise may be made for it, else nil.
 func (w Window) NextDueInRange() *time.Time {
 	if w.NextDue == nil || !w.contains(*w.NextDue) {

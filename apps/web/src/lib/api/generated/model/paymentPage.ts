@@ -12,7 +12,7 @@ import type { PromiseDates } from './promiseDates';
 export interface PaymentPage {
   /** The tenant's active payment promise with its newest version's terms, or null when there is none. It stays active until it is closed, even once everything is paid. */
   promise: PaymentPromise | null;
-  /** The days a promise made now may name (specific_date); null when the tenant owes nothing. */
+  /** The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible). */
   promiseDates: PromiseDates | null;
   /**
      * The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
