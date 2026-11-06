@@ -24,7 +24,7 @@ import {
 } from "@/components/client/payment-link/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
-import { useGetTenantAccount } from "@/lib/api/generated/money/money";
+import { useListTenantOpenInvoices } from "@/lib/api/generated/money/money";
 import { useGetTenant } from "@/lib/api/generated/tenants/tenants";
 import type { AppAbility } from "@/lib/capabilities";
 import { jakartaToday } from "@/lib/format/date";
@@ -56,8 +56,8 @@ type TenantDetailViewProps = {
 // for a member with invoice:read and payment:read) and a card for each lease the member may see, with "Catat
 // pembayaran" (payment:record), "Ubah penyewa" and, for a tenant without an active lease,
 // "Sewakan unit", and "Catat meteran" on a lease that expects metered amounts (charge:record),
-// each shown from the member's capabilities (getOrgMe). "Salin link bayar" (invoice:share) copies
-// a new payment link for the newest open invoice in the account the money section loads.
+// each shown from the member's capabilities (getOrgMe). "Salin link bayar" (invoice:read and
+// invoice:share) copies a new payment link for the tenant's newest open invoice.
 // The API answers 404 for a tenant that does not exist and 403 for one the member may not see;
 // both read "Penyewa tidak ditemukan".
 export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
@@ -77,14 +77,14 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   const [notice, setNotice] = useState("");
   const [correctionRequest, setCorrectionRequest] =
     useState<CorrectionRequest | null>(null);
-  // "Salin link bayar" needs the open invoices: the same query (and cache entry) as the money
-  // section, so it adds no request; without invoice:read and payment:read it never runs. That
-  // leaves out the built-in Karyawan (invoice:read and invoice:share, no payment:read) for now.
+  // "Salin link bayar" finds the newest open invoice through listTenantOpenInvoices, which needs
+  // invoice:read only, so a karyawan who may share a link (on the tenants they collect) can find
+  // it without the account's payment:read. It never runs for a member who may not share.
   const canShare = canSharePayLink(ability);
-  const account = useGetTenantAccount(orgId, tenantId, {
-    query: { enabled: showAccount && canShare },
+  const openInvoices = useListTenantOpenInvoices(orgId, tenantId, {
+    query: { enabled: canShare },
   });
-  const shareInvoice = payLinkInvoice(canShare && showAccount, account.data);
+  const shareInvoice = payLinkInvoice(canShare, openInvoices.data);
   const payLink = useCopyPayLink(orgId, setNotice);
 
   if (tenant.isError) {

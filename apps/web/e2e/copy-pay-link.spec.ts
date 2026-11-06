@@ -13,6 +13,7 @@ import type {
   Tenant,
   TenantAccount,
   TenantList,
+  TenantOpenInvoice,
   Unit,
 } from "../src/lib/api/generated/model";
 import { formatMonthYear, jakartaToday } from "../src/lib/format/date";
@@ -22,12 +23,14 @@ import {
 } from "./support/page-checks";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
-import { HENDRA } from "./support/staff";
+import { HENDRA, RUDI } from "./support/staff";
 
 // "Salin link bayar" on Detail penyewa, against the real API and its worker. Each press makes a
-// new payment link (decision 39) for the tenant's newest open invoice and copies it. Pak Hendra
-// is Admin of the whole of Griya Sejahtera (invoice:share) and Supervisor in Kost Putri Anggrek
-// (no invoice:share). Tenant names start with W or Y, so they sort after every seeded tenant and
+// new payment link (decision 39) for the tenant's newest open invoice (listTenantOpenInvoices)
+// and copies it. Pak Hendra is Admin of the whole of Griya Sejahtera (invoice:share) and
+// Supervisor in Kost Putri Anggrek (no invoice:share); Mas Rudi is Karyawan in Kost Putri Anggrek,
+// with invoice:read and invoice:share on the tenants he collects (Ayu Lestari) and no
+// payment:read. Tenant names start with W or Y, so they sort after every seeded tenant and
 // the seeded rows keep the first page of the tenant list.
 
 const GRIYA = "Griya Sejahtera";
@@ -153,9 +156,21 @@ async function makeTenant(
   return { tenant, account, accountPath };
 }
 
-// Opens Detail penyewa and waits for the account, so a missing button means hidden, not loading.
+function isOpenInvoicesGet(request: Request): boolean {
+  return (
+    request.method() === "GET" &&
+    /\/api\/orgs\/[^/]+\/tenants\/[^/]+\/open-invoices$/.test(request.url())
+  );
+}
+
+// Opens Detail penyewa and waits for the account and the open invoices the button reads, so a
+// missing button means hidden, not loading.
 async function openTenantPage(page: Page, orgId: string, tenant: Tenant) {
+  const openInvoices = page.waitForResponse((response) =>
+    isOpenInvoicesGet(response.request()),
+  );
   await page.goto(`/o/${orgId}/tenants/${tenant.id}`);
+  expect((await openInvoices).status()).toBe(200);
   await expect(
     page.getByRole("heading", { level: 1, name: tenant.name }),
   ).toBeVisible();
@@ -410,6 +425,10 @@ test.describe("Supervisor", () => {
     page,
   }) => {
     const outsideRequests = trackOutsideRequests(page);
+    const openInvoiceReads: string[] = [];
+    page.on("request", (request) => {
+      if (isOpenInvoicesGet(request)) openInvoiceReads.push(request.url());
+    });
     const orgId = await openOrganization(page, ANGGREK);
     const { items } = await call<TenantList>(
       page,
@@ -437,6 +456,150 @@ test.describe("Supervisor", () => {
     ).toBeVisible();
 
     await expect(page.getByRole("button", { name: BUTTON })).toHaveCount(0);
+    // Without invoice:share the open invoices are never read.
+    expect(openInvoiceReads).toEqual([]);
     expect(outsideRequests).toEqual([]);
+  });
+});
+
+// Looks a seeded tenant up as Pak Hendra (Supervisor there, who may read every invoice): Mas
+// Rudi cannot list tenants he does not collect. Returns the tenant's id and how many open
+// invoices the organization has for them.
+async function seededTenant(
+  browser: Browser,
+  testInfo: TestInfo,
+  orgId: string,
+  name: string,
+): Promise<{ id: string; openInvoices: number }> {
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    storageState: HENDRA.storageState,
+  });
+  try {
+    const list = await context.request.get(
+      `/api/orgs/${orgId}/tenants?q=${encodeURIComponent(name)}`,
+    );
+    expect(list.status(), await list.text()).toBe(200);
+    const { items } = (await list.json()) as TenantList;
+    const tenant = items.find((each) => each.name === name);
+    if (tenant === undefined) throw new Error(`${name} is not seeded`);
+    const open = await context.request.get(
+      `/api/orgs/${orgId}/tenants/${tenant.id}/open-invoices`,
+    );
+    expect(open.status(), await open.text()).toBe(200);
+    const invoices = (await open.json()) as TenantOpenInvoice[];
+    return { id: tenant.id, openInvoices: invoices.length };
+  } finally {
+    await context.close();
+  }
+}
+
+// Mas Rudi has one organization, so the picker goes straight in. Returns its id.
+async function openOnlyOrganization(page: Page): Promise<string> {
+  await page.goto("/organizations");
+  await expect(page).toHaveURL(ORG_HOME_URL);
+  const orgId = /\/o\/([0-9a-f-]{36})/.exec(page.url())?.[1];
+  if (orgId === undefined) throw new Error("not on an organization's page");
+  return orgId;
+}
+
+test.describe("Karyawan", () => {
+  test.use({ storageState: RUDI.storageState });
+
+  test("copies a link for a tenant he collects, without reading the account", async ({
+    page,
+    browser,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"], {
+        origin: testInfo.project.use.baseURL,
+      });
+    const outsideRequests = trackOutsideRequests(page);
+    const accountReads: string[] = [];
+    page.on("request", (request) => {
+      if (/\/tenants\/[0-9a-f-]{36}\/account/.test(request.url())) {
+        accountReads.push(request.url());
+      }
+    });
+    const orgId = await openOnlyOrganization(page);
+    const ayu = await seededTenant(browser, testInfo, orgId, "Ayu Lestari");
+    // What the button should share: Ayu's newest open invoice, as the API lists it to him.
+    const open = await call<TenantOpenInvoice[]>(
+      page,
+      "GET",
+      `/orgs/${orgId}/tenants/${ayu.id}/open-invoices`,
+      200,
+    );
+    expect(open.length).toBeGreaterThan(0);
+    const newest = open.reduce((latest, each) =>
+      each.period >= latest.period ? each : latest,
+    );
+
+    const openInvoices = page.waitForResponse((response) =>
+      isOpenInvoicesGet(response.request()),
+    );
+    await page.goto(`/o/${orgId}/tenants/${ayu.id}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Ayu Lestari" }),
+    ).toBeVisible();
+    expect((await openInvoices).status()).toBe(200);
+    // No money section without payment:read; the button stands on its own.
+    await expect(page.getByRole("region", { name: REGION })).toHaveCount(0);
+    const button = page.getByRole("button", { name: BUTTON });
+    await expect(button).toBeVisible();
+    await expectTouchTarget(button);
+    await attachViewportScreenshot(page, testInfo, "copy-pay-link-karyawan");
+
+    const answer = page.waitForResponse((response) =>
+      isLinkPost(response.request()),
+    );
+    await button.click();
+    const created = await answer;
+    expect(created.status()).toBe(201);
+    expect(created.url()).toContain(`/invoices/${newest.id}/`);
+    await expect(
+      page.getByRole("status").filter({ hasText: COPIED }),
+    ).toBeVisible();
+    const url = await readClipboard(page);
+    expect(url).toMatch(LINK);
+    const token = LINK.exec(url)?.[1] ?? "";
+    const opened = await readAsTenant(browser, testInfo, token);
+    expect(opened.invoice.id).toBe(newest.id);
+    expect(opened.tenantName).toBe("Ayu Lestari");
+    expect(await page.content()).not.toContain(token);
+    await attachViewportScreenshot(
+      page,
+      testInfo,
+      "copy-pay-link-karyawan-copied",
+    );
+
+    expect(accountReads).toEqual([]);
+    expect(outsideRequests).toEqual([]);
+  });
+
+  test("has no button for a tenant he does not collect", async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const orgId = await openOnlyOrganization(page);
+    // Rina Wulandari owes money here and is collected by nobody.
+    const rina = await seededTenant(browser, testInfo, orgId, "Rina Wulandari");
+    expect(rina.openInvoices).toBeGreaterThan(0);
+    // The API lists none of her invoices to him.
+    const open = await call<TenantOpenInvoice[]>(
+      page,
+      "GET",
+      `/orgs/${orgId}/tenants/${rina.id}/open-invoices`,
+      200,
+    );
+    expect(open).toEqual([]);
+
+    await page.goto(`/o/${orgId}/tenants/${rina.id}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Penyewa tidak ditemukan" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: BUTTON })).toHaveCount(0);
   });
 });
