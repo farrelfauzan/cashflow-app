@@ -34,3 +34,11 @@ from the documentation and are not real answers:
 - `generate_rejected.json`: an invented `success:false` answer to generate (HTTP 200).
 
 Replace a derived file with a scrubbed recording once a real one is seen.
+
+## Webhook bodies (real capture, 2026-11-06)
+
+`webhook_paid.json` and `webhook_challenge.json` follow the bodies the user's listener captured from
+AutoGoPay: the same fields in the same order, with the ids, order id and challenge replaced by
+clearly synthetic values and the amount the real Rp1. The `timestamp` values are placeholders in the
+WIB layout (the handler does not read them). Each is one line with no trailing newline in the
+signed bytes: tests sign the exact file contents with a test key, as AutoGoPay signs the raw body.

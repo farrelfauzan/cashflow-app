@@ -43,6 +43,19 @@ func (q *Queries) HasAutogopayAccount(ctx context.Context, organizationID uuid.U
 	return has_account, err
 }
 
+const lookupAutogopayWebhook = `-- name: LookupAutogopayWebhook :one
+SELECT w.organization_id::uuid AS organization_id FROM autogopay_webhook_lookup($1::text) AS w
+`
+
+// Maps a webhook id to its account's organization, with no organization scope, through the
+// SECURITY DEFINER function autogopay_webhook_lookup. No row when no account has that id.
+func (q *Queries) LookupAutogopayWebhook(ctx context.Context, webhookID string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lookupAutogopayWebhook, webhookID)
+	var organization_id uuid.UUID
+	err := row.Scan(&organization_id)
+	return organization_id, err
+}
+
 const upsertAutogopayAccount = `-- name: UpsertAutogopayAccount :one
 INSERT INTO autogopay_account (
     organization_id, api_key_ciphertext, key_id, webhook_id, created_at, updated_at, updated_by_staff_user_id

@@ -626,7 +626,9 @@ func TestActiveOrganizationIDs(t *testing.T) {
 // SECURITY DEFINER function owned by the migration role could read under either setting. Today
 // there are two: active_organization_ids() reads organization ids only, and
 // payment_link_lookup(bytea) reads one link's organization and id by its token hash and touches
-// no other table. A new one must be reviewed against both policies, and this test says so. (Its
+// no other table, and autogopay_webhook_lookup(text) (00020, setting app.autogopay_webhook_lookup)
+// reads one AutoGoPay account's organization id by its webhook id. A new one must be reviewed
+// against all three policies, and this test says so. (Its
 // name predates the second function; 00011_money.sql refers to it by this name.)
 func TestActiveOrganizationIDsIsTheOnlySecurityDefiner(t *testing.T) {
 	ctx := context.Background()
@@ -643,7 +645,8 @@ func TestActiveOrganizationIDsIsTheOnlySecurityDefiner(t *testing.T) {
 	require.NoError(t, err)
 	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
-	require.Equal(t, []string{"active_organization_ids", "payment_link_lookup"}, names,
-		"a new SECURITY DEFINER function must be checked against the organization_list_ids policy in 00011_money.sql "+
-			"and the payment_link_lookup policy in 00017_payment_link.sql")
+	require.Equal(t, []string{"active_organization_ids", "autogopay_webhook_lookup", "payment_link_lookup"}, names,
+		"a new SECURITY DEFINER function must be checked against the organization_list_ids policy in 00011_money.sql, "+
+			"the payment_link_lookup policy in 00017_payment_link.sql and the autogopay_account_webhook_lookup policy "+
+			"in 00020_autogopay_webhook_lookup.sql")
 }

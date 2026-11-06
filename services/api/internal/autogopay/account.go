@@ -136,6 +136,35 @@ func (s *Service) APIKey(ctx context.Context, tx pgx.Tx, org uuid.UUID) (secret.
 	return secret.NewValue(string(plain)), nil
 }
 
+// ErrUnknownWebhook means no account has the webhook id, or the id is malformed.
+var ErrUnknownWebhook = errors.New("autogopay: unknown webhook")
+
+// WebhookKey finds the organization behind a webhook id and decrypts its API key, which signs the
+// callbacks sent to that URL. The lookup goes through the narrow SECURITY DEFINER function
+// (decision 39); the key is read inside the organization's own scope. A malformed or unknown id is
+// ErrUnknownWebhook.
+func (s *Service) WebhookKey(ctx context.Context, webhookID string) (uuid.UUID, secret.Value, error) {
+	if !ValidWebhookID(webhookID) {
+		return uuid.Nil, secret.Value{}, ErrUnknownWebhook
+	}
+	org, err := s.store.LookupAutogopayWebhook(ctx, webhookID)
+	if errors.Is(err, store.ErrWebhookNotFound) {
+		return uuid.Nil, secret.Value{}, ErrUnknownWebhook
+	}
+	if err != nil {
+		return uuid.Nil, secret.Value{}, fmt.Errorf("autogopay: looking up the webhook: %w", err)
+	}
+	var key secret.Value
+	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		key, err = s.APIKey(ctx, tx, org)
+		return err
+	})
+	if err != nil {
+		return uuid.Nil, secret.Value{}, err
+	}
+	return org, key, nil
+}
+
 // additionalData binds a ciphertext to its organization's row, so a ciphertext copied onto
 // another organization's account does not decrypt there.
 func additionalData(org uuid.UUID) []byte {

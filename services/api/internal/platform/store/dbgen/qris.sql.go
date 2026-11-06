@@ -167,6 +167,54 @@ func (q *Queries) GetQrisAttempt(ctx context.Context, arg GetQrisAttemptParams) 
 	return i, err
 }
 
+const getQrisAttemptByTransactionID = `-- name: GetQrisAttemptByTransactionID :one
+SELECT id, organization_id, tenant_id, payment_link_id, amount, transaction_id, qr_string, status,
+       expires_at, created_at, closed_at, check_requested_at
+FROM qris_attempt
+WHERE organization_id = $1 AND transaction_id = $2
+`
+
+type GetQrisAttemptByTransactionIDParams struct {
+	OrganizationID uuid.UUID
+	TransactionID  string
+}
+
+type GetQrisAttemptByTransactionIDRow struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	PaymentLinkID    uuid.UUID
+	Amount           int64
+	TransactionID    string
+	QrString         string
+	Status           string
+	ExpiresAt        time.Time
+	CreatedAt        time.Time
+	ClosedAt         *time.Time
+	CheckRequestedAt *time.Time
+}
+
+// The attempt AutoGoPay's webhook names, inside the organization its URL belongs to.
+func (q *Queries) GetQrisAttemptByTransactionID(ctx context.Context, arg GetQrisAttemptByTransactionIDParams) (GetQrisAttemptByTransactionIDRow, error) {
+	row := q.db.QueryRow(ctx, getQrisAttemptByTransactionID, arg.OrganizationID, arg.TransactionID)
+	var i GetQrisAttemptByTransactionIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.PaymentLinkID,
+		&i.Amount,
+		&i.TransactionID,
+		&i.QrString,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.ClosedAt,
+		&i.CheckRequestedAt,
+	)
+	return i, err
+}
+
 const insertQrisAttempt = `-- name: InsertQrisAttempt :exec
 
 INSERT INTO qris_attempt (
