@@ -1228,6 +1228,9 @@ export function flowModeAfterCard(
 
 export const PROMISE_TITLE = "Kapan sisanya dilunasi?";
 export const PROMISE_KIND_LEGEND = "Pilihan tanggal";
+// Labelled by its due date only: the next bill to fall due may be a late-entered period of an
+// earlier month (period October, due 4 November), so a month name could be wrong.
+export const PROMISE_NEXT_DUE_LABEL = "Bareng tagihan berikutnya";
 export const PROMISE_OWN_DATE_LABEL = "Pilih tanggal sendiri";
 export const PROMISE_DATE_LABEL = "Tanggal pelunasan";
 export const PROMISE_AMOUNT_LABEL = "Nominal janji (boleh dikosongkan)";
@@ -1353,7 +1356,7 @@ export function promiseFormView(
   if (offer.nextInvoiceDueDate !== null) {
     kindOptions.push({
       value: PromiseKind.with_next_invoice,
-      label: `Bareng tagihan ${formatMonth(offer.nextInvoiceDueDate)}`,
+      label: PROMISE_NEXT_DUE_LABEL,
       sub: `Jatuh tempo ${formatDate(offer.nextInvoiceDueDate)}`,
     });
   }

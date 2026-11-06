@@ -2139,7 +2139,7 @@ describe("the Janji screen", () => {
       kindOptions: [
         {
           value: "with_next_invoice",
-          label: "Bareng tagihan Desember",
+          label: "Bareng tagihan berikutnya",
           sub: "Jatuh tempo 1 Des 2026",
         },
         {
