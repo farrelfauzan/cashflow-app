@@ -83,7 +83,7 @@ func (s *Server) listInvoices(w http.ResponseWriter, r *http.Request) {
 		Items: make([]apigen.InvoiceListItem, len(res.Items)), Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
 		Summary: apigen.InvoiceListSummary{
 			Billed: res.Summary.Billed, Paid: res.Summary.Paid, Outstanding: res.Summary.Outstanding,
-			TenantsOutstanding: res.Summary.TenantsOutstanding,
+			TenantsOutstanding: res.Summary.TenantsOutstanding, TenantsWithPromise: res.Summary.TenantsWithPromise,
 		},
 	}
 	if o := res.Summary.OldestOverdue; o != nil {
@@ -103,7 +103,7 @@ func (s *Server) listInvoices(w http.ResponseWriter, r *http.Request) {
 			Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate), IssuedOn: date(inv.IssuedOn),
 			Amount: inv.Amount, Billed: inv.Billed, Paid: inv.Paid, Outstanding: inv.Outstanding,
 			Status: apigen.InvoiceStatus(inv.Status), OverdueDays: inv.OverdueDays, PastPlannedEnd: inv.PastPlannedEnd,
-			Lines: lines,
+			Lines: lines, Promise: toAPIActivePromise(inv.Promise), BrokenPromises: inv.BrokenPromises,
 		}
 	}
 	s.writeJSON(w, http.StatusOK, out)

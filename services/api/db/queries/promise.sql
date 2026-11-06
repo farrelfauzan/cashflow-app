@@ -71,12 +71,35 @@ WHERE v.organization_id = @organization_id AND v.promise_id = ANY(@promise_ids::
 ORDER BY v.promise_id, v.version;
 
 -- name: ListPromiseCoveredInvoices :many
--- The invoices the given versions cover, in FIFO order (oldest period first).
+-- The invoices the given versions cover, in FIFO order (oldest period first). lease_ids, when not
+-- NULL, keeps only the invoices of those leases (the ones a member may see in Penagihan).
 SELECT c.promise_version_id, c.invoice_id
 FROM promise_covered_invoice c
 JOIN invoice i ON i.organization_id = c.organization_id AND i.id = c.invoice_id
 WHERE c.organization_id = @organization_id AND c.promise_version_id = ANY(@version_ids::uuid[])
+  AND (sqlc.narg(lease_ids)::uuid[] IS NULL OR i.lease_id = ANY(sqlc.narg(lease_ids)::uuid[]))
 ORDER BY c.promise_version_id, i.period, i.seq;
+
+-- name: ListActivePromiseLatest :many
+-- The newest version of each given tenant's active promise (a tenant has at most one), with the
+-- member who made it (none from the tenant page).
+SELECT DISTINCT ON (p.tenant_id)
+       p.tenant_id, p.id AS promise_id, v.id, v.version, v.kind, v.promised_date, v.promised_amount,
+       v.paying_now, v.source, v.note, v.created_at,
+       m.id AS created_by_member_id, su.name AS created_by_name
+FROM payment_promise p
+JOIN promise_version v ON v.organization_id = p.organization_id AND v.promise_id = p.id
+LEFT JOIN membership m ON m.organization_id = v.organization_id AND m.staff_user_id = v.created_by_staff_user_id
+LEFT JOIN staff_user su ON su.id = v.created_by_staff_user_id
+WHERE p.organization_id = @organization_id AND p.tenant_id = ANY(@tenant_ids::uuid[]) AND p.status = 'active'
+ORDER BY p.tenant_id, v.version DESC;
+
+-- name: CountBrokenPromisesByTenant :many
+-- How many promises each given tenant broke, ever; a tenant with none has no row.
+SELECT tenant_id, count(*) AS broken
+FROM payment_promise
+WHERE organization_id = @organization_id AND tenant_id = ANY(@tenant_ids::uuid[]) AND status = 'broken'
+GROUP BY tenant_id;
 
 
 -- name: SumTenantPaymentsSince :one

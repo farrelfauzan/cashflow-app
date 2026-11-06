@@ -39,6 +39,44 @@ func (q *Queries) ClosePromise(ctx context.Context, arg ClosePromiseParams) (int
 	return result.RowsAffected(), nil
 }
 
+const countBrokenPromisesByTenant = `-- name: CountBrokenPromisesByTenant :many
+SELECT tenant_id, count(*) AS broken
+FROM payment_promise
+WHERE organization_id = $1 AND tenant_id = ANY($2::uuid[]) AND status = 'broken'
+GROUP BY tenant_id
+`
+
+type CountBrokenPromisesByTenantParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+}
+
+type CountBrokenPromisesByTenantRow struct {
+	TenantID uuid.UUID
+	Broken   int64
+}
+
+// How many promises each given tenant broke, ever; a tenant with none has no row.
+func (q *Queries) CountBrokenPromisesByTenant(ctx context.Context, arg CountBrokenPromisesByTenantParams) ([]CountBrokenPromisesByTenantRow, error) {
+	rows, err := q.db.Query(ctx, countBrokenPromisesByTenant, arg.OrganizationID, arg.TenantIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountBrokenPromisesByTenantRow
+	for rows.Next() {
+		var i CountBrokenPromisesByTenantRow
+		if err := rows.Scan(&i.TenantID, &i.Broken); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countCoveredInvoicesOwing = `-- name: CountCoveredInvoicesOwing :one
 SELECT count(*)
 FROM promise_covered_invoice c
@@ -256,17 +294,89 @@ func (q *Queries) InsertPromiseVersion(ctx context.Context, arg InsertPromiseVer
 	return err
 }
 
+const listActivePromiseLatest = `-- name: ListActivePromiseLatest :many
+SELECT DISTINCT ON (p.tenant_id)
+       p.tenant_id, p.id AS promise_id, v.id, v.version, v.kind, v.promised_date, v.promised_amount,
+       v.paying_now, v.source, v.note, v.created_at,
+       m.id AS created_by_member_id, su.name AS created_by_name
+FROM payment_promise p
+JOIN promise_version v ON v.organization_id = p.organization_id AND v.promise_id = p.id
+LEFT JOIN membership m ON m.organization_id = v.organization_id AND m.staff_user_id = v.created_by_staff_user_id
+LEFT JOIN staff_user su ON su.id = v.created_by_staff_user_id
+WHERE p.organization_id = $1 AND p.tenant_id = ANY($2::uuid[]) AND p.status = 'active'
+ORDER BY p.tenant_id, v.version DESC
+`
+
+type ListActivePromiseLatestParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+}
+
+type ListActivePromiseLatestRow struct {
+	TenantID          uuid.UUID
+	PromiseID         uuid.UUID
+	ID                uuid.UUID
+	Version           int32
+	Kind              string
+	PromisedDate      time.Time
+	PromisedAmount    *int64
+	PayingNow         int64
+	Source            string
+	Note              *string
+	CreatedAt         time.Time
+	CreatedByMemberID uuid.NullUUID
+	CreatedByName     *string
+}
+
+// The newest version of each given tenant's active promise (a tenant has at most one), with the
+// member who made it (none from the tenant page).
+func (q *Queries) ListActivePromiseLatest(ctx context.Context, arg ListActivePromiseLatestParams) ([]ListActivePromiseLatestRow, error) {
+	rows, err := q.db.Query(ctx, listActivePromiseLatest, arg.OrganizationID, arg.TenantIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActivePromiseLatestRow
+	for rows.Next() {
+		var i ListActivePromiseLatestRow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.PromiseID,
+			&i.ID,
+			&i.Version,
+			&i.Kind,
+			&i.PromisedDate,
+			&i.PromisedAmount,
+			&i.PayingNow,
+			&i.Source,
+			&i.Note,
+			&i.CreatedAt,
+			&i.CreatedByMemberID,
+			&i.CreatedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPromiseCoveredInvoices = `-- name: ListPromiseCoveredInvoices :many
 SELECT c.promise_version_id, c.invoice_id
 FROM promise_covered_invoice c
 JOIN invoice i ON i.organization_id = c.organization_id AND i.id = c.invoice_id
 WHERE c.organization_id = $1 AND c.promise_version_id = ANY($2::uuid[])
+  AND ($3::uuid[] IS NULL OR i.lease_id = ANY($3::uuid[]))
 ORDER BY c.promise_version_id, i.period, i.seq
 `
 
 type ListPromiseCoveredInvoicesParams struct {
 	OrganizationID uuid.UUID
 	VersionIds     []uuid.UUID
+	LeaseIds       []uuid.UUID
 }
 
 type ListPromiseCoveredInvoicesRow struct {
@@ -274,9 +384,10 @@ type ListPromiseCoveredInvoicesRow struct {
 	InvoiceID        uuid.UUID
 }
 
-// The invoices the given versions cover, in FIFO order (oldest period first).
+// The invoices the given versions cover, in FIFO order (oldest period first). lease_ids, when not
+// NULL, keeps only the invoices of those leases (the ones a member may see in Penagihan).
 func (q *Queries) ListPromiseCoveredInvoices(ctx context.Context, arg ListPromiseCoveredInvoicesParams) ([]ListPromiseCoveredInvoicesRow, error) {
-	rows, err := q.db.Query(ctx, listPromiseCoveredInvoices, arg.OrganizationID, arg.VersionIds)
+	rows, err := q.db.Query(ctx, listPromiseCoveredInvoices, arg.OrganizationID, arg.VersionIds, arg.LeaseIds)
 	if err != nil {
 		return nil, err
 	}

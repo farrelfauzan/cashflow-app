@@ -45,7 +45,7 @@ type Service struct {
 	authz    *authz.Service
 	clock    clock.Clock
 	log      *slog.Logger
-	payments PaymentHook
+	promises Promises
 }
 
 // PaymentHook runs inside the transaction of every manual payment RecordPayment inserts, after
@@ -56,14 +56,14 @@ type PaymentHook interface {
 	PaymentRecorded(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID) error
 }
 
-// NewService returns a Service. c decides "today" in Asia/Jakarta. payments is required: a
-// Service without it would record payments that never close the promise they keep, so a nil one
-// stops the program at wiring time.
-func NewService(st *store.Store, az *authz.Service, c clock.Clock, log *slog.Logger, payments PaymentHook) *Service {
-	if payments == nil {
-		panic("billing.NewService: a PaymentHook is required (promise.NewCloser)")
+// NewService returns a Service. c decides "today" in Asia/Jakarta. promises is required: a
+// Service without it would record payments that never close the promise they keep, and could not
+// show promises to staff, so a nil one stops the program at wiring time.
+func NewService(st *store.Store, az *authz.Service, c clock.Clock, log *slog.Logger, promises Promises) *Service {
+	if promises == nil {
+		panic("billing.NewService: a Promises hook is required (promise.NewCloser)")
 	}
-	return &Service{store: st, authz: az, clock: c, log: log, payments: payments}
+	return &Service{store: st, authz: az, clock: c, log: log, promises: promises}
 }
 
 // Result counts what one generation run did.

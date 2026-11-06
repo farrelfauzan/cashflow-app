@@ -51,6 +51,9 @@ summarizes, reminds and reports.
   Cloud API needs a registered company (PT) and a verified Meta business we do not have yet.
   GOWA, Twilio and a later Cloud API adapter all sit behind `MessagingProvider`, so switching
   never touches callers. See "Messaging".
+- **Telegram** (decision 42, 2026-11-06): a platform bot is added as a second channel, not a
+  replacement. Staff first (linking, login codes, notifications), tenants who opt in after
+  slice 5. Not built yet.
 - Ask before deviating from any decision marked **Decided** below.
 
 ## Decisions
@@ -61,14 +64,15 @@ summarizes, reminds and reports.
 | Money | **Decided** | Integer rupiah (`int64` in Go, `bigint` in Postgres). Never floats. |
 | Timezone | **Decided** | Asia/Jakarta for every date rule (H-3, H0, payroll day, ...). |
 | Penyewa auth | **Decided** | No accounts. Signed per-invoice token links. |
-| Staff auth | **Decided** | OTP over WhatsApp (admin, karyawan, Supervisor). |
+| Staff auth | **Decided** | OTP over WhatsApp (admin, karyawan, Supervisor), or over Telegram for a staff member who linked the platform bot, with WhatsApp as the fallback (decision 42). |
 | Authorization | **Decided** | RBAC in the style of AWS IAM: `resource:verb` permissions, policy documents with Allow/Deny statements, default deny, explicit Deny wins. Details in "Authorization (RBAC)". |
 | Multi-tenancy | **Decided** | `organization_id` on every business row, enforced in app layer AND Postgres RLS. |
-| Provider interfaces | **Decided** | `MessagingProvider` (adapters: `gowa`, `twilio`, `devlog` for development, a Cloud API adapter later), `BankTransferProvider`, and an AutoGoPay client, each with fakes. `DisbursementProvider` is deferred (see Disbursement). |
+| Provider interfaces | **Decided** | `MessagingProvider` (adapters: `gowa`, `twilio`, `telegram` (decision 42), `devlog` for development, a Cloud API adapter later), `BankTransferProvider`, and an AutoGoPay client, each with fakes. `DisbursementProvider` is deferred (see Disbursement). |
 | Web / API / data / infra | **Decided** | Next.js 16 App Router PWA (React 19, TypeScript strict) + Tailwind 4 (one responsive app), TanStack Query, shadcn/ui, Go API and worker (one module, two binaries), PostgreSQL, Redis for the queue, Docker Compose on a VPS. |
 | Data layer | **Decided** | sqlc over pgx v5 with goose SQL migrations, no ORM. ent was compared and rejected: money rules are easier to review and safer as plain SQL, and the team is new to Go. |
 | Libraries and tooling | Tentative | chi, pgx v5, goose, asynq on Redis (replaces BullMQ), OpenAPI contract with oapi-codegen for Go and Orval for the web (TypeScript types, request functions and TanStack Query hooks through one axios mutator; replaces `packages/shared`), react-hook-form with a zod resolver for forms (zod only for friendly early messages, decision 20), S3-compatible storage (R2), Caddy, GitHub Actions with GHCR. Queue library is revisited after slice 3 (River, Postgres-backed, is the alternative). |
 | WhatsApp account | **Decided** | ONE platform-owned number sends for every organization. No per-org WA numbers or tokens. Which provider drives it is open ("WhatsApp provider" below, decision 35). |
+| Telegram | **Decided** | An additional channel beside WhatsApp (decision 42): ONE platform bot (BotFather) for every organization, no per-org bots. Stage 1: staff link their Telegram and get login codes and staff notifications there. Stage 2, after slice 5: tenants opt in from the payment page and get reminders there, and can leave with /stop (an admin can also switch them back). WhatsApp stays for everyone who has not linked, and is the fallback when Telegram fails. See "Messaging". |
 | WhatsApp provider | Open | Built: GOWA (self-hosted `aldinokemal/go-whatsapp-web-multidevice`, pinned image), chosen for launch because the Cloud API needs a registered company (PT) and there is none yet; WhatsApp restricted its number on 2026-11-01. Twilio (decision 35, the user's choice of 2026-11-01): the sandbox in development now; a verified Twilio sender would need approved templates. Later: WhatsApp Cloud API, integrated directly, once a PT and a verified Meta business exist. The pilot and launch provider is decided once the company and Meta verification question is answered. All sit behind `MessagingProvider`; templates have names and ordered parameters and buttons carry both a payload and a link, so a switch is a new adapter, not a rewrite. |
 | Disbursement | Deferred | No `DisbursementProvider` for now: payroll is paid by hand and recorded in the app, as in the design. Revisit (Flip for Business or Xendit) only if the owner wants the app to send money. Confirm by week 14 of the project plan. |
 | Bank transfer | **Decided** | Manual for now (decision 38): the payment page shows the organization's bank account and asks for the tenant's name in the transfer note, and the admin records the transfer as a manual payment. The proof photo upload comes in slice 6. No virtual-account provider yet; a static VA per tenant or bank-mutation polling (e.g. Moota) can be added later behind `BankTransferProvider`. |
@@ -461,6 +465,16 @@ parameters and optional buttons; the adapter turns that into what its provider a
 Every message goes to `message_log` with its status and `organization_id`.
 
 **Adapters**
+- `telegram` (decision 42): the platform bot through the Bot API, with the token in
+  `TELEGRAM_BOT_TOKEN` (a secret: validated at startup, never logged or sent anywhere). A bot can
+  message only a chat that pressed Start, so a recipient is reached on Telegram only after
+  linking: a staff member from the app with a one-time code (or by sharing their contact), a
+  tenant from the payment page with a one-time deep-link code bound to the lease (stage 2; the
+  link token never goes to Telegram). The chat id is stored for that staff user or lease, never
+  matched from a phone number. Rate limits (about 30 messages a second overall, 1 a second per
+  chat) are paced through the queue; a Telegram error falls back to WhatsApp. Buttons are inline
+  keyboard buttons carrying the same payload and link. Tests use an `httptest` server like
+  `gowa` and `twilio`.
 - `gowa`: a self-hosted GOWA server drives the platform number, linked like WhatsApp
   Web. The API calls `POST /send/message` with basic auth (`GOWA_URL`, `GOWA_USERNAME`,
   `GOWA_PASSWORD`, optional `GOWA_DEVICE_ID`). GOWA's error codes map to `ErrRateLimited`,
@@ -490,6 +504,12 @@ none.
 **Buttons** carry an opaque `Payload` (maps back to org + invoice, lease or payroll run) and a
 `URL` to our page that does the same thing. GOWA has no native buttons, so it sends the links:
 "Setujui" (Supervisor), "Bayar" / "Ubah janji" (tenant) open our pages.
+
+**Inbound (Telegram)**: the bot's webhook, `/webhooks/telegram`, checks the
+`X-Telegram-Bot-Api-Secret-Token` header (`TELEGRAM_WEBHOOK_SECRET`) with a constant-time compare
+before parsing. An update resolves its organization from the chat's stored link (staff user or
+lease) or the one-time code it carries, never from the sender alone; a staff user in several
+organizations is resolved the same way as on WhatsApp.
 
 **Inbound** (slice 5): GOWA posts events to `/webhooks/gowa`, signed with HMAC-SHA256 of the
 raw body in `X-Hub-Signature-256` (`WHATSAPP_WEBHOOK_SECRET`). Verify before parsing. Resolve

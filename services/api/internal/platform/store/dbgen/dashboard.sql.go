@@ -510,7 +510,11 @@ SELECT coalesce(sum(b.billed), 0)::bigint                                 AS bil
        coalesce(sum(b.paid), 0)::bigint                                   AS paid,
        coalesce(sum(b.outstanding), 0)::bigint                            AS outstanding,
        count(*)::bigint                                                   AS invoice_count,
-       count(DISTINCT b.tenant_id) FILTER (WHERE b.outstanding > 0)::bigint AS tenants_outstanding
+       count(DISTINCT b.tenant_id) FILTER (WHERE b.outstanding > 0)::bigint AS tenants_outstanding,
+       count(DISTINCT b.tenant_id) FILTER (WHERE b.outstanding > 0 AND EXISTS (
+           SELECT 1 FROM payment_promise p
+           WHERE p.organization_id = b.organization_id AND p.tenant_id = b.tenant_id AND p.status = 'active'
+       ))::bigint                                                         AS tenants_with_promise
 FROM invoice_balance b
 JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
@@ -534,6 +538,7 @@ type SumMonthInvoicesRow struct {
 	Outstanding        int64
 	InvoiceCount       int64
 	TenantsOutstanding int64
+	TenantsWithPromise int64
 }
 
 // The Supervisor's dashboard and Penagihan (T-053). Read-only, in an organization scope
@@ -541,7 +546,8 @@ type SumMonthInvoicesRow struct {
 // the organization; each query gets the visible leases in lease_ids and counts only the invoices
 // of those leases. A month's invoices are those whose period starts in [month_start, month_end).
 // What the month's visible invoices bill, what is paid on them and what they still owe, how many
-// there are (cancelled ones included) and how many tenants still owe something on one of them.
+// there are (cancelled ones included), how many tenants still owe something on one of them, and
+// how many of those tenants have an active payment promise.
 func (q *Queries) SumMonthInvoices(ctx context.Context, arg SumMonthInvoicesParams) (SumMonthInvoicesRow, error) {
 	row := q.db.QueryRow(ctx, sumMonthInvoices,
 		arg.OrganizationID,
@@ -557,6 +563,7 @@ func (q *Queries) SumMonthInvoices(ctx context.Context, arg SumMonthInvoicesPara
 		&i.Outstanding,
 		&i.InvoiceCount,
 		&i.TenantsOutstanding,
+		&i.TenantsWithPromise,
 	)
 	return i, err
 }
