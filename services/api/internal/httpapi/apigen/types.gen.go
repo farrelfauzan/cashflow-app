@@ -1520,7 +1520,7 @@ type PaymentPage struct {
 	// Invoice The invoice the link was sent for, whatever its state.
 	Invoice PaymentPageInvoice `json:"invoice"`
 
-	// NextInvoiceDueDate The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
+	// NextInvoiceDueDate The due date a with_next_invoice promise would take ("Bareng tagihan berikutnya"): the earliest due date after today among the tenant's leases that will still bill, whether that invoice is already made or not: the next bill to fall due. An invoice belongs to the month of its due date, so the page labels the choice by this date's month ("Bareng tagihan November · Jatuh tempo 13 Nov 2026"). Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest; then the page does not offer that choice.
 	NextInvoiceDueDate *openapi_types.Date `json:"nextInvoiceDueDate"`
 
 	// OpenInvoices The invoices that still owe something, oldest period first. Empty when paid.
