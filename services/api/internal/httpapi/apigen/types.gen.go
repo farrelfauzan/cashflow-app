@@ -1434,8 +1434,11 @@ type PaymentPage struct {
 	Outstanding int64 `json:"outstanding"`
 
 	// Paid True when the tenant owes nothing.
-	Paid       bool   `json:"paid"`
-	TenantName string `json:"tenantName"`
+	Paid bool `json:"paid"`
+
+	// QrisAvailable True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
+	QrisAvailable bool   `json:"qrisAvailable"`
+	TenantName    string `json:"tenantName"`
 }
 
 // PaymentPageInvoice defines model for PaymentPageInvoice.
@@ -1532,6 +1535,9 @@ type PropertyList struct {
 type QrisStatus struct {
 	// Amount The latest attempt's amount in rupiah; absent when status is none.
 	Amount *int64 `json:"amount,omitempty"`
+
+	// CheckedAt When the tenant said they paid ("Saya sudah bayar"); present only while status is checking.
+	CheckedAt *time.Time `json:"checkedAt,omitempty"`
 
 	// ExpiresAt When the latest attempt's QR expires; absent when status is none.
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`

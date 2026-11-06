@@ -13,4 +13,6 @@ export interface QrisStatus {
   amount?: number;
   /** When the latest attempt's QR expires; absent when status is none. */
   expiresAt?: string;
+  /** When the tenant said they paid ("Saya sudah bayar"); present only while status is checking. */
+  checkedAt?: string;
 }

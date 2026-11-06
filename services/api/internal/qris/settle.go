@@ -158,5 +158,9 @@ func view(a *Attempt, now time.Time) PublicView {
 	if a == nil {
 		return PublicView{Status: StatusNone}
 	}
-	return PublicView{Status: PublicStatus(a, now), Amount: a.Amount, ExpiresAt: a.ExpiresAt}
+	v := PublicView{Status: PublicStatus(a, now), Amount: a.Amount, ExpiresAt: a.ExpiresAt}
+	if v.Status == StatusChecking {
+		v.CheckedAt = a.CheckRequestedAt
+	}
+	return v
 }

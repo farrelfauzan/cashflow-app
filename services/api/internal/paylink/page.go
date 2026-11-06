@@ -33,6 +33,9 @@ type Page struct {
 	OpenInvoices []PageInvoice
 	// BankAccount is where to transfer by hand; nil when the organization has not set one.
 	BankAccount *BankAccount
+	// QRISAvailable is true when the organization has an AutoGoPay account, so the page offers
+	// QRIS. It says nothing about whether AutoGoPay is up right now.
+	QRISAvailable bool
 }
 
 // PageInvoice is one invoice as the tenant sees it.
@@ -126,6 +129,10 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 	if err != nil {
 		return Page{}, err
 	}
+	qrisAvailable, err := q.HasAutogopayAccount(ctx, org)
+	if err != nil {
+		return Page{}, fmt.Errorf("paylink: checking for an AutoGoPay account: %w", err)
+	}
 
 	out := Page{
 		OrganizationName: o.DisplayName,
@@ -135,6 +142,7 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 		Paid:             acct.Outstanding == 0,
 		OpenInvoices:     []PageInvoice{},
 		BankAccount:      bank,
+		QRISAvailable:    qrisAvailable,
 	}
 	found := false
 	for _, inv := range acct.Invoices {

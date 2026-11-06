@@ -86,5 +86,6 @@ func toAPIQrisStatus(v qris.PublicView) apigen.QrisStatus {
 		amount, expires := v.Amount, v.ExpiresAt
 		out.Amount, out.ExpiresAt = &amount, &expires
 	}
+	out.CheckedAt = v.CheckedAt
 	return out
 }

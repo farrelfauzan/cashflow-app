@@ -3076,8 +3076,14 @@ components:
 
     PaymentPage:
       type: object
-      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount]
+      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable]
       properties:
+        qrisAvailable:
+          type: boolean
+          description: >
+            True when the organization has set up QRIS (an AutoGoPay account), so the page offers
+            "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing
+            about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
         organizationName: { type: string, description: "The organization's display name: who bills the tenant." }
         tenantName: { type: string }
         invoice:
@@ -3131,3 +3137,9 @@ components:
           type: string
           format: date-time
           description: When the latest attempt's QR expires; absent when status is none.
+        checkedAt:
+          type: string
+          format: date-time
+          description: >
+            When the tenant said they paid ("Saya sudah bayar"); present only while status is
+            checking.

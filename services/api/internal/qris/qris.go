@@ -194,6 +194,8 @@ type PublicView struct {
 	Status    Status
 	Amount    int64
 	ExpiresAt time.Time
+	// CheckedAt is when the tenant said they paid; set only while Status is StatusChecking.
+	CheckedAt *time.Time
 }
 
 // PublicStatus reads what the page shows about the latest attempt of the tenant behind token.
@@ -201,10 +203,7 @@ type PublicView struct {
 func (s *Service) PublicStatus(ctx context.Context, token string) (PublicView, error) {
 	var out PublicView
 	err := s.withLink(ctx, token, func(_ *dbgen.Queries, _, _ uuid.UUID, a *Attempt) error {
-		out.Status = PublicStatus(a, s.clock.Now())
-		if a != nil {
-			out.Amount, out.ExpiresAt = a.Amount, a.ExpiresAt
-		}
+		out = view(a, s.clock.Now())
 		return nil
 	})
 	if err != nil {
