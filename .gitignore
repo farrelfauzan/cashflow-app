@@ -5,6 +5,13 @@
 
 # Go
 services/api/bin/
+# Binaries left by `go build ./cmd/...` run inside services/api.
+services/api/api
+services/api/worker
+services/api/migrate
+services/api/admin
+services/api/telegrampoll
+services/api/fakeautogopay
 *.test
 *.out
 coverage.html
