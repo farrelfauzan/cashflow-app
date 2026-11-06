@@ -106,6 +106,8 @@ export * from './property';
 export * from './propertyInput';
 export * from './propertyKind';
 export * from './propertyList';
+export * from './qrisStatus';
+export * from './qrisStatusStatus';
 export * from './roleGrant';
 export * from './roleGrantRole';
 export * from './roleRef';

@@ -264,6 +264,33 @@ func (e PropertyKind) Valid() bool {
 	}
 }
 
+// Defines values for QrisStatusStatus.
+const (
+	QrisStatusStatusChecking QrisStatusStatus = "checking"
+	QrisStatusStatusExpired  QrisStatusStatus = "expired"
+	QrisStatusStatusNone     QrisStatusStatus = "none"
+	QrisStatusStatusPaid     QrisStatusStatus = "paid"
+	QrisStatusStatusPending  QrisStatusStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the QrisStatusStatus enum.
+func (e QrisStatusStatus) Valid() bool {
+	switch e {
+	case QrisStatusStatusChecking:
+		return true
+	case QrisStatusStatusExpired:
+		return true
+	case QrisStatusStatusNone:
+		return true
+	case QrisStatusStatusPaid:
+		return true
+	case QrisStatusStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RoleGrantRole.
 const (
 	Admin      RoleGrantRole = "admin"
@@ -1492,6 +1519,21 @@ type PropertyList struct {
 	// Total Every row matching the filters that the member may see, on all pages.
 	Total int `json:"total"`
 }
+
+// QrisStatus defines model for QrisStatus.
+type QrisStatus struct {
+	// Amount The latest attempt's amount in rupiah; absent when status is none.
+	Amount *int64 `json:"amount,omitempty"`
+
+	// ExpiresAt When the latest attempt's QR expires; absent when status is none.
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+
+	// Status none: no QR yet. pending: the QR can be paid. checking: the tenant said they paid and no answer has come yet. paid: the attempt was paid. expired: the QR expired or was cancelled; the tenant makes a new one.
+	Status QrisStatusStatus `json:"status"`
+}
+
+// QrisStatusStatus none: no QR yet. pending: the QR can be paid. checking: the tenant said they paid and no answer has come yet. paid: the attempt was paid. expired: the QR expired or was cancelled; the tenant makes a new one.
+type QrisStatusStatus string
 
 // RoleGrant defines model for RoleGrant.
 type RoleGrant struct {

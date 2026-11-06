@@ -235,6 +235,22 @@ type Property struct {
 	UpdatedAt      time.Time
 }
 
+type QrisAttempt struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	PaymentLinkID    uuid.UUID
+	Amount           int64
+	TransactionID    string
+	OrderID          string
+	QrString         string
+	Status           string
+	ExpiresAt        time.Time
+	CreatedAt        time.Time
+	ClosedAt         *time.Time
+	CheckRequestedAt *time.Time
+}
+
 type Role struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

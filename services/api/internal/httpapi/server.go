@@ -21,6 +21,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
@@ -51,6 +52,8 @@ type Deps struct {
 	Billing *billing.Service
 	// PayLinks mints and revokes tenant payment links and reads the public payment page.
 	PayLinks *paylink.Service
+	// QRIS reads the tenant's latest QRIS attempt behind a payment link: its status and image.
+	QRIS *qris.Service
 	// PublicLimiter rate-limits the public payment page per token and per client address.
 	PublicLimiter ratelimit.Limiter
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
@@ -93,6 +96,8 @@ func New(d Deps) *Server {
 		r.Post("/auth/otp/verify", s.verifyLoginCode)
 		// The tenant payment page: public, no session; the token in the path is the access.
 		r.With(publicPageHeaders).Get("/t/{token}", s.getPaymentPage)
+		r.With(publicPageHeaders).Get("/t/{token}/status", s.getPaymentStatus)
+		r.With(publicPageHeaders).Get("/t/{token}/qris.png", s.getPaymentQRImage)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireSession)

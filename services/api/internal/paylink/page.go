@@ -69,31 +69,43 @@ func (s *Service) PublicPage(ctx context.Context, token string) (Page, error) {
 	}
 	var out Page
 	err = s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
-		q := dbgen.New(tx)
-		link, err := q.GetPaymentLink(ctx, dbgen.GetPaymentLinkParams{OrganizationID: org, ID: linkID})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrLinkNotFound
-		}
+		tenantID, invoiceID, err := s.OpenLink(ctx, tx, org, linkID)
 		if err != nil {
-			return fmt.Errorf("paylink: loading the link: %w", err)
+			return err
 		}
-		if link.RevokedAt != nil {
-			return ErrLinkNotFound
-		}
-		st, err := q.GetInvoiceSettlement(ctx, dbgen.GetInvoiceSettlementParams{OrganizationID: org, InvoiceID: link.InvoiceID})
-		if err != nil {
-			return fmt.Errorf("paylink: reading the invoice's balance: %w", err)
-		}
-		if Expired(s.clock.Now(), st.Outstanding, st.SettledAt) {
-			return ErrLinkExpired
-		}
-		out, err = s.readPage(ctx, tx, q, org, link.TenantID, link.InvoiceID)
+		out, err = s.readPage(ctx, tx, dbgen.New(tx), org, tenantID, invoiceID)
 		return err
 	})
 	if err != nil {
 		return Page{}, err
 	}
 	return out, nil
+}
+
+// OpenLink checks, inside tx scoped to org, that the link a token resolved to (Resolve) still
+// works, and returns its tenant and invoice. A missing or revoked link is ErrLinkNotFound; a link
+// whose invoice was paid or cancelled LinkLifetimeAfterPaid ago or longer is ErrLinkExpired. Every
+// public endpoint behind a token opens the link this way before reading anything else.
+func (s *Service) OpenLink(ctx context.Context, tx pgx.Tx, org, linkID uuid.UUID) (tenantID, invoiceID uuid.UUID, err error) {
+	q := dbgen.New(tx)
+	link, err := q.GetPaymentLink(ctx, dbgen.GetPaymentLinkParams{OrganizationID: org, ID: linkID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, ErrLinkNotFound
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("paylink: loading the link: %w", err)
+	}
+	if link.RevokedAt != nil {
+		return uuid.Nil, uuid.Nil, ErrLinkNotFound
+	}
+	st, err := q.GetInvoiceSettlement(ctx, dbgen.GetInvoiceSettlementParams{OrganizationID: org, InvoiceID: link.InvoiceID})
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("paylink: reading the invoice's balance: %w", err)
+	}
+	if Expired(s.clock.Now(), st.Outstanding, st.SettledAt) {
+		return uuid.Nil, uuid.Nil, ErrLinkExpired
+	}
+	return link.TenantID, link.InvoiceID, nil
 }
 
 // readPage reads what the page shows for a link that works.

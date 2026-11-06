@@ -1473,6 +1473,86 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "429": { $ref: "#/components/responses/Error" }
 
+  /t/{token}/status:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The secret in the payment link. Never log it or send it anywhere else.
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+    get:
+      tags: [payment-page]
+      operationId: getPaymentStatus
+      summary: The state of the tenant's latest QRIS attempt (public; polled by the payment page)
+      description: >
+        No session: the token is the access, as for getPaymentPage, and link errors answer the
+        same. Attempts belong to the tenant, so every working link of the tenant shows the same
+        latest attempt. none means no QR was made yet; pending means the QR can be paid; checking
+        means the tenant said they paid and no answer has come yet ("Sedang dicek"); paid means
+        the attempt was paid; expired means the QR expired or was cancelled ("QR kedaluwarsa").
+        A pending QR at or past its expiry shows as expired unless a check was asked for; a late
+        payment is still recorded when it arrives. The latest attempt can be old (paid or
+        abandoned weeks ago), so the page chooses its first state from getPaymentPage (paid,
+        outstanding) and reads this only to resume a pending or checking QR or to poll a QR made
+        in this visit; it never shows a paid or expired answer from before the visit. Limited
+        per token and per client address together with getPaymentPage (429 rate_limited).
+        Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QrisStatus" }
+        "404":
+          description: "No working link with this token (code payment_link_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: "The link's invoice was paid or cancelled 30 days ago or longer (code payment_link_expired)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /t/{token}/qris.png:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The secret in the payment link. Never log it or send it anywhere else.
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+    get:
+      tags: [payment-page]
+      operationId: getPaymentQRImage
+      summary: The QR image of the tenant's live QRIS attempt (public; the token is the access)
+      description: >
+        A PNG drawn by the API, with the amount, the unit and property of the link's invoice and
+        the expiry printed under the code, so the page loads no third-party image. Link errors
+        answer as for getPaymentPage. 404 qris_not_found when the tenant has no QR yet; 410
+        qris_expired when the latest QR expired, was paid or was cancelled, or is at or past its
+        expiry. Limited per token and per client address together with getPaymentPage (429
+        rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+      security: []
+      responses:
+        "200":
+          description: The QR image
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404":
+          description: "No working link with this token (code payment_link_not_found), or no QR yet (code qris_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: "The link expired (code payment_link_expired), or the QR can no longer be paid (code qris_expired)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
 components:
   parameters:
     OrgId:
@@ -2890,3 +2970,23 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/BankAccount"
+
+    QrisStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [none, pending, checking, paid, expired]
+          description: >
+            none: no QR yet. pending: the QR can be paid. checking: the tenant said they paid and
+            no answer has come yet. paid: the attempt was paid. expired: the QR expired or was
+            cancelled; the tenant makes a new one.
+        amount:
+          type: integer
+          format: int64
+          description: The latest attempt's amount in rupiah; absent when status is none.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the latest attempt's QR expires; absent when status is none.
