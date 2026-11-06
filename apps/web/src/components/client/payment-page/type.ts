@@ -84,6 +84,13 @@ export type PartialPayMode =
   // A chosen amount, paid by QRIS. `outstandingAfter` is the preview's, kept when it was chosen.
   | { kind: "chosen"; text: string; amount: number; outstandingAfter: number };
 
+// The chosen-amount card above the tabs: the amount formatted, and what stays owed (null when
+// it pays everything or when the QR's amount is not the chosen one).
+export type ChosenAmountView = {
+  amount: string;
+  remainderLine: string | null;
+};
+
 // What the amount field of "Bayar sebagian" holds, checked by comparison only.
 export type PartialAmountCheck =
   // Nothing (or 0) typed: no preview, no message, the primary waits.

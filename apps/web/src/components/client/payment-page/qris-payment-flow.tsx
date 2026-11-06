@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import type { PaymentPage } from "@/lib/api/generated/model";
-import { formatRupiah } from "@/lib/format/rupiah";
 
 import { ChosenAmountCard } from "./chosen-amount-card";
 import { PartialEntry } from "./partial-entry";
@@ -25,7 +24,7 @@ import {
   canChangePartialAmount,
   changePartialAmount,
   choosePartial,
-  chosenRemainderLine,
+  chosenAmountView,
   openPartialEntry,
   partialModeAfterCard,
   qrisAnnouncement,
@@ -88,8 +87,7 @@ export function QrisPaymentFlow({
             <PaymentPageHeader header={partialHeader} />
             {card.kind !== "checking" && (
               <ChosenAmountCard
-                amount={formatRupiah(mode.amount)}
-                remainderLine={chosenRemainderLine(mode.outstandingAfter)}
+                {...chosenAmountView(mode.amount, mode.outstandingAfter, card)}
                 onChange={
                   canChangePartialAmount(card)
                     ? () => setMode(changePartialAmount(mode))

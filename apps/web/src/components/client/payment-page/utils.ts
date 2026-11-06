@@ -16,6 +16,7 @@ import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { groupRupiahDigits } from "@/lib/format/rupiah-input";
 
 import type {
+  ChosenAmountView,
   CopyStatus,
   OpenPaymentPageView,
   PaidPaymentPageView,
@@ -946,6 +947,29 @@ export function chosenRemainderLine(outstandingAfter: number): string | null {
     : null;
 }
 
+// The chosen-amount card: the amount of the QR once there is one, since a QR is capped at what is
+// owed when it is made (a payment recorded meanwhile makes the next QR smaller). The remainder
+// line came from the preview of the chosen amount, so it shows only while the QR's amount is that
+// amount. Comparisons only.
+export function chosenAmountView(
+  chosen: number,
+  outstandingAfter: number,
+  card: QrisCard,
+): ChosenAmountView {
+  const qrAmount =
+    (card.kind === "pending" ||
+      card.kind === "checking" ||
+      card.kind === "expired") &&
+    card.amount !== null
+      ? card.amount
+      : chosen;
+  return {
+    amount: formatRupiah(qrAmount),
+    remainderLine:
+      qrAmount === chosen ? chosenRemainderLine(outstandingAfter) : null,
+  };
+}
+
 // The "Uang ini dipakai untuk" card, from the API's answer as is.
 export function previewView(preview: PaymentPreview): PreviewView {
   return {
@@ -1025,9 +1049,10 @@ const QR_IN_FLIGHT: ReadonlySet<QrisCard["kind"]> = new Set([
   "checking",
 ]);
 
-// After the card changes: a chosen amount whose QR was paid (the card went back to idle without
-// an alert, and the page is read again) returns to the full page, so the tenant sees what is
-// left. A failed create comes back to idle with an alert and keeps the chosen amount.
+// After the card changes: a chosen amount whose QR is paid or gone (the card went back to idle
+// without an alert: paid, a status of "none", or a check's qris_not_found) returns to the full
+// page, which shows what is owed now. A failed create comes back to idle with an alert and keeps
+// the chosen amount.
 export function partialModeAfterCard(
   mode: PartialPayMode,
   previous: QrisCard,

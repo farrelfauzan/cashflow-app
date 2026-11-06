@@ -22,6 +22,7 @@ import {
   canChangePartialAmount,
   changePartialAmount,
   choosePartial,
+  chosenAmountView,
   chosenRemainderLine,
   openPartialEntry,
   partialAmountCheck,
@@ -1677,6 +1678,56 @@ describe("partial labels", () => {
       "Sisa Rp1.250.000 tetap jadi tagihan.",
     );
     expect(chosenRemainderLine(0)).toBeNull();
+  });
+});
+
+describe("chosenAmountView", () => {
+  it("shows the chosen amount and what stays owed before any QR", () => {
+    expect(chosenAmountView(1_000_000, 500_000, { kind: "idle" })).toEqual({
+      amount: "Rp1.000.000",
+      remainderLine: "Sisa Rp500.000 tetap jadi tagihan.",
+    });
+  });
+
+  it("keeps the remainder while the QR is for the chosen amount", () => {
+    expect(
+      chosenAmountView(1_000_000, 500_000, {
+        kind: "pending",
+        amount: 1_000_000,
+        expiresAt: "2026-11-06T12:15:00Z",
+      }),
+    ).toEqual({
+      amount: "Rp1.000.000",
+      remainderLine: "Sisa Rp500.000 tetap jadi tagihan.",
+    });
+  });
+
+  it("shows the QR's amount and no stale remainder when a payment made the QR smaller", () => {
+    // Owed Rp1.500.000, chose Rp1.000.000; the QR expired, Rp800.000 cash was recorded, and the
+    // new QR is capped at the Rp700.000 still owed.
+    const view = {
+      amount: "Rp700.000",
+      remainderLine: null,
+    };
+    expect(
+      chosenAmountView(1_000_000, 500_000, {
+        kind: "pending",
+        amount: 700_000,
+        expiresAt: "2026-11-06T12:15:00Z",
+      }),
+    ).toEqual(view);
+    expect(
+      chosenAmountView(1_000_000, 500_000, {
+        kind: "expired",
+        amount: 700_000,
+      }),
+    ).toEqual(view);
+  });
+
+  it("falls back to the chosen amount when the QR's amount is unknown", () => {
+    expect(
+      chosenAmountView(1_000_000, 0, { kind: "expired", amount: null }),
+    ).toEqual({ amount: "Rp1.000.000", remainderLine: null });
   });
 });
 
