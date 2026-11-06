@@ -83,7 +83,7 @@ func (s *Server) listInvoices(w http.ResponseWriter, r *http.Request) {
 		Items: make([]apigen.InvoiceListItem, len(res.Items)), Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
 		Summary: apigen.InvoiceListSummary{
 			Billed: res.Summary.Billed, Paid: res.Summary.Paid, Outstanding: res.Summary.Outstanding,
-			TenantsOutstanding: res.Summary.TenantsOutstanding,
+			TenantsOutstanding: res.Summary.TenantsOutstanding, TenantsWithPromise: res.Summary.TenantsWithPromise,
 		},
 	}
 	if o := res.Summary.OldestOverdue; o != nil {

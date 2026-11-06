@@ -5,12 +5,17 @@
 
 -- name: SumMonthInvoices :one
 -- What the month's visible invoices bill, what is paid on them and what they still owe, how many
--- there are (cancelled ones included) and how many tenants still owe something on one of them.
+-- there are (cancelled ones included), how many tenants still owe something on one of them, and
+-- how many of those tenants have an active payment promise.
 SELECT coalesce(sum(b.billed), 0)::bigint                                 AS billed,
        coalesce(sum(b.paid), 0)::bigint                                   AS paid,
        coalesce(sum(b.outstanding), 0)::bigint                            AS outstanding,
        count(*)::bigint                                                   AS invoice_count,
-       count(DISTINCT b.tenant_id) FILTER (WHERE b.outstanding > 0)::bigint AS tenants_outstanding
+       count(DISTINCT b.tenant_id) FILTER (WHERE b.outstanding > 0)::bigint AS tenants_outstanding,
+       count(DISTINCT b.tenant_id) FILTER (WHERE b.outstanding > 0 AND EXISTS (
+           SELECT 1 FROM payment_promise p
+           WHERE p.organization_id = b.organization_id AND p.tenant_id = b.tenant_id AND p.status = 'active'
+       ))::bigint                                                         AS tenants_with_promise
 FROM invoice_balance b
 JOIN lease l ON l.organization_id = b.organization_id AND l.id = b.lease_id
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id

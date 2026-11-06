@@ -3157,7 +3157,7 @@ components:
 
     InvoiceListSummary:
       type: object
-      required: [billed, paid, outstanding, tenantsOutstanding]
+      required: [billed, paid, outstanding, tenantsOutstanding, tenantsWithPromise]
       description: >
         The month's invoices in the chosen property (propertyId), whatever status, q and page
         are. oldestOverdue is not tied to the month: the oldest debt now, in the chosen property.
@@ -3166,6 +3166,9 @@ components:
         paid: { type: integer, format: int64 }
         outstanding: { type: integer, format: int64 }
         tenantsOutstanding: { type: integer, description: Tenants with a month's invoice still owing something. }
+        tenantsWithPromise:
+          type: integer
+          description: "Of the tenants counted in tenantsOutstanding, those with an active payment promise (9 penyewa, 3 ada janji)."
         oldestOverdue: { $ref: "#/components/schemas/OldestOverdue" }
 
     InvoiceList:

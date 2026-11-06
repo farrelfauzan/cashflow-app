@@ -93,6 +93,13 @@ func TestStaffPromisesOverHTTP(t *testing.T) {
 		}
 		return out
 	}
+	// summary is Penagihan's November summary as c sees it.
+	summary := func(t *testing.T, c *client, org uuid.UUID) apigen.InvoiceListSummary {
+		t.Helper()
+		resp, body := c.do(http.MethodGet, "/api/orgs/"+org.String()+"/invoices?period=2026-11", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		return decode[apigen.InvoiceList](t, body).Summary
+	}
 	requireSameOffer := func(t *testing.T, acct apigen.TenantAccount, p apigen.PaymentPage) {
 		t.Helper()
 		require.Equal(t, p.PromiseDates, acct.PromiseDates, "promiseDates as on the payment page")
@@ -167,6 +174,10 @@ func TestStaffPromisesOverHTTP(t *testing.T) {
 		require.Equal(t, rina.tenantID, newer.TenantId)
 		require.Nil(t, newer.Promise, "a newer invoice the promise does not cover")
 		require.Nil(t, got[sari.invoiceID].Promise, "a tenant without a promise")
+
+		sum := summary(t, admin, a.o.ID)
+		require.Equal(t, 3, sum.TenantsOutstanding, "Rina, Sari and Budi owe")
+		require.Equal(t, 1, sum.TenantsWithPromise, "only Rina has a promise")
 	})
 
 	t.Run("a karyawan sees only their rows, and only the covered invoices they may see", func(t *testing.T) {
@@ -186,6 +197,11 @@ func TestStaffPromisesOverHTTP(t *testing.T) {
 		require.NotNil(t, row.Promise)
 		require.Equal(t, []uuid.UUID{budiKaryawanInvoice}, row.Promise.CoveredInvoiceIds,
 			"the other lease's invoice is not shown to them")
+
+		require.Equal(t, 2, summary(t, admin, a.o.ID).TenantsWithPromise, "Rina and Budi")
+		sum := summary(t, karyawan, a.o.ID)
+		require.Equal(t, 1, sum.TenantsOutstanding, "the karyawan sees only Budi")
+		require.Equal(t, 1, sum.TenantsWithPromise)
 	})
 
 	t.Run("another organization's promises never appear", func(t *testing.T) {

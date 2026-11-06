@@ -133,6 +133,8 @@ type InvoiceSummary struct {
 	Paid               int64
 	Outstanding        int64
 	TenantsOutstanding int
+	// TenantsWithPromise is how many of the TenantsOutstanding tenants have an active promise.
+	TenantsWithPromise int
 	OldestOverdue      *OldestOverdue
 }
 
@@ -416,7 +418,10 @@ func loadInvoiceSummary(ctx context.Context, q *dbgen.Queries, args dbgen.ListIn
 	if err != nil {
 		return InvoiceSummary{}, fmt.Errorf("summing the month's invoices: %w", err)
 	}
-	out := InvoiceSummary{Billed: sum.Billed, Paid: sum.Paid, Outstanding: sum.Outstanding, TenantsOutstanding: int(sum.TenantsOutstanding)}
+	out := InvoiceSummary{
+		Billed: sum.Billed, Paid: sum.Paid, Outstanding: sum.Outstanding,
+		TenantsOutstanding: int(sum.TenantsOutstanding), TenantsWithPromise: int(sum.TenantsWithPromise),
+	}
 	oldest, err := q.GetOldestOverdue(ctx, dbgen.GetOldestOverdueParams{
 		OrganizationID: args.OrganizationID, LeaseIds: args.LeaseIds, Today: args.Today, PropertyID: args.PropertyID,
 	})

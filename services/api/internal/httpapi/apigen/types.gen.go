@@ -1102,6 +1102,9 @@ type InvoiceListSummary struct {
 
 	// TenantsOutstanding Tenants with a month's invoice still owing something.
 	TenantsOutstanding int `json:"tenantsOutstanding"`
+
+	// TenantsWithPromise Of the tenants counted in tenantsOutstanding, those with an active payment promise (9 penyewa, 3 ada janji).
+	TenantsWithPromise int `json:"tenantsWithPromise"`
 }
 
 // InvoiceStatus open: nothing paid; partial: some paid; paid: fully paid; cancelled: corrected to zero. Whether an open or partial invoice is overdue follows from its dueDate (debt from the day after it, Asia/Jakarta).
