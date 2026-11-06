@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   getGetDashboardQueryKey,
   getGetTenantAccountQueryKey,
+  getListTenantOpenInvoicesQueryKey,
   useCreateCorrection,
 } from "@/lib/api/generated/money/money";
 import type { CorrectionDialogView } from "./type";
@@ -72,14 +73,17 @@ export function CorrectionDialog({
     apiError: correctionFormError,
   });
 
-  // The tenant's account, Beranda and Penagihan all show what a correction changes. Cached
-  // money is never patched; the API's answer is the one shown.
+  // The tenant's account and open invoices ("Salin link bayar"), Beranda and Penagihan all show
+  // what a correction changes. Cached money is never patched; the API's answer is the one shown.
   const create = useCreateCorrection({
     mutation: {
       onSuccess: () =>
         Promise.all([
           queryClient.invalidateQueries({
             queryKey: getGetTenantAccountQueryKey(orgId, tenantId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListTenantOpenInvoicesQueryKey(orgId, tenantId),
           }),
           queryClient.invalidateQueries({
             queryKey: getGetDashboardQueryKey(orgId),

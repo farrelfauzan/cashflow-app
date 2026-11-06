@@ -4,6 +4,7 @@ import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 
 import { getListMembersQueryKey } from "@/lib/api/generated/members/members";
 import type { Lease } from "@/lib/api/generated/model";
+import { getListTenantOpenInvoicesQueryKey } from "@/lib/api/generated/money/money";
 import {
   getGetPropertyQueryKey,
   getListPropertiesQueryKey,
@@ -14,10 +15,11 @@ import {
   getListTenantsQueryKey,
 } from "@/lib/api/generated/tenants/tenants";
 
-// After a lease changes: reload its tenant, the tenant list and the member list (whose count of
-// leases per collector feeds "penyewa belum punya penagih"), and when the unit is free again
-// (a move-out or a cancelled booking) the unit list and the property's occupancy too. Cached
-// values are never patched; the API's answer is the one shown.
+// After a lease changes: reload its tenant, the tenant's open invoices (a planned end, a move-out
+// or a cancelled booking can cancel one, which "Salin link bayar" must not share), the tenant list
+// and the member list (whose count of leases per collector feeds "penyewa belum punya penagih"),
+// and when the unit is free again (a move-out or a cancelled booking) the unit list and the
+// property's occupancy too. Cached values are never patched; the API's answer is the one shown.
 export function useRefreshLease(
   orgId: string,
 ): (lease: Lease, unitFreed: boolean) => Promise<void> {
@@ -25,6 +27,7 @@ export function useRefreshLease(
   return async (lease, unitFreed) => {
     const keys: QueryKey[] = [
       getGetTenantQueryKey(orgId, lease.tenantId),
+      getListTenantOpenInvoicesQueryKey(orgId, lease.tenantId),
       getListTenantsQueryKey(orgId),
       getListMembersQueryKey(orgId),
     ];
