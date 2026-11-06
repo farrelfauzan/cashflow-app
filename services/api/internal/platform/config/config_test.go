@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/base64"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -579,6 +580,130 @@ func TestLoadFakeAutoGoPay(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.wantAddr, got.Addr)
+		})
+	}
+}
+
+func TestTelegramSettings(t *testing.T) {
+	// A placeholder in the Bot API token shape, built at run time so no source line looks like a
+	// real token to secret scanning.
+	token := "7000000001:" + strings.Repeat("AbCdEfGhIj", 4)
+	_, tokenSecret, _ := strings.Cut(token, ":")
+	webhookSecret := strings.Repeat("w-_9", 8)
+	env := func(appEnv string, kv ...string) map[string]string {
+		m := map[string]string{
+			"APP_ENV": appEnv, "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+			"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+			"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
+		}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	bot := []string{"TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", "CashflowDevBot"}
+	with := func(kv ...string) []string { return append(append([]string{}, bot...), kv...) }
+	tests := []struct {
+		name    string
+		env     map[string]string
+		want    Telegram
+		wantErr string
+	}{
+		{name: "nothing set", env: env("production")},
+		{name: "token and username", env: env("production", bot...), want: Telegram{BotToken: token, BotUsername: "CashflowDevBot"}},
+		{name: "username ending in lowercase bot", env: env("production", "TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", "cashflow_dev_bot"),
+			want: Telegram{BotToken: token, BotUsername: "cashflow_dev_bot"}},
+		{name: "all four", env: env("production", with("TELEGRAM_WEBHOOK_SECRET", webhookSecret, "TELEGRAM_API_BASE_URL", "https://api.telegram.org")...),
+			want: Telegram{BotToken: token, BotUsername: "CashflowDevBot", WebhookSecret: webhookSecret, APIBaseURL: "https://api.telegram.org"}},
+		{name: "a local Bot API server over http in development", env: env("development", with("TELEGRAM_API_BASE_URL", "http://127.0.0.1:8081")...),
+			want: Telegram{BotToken: token, BotUsername: "CashflowDevBot", APIBaseURL: "http://127.0.0.1:8081"}},
+		{name: "token without a colon", env: env("production", "TELEGRAM_BOT_TOKEN", strings.ReplaceAll(token, ":", ""), "TELEGRAM_BOT_USERNAME", "CashflowDevBot"),
+			wantErr: "TELEGRAM_BOT_TOKEN must be"},
+		{name: "token secret too short", env: env("production", "TELEGRAM_BOT_TOKEN", "7000000001:"+tokenSecret[:29], "TELEGRAM_BOT_USERNAME", "CashflowDevBot"),
+			wantErr: "TELEGRAM_BOT_TOKEN must be"},
+		{name: "token with letters in the bot id", env: env("production", "TELEGRAM_BOT_TOKEN", "70a0:"+tokenSecret, "TELEGRAM_BOT_USERNAME", "CashflowDevBot"),
+			wantErr: "TELEGRAM_BOT_TOKEN must be"},
+		{name: "token with a bad character", env: env("production", "TELEGRAM_BOT_TOKEN", token+"!", "TELEGRAM_BOT_USERNAME", "CashflowDevBot"),
+			wantErr: "TELEGRAM_BOT_TOKEN must be"},
+		{name: "token without a username", env: env("production", "TELEGRAM_BOT_TOKEN", token), wantErr: "TELEGRAM_BOT_USERNAME is required"},
+		{name: "username with @", env: env("production", "TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", "@CashflowDevBot"),
+			wantErr: "TELEGRAM_BOT_USERNAME must be"},
+		{name: "username not ending in bot", env: env("production", "TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", "CashflowDev"),
+			wantErr: "TELEGRAM_BOT_USERNAME must be"},
+		{name: "token pasted as the username", env: env("production", "TELEGRAM_BOT_TOKEN", token, "TELEGRAM_BOT_USERNAME", token),
+			wantErr: "TELEGRAM_BOT_USERNAME must be"},
+		{name: "webhook secret with a bad character", env: env("production", with("TELEGRAM_WEBHOOK_SECRET", "abc def")...),
+			wantErr: "TELEGRAM_WEBHOOK_SECRET must be"},
+		{name: "webhook secret too long", env: env("production", with("TELEGRAM_WEBHOOK_SECRET", strings.Repeat("a", 257))...),
+			wantErr: "TELEGRAM_WEBHOOK_SECRET must be"},
+		{name: "webhook secret of 256 characters", env: env("production", with("TELEGRAM_WEBHOOK_SECRET", strings.Repeat("a", 256))...),
+			want: Telegram{BotToken: token, BotUsername: "CashflowDevBot", WebhookSecret: strings.Repeat("a", 256)}},
+		{name: "http base url outside development", env: env("staging", with("TELEGRAM_API_BASE_URL", "http://api.telegram.org")...),
+			wantErr: "TELEGRAM_API_BASE_URL must use https in staging"},
+		{name: "base url with the token in its path", env: env("production", with("TELEGRAM_API_BASE_URL", "https://api.telegram.org/bot"+token)...),
+			wantErr: "TELEGRAM_API_BASE_URL must be an absolute http(s) URL"},
+		{name: "relative base url", env: env("production", with("TELEGRAM_API_BASE_URL", "api.telegram.org")...),
+			wantErr: "TELEGRAM_API_BASE_URL must be an absolute http(s) URL"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, apiErr := loadAPI(context.Background(), envconfig.MapLookuper(tc.env))
+			worker, workerErr := loadWorker(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				for _, err := range []error{apiErr, workerErr} {
+					require.ErrorContains(t, err, tc.wantErr)
+					require.NotContains(t, err.Error(), tokenSecret, "the token never appears in an error")
+					require.NotContains(t, err.Error(), "abc def", "the webhook secret never appears in an error")
+				}
+				return
+			}
+			require.NoError(t, apiErr)
+			require.NoError(t, workerErr)
+			require.Equal(t, tc.want, got.Telegram)
+			require.Equal(t, tc.want, worker.Telegram)
+		})
+	}
+}
+
+func TestTelegramLogValueHidesSecrets(t *testing.T) {
+	t.Parallel()
+	token := "7000000001:" + strings.Repeat("AbCdEfGhIj", 4)
+	var buf strings.Builder
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+	log.Info("config", "telegram", Telegram{BotToken: token, BotUsername: "CashflowDevBot", WebhookSecret: "hook-secret-value"})
+	require.NotContains(t, buf.String(), "AbCdEfGhIj")
+	require.NotContains(t, buf.String(), "hook-secret-value")
+	require.Contains(t, buf.String(), `"enabled":true`)
+}
+
+func TestLoadTelegramPoll(t *testing.T) {
+	token := "7000000001:" + strings.Repeat("AbCdEfGhIj", 4)
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "development with a bot", env: map[string]string{"TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}},
+		{name: "no token", env: map[string]string{}, wantErr: "needs TELEGRAM_BOT_TOKEN"},
+		{name: "token without username", env: map[string]string{"TELEGRAM_BOT_TOKEN": token}, wantErr: "TELEGRAM_BOT_USERNAME is required"},
+		{name: "malformed token", env: map[string]string{"TELEGRAM_BOT_TOKEN": "nope", "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"}, wantErr: "TELEGRAM_BOT_TOKEN must be"},
+		{name: "refused in staging", env: map[string]string{"APP_ENV": "staging", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
+			wantErr: "only runs in development"},
+		{name: "refused in production", env: map[string]string{"APP_ENV": "production", "TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_USERNAME": "cashflow_dev_bot"},
+			wantErr: "only runs in development"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := loadTelegramPoll(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.NotContains(t, err.Error(), "AbCdEfGhIj")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, token, got.Telegram.BotToken)
 		})
 	}
 }

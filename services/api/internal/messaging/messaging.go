@@ -7,6 +7,9 @@
 //   - devlog: local development, writes messages to the log.
 //   - messagingtest: an in-memory fake for tests.
 //
+// Package telegram is the Telegram Bot API client (decision 42). It renders the same templates
+// but sends to a chat id, not a phone, so it is not a Provider.
+//
 // A WhatsApp Cloud API adapter can be added later behind the same interface, once there is a
 // registered business to own the account. Callers never change: they send a template name and
 // parameters, and each adapter turns that into whatever its provider accepts.

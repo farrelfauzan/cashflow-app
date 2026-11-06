@@ -339,6 +339,30 @@ instead of a 500. The log carries only Twilio's HTTP status and error code (for 
 WhatsApp), never the phone number or the message; look the code up at
 https://www.twilio.com/docs/api/errors.
 
+### Telegram bot in development (polling)
+
+Telegram is the second messaging channel (decision 42). Staging and production will receive the
+bot's updates on a webhook; on a developer machine `make telegram-poll` runs `cmd/telegrampoll`,
+which asks Telegram for updates by long polling instead, so no public address or tunnel is
+needed. It refuses to start unless `APP_ENV=development` and a bot token is set.
+
+1. In Telegram, open @BotFather, send `/newbot` and follow it. Use a development bot of your own,
+   never the staging or production bot. BotFather answers with the bot's username and its token.
+2. In `services/api/.env` set `TELEGRAM_BOT_TOKEN` (the token) and `TELEGRAM_BOT_USERNAME` (the
+   username without the @). Never commit the token and never paste it in a chat, an issue or a
+   pull request; if it leaks, revoke it in BotFather (`/revoke`) and set the new one.
+3. Run `make telegram-poll`. It checks the token with `getMe` and logs the bot's username and id,
+   then logs each update it receives by its id and kind (message, contact or other), never the
+   chat, phone number or text. Open the bot in Telegram and press Start to see one arrive.
+   Ctrl-C stops it.
+
+If it stops with "getUpdates is blocked", the bot has a webhook set (Telegram allows either a
+webhook or polling, not both) or another poller is running with the same token. Delete the
+webhook with the Bot API's `deleteWebhook` method, or stop the other poller. A token Telegram
+refuses (wrong, or revoked in BotFather) stops it with "telegram refused the bot token". Tests
+never call Telegram: `internal/messaging/telegram` is tested against `httptest` servers that
+replay Bot API answers.
+
 ## Everyday commands
 
 | Command | What it does |
@@ -350,6 +374,7 @@ https://www.twilio.com/docs/api/errors.
 | `make api-gen` | regenerate `internal/httpapi/apigen` after editing `api/openapi.yaml` |
 | `make admin ARGS='...'` | run the operator tool |
 | `make wa-up` / `make wa-down` | start or stop the GOWA WhatsApp gateway |
+| `make telegram-poll` | long-poll the development Telegram bot (development only) |
 | `make api-check` | everything CI runs |
 
 ## Where things live
@@ -364,7 +389,9 @@ https://www.twilio.com/docs/api/errors.
 - `internal/httpapi`: routing, middleware, handlers. `apigen` is generated from the OpenAPI file.
 - `internal/messaging`: the WhatsApp provider interface and the message templates. Adapters:
   `gowa`, `twilio` (the Twilio sandbox, development only), `devlog` (development log)
-  and the test fake in `messagingtest`.
+  and the test fake in `messagingtest`. `telegram` is the Telegram Bot API client (send to a
+  chat, `getMe`, `getUpdates`, the development poll loop); it sends to a chat id, so it is not a
+  WhatsApp provider.
 - `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
   key rotation, and `secret.Value`, which prints as `[redacted]`.
 - `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook
