@@ -30,6 +30,6 @@ export async function attachViewportScreenshot(
   name: string,
 ): Promise<void> {
   const path = testInfo.outputPath(`${name}-${testInfo.project.name}.png`);
-  await page.screenshot({ path });
+  await page.screenshot({ path, animations: "disabled" });
   await testInfo.attach(name, { path, contentType: "image/png" });
 }

@@ -1,6 +1,8 @@
 // What the tenant payment page (/t/[token]) renders, built from getPaymentPage by utils.ts.
 // Every amount is a field the API sent, formatted; nothing here is computed rupiah.
 
+import type { QrisStatus } from "@/lib/api/generated/model";
+
 // The top of every loaded state: who bills the tenant, the link's invoice and whose it is.
 export type PaymentPageHeaderView = {
   organizationName: string;
@@ -44,6 +46,20 @@ export type OpenPaymentPageView = {
   transfer: TransferView | null;
   // "Cara bayar belum diatur. Hubungi … untuk membayar."
   noTransferText: string;
+  // Null when the organization has not set up QRIS: no tabs, bank transfer only.
+  qris: QrisOfferView | null;
+};
+
+// What the QRIS tab starts from when the organization has set up QRIS.
+export type QrisOfferView = {
+  // The API's outstanding, sent as is as the QR's amount (never computed here).
+  outstanding: number;
+  // "Bayar QRIS Rp2.250.000"; "Bayar QRIS Rp10.000.000" when more is owed (one QR's most).
+  startLabel: string;
+  // Shown when more than Rp10.000.000 is owed: one QR pays at most that, the rest later.
+  limitNote: string | null;
+  // "qris-kamar-07.png": the name "Unduh QR" saves under; never holds the token.
+  downloadName: string;
 };
 
 // The link's invoice under "Rincian" on Lunas.
@@ -83,3 +99,97 @@ export type PaymentPageMessageView = {
 };
 
 export type CopyStatus = "idle" | "copied" | "failed";
+
+// The two ways to pay when QRIS is set up.
+export type PaymentTab = "qris" | "transfer";
+
+// The QRIS card. Amounts are the API's QrisStatus.amount (null when the API left it out);
+// times are its RFC 3339 strings.
+export type QrisCard =
+  // Reading getPaymentStatus once on load, to resume a pending or checking QR.
+  | { kind: "resuming" }
+  // No QR in this visit: "Bayar QRIS".
+  | { kind: "idle" }
+  // createPaymentQris is running (up to about 20 seconds).
+  // retried: the API was overloaded once and this is the one automatic retry.
+  | { kind: "creating"; retried?: true }
+  // 409 qris_busy: another request is making the tenant's QR. Polls as if pending until that QR
+  // shows, and gives up at `until` (epoch ms).
+  | { kind: "waiting"; until: number }
+  // A live QR (board "Bayar QRIS").
+  | { kind: "pending"; amount: number | null; expiresAt: string }
+  // The tenant said they paid; no answer yet (board "Sedang dicek").
+  | { kind: "checking"; amount: number | null; checkedAt: string | null }
+  // The QR of this visit expired or was cancelled (board "QR kedaluwarsa").
+  | { kind: "expired"; amount: number | null }
+  // 503 qris_unavailable (board "QRIS gangguan"): the Transfer bank tab with a banner.
+  | { kind: "unavailable" };
+
+export type QrisModel = {
+  card: QrisCard;
+  tab: PaymentTab;
+  // The API's message (or the page's own) under the QRIS buttons; null when there is none.
+  alert: string | null;
+  // "Saya sudah bayar" is running: status reads that land meanwhile are ignored, so an older
+  // "pending" never overwrites the check's answer.
+  checkRunning: boolean;
+  // Counts each start and end of "Saya sudah bayar". A status read that began under another
+  // count is stale (it may say "pending" after the check said "checking") and is dropped.
+  checks: number;
+};
+
+// What happens on the QRIS card, with the time of the event (epoch ms) where it matters.
+export type QrisEvent =
+  // `checks`: the model's count when the read began.
+  | { type: "status-read"; status: QrisStatus; now: number; checks: number }
+  | { type: "status-failed"; error: unknown }
+  | { type: "create-started" }
+  // Nothing is owed after all, so no QR is asked for.
+  | { type: "create-skipped" }
+  | { type: "created"; status: QrisStatus; now: number }
+  | { type: "create-failed"; error: unknown; now: number }
+  | { type: "check-started" }
+  | { type: "checked"; status: QrisStatus; now: number }
+  | { type: "check-failed"; error: unknown }
+  | { type: "tab-selected"; tab: PaymentTab };
+
+// The next model, and what the hook must do besides showing it.
+export type QrisStep = {
+  model: QrisModel;
+  // Read getPaymentPage again: it shows Lunas, or what is left.
+  refetchPage: boolean;
+  // The link stopped working: the page shows "Link tidak berlaku".
+  linkGone: boolean;
+  // Read getPaymentStatus once now, outside the polling interval.
+  pollNow: boolean;
+  // Send the same createPaymentQris again after QRIS_OVERLOADED_RETRY_MS: the API was too busy
+  // to reach AutoGoPay (qris_overloaded), so nothing was made and one retry is safe.
+  retryCreate: boolean;
+};
+
+// One row of the "Sedang dicek" details card.
+export type QrisDetailRow = {
+  label: string;
+  value: string;
+};
+
+// What useQrisPayment gives the page.
+export type QrisPayment = {
+  model: QrisModel;
+  // "Bayar QRIS", or "Buat QR baru" (`afterExpiry` reads the page again first, for the current
+  // total).
+  start: (afterExpiry: boolean) => void;
+  // "Saya sudah bayar".
+  check: () => void;
+  // Reads the status once now (the countdown reached zero, the image did not load).
+  pollNow: () => void;
+  selectTab: (tab: PaymentTab) => void;
+};
+
+// What useCountdown gives a live QR.
+export type Countdown = {
+  // The device's clock at the last tick (epoch ms).
+  now: number;
+  // Whole seconds left, never below 0.
+  seconds: number;
+};

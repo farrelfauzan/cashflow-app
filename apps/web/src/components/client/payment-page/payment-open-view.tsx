@@ -1,20 +1,29 @@
 "use client";
 
-import { BankTransferSection } from "./bank-transfer-section";
-import { NoTransferNote } from "./no-transfer-note";
+import type { PaymentPage } from "@/lib/api/generated/model";
+
+import { BankTransferMethod } from "./bank-transfer-method";
+import { PaymentMethods } from "./payment-methods";
 import { PaymentPageHeader } from "./payment-page-header";
 import { PaymentSummaryCard } from "./payment-summary-card";
-import { QrisSoonNote } from "./qris-soon-note";
 import type { OpenPaymentPageView } from "./type";
 import { ALLOCATION_NOTE, FOOTER_TEXT } from "./utils";
 
 type PaymentOpenViewProps = {
   view: OpenPaymentPageView;
+  token: string;
+  refetchPage: () => Promise<PaymentPage | undefined>;
+  onLinkGone: () => void;
 };
 
-// The tenant owes something (boards "Bayar · Pilih" and "Bayar · Transfer"): what is open, the
-// total, and how to pay it by bank transfer.
-export function PaymentOpenView({ view }: PaymentOpenViewProps) {
+// The tenant owes something (boards "Bayar · Pilih", "Bayar · Transfer" and the QRIS boards):
+// what is open, the total, and how to pay it. Without QRIS set up, bank transfer only, as before.
+export function PaymentOpenView({
+  view,
+  token,
+  refetchPage,
+  onLinkGone,
+}: PaymentOpenViewProps) {
   return (
     <>
       <PaymentPageHeader header={view.header} />
@@ -29,12 +38,21 @@ export function PaymentOpenView({ view }: PaymentOpenViewProps) {
         credit={view.credit}
       />
       <p className="text-sm leading-normal md:text-base">{ALLOCATION_NOTE}</p>
-      {view.transfer === null ? (
-        <NoTransferNote text={view.noTransferText} />
+      {view.qris === null ? (
+        <BankTransferMethod
+          transfer={view.transfer}
+          noTransferText={view.noTransferText}
+        />
       ) : (
-        <BankTransferSection transfer={view.transfer} />
+        <PaymentMethods
+          token={token}
+          offer={view.qris}
+          transfer={view.transfer}
+          noTransferText={view.noTransferText}
+          refetchPage={refetchPage}
+          onLinkGone={onLinkGone}
+        />
       )}
-      <QrisSoonNote />
       <p className="mt-auto rounded-xl bg-accent px-4 py-3 text-sm text-foreground md:text-base">
         {FOOTER_TEXT}
       </p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 
 import { useGetPaymentPage } from "@/lib/api/generated/payment-page/payment-page";
 
@@ -18,7 +18,8 @@ type PaymentPageScreenProps = {
 // The tenant payment page, read in the browser only: the API limits it per client address,
 // which a server-side read would hide behind the web server's own address. A malformed token is
 // never sent. The page is read again when the tenant comes back to the tab (after paying in
-// their bank's app), never on a timer.
+// their bank's app) and when a QRIS answer says something was paid, never on a timer; the QR's
+// status is what PaymentMethods polls.
 export function PaymentPageScreen({ params }: PaymentPageScreenProps) {
   const { token } = use(params);
   const wellFormed = isWellFormedToken(token);
@@ -33,10 +34,14 @@ export function PaymentPageScreen({ params }: PaymentPageScreenProps) {
     },
   });
 
+  // A QRIS request found the link revoked or expired before a page read did.
+  const [linkGone, setLinkGone] = useState(false);
+
   const state = paymentPageState({
     wellFormed,
     data: page.data,
     error: page.error,
+    linkGone,
   });
 
   if (state.kind === "loading") return <PaymentPageLoading />;
@@ -55,7 +60,12 @@ export function PaymentPageScreen({ params }: PaymentPageScreenProps) {
       {state.view.status === "paid" ? (
         <PaymentPaidView view={state.view} />
       ) : (
-        <PaymentOpenView view={state.view} />
+        <PaymentOpenView
+          view={state.view}
+          token={token}
+          refetchPage={async () => (await page.refetch()).data}
+          onLinkGone={() => setLinkGone(true)}
+        />
       )}
     </PaymentPageFrame>
   );
