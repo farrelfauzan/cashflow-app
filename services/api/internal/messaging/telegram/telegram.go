@@ -4,7 +4,9 @@
 //
 // Client does not implement messaging.Provider. A Provider sends to a phone number, and a bot
 // can only message a chat that pressed Start on it, so which chat (or whether WhatsApp instead)
-// is chosen per recipient by the router that comes later (TG-3). Send takes the chat id.
+// is chosen per recipient by the router that comes later (TG-3). Send takes the chat id. The
+// router is the messaging.Provider: callers keep calling SendTemplate, and through it this
+// adapter is one of the MessagingProvider adapters CLAUDE.md lists.
 //
 // Messages use the same templates as WhatsApp (messaging.Render) and go out as plain text, with
 // no parse_mode, so template text is never read as markup. Buttons become inline keyboard URL
