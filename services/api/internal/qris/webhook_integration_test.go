@@ -98,6 +98,14 @@ func TestWebhookHandle(t *testing.T) {
 	const fixtureTx = "00000000-0000-4000-8000-0000000000a1"
 	log := slog.New(slog.DiscardHandler)
 
+	// A's id with its first character replaced by a different one; always a real change, even when
+	// the random id starts with 'x'.
+	first := "x"
+	if aID[0] == 'x' {
+		first = "y"
+	}
+	changedID := first + aID[1:]
+
 	refused := []struct {
 		name      string
 		webhookID string
@@ -107,7 +115,7 @@ func TestWebhookHandle(t *testing.T) {
 		{"an unknown webhook id", strings.Repeat("Q", 43), hexHMAC(paid, a.key), paid},
 		{"a malformed webhook id", "griya-sejahtera", hexHMAC(paid, a.key), paid},
 		{"an empty webhook id", "", hexHMAC(paid, a.key), paid},
-		{"A's id with one character changed", "x" + aID[1:], hexHMAC(paid, a.key), paid},
+		{"A's id with one character changed", changedID, hexHMAC(paid, a.key), paid},
 		{"a bad signature", aID, hexHMAC(paid, "agp-live-key-palsu"), paid},
 		{"a missing signature", aID, "", paid},
 		{"a signature over another body", aID, hexHMAC(challenge, a.key), paid},
