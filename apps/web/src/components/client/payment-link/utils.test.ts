@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  AccountInvoice,
-  Capability,
-  TenantAccount,
-} from "@/lib/api/generated/model";
+import type { Capability, TenantOpenInvoice } from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
 import {
@@ -15,39 +11,18 @@ import {
   payLinkInvoice,
 } from "./utils";
 
-function invoice(overrides: Partial<AccountInvoice>): AccountInvoice {
+function invoice(overrides: Partial<TenantOpenInvoice>): TenantOpenInvoice {
   return {
     id: "inv",
     kind: "regular",
-    leaseId: "lease-1",
     unitLabel: "Kamar 3",
     propertyName: "Kos Melati",
     period: "2026-10-01",
     periodEnd: "2026-10-31",
     dueDate: "2026-10-01",
-    issuedOn: "2026-09-28",
     amount: 1_100_000,
-    billed: 1_100_000,
-    paid: 0,
-    outstanding: 1_100_000,
-    status: "open",
-    lines: [],
-    corrections: [],
+    balance: 1_100_000,
     ...overrides,
-  };
-}
-
-const paid = (period: string, id: string) =>
-  invoice({ id, period, paid: 1_100_000, outstanding: 0, status: "paid" });
-
-function account(invoices: AccountInvoice[]): TenantAccount {
-  return {
-    tenantId: "tenant-1",
-    invoices,
-    payments: [],
-    overdue: 0,
-    outstanding: 0,
-    credit: 0,
   };
 }
 
@@ -55,23 +30,18 @@ describe("newestOpenInvoice", () => {
   it("picks the latest period that still owes something", () => {
     const invoices = [
       invoice({ id: "sep", period: "2026-09-01" }),
-      invoice({ id: "oct", period: "2026-10-01", status: "partial" }),
+      invoice({ id: "oct", period: "2026-10-01", balance: 300_000 }),
       invoice({ id: "nov", period: "2026-11-01" }),
     ];
     expect(newestOpenInvoice(invoices)?.id).toBe("nov");
   });
 
-  it("skips paid and cancelled invoices, even newer ones", () => {
+  it("skips an invoice with nothing left, even a newer one", () => {
+    // The API lists only invoices with a balance above 0; the check stays in case it ever
+    // sends one.
     const invoices = [
       invoice({ id: "sep", period: "2026-09-01" }),
-      paid("2026-10-01", "oct"),
-      invoice({
-        id: "nov",
-        period: "2026-11-01",
-        billed: 0,
-        outstanding: 0,
-        status: "cancelled",
-      }),
+      invoice({ id: "nov", period: "2026-11-01", balance: 0 }),
     ];
     expect(newestOpenInvoice(invoices)?.id).toBe("sep");
   });
@@ -92,11 +62,16 @@ describe("newestOpenInvoice", () => {
     expect(newestOpenInvoice(invoices)?.id).toBe("final");
   });
 
+  it("keeps the later one in the API's order when two leases share a period", () => {
+    const invoices = [
+      invoice({ id: "kamar-1", period: "2026-11-01" }),
+      invoice({ id: "kamar-2", period: "2026-11-01" }),
+    ];
+    expect(newestOpenInvoice(invoices)?.id).toBe("kamar-2");
+  });
+
   it("is null when nothing is owed", () => {
     expect(newestOpenInvoice([])).toBeNull();
-    expect(
-      newestOpenInvoice([paid("2026-10-01", "oct"), paid("2026-11-01", "nov")]),
-    ).toBeNull();
   });
 });
 
@@ -105,46 +80,56 @@ function ability(...capabilities: Capability[]) {
 }
 
 describe("canSharePayLink", () => {
-  it("shows for allow and conditional, hides for deny and a missing action", () => {
+  const read = (access: Capability["access"]): Capability => ({
+    action: "invoice:read",
+    access,
+  });
+  const share = (access: Capability["access"]): Capability => ({
+    action: "invoice:share",
+    access,
+  });
+
+  it("shows for an admin who may read and share every invoice", () => {
+    expect(canSharePayLink(ability(read("allow"), share("allow")))).toBe(true);
+  });
+
+  it("shows for a karyawan who may read and share only the tenants they collect", () => {
     expect(
-      canSharePayLink(ability({ action: "invoice:share", access: "allow" })),
+      canSharePayLink(ability(read("conditional"), share("conditional"))),
     ).toBe(true);
-    expect(
-      canSharePayLink(
-        ability({ action: "invoice:share", access: "conditional" }),
-      ),
-    ).toBe(true);
-    expect(
-      canSharePayLink(ability({ action: "invoice:share", access: "deny" })),
-    ).toBe(false);
-    expect(
-      canSharePayLink(ability({ action: "invoice:read", access: "allow" })),
-    ).toBe(false);
+  });
+
+  it("hides without invoice:share", () => {
+    expect(canSharePayLink(ability(read("allow"), share("deny")))).toBe(false);
+    expect(canSharePayLink(ability(read("allow")))).toBe(false);
+  });
+
+  it("hides without invoice:read, which finding the open invoices needs", () => {
+    expect(canSharePayLink(ability(read("deny"), share("allow")))).toBe(false);
+    expect(canSharePayLink(ability(share("allow")))).toBe(false);
   });
 });
 
 describe("payLinkInvoice", () => {
-  const open = account([
+  const open = [
     invoice({ id: "oct", period: "2026-10-01" }),
     invoice({ id: "nov", period: "2026-11-01" }),
-  ]);
+  ];
 
   it("is the newest open invoice for a member who may share", () => {
     expect(payLinkInvoice(true, open)?.id).toBe("nov");
   });
 
-  it("hides the button without invoice:share", () => {
+  it("hides the button without permission to share", () => {
     expect(payLinkInvoice(false, open)).toBeNull();
   });
 
-  it("hides the button until the account has loaded, or when it cannot be read", () => {
+  it("hides the button until the open invoices load, or when the read fails or is refused", () => {
     expect(payLinkInvoice(true, undefined)).toBeNull();
   });
 
-  it("hides the button when nothing is owed", () => {
-    expect(payLinkInvoice(true, account([paid("2026-11-01", "nov")]))).toBe(
-      null,
-    );
+  it("hides the button when nothing is owed or the member may see none (an empty list)", () => {
+    expect(payLinkInvoice(true, [])).toBeNull();
   });
 });
 

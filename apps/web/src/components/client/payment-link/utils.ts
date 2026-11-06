@@ -1,4 +1,4 @@
-import type { AccountInvoice, TenantAccount } from "@/lib/api/generated/model";
+import type { TenantOpenInvoice } from "@/lib/api/generated/model";
 import type { AppAbility } from "@/lib/capabilities";
 
 import type { ClipboardItemFactory, ClipboardWriter } from "./type";
@@ -17,12 +17,11 @@ export const PAY_LINK_FALLBACK_HINT =
 export const COPY_AGAIN_TEXT = "Salin";
 export const CLOSE_TEXT = "Tutup";
 
-// invoice:share, on some records or all: "conditional" shows the button and the API decides per
-// invoice. Never by role name. The button also needs the tenant's account (invoice:read and
-// payment:read, see payLinkInvoice), which the built-in Karyawan role cannot read yet, so a
-// karyawan does not see it until the API offers them a way to find the open invoices.
+// The member may share invoices and find the tenant's open ones (listTenantOpenInvoices needs
+// invoice:read), on some records or all: "conditional" shows the button and the API decides per
+// tenant and invoice (a karyawan sees only the tenants they collect). Never by role name.
 export function canSharePayLink(ability: AppAbility): boolean {
-  return ability.can("share", "invoice");
+  return ability.can("read", "invoice") && ability.can("share", "invoice");
 }
 
 // The invoice a new link is made for: the one with the latest period that still owes something.
@@ -30,25 +29,25 @@ export function canSharePayLink(ability: AppAbility): boolean {
 // invoice. Equal periods (two leases) keep the later one in the API's order. Null when nothing
 // is owed.
 export function newestOpenInvoice(
-  invoices: readonly AccountInvoice[],
-): AccountInvoice | null {
-  let newest: AccountInvoice | null = null;
+  invoices: readonly TenantOpenInvoice[],
+): TenantOpenInvoice | null {
+  let newest: TenantOpenInvoice | null = null;
   for (const invoice of invoices) {
-    if (invoice.outstanding <= 0) continue;
+    if (invoice.balance <= 0) continue;
     if (newest === null || invoice.period >= newest.period) newest = invoice;
   }
   return newest;
 }
 
 // The invoice "Salin link bayar" shares, or null to hide the button: the member may share
-// invoices, the account has loaded (a member who cannot read it never gets it), and something
-// is owed.
+// invoices, the tenant's open invoices have loaded (a refused or failed read never does), and
+// something is owed. The API answers [] for a tenant the member may see none of.
 export function payLinkInvoice(
   canShare: boolean,
-  account: TenantAccount | undefined,
-): AccountInvoice | null {
-  if (!canShare || account === undefined) return null;
-  return newestOpenInvoice(account.invoices);
+  openInvoices: readonly TenantOpenInvoice[] | undefined,
+): TenantOpenInvoice | null {
+  if (!canShare || openInvoices === undefined) return null;
+  return newestOpenInvoice(openInvoices);
 }
 
 // Copies the text; false when the browser has no clipboard or refuses (not a secure context, no
