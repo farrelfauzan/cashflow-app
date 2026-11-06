@@ -116,7 +116,9 @@ func (d Decision) HasMessage() bool {
 //     tenant's last h7 visit task was resolved counts, so a resolved visit does not reopen the
 //     next morning for the same debt, while a debt reaching H+7 after the visit opens a new one.
 //   - The H-1 of the active promise's newest version when promised-1 <= today <= promised, once
-//     per version, so an edit to a new date gets its own.
+//     per version, so an edit to a new date gets its own; only while an invoice it covers still
+//     owes something (a covered invoice cancelled by "Rencana keluar" before the close owes
+//     nothing, and there is nothing left to remind of).
 //   - The notice of the tenant's newest broken promise when it closed in the last
 //     BrokenNoticeDays days, once per promise. Not while the tenant has an active promise: they
 //     already made a new one, which is what the notice asks for. An older broken promise is
@@ -147,7 +149,7 @@ func Decide(in Input) Decision {
 		d.Stages = append(d.Stages, key)
 	}
 
-	if p := in.Promise; p != nil && !p.Reminded &&
+	if p := in.Promise; p != nil && !p.Reminded && coveredOwing(in.Invoices) &&
 		!today.Before(addDays(p.PromisedDate, -1)) && !today.After(p.PromisedDate) {
 		d.PromiseH1 = p.VersionID
 	}
@@ -159,6 +161,16 @@ func Decide(in Input) Decision {
 		}
 	}
 	return d
+}
+
+// coveredOwing reports whether an invoice the active promise covers still owes something.
+func coveredOwing(invoices []Invoice) bool {
+	for _, inv := range invoices {
+		if inv.Covered && inv.Outstanding > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // stageOn is the message stage whose window holds today for an invoice due on due, "" for none.

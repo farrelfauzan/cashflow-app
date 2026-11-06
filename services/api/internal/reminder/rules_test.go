@@ -232,10 +232,11 @@ func TestDecidePromiseH1(t *testing.T) {
 	t.Parallel()
 	promised := day(2026, 11, 20)
 	tests := []struct {
-		name    string
-		today   time.Time
-		promise reminder.ActivePromise
-		want    uuid.UUID
+		name     string
+		today    time.Time
+		promise  reminder.ActivePromise
+		invoices []reminder.Invoice // nil: one covered invoice still owing
+		want     uuid.UUID
 	}{
 		{name: "promised-2: not yet", today: day(2026, 11, 18), promise: reminder.ActivePromise{VersionID: version1, PromisedDate: promised}},
 		{name: "promised-1: H-1", today: day(2026, 11, 19), promise: reminder.ActivePromise{VersionID: version1, PromisedDate: promised}, want: version1},
@@ -246,12 +247,27 @@ func TestDecidePromiseH1(t *testing.T) {
 		{name: "a promise for tomorrow made today: H-1 today", today: day(2026, 11, 19), promise: reminder.ActivePromise{VersionID: version2, PromisedDate: promised}, want: version2},
 		{name: "a 31 Jan promise: H-1 on 30 Jan", today: day(2027, 1, 30), promise: reminder.ActivePromise{VersionID: version1, PromisedDate: day(2027, 1, 31)}, want: version1},
 		{name: "a 1 Mar promise: H-1 on 28 Feb", today: day(2027, 2, 28), promise: reminder.ActivePromise{VersionID: version1, PromisedDate: day(2027, 3, 1)}, want: version1},
+		{
+			name: "the covered invoice was cancelled (owes nothing): no H-1", today: day(2026, 11, 19),
+			promise:  reminder.ActivePromise{VersionID: version1, PromisedDate: promised},
+			invoices: []reminder.Invoice{{ID: uuid.New(), DueDate: day(2026, 12, 25), Outstanding: 0, Covered: true}},
+		},
+		{
+			name: "only an uncovered invoice owes: no H-1", today: day(2026, 11, 19),
+			promise:  reminder.ActivePromise{VersionID: version1, PromisedDate: promised},
+			invoices: []reminder.Invoice{{ID: uuid.New(), DueDate: day(2026, 12, 25), Outstanding: 500_000}},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			p := tc.promise
-			got := reminder.Decide(reminder.Input{Today: tc.today, Promise: &p})
+			invoices := tc.invoices
+			if invoices == nil {
+				// A covered invoice still owing, due well after the window, so it adds no stage.
+				invoices = []reminder.Invoice{{ID: uuid.New(), DueDate: day(2027, 6, 1), Outstanding: 500_000, Covered: true}}
+			}
+			got := reminder.Decide(reminder.Input{Today: tc.today, Promise: &p, Invoices: invoices})
 			require.Equal(t, tc.want, got.PromiseH1)
 			require.Equal(t, tc.want != uuid.Nil, got.HasMessage())
 		})
