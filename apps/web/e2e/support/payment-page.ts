@@ -57,7 +57,8 @@ export function uniqueName(testInfo: TestInfo, base: string): string {
 }
 
 // A tenant number no other run, project, test or retry uses. Each spec has its own prefix
-// ("0814-8": payment-page.spec.ts, "0815-1": payment-page-qris.spec.ts), used by no other spec.
+// ("0814-8": payment-page.spec.ts, "0815-1": payment-page-qris.spec.ts,
+// "0815-2": payment-page-partial.spec.ts), used by no other spec.
 export function tenantNumber(
   testInfo: TestInfo,
   prefix: string,
@@ -249,8 +250,8 @@ export async function readPage(page: Page, path: string): Promise<PaymentPage> {
 
 // Every request the page makes that carries the token where it does not belong. It belongs only
 // in the paths of the page document and of the page's own API calls: the page read, the QR
-// status, making a QR, the QR image and "Saya sudah bayar". Never in a query string, a referer
-// or a body. Paths are logged with the token masked.
+// status, making a QR, the QR image, "Saya sudah bayar" and the "Bayar sebagian" preview. Never
+// in a query string, a referer or a body. Paths are logged with the token masked.
 export function trackTokenLeaks(
   page: Page,
   path: string,
@@ -263,6 +264,7 @@ export function trackTokenLeaks(
     `POST ${api}/qris`,
     `GET ${api}/qris.png`,
     `POST ${api}/check`,
+    `GET ${api}/preview`,
   ]);
   const leaks: string[] = [];
   page.on("request", (request) => {
@@ -299,7 +301,10 @@ export async function expectTouchTarget(locator: Locator, min = 44) {
 // spend that budget and answer 429 to unrelated tests. Each test plays one tenant's phone, so it
 // gets its own address in 198.18.0.0/15 (reserved for testing), one /16 per spec. The Next.js
 // /api rewrite passes the header on; behind Caddy in production the API reads Caddy's.
-export function tenantClientAddress(testInfo: TestInfo, spec: 18 | 19): string {
+export function tenantClientAddress(
+  testInfo: TestInfo,
+  spec: 18 | 19 | 20,
+): string {
   const key = `${runId()}|${testInfo.project.name}|${testInfo.titlePath.join("|")}|${testInfo.retry}`;
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
