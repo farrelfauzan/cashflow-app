@@ -109,7 +109,8 @@ export type QrisCard =
   // No QR in this visit: "Bayar QRIS".
   | { kind: "idle" }
   // createPaymentQris is running (up to about 20 seconds).
-  | { kind: "creating" }
+  // retried: the API was overloaded once and this is the one automatic retry.
+  | { kind: "creating"; retried?: true }
   // 409 qris_busy: another request is making the tenant's QR. Polls as if pending until that QR
   // shows, and gives up at `until` (epoch ms).
   | { kind: "waiting"; until: number }
@@ -155,6 +156,9 @@ export type QrisStep = {
   linkGone: boolean;
   // Read getPaymentStatus once now, outside the polling interval.
   pollNow: boolean;
+  // Send the same createPaymentQris again after QRIS_OVERLOADED_RETRY_MS: the API was too busy
+  // to reach AutoGoPay (qris_overloaded), so nothing was made and one retry is safe.
+  retryCreate: boolean;
 };
 
 // One row of the "Sedang dicek" details card.

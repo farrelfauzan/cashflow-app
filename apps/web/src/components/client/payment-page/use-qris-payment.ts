@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { PaymentPage } from "@/lib/api/generated/model";
 import {
@@ -10,9 +10,16 @@ import {
   useGetPaymentStatus,
 } from "@/lib/api/generated/payment-page/payment-page";
 
-import type { QrisEvent, QrisModel, QrisOfferView, QrisPayment } from "./type";
+import type {
+  QrisEvent,
+  QrisModel,
+  QrisOfferView,
+  QrisPayment,
+  QrisStep,
+} from "./type";
 import {
   INITIAL_QRIS_MODEL,
+  QRIS_OVERLOADED_RETRY_MS,
   canCheckQris,
   canStartQris,
   qrisCreateAmount,
@@ -49,15 +56,24 @@ export function useQrisPayment({
   const create = useCreatePaymentQris();
   const confirm = useCheckPaymentQris();
 
-  // Moves the state machine and runs its effects; returns whether the status should be read
-  // once now (only the caller that holds the status query can do that).
-  function apply(event: QrisEvent): boolean {
+  // The one automatic retry after qris_overloaded, cleared when the page goes away.
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (retryTimer.current !== null) clearTimeout(retryTimer.current);
+    },
+    [],
+  );
+
+  // Moves the state machine and runs its effects; returns the step, whose pollNow and
+  // retryCreate only the caller can act on.
+  function apply(event: QrisEvent): QrisStep {
     const next = qrisStep(current.current, event);
     current.current = next.model;
     setModel(next.model);
     if (next.refetchPage) void refetchPage();
     if (next.linkGone) onLinkGone();
-    return next.pollNow;
+    return next;
   }
 
   const status = useGetPaymentStatus(token, {
@@ -104,11 +120,21 @@ export function useQrisPayment({
       return;
     }
 
-    try {
-      const answer = await create.mutateAsync({ token, data: { amount } });
-      apply({ type: "created", status: answer, now: Date.now() });
-    } catch (error) {
-      apply({ type: "create-failed", error, now: Date.now() });
+    // One automatic retry after qris_overloaded (nothing reached AutoGoPay), never more.
+    for (;;) {
+      try {
+        const answer = await create.mutateAsync({ token, data: { amount } });
+        apply({ type: "created", status: answer, now: Date.now() });
+        return;
+      } catch (error) {
+        const next = apply({ type: "create-failed", error, now: Date.now() });
+        if (!next.retryCreate) return;
+      }
+      await new Promise<void>((resolve) => {
+        retryTimer.current = setTimeout(resolve, QRIS_OVERLOADED_RETRY_MS);
+      });
+      retryTimer.current = null;
+      if (current.current.card.kind !== "creating") return;
     }
   }
 
@@ -119,7 +145,7 @@ export function useQrisPayment({
       const answer = await confirm.mutateAsync({ token });
       apply({ type: "checked", status: answer, now: Date.now() });
     } catch (error) {
-      if (apply({ type: "check-failed", error })) pollNow();
+      if (apply({ type: "check-failed", error }).pollNow) pollNow();
     }
   }
 

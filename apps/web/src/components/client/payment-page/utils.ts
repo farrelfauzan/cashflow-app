@@ -286,6 +286,10 @@ export const CHECKING_POLL_MS = 15_000;
 // (a create takes up to about 20 seconds).
 export const BUSY_WAIT_MS = 30_000;
 
+// qris_overloaded comes with Retry-After: 5. The page retries once after it, then offers bank
+// transfer as for an outage.
+export const QRIS_OVERLOADED_RETRY_MS = 5_000;
+
 export const PAYMENT_TABS_LABEL = "Cara bayar";
 export const QRIS_TAB_TEXT = "QRIS";
 export const TRANSFER_TAB_TEXT = "Transfer bank";
@@ -485,6 +489,7 @@ function step(
     refetchPage: false,
     linkGone: false,
     pollNow: false,
+    retryCreate: false,
     ...effects,
   };
 }
@@ -663,6 +668,17 @@ function createFailed(model: QrisModel, error: unknown, now: number): QrisStep {
       );
     case "nothing_to_pay":
       return step(withCard(model, idle), { refetchPage: true });
+    case "qris_overloaded":
+      // Nothing reached AutoGoPay: retry once, then fall back as for an outage.
+      if (model.card.kind === "creating" && model.card.retried !== true) {
+        return step(withCard(model, { kind: "creating", retried: true }), {
+          retryCreate: true,
+        });
+      }
+      return step({
+        ...withCard(model, { kind: "unavailable" }),
+        tab: "transfer",
+      });
     case "qris_unavailable":
       return step({
         ...withCard(model, { kind: "unavailable" }),

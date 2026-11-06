@@ -753,7 +753,12 @@ function qrisError(status: number, code: string, field?: string): ApiError {
   return new ApiError({ status, code, message: `Pesan ${code}.`, field });
 }
 
-const NO_EFFECTS = { refetchPage: false, linkGone: false, pollNow: false };
+const NO_EFFECTS = {
+  refetchPage: false,
+  linkGone: false,
+  pollNow: false,
+  retryCreate: false,
+};
 
 describe("qrisStep, resuming on load", () => {
   const resuming = model({ kind: "resuming" });
@@ -965,6 +970,32 @@ describe("qrisStep, createPaymentQris answers", () => {
       ...NO_EFFECTS,
       refetchPage: true,
     });
+  });
+
+  it("retries once on 503 qris_overloaded, keeping the button busy", () => {
+    expect(failed(qrisError(503, "qris_overloaded"))).toEqual({
+      model: model({ kind: "creating", retried: true }),
+      ...NO_EFFECTS,
+      retryCreate: true,
+    });
+  });
+
+  it("switches to Transfer bank when the retry is overloaded too", () => {
+    expect(
+      qrisStep(model({ kind: "creating", retried: true }), {
+        type: "create-failed",
+        error: qrisError(503, "qris_overloaded"),
+        now: NOW,
+      }),
+    ).toEqual({
+      model: model({ kind: "unavailable" }, { tab: "transfer" }),
+      ...NO_EFFECTS,
+    });
+  });
+
+  it("starts with a fresh retry when the tenant presses again", () => {
+    const next = qrisStep(model({ kind: "idle" }), { type: "create-started" });
+    expect(next.model.card).toEqual({ kind: "creating" });
   });
 
   it("switches to Transfer bank with the banner on 503 qris_unavailable", () => {
