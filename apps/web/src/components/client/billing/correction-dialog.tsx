@@ -74,8 +74,7 @@ export function CorrectionDialog({
   });
 
   // The tenant's account and open invoices ("Salin link bayar"), Beranda and Penagihan all show
-  // what a correction changes. Cached
-  // money is never patched; the API's answer is the one shown.
+  // what a correction changes. Cached money is never patched; the API's answer is the one shown.
   const create = useCreateCorrection({
     mutation: {
       onSuccess: () =>
