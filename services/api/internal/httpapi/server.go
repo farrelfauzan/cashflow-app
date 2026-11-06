@@ -102,6 +102,7 @@ func New(d Deps) *Server {
 		r.Post("/auth/otp/verify", s.verifyLoginCode)
 		// The tenant payment page: public, no session; the token in the path is the access.
 		r.With(publicPageHeaders).Get("/t/{token}", s.getPaymentPage)
+		r.With(publicPageHeaders).Get("/t/{token}/preview", s.getPaymentPreview)
 		r.With(publicPageHeaders).Get("/t/{token}/status", s.getPaymentStatus)
 		r.With(publicPageHeaders).Get("/t/{token}/qris.png", s.getPaymentQRImage)
 		r.With(publicPageHeaders).Post("/t/{token}/qris", s.createPaymentQris)

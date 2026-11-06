@@ -27,9 +27,11 @@ import type {
   CreateQrisRequest,
   Error,
   ErrorResponse,
+  GetPaymentPreviewParams,
   PaymentLink,
   PaymentLinksRevoked,
   PaymentPage,
+  PaymentPreview,
   QrisStatus
 } from '../model';
 
@@ -270,6 +272,104 @@ export function useGetPaymentPage<TData = Awaited<ReturnType<typeof getPaymentPa
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = useGetPaymentPageQueryOptions(token,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * No session: the token is the access, and link errors answer as for getPaymentPage. Read only: nothing is recorded. It walks the tenant's open invoices oldest period first, the order a payment pays them, and lists each invoice the amount reaches with what it owes, what the amount pays on it and what it would still owe, so the page shows "Uang ini dipakai untuk" without doing the math. Invoices the amount does not reach are not listed. The amount is whole rupiah, at least Rp1 and at most what the tenant owes now; there is no QRIS limit here, since the page also previews a bank transfer. The answer is what paying would do at this moment: a payment recorded meanwhile changes it. Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * @summary What paying an amount now would pay (public; "Bayar sebagian")
+ */
+export const getPaymentPreview = (
+    token: string,
+    params: GetPaymentPreviewParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<PaymentPreview>(
+      {url: `/t/${token}/preview`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetPaymentPreviewQueryKey = (token: string,
+    params?: GetPaymentPreviewParams,) =>
+    apiQueryKey({ token,params }, { url: `/t/${token}/preview` });
+
+
+export const useGetPaymentPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getPaymentPreview>>, TError = ErrorType<Error | ErrorResponse>>(token: string,
+    params: GetPaymentPreviewParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentPreview>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ token,params }, { url: `/t/${token}/preview`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPaymentPreview>>> = ({ signal }) => getPaymentPreview(token,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPaymentPreview>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPaymentPreviewQueryResult = NonNullable<Awaited<ReturnType<typeof getPaymentPreview>>>
+export type GetPaymentPreviewQueryError = ErrorType<Error | ErrorResponse>
+
+
+export function useGetPaymentPreview<TData = Awaited<ReturnType<typeof getPaymentPreview>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string,
+    params: GetPaymentPreviewParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentPreview>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPaymentPreview>>,
+          TError,
+          Awaited<ReturnType<typeof getPaymentPreview>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPaymentPreview<TData = Awaited<ReturnType<typeof getPaymentPreview>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string,
+    params: GetPaymentPreviewParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentPreview>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPaymentPreview>>,
+          TError,
+          Awaited<ReturnType<typeof getPaymentPreview>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPaymentPreview<TData = Awaited<ReturnType<typeof getPaymentPreview>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string,
+    params: GetPaymentPreviewParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentPreview>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary What paying an amount now would pay (public; "Bayar sebagian")
+ */
+
+export function useGetPaymentPreview<TData = Awaited<ReturnType<typeof getPaymentPreview>>, TError = ErrorType<Error | ErrorResponse>>(
+ token: string,
+    params: GetPaymentPreviewParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPaymentPreview>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetPaymentPreviewQueryOptions(token,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
