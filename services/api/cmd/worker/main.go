@@ -24,6 +24,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise/promisetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 )
 
 func main() {
@@ -107,6 +109,16 @@ func run() error {
 		Log:      log,
 	}
 	if err := promises.Register(mux, sched); err != nil {
+		return err
+	}
+	reminders := remindertask.Worker{
+		Decider:  reminder.NewDecider(st, clk, log),
+		Orgs:     st,
+		Enqueuer: remindertask.NewClient(client),
+		Clock:    clk,
+		Log:      log,
+	}
+	if err := reminders.Register(mux, sched); err != nil {
 		return err
 	}
 

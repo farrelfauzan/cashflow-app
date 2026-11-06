@@ -290,6 +290,26 @@ type QrisAttempt struct {
 	AmountMismatch   bool
 }
 
+type Reminder struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	RunDay           time.Time
+	PromiseVersionID uuid.NullUUID
+	BrokenPromiseID  uuid.NullUUID
+	Status           string
+	SentAt           *time.Time
+	CreatedAt        time.Time
+}
+
+type ReminderInvoice struct {
+	OrganizationID uuid.UUID
+	ReminderID     uuid.UUID
+	InvoiceID      uuid.UUID
+	TenantID       uuid.UUID
+	Stage          string
+}
+
 type Role struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

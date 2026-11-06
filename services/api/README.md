@@ -377,6 +377,10 @@ https://www.twilio.com/docs/api/errors.
   when a payment keeps it, and closing the rest once their day has ended (kept, partially kept,
   broken), with the broken_promises visit task. `promisetask` runs the close from the worker at
   00:30 Asia/Jakarta.
+- `internal/reminder`: the daily reminder decisions (H-3, H0, H+3, a promise's H-1, a broken
+  promise's notice, and the h7 visit task at H+7), recorded once each as `reminder` rows, one per
+  tenant and run; nothing is sent yet (S4-5 sends them). `remindertask` runs `reminders:decide`
+  from the worker at 08:00 Asia/Jakarta, one task per organization and day.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.
