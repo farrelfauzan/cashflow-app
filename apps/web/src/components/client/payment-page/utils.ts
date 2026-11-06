@@ -26,6 +26,7 @@ import type {
   QrisCard,
   QrisDetailRow,
   QrisEvent,
+  QrisGuideApp,
   QrisModel,
   QrisOfferView,
   QrisStep,
@@ -306,6 +307,42 @@ export const QRIS_PENDING_TEXT =
 export const QRIS_NEW_TEXT = "Buat QR baru";
 export const QRIS_PAID_CLAIM_TEXT = "Saya sudah bayar";
 export const QRIS_CREATE_FAILED_TEXT = "QR belum bisa dibuat. Coba lagi.";
+
+// "Cara bayar pakai QR yang diunduh", the guide under a live QR (T-085, no board yet). App
+// menus change, so a per-app note names only what the app's own help page said (checked
+// 2026-11-06: bca.co.id, bankmandiri.co.id, gopay.co.id); every other app gets the generic hint.
+export const QRIS_GUIDE_TITLE = "Cara bayar pakai QR yang diunduh";
+export const QRIS_GUIDE_STEPS: readonly string[] = [
+  `Ketuk "${QRIS_DOWNLOAD_TEXT}". Bisa juga ambil tangkapan layar, asal seluruh kotak QR ikut.`,
+  "Buka aplikasi bank atau e-wallet, lalu pilih menu QRIS atau Scan.",
+  'Ketuk ikon galeri atau "Upload QR", lalu pilih gambar QR tadi.',
+  "Pastikan jumlahnya sama dengan di halaman ini, lalu konfirmasi pembayarannya di aplikasi.",
+  `Kembali ke halaman ini. Kalau belum Lunas, ketuk "${QRIS_PAID_CLAIM_TEXT}".`,
+];
+export const QRIS_GUIDE_IPHONE_NOTE =
+  "Di iPhone, QR yang diunduh biasanya masuk ke app File, bukan Foto. Kalau aplikasi tidak menemukannya, pakai tangkapan layar.";
+export const QRIS_GUIDE_APPS_TITLE = "Di aplikasi Anda";
+export const QRIS_GUIDE_APPS: readonly QrisGuideApp[] = [
+  {
+    name: "myBCA",
+    steps: 'Buka gambar QR di galeri, ketuk "Bagikan", lalu pilih myBCA.',
+  },
+  {
+    name: "Livin' by Mandiri",
+    steps: "Di beranda pilih QRIS, lalu pilih gambar QR dari galeri.",
+  },
+  {
+    name: "GoPay",
+    steps: 'Di beranda pilih QRIS, lalu "Upload QR" (ikon galeri).',
+  },
+  {
+    name: "Aplikasi lain",
+    steps:
+      "Seperti BRImo, wondr by BNI, OVO, DANA atau ShopeePay: di layar scan QRIS, cari ikon galeri atau unggah gambar.",
+  },
+];
+export const QRIS_GUIDE_FALLBACK =
+  "Tidak ada pilihan galeri? Scan QR ini dengan kamera dari HP lain, atau bayar lewat Transfer bank.";
 
 export const QRIS_EXPIRED_TITLE = "QR kedaluwarsa";
 export const QRIS_EXPIRED_TEXT =

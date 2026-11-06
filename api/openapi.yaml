@@ -1542,6 +1542,61 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "429": { $ref: "#/components/responses/Error" }
 
+  /t/{token}/preview:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The secret in the payment link. Never log it or send it anywhere else.
+        schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+    get:
+      tags: [payment-page]
+      operationId: getPaymentPreview
+      summary: What paying an amount now would pay (public; "Bayar sebagian")
+      description: >
+        No session: the token is the access, and link errors answer as for getPaymentPage. Read
+        only: nothing is recorded. It walks the tenant's open invoices oldest period first, the
+        order a payment pays them, and lists each invoice the amount reaches with what it owes,
+        what the amount pays on it and what it would still owe, so the page shows "Uang ini
+        dipakai untuk" without doing the math. Invoices the amount does not reach are not listed.
+        The amount is whole rupiah, at least Rp1 and at most what the tenant owes now; there is
+        no QRIS limit here, since the page also previews a bank transfer. The answer is what
+        paying would do at this moment: a payment recorded meanwhile changes it. Limited per
+        token and per client address together with getPaymentPage (429 rate_limited). Responses
+        carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+      security: []
+      parameters:
+        - name: amount
+          in: query
+          required: true
+          description: Whole rupiah the tenant would pay. Errors use field amount.
+          schema: { type: integer, format: int64, minimum: 1, example: 1000000 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentPreview" }
+        "400":
+          description: >
+            Field amount: missing, not a whole number or below Rp1 (code invalid_input), or above
+            what the tenant owes now, including when they owe nothing (code
+            amount_above_outstanding).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: "No working link with this token (code payment_link_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: "The link's invoice was paid or cancelled 30 days ago or longer (code payment_link_expired)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
   /t/{token}/status:
     parameters:
       - name: token
@@ -3433,6 +3488,34 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/TenantPromise" }
+
+    PaymentPreviewItem:
+      type: object
+      required: [invoiceId, kind, unitLabel, propertyName, period, periodEnd, dueDate, balance, applied, balanceAfter, paidInFull]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/InvoiceKind" }
+        unitLabel: { type: string, example: Kamar 11 }
+        propertyName: { type: string, example: Kos Melati }
+        period: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        balance: { type: integer, format: int64, example: 1250000, description: "What the invoice owes now, before this amount." }
+        applied: { type: integer, format: int64, example: 250000, description: "What the amount would pay on it; always above 0." }
+        balanceAfter: { type: integer, format: int64, example: 1000000, description: "What it would still owe; balance minus applied." }
+        paidInFull: { type: boolean, description: True when the amount pays what the invoice owes ("Lunas"). }
+
+    PaymentPreview:
+      type: object
+      required: [amount, outstandingBefore, outstandingAfter, items]
+      properties:
+        amount: { type: integer, format: int64, example: 1000000, description: "The amount previewed, as asked." }
+        outstandingBefore: { type: integer, format: int64, description: "What the tenant owes now over all their invoices." }
+        outstandingAfter: { type: integer, format: int64, description: "What they would still owe after paying amount." }
+        items:
+          type: array
+          description: The invoices the amount reaches, oldest period first; the last may be paid in part.
+          items: { $ref: "#/components/schemas/PaymentPreviewItem" }
 
     CreateQrisRequest:
       type: object

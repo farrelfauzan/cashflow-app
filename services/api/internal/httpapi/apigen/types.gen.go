@@ -1578,6 +1578,57 @@ type PaymentPageLine struct {
 	Label string `json:"label"`
 }
 
+// PaymentPreview defines model for PaymentPreview.
+type PaymentPreview struct {
+	// Amount The amount previewed, as asked.
+	//
+	// Example: 1000000
+	Amount int64 `json:"amount"`
+
+	// Items The invoices the amount reaches, oldest period first; the last may be paid in part.
+	Items []PaymentPreviewItem `json:"items"`
+
+	// OutstandingAfter What they would still owe after paying amount.
+	OutstandingAfter int64 `json:"outstandingAfter"`
+
+	// OutstandingBefore What the tenant owes now over all their invoices.
+	OutstandingBefore int64 `json:"outstandingBefore"`
+}
+
+// PaymentPreviewItem defines model for PaymentPreviewItem.
+type PaymentPreviewItem struct {
+	// Applied What the amount would pay on it; always above 0.
+	//
+	// Example: 250000
+	Applied int64 `json:"applied"`
+
+	// Balance What the invoice owes now, before this amount.
+	//
+	// Example: 1250000
+	Balance int64 `json:"balance"`
+
+	// BalanceAfter What it would still owe; balance minus applied.
+	//
+	// Example: 1000000
+	BalanceAfter int64              `json:"balanceAfter"`
+	DueDate      openapi_types.Date `json:"dueDate"`
+	InvoiceId    openapi_types.UUID `json:"invoiceId"`
+
+	// Kind regular: bills one period of the lease's term. final: the one invoice made at move-out for metered usage no regular invoice billed; its period and periodEnd are the lease's last day, so it belongs to the month the tenant left, and it is due on the move-out day.
+	Kind InvoiceKind `json:"kind"`
+
+	// PaidInFull True when the amount pays what the invoice owes ("Lunas").
+	PaidInFull bool               `json:"paidInFull"`
+	Period     openapi_types.Date `json:"period"`
+	PeriodEnd  openapi_types.Date `json:"periodEnd"`
+
+	// PropertyName Example: Kos Melati
+	PropertyName string `json:"propertyName"`
+
+	// UnitLabel Example: Kamar 11
+	UnitLabel string `json:"unitLabel"`
+}
+
 // PaymentPromise A tenant's promise as the payment page shows it, with its newest version's terms.
 type PaymentPromise struct {
 	// CreatedAt When the newest version was saved.
@@ -2217,6 +2268,12 @@ type ListTenantPromisesParams struct {
 	// Page The page to return, from 1. A page past the last has no items.
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// GetPaymentPreviewParams defines parameters for GetPaymentPreview.
+type GetPaymentPreviewParams struct {
+	// Amount Whole rupiah the tenant would pay. Errors use field amount.
+	Amount int64 `form:"amount" json:"amount"`
 }
 
 // RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.

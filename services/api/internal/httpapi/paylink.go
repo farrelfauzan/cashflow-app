@@ -3,6 +3,7 @@ package httpapi
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -46,6 +47,30 @@ func (s *Server) getPaymentPage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, http.StatusOK, toAPIPaymentPage(page))
 }
+
+// getPaymentPreview tells the tenant page what paying an amount now would pay, oldest invoice
+// first. It is read only, opens the link like getPaymentPage and shares its limits. The token is
+// never logged, as for getPaymentPage.
+func (s *Server) getPaymentPreview(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if !s.allowPaymentPage(w, r, token) {
+		return
+	}
+	amount, err := strconv.ParseInt(r.URL.Query().Get("amount"), 10, 64)
+	if err != nil || amount < 1 {
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", previewAmountMessage, "amount")
+		return
+	}
+	p, err := s.PayLinks.PublicPreview(r.Context(), token, amount)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIPaymentPreview(p))
+}
+
+// previewAmountMessage answers a previewed amount that is missing, not a whole number or below Rp1.
+const previewAmountMessage = "Jumlah harus angka bulat lebih dari Rp0."
 
 // allowPaymentPage counts the request against the client's address and the token, before
 // anything looks the token up, and answers 429 when either is over its limit. When the limiter
@@ -141,4 +166,20 @@ func toAPIPaymentPageInvoice(inv paylink.PageInvoice) apigen.PaymentPageInvoice 
 		Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate),
 		Amount: inv.Amount, Balance: inv.Balance, Lines: lines,
 	}
+}
+
+func toAPIPaymentPreview(p paylink.Preview) apigen.PaymentPreview {
+	out := apigen.PaymentPreview{
+		Amount: p.Amount, OutstandingBefore: p.OutstandingBefore, OutstandingAfter: p.OutstandingAfter,
+		Items: make([]apigen.PaymentPreviewItem, len(p.Items)),
+	}
+	for i, it := range p.Items {
+		inv := it.Invoice
+		out.Items[i] = apigen.PaymentPreviewItem{
+			InvoiceId: inv.ID, Kind: apigen.InvoiceKind(inv.Kind), UnitLabel: inv.UnitLabel, PropertyName: inv.PropertyName,
+			Period: date(inv.Period), PeriodEnd: date(inv.PeriodEnd), DueDate: date(inv.DueDate),
+			Balance: it.Balance, Applied: it.Applied, BalanceAfter: it.BalanceAfter, PaidInFull: it.PaidInFull,
+		}
+	}
+	return out
 }
