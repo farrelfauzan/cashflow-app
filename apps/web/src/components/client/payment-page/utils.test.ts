@@ -1,15 +1,37 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
 import type {
   PaymentPage,
   PaymentPageInvoice,
+  PaymentPreview,
   QrisStatus,
 } from "@/lib/api/generated/model";
 
-import type { QrisCard, QrisEvent, QrisModel } from "./type";
+import type {
+  PartialPayMode,
+  PreviewView,
+  QrisCard,
+  QrisEvent,
+  QrisModel,
+} from "./type";
 import {
   BUSY_WAIT_MS,
+  FULL_MODE,
+  PARTIAL_ABOVE_LIMIT_TEXT,
+  canChangePartialAmount,
+  changePartialAmount,
+  choosePartial,
+  chosenRemainderLine,
+  openPartialEntry,
+  partialAmountCheck,
+  partialFieldText,
+  partialModeAfterCard,
+  partialPayLabel,
+  previewErrorView,
+  previewView,
+  qrisPartialAmount,
+  quickAmounts,
   COPY_STATUS_TEXT,
   INITIAL_QRIS_MODEL,
   MESSAGES,
@@ -552,6 +574,13 @@ describe("qrisOfferView", () => {
       startLabel: "Bayar QRIS Rp2.250.000",
       limitNote: null,
       downloadName: "qris-kamar-07.png",
+      totalLine: "Total tagihan Rp2.250.000",
+      quickAmounts: [
+        { amount: 750_000, label: "Sisa Oktober 2026 · Rp750.000" },
+        { amount: 250_000, label: "Rp250.000" },
+        { amount: 500_000, label: "Rp500.000" },
+        { amount: 1_000_000, label: "Rp1.000.000" },
+      ],
     });
     const view = paymentPageView(page({ qrisAvailable: true }));
     expect(view.status === "open" && view.qris?.outstanding).toBe(2_250_000);
@@ -1479,5 +1508,383 @@ describe("qrisStep, tabs", () => {
     expect(
       qrisStep(before, { type: "tab-selected", tab: "qris" }).model,
     ).toEqual(model({ kind: "unavailable" }, { tab: "qris" }));
+  });
+});
+
+describe("quickAmounts", () => {
+  it("offers what is left of the oldest invoice first when several are open", () => {
+    expect(quickAmounts(page())).toEqual([
+      { amount: 750_000, label: "Sisa Oktober 2026 · Rp750.000" },
+      { amount: 250_000, label: "Rp250.000" },
+      { amount: 500_000, label: "Rp500.000" },
+      { amount: 1_000_000, label: "Rp1.000.000" },
+    ]);
+  });
+
+  it("names an untouched oldest invoice as in the summary", () => {
+    const october = invoice({
+      id: "inv-okt",
+      period: "2026-10-01",
+      balance: 1_500_000,
+    });
+    const chips = quickAmounts(
+      page({ outstanding: 3_000_000, openInvoices: [october, invoice()] }),
+    );
+    expect(chips[0]).toEqual({
+      amount: 1_500_000,
+      label: "Tagihan Oktober 2026 · Rp1.500.000",
+    });
+  });
+
+  it("offers only round amounts when one invoice is open", () => {
+    const only = invoice();
+    expect(
+      quickAmounts(page({ outstanding: 1_500_000, openInvoices: [only] })),
+    ).toEqual([
+      { amount: 250_000, label: "Rp250.000" },
+      { amount: 500_000, label: "Rp500.000" },
+      { amount: 1_000_000, label: "Rp1.000.000" },
+    ]);
+  });
+
+  it("drops round amounts at or above the total", () => {
+    const only = invoice({ amount: 500_000, balance: 500_000 });
+    expect(
+      quickAmounts(page({ outstanding: 500_000, openInvoices: [only] })),
+    ).toEqual([{ amount: 250_000, label: "Rp250.000" }]);
+    expect(
+      quickAmounts(
+        page({
+          outstanding: 250_000,
+          openInvoices: [invoice({ amount: 250_000, balance: 250_000 })],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not offer a round amount twice", () => {
+    const october = invoice({
+      id: "inv-okt",
+      period: "2026-10-01",
+      balance: 500_000,
+    });
+    const amounts = quickAmounts(
+      page({ outstanding: 2_000_000, openInvoices: [october, invoice()] }),
+    ).map((chip) => chip.amount);
+    expect(amounts).toEqual([500_000, 250_000, 1_000_000]);
+  });
+
+  it("leaves out an oldest balance one QR cannot take", () => {
+    const october = invoice({
+      id: "inv-okt",
+      period: "2026-10-01",
+      amount: 12_000_000,
+      balance: 12_000_000,
+    });
+    const amounts = quickAmounts(
+      page({ outstanding: 13_500_000, openInvoices: [october, invoice()] }),
+    ).map((chip) => chip.amount);
+    expect(amounts).toEqual([250_000, 500_000, 1_000_000]);
+  });
+
+  it("is part of the QRIS offer, with the total line", () => {
+    const offer = qrisOfferView(page({ qrisAvailable: true }));
+    expect(offer?.totalLine).toBe("Total tagihan Rp2.250.000");
+    expect(offer?.quickAmounts).toHaveLength(4);
+  });
+});
+
+describe("partialAmountCheck", () => {
+  it.each([
+    { name: "empty", text: "", want: { kind: "empty" } },
+    { name: "zero", text: "0", want: { kind: "empty" } },
+    { name: "Rp1", text: "1", want: { kind: "valid", amount: 1 } },
+    {
+      name: "grouped",
+      text: "1.000.000",
+      want: { kind: "valid", amount: 1_000_000 },
+    },
+    {
+      name: "one QR's most",
+      text: "10.000.000",
+      want: { kind: "valid", amount: 10_000_000 },
+    },
+    {
+      name: "above one QR's most",
+      text: "10.000.001",
+      want: { kind: "invalid", message: PARTIAL_ABOVE_LIMIT_TEXT },
+    },
+  ])("$name", ({ text, want }) => {
+    expect(partialAmountCheck(text)).toEqual(want);
+  });
+
+  it("says the limit in Bahasa Indonesia", () => {
+    expect(PARTIAL_ABOVE_LIMIT_TEXT).toBe(
+      "QRIS paling banyak Rp10.000.000 sekali bayar.",
+    );
+  });
+
+  it("partialFieldText groups a chip's amount for the field", () => {
+    expect(partialFieldText(750_000)).toBe("750.000");
+    expect(partialAmountCheck(partialFieldText(750_000))).toEqual({
+      kind: "valid",
+      amount: 750_000,
+    });
+  });
+});
+
+describe("qrisPartialAmount", () => {
+  it.each([
+    {
+      name: "below what is owed",
+      chosen: 500_000,
+      owed: 2_250_000,
+      want: 500_000,
+    },
+    {
+      name: "equal to what is owed",
+      chosen: 2_250_000,
+      owed: 2_250_000,
+      want: 2_250_000,
+    },
+    {
+      name: "above what is owed now",
+      chosen: 1_000_000,
+      owed: 750_000,
+      want: 750_000,
+    },
+    {
+      name: "above one QR's most",
+      chosen: 12_000_000,
+      owed: 20_000_000,
+      want: 10_000_000,
+    },
+    { name: "nothing owed", chosen: 500_000, owed: 0, want: null },
+    { name: "no amount", chosen: 0, owed: 500_000, want: null },
+  ])("$name", ({ chosen, owed, want }) => {
+    expect(qrisPartialAmount(chosen, owed)).toBe(want);
+  });
+});
+
+describe("partial labels", () => {
+  it("names the amount on the primary", () => {
+    expect(partialPayLabel(1_000_000)).toBe("Bayar QRIS Rp1.000.000");
+    expect(partialPayLabel(null)).toBe("Bayar QRIS");
+  });
+
+  it("says what stays owed only when something does", () => {
+    expect(chosenRemainderLine(1_250_000)).toBe(
+      "Sisa Rp1.250.000 tetap jadi tagihan.",
+    );
+    expect(chosenRemainderLine(0)).toBeNull();
+  });
+});
+
+const PREVIEW: PaymentPreview = {
+  amount: 1_000_000,
+  outstandingBefore: 2_250_000,
+  outstandingAfter: 1_250_000,
+  items: [
+    {
+      invoiceId: "inv-okt",
+      kind: "regular",
+      unitLabel: "Kamar 07",
+      propertyName: "Kos Melati",
+      period: "2026-10-01",
+      periodEnd: "2026-10-31",
+      dueDate: "2026-10-01",
+      balance: 750_000,
+      applied: 750_000,
+      balanceAfter: 0,
+      paidInFull: true,
+    },
+    {
+      invoiceId: "inv-nov",
+      kind: "regular",
+      unitLabel: "Kamar 07",
+      propertyName: "Kos Melati",
+      period: "2026-11-01",
+      periodEnd: "2026-11-30",
+      dueDate: "2026-11-01",
+      balance: 1_500_000,
+      applied: 250_000,
+      balanceAfter: 1_250_000,
+      paidInFull: false,
+    },
+  ],
+};
+
+describe("previewView", () => {
+  it("shows the API's items as they are", () => {
+    expect(previewView(PREVIEW)).toEqual({
+      amount: 1_000_000,
+      rows: [
+        {
+          id: "inv-okt",
+          name: "Oktober 2026",
+          chip: "Lunas",
+          paidInFull: true,
+          applied: "Rp750.000",
+        },
+        {
+          id: "inv-nov",
+          name: "November 2026",
+          chip: "sisa Rp1.250.000",
+          paidInFull: false,
+          applied: "Rp250.000",
+        },
+      ],
+      outstandingAfterLine: "Sisa tagihan setelah ini Rp1.250.000",
+      outstandingAfter: 1_250_000,
+    });
+  });
+
+  it("has no remainder line when the amount pays everything", () => {
+    expect(
+      previewView({ ...PREVIEW, outstandingAfter: 0 }).outstandingAfterLine,
+    ).toBeNull();
+  });
+});
+
+describe("previewErrorView", () => {
+  it("replaces the page when the link stopped working", () => {
+    expect(previewErrorView(apiError(404, "payment_link_not_found"))).toEqual({
+      kind: "link-gone",
+    });
+    expect(previewErrorView(apiError(410, "payment_link_expired"))).toEqual({
+      kind: "link-gone",
+    });
+  });
+
+  it("puts the API's refusal of the amount under the field", () => {
+    const error = new ApiError({
+      status: 400,
+      code: "amount_above_outstanding",
+      message: "Nominal lebih dari total tagihan.",
+      field: "amount",
+    });
+    expect(previewErrorView(error)).toEqual({
+      kind: "field",
+      message: "Nominal lebih dari total tagihan.",
+    });
+  });
+
+  it("shows the API's message for the rate limit", () => {
+    expect(previewErrorView(apiError(429, "rate_limited"))).toEqual({
+      kind: "alert",
+      message: "Pesan.",
+    });
+  });
+
+  it("shows the generic message for anything else", () => {
+    expect(previewErrorView(apiError(500, "internal"))).toEqual({
+      kind: "alert",
+      message: GENERIC_ERROR_MESSAGE,
+    });
+    expect(previewErrorView(new Error("boom"))).toEqual({
+      kind: "alert",
+      message: GENERIC_ERROR_MESSAGE,
+    });
+  });
+});
+
+describe("partial pay modes", () => {
+  const preview: PreviewView = previewView(PREVIEW);
+  const entry: PartialPayMode = { kind: "entry", text: "1.000.000" };
+  const chosen: PartialPayMode = {
+    kind: "chosen",
+    text: "1.000.000",
+    amount: 1_000_000,
+    outstandingAfter: 1_250_000,
+  };
+  const idle: QrisModel = { ...INITIAL_QRIS_MODEL, card: { kind: "idle" } };
+
+  it("opens the entry empty", () => {
+    expect(openPartialEntry()).toEqual({ kind: "entry", text: "" });
+  });
+
+  it("chooses the previewed amount and keeps what stays owed", () => {
+    expect(choosePartial(entry, preview)).toEqual(chosen);
+    expect(choosePartial(FULL_MODE, preview)).toBe(FULL_MODE);
+  });
+
+  it("goes back to the entry with the amount kept", () => {
+    expect(changePartialAmount(chosen)).toEqual(entry);
+    expect(changePartialAmount(FULL_MODE)).toBe(FULL_MODE);
+  });
+
+  it("offers Ubah nominal only while no QR is in flight", () => {
+    expect(canChangePartialAmount({ kind: "idle" })).toBe(true);
+    expect(canChangePartialAmount({ kind: "expired", amount: 1 })).toBe(true);
+    expect(canChangePartialAmount({ kind: "unavailable" })).toBe(true);
+    expect(canChangePartialAmount({ kind: "creating" })).toBe(false);
+    expect(
+      canChangePartialAmount({
+        kind: "pending",
+        amount: 1,
+        expiresAt: "2026-11-06T10:00:00Z",
+      }),
+    ).toBe(false);
+    expect(
+      canChangePartialAmount({ kind: "checking", amount: 1, checkedAt: null }),
+    ).toBe(false);
+  });
+
+  it.each<{ name: string; previous: QrisCard }>([
+    {
+      name: "pending",
+      previous: {
+        kind: "pending",
+        amount: 1,
+        expiresAt: "2026-11-06T10:00:00Z",
+      },
+    },
+    {
+      name: "checking",
+      previous: { kind: "checking", amount: 1, checkedAt: null },
+    },
+    { name: "creating", previous: { kind: "creating" } },
+    { name: "waiting", previous: { kind: "waiting", until: 0 } },
+  ])("returns to the whole page when a $name QR ends paid", ({ previous }) => {
+    expect(partialModeAfterCard(chosen, previous, idle)).toBe(FULL_MODE);
+  });
+
+  it("keeps the chosen amount when a create fails with an alert", () => {
+    expect(
+      partialModeAfterCard(
+        chosen,
+        { kind: "creating" },
+        {
+          ...idle,
+          alert: QRIS_CREATE_FAILED_TEXT,
+        },
+      ),
+    ).toBe(chosen);
+  });
+
+  it("keeps the chosen amount while the QR goes on or expires", () => {
+    const pending: QrisModel = {
+      ...INITIAL_QRIS_MODEL,
+      card: { kind: "pending", amount: 1, expiresAt: "2026-11-06T10:00:00Z" },
+    };
+    expect(partialModeAfterCard(chosen, { kind: "creating" }, pending)).toBe(
+      chosen,
+    );
+    expect(
+      partialModeAfterCard(chosen, pending.card, {
+        ...INITIAL_QRIS_MODEL,
+        card: { kind: "expired", amount: 1 },
+      }),
+    ).toBe(chosen);
+  });
+
+  it("leaves other views alone", () => {
+    expect(partialModeAfterCard(entry, { kind: "creating" }, idle)).toBe(entry);
+    expect(partialModeAfterCard(FULL_MODE, { kind: "creating" }, idle)).toBe(
+      FULL_MODE,
+    );
+    expect(partialModeAfterCard(chosen, { kind: "resuming" }, idle)).toBe(
+      chosen,
+    );
   });
 });

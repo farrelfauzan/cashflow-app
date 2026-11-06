@@ -153,7 +153,11 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
     name: `Bayar QRIS ${formatRupiah(expected.outstanding)}`,
   });
   await expect(payQris).toBeVisible();
-  await expect(page.getByRole("button")).toHaveCount(1);
+  // "Bayar QRIS" is the one primary; "Bayar sebagian" under it is a text button.
+  await expect(
+    page.getByRole("button", { name: "Bayar sebagian" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(2);
   await expect(page.getByRole("region", { name: "Transfer bank" })).toHaveCount(
     0,
   );

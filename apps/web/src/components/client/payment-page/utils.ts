@@ -1,4 +1,4 @@
-import { invoiceName } from "@/components/client/billing/utils";
+import { invoiceName, invoiceTitle } from "@/components/client/billing/utils";
 import { API_BASE_PATH } from "@/lib/api/client";
 import {
   ApiError,
@@ -8,10 +8,12 @@ import {
 import type {
   PaymentPage,
   PaymentPageInvoice,
+  PaymentPreview,
   QrisStatus,
 } from "@/lib/api/generated/model";
 import { formatDateTime, formatMonthYear } from "@/lib/format/date";
-import { formatRupiah } from "@/lib/format/rupiah";
+import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
+import { groupRupiahDigits } from "@/lib/format/rupiah-input";
 
 import type {
   CopyStatus,
@@ -22,13 +24,18 @@ import type {
   PaymentPageMessageView,
   PaymentPageState,
   PaymentPageView,
+  PartialAmountCheck,
+  PartialPayMode,
   PaymentTab,
+  PreviewErrorView,
+  PreviewView,
   QrisCard,
   QrisDetailRow,
   QrisEvent,
   QrisModel,
   QrisOfferView,
   QrisStep,
+  QuickAmountView,
   SummaryRowView,
   TransferView,
 } from "./type";
@@ -361,6 +368,8 @@ export function qrisOfferView(page: PaymentPage): QrisOfferView | null {
     startLabel: qrisStartLabel(page.outstanding),
     limitNote: qrisLimitNote(page.outstanding),
     downloadName: qrisDownloadName(page.invoice.unitLabel),
+    totalLine: `${TOTAL_LABEL} ${formatRupiah(page.outstanding)}`,
+    quickAmounts: quickAmounts(page),
   };
 }
 
@@ -807,4 +816,188 @@ export function qrisImageAlt(amount: number | null): string {
 // Radix Tabs hands back the value as a string.
 export function toPaymentTab(value: string): PaymentTab {
   return value === "transfer" ? "transfer" : "qris";
+}
+
+// "Bayar sebagian" (boards "Bayar sebagian" and "QRIS bayar sebagian"): the tenant picks an
+// amount, the API previews what it pays (getPaymentPreview), and one QR is made for it. Amounts
+// are compared, never added or subtracted: what the amount pays and what is left are the API's.
+
+export const PARTIAL_TITLE = "Bayar sebagian";
+export const PARTIAL_OPEN_TEXT = "Bayar sebagian";
+export const PARTIAL_BACK_TEXT = "Kembali";
+export const PARTIAL_AMOUNT_LABEL = "Nominal yang dibayar sekarang";
+export const PARTIAL_AMOUNT_HINT = "Bebas berapa pun, tanpa minimum.";
+export const PARTIAL_QUICK_LABEL = "Pilih nominal";
+export const PARTIAL_ABOVE_LIMIT_TEXT =
+  "QRIS paling banyak Rp10.000.000 sekali bayar.";
+export const PREVIEW_TITLE = "Uang ini dipakai untuk";
+export const PREVIEW_NOTE = "Tagihan tertua selalu dilunasi lebih dulu.";
+export const PREVIEW_PAID_CHIP = "Lunas";
+export const PARTIAL_CHANGE_TEXT = "Ubah nominal";
+
+// How long typing pauses before the preview is read. The preview shares 30 requests a minute per
+// token with the page and the QR status, so every keystroke must not be a request.
+export const PREVIEW_DEBOUNCE_MS = 400;
+
+// The round amounts offered under the field, each only while it is below what is owed.
+export const QUICK_ROUND_AMOUNTS: readonly number[] = [
+  250_000, 500_000, 1_000_000,
+];
+
+// The quick amounts of "Bayar sebagian": what is left of the oldest open invoice (only when more
+// than one is open, since otherwise it is the total), then Rp250.000, Rp500.000 and Rp1.000.000,
+// each only when strictly below the total. An amount one QR cannot take, or one already offered,
+// is left out. Comparisons only.
+export function quickAmounts(page: PaymentPage): QuickAmountView[] {
+  const chips: QuickAmountView[] = [];
+  const oldest = page.openInvoices[0];
+  if (
+    page.openInvoices.length > 1 &&
+    oldest !== undefined &&
+    oldest.balance > 0 &&
+    oldest.balance < page.outstanding &&
+    oldest.balance <= QRIS_LIMIT
+  ) {
+    chips.push({
+      amount: oldest.balance,
+      label: `${summaryRowLabel(oldest)} · ${formatRupiah(oldest.balance)}`,
+    });
+  }
+  for (const amount of QUICK_ROUND_AMOUNTS) {
+    if (amount >= page.outstanding) continue;
+    if (chips.some((chip) => chip.amount === amount)) continue;
+    chips.push({ amount, label: formatRupiah(amount) });
+  }
+  return chips;
+}
+
+// What the amount field holds. Empty and 0 are "nothing yet" (no message); above what one QR
+// takes is refused here. Above what is owed is the API's to say (the preview's 400).
+export function partialAmountCheck(text: string): PartialAmountCheck {
+  const amount = parseRupiahInput(text);
+  if (amount === null || amount < 1) return { kind: "empty" };
+  if (amount > QRIS_LIMIT) {
+    return { kind: "invalid", message: PARTIAL_ABOVE_LIMIT_TEXT };
+  }
+  return { kind: "valid", amount };
+}
+
+// The field text for an amount: 750000 gives "750.000".
+export function partialFieldText(amount: number): string {
+  return groupRupiahDigits(String(amount));
+}
+
+// The amount one QR of "Bayar sebagian" asks for: the chosen amount, but never above what is
+// owed now nor above one QR's most. Null when nothing is owed. The smallest of three, no math.
+export function qrisPartialAmount(
+  chosen: number,
+  outstanding: number,
+): number | null {
+  if (outstanding < 1 || chosen < 1) return null;
+  return Math.min(chosen, outstanding, QRIS_LIMIT);
+}
+
+// "Bayar QRIS Rp1.000.000"; just "Bayar QRIS" while no amount is valid.
+export function partialPayLabel(amount: number | null): string {
+  return amount === null ? "Bayar QRIS" : `Bayar QRIS ${formatRupiah(amount)}`;
+}
+
+// "Sisa Rp1.250.000 tetap jadi tagihan." under the chosen amount; null when it pays everything.
+export function chosenRemainderLine(outstandingAfter: number): string | null {
+  return outstandingAfter > 0
+    ? `Sisa ${formatRupiah(outstandingAfter)} tetap jadi tagihan.`
+    : null;
+}
+
+// The "Uang ini dipakai untuk" card, from the API's answer as is.
+export function previewView(preview: PaymentPreview): PreviewView {
+  return {
+    amount: preview.amount,
+    rows: preview.items.map((item) => ({
+      id: item.invoiceId,
+      name: invoiceTitle(item),
+      chip: item.paidInFull
+        ? PREVIEW_PAID_CHIP
+        : `sisa ${formatRupiah(item.balanceAfter)}`,
+      paidInFull: item.paidInFull,
+      applied: formatRupiah(item.applied),
+    })),
+    outstandingAfterLine:
+      preview.outstandingAfter > 0
+        ? `Sisa tagihan setelah ini ${formatRupiah(preview.outstandingAfter)}`
+        : null,
+    outstandingAfter: preview.outstandingAfter,
+  };
+}
+
+// What a failed preview shows: a link that stopped working replaces the page, the API's refusal
+// of the amount goes under the field, a rate limit shows the API's message, anything else the
+// generic one.
+export function previewErrorView(error: unknown): PreviewErrorView {
+  if (isLinkError(error)) return { kind: "link-gone" };
+  if (!(error instanceof ApiError)) {
+    return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
+  }
+  if (error.status === 400 && error.field === AMOUNT_FIELD) {
+    return { kind: "field", message: error.message };
+  }
+  if (error.status === 429) return { kind: "alert", message: error.message };
+  return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
+}
+
+export const FULL_MODE: PartialPayMode = { kind: "full" };
+
+// "Bayar sebagian" under "Bayar QRIS": the entry with an empty field.
+export function openPartialEntry(): PartialPayMode {
+  return { kind: "entry", text: "" };
+}
+
+// The primary of the entry: the amount and what the preview said would be left.
+export function choosePartial(
+  mode: PartialPayMode,
+  preview: PreviewView,
+): PartialPayMode {
+  if (mode.kind !== "entry") return mode;
+  return {
+    kind: "chosen",
+    text: mode.text,
+    amount: preview.amount,
+    outstandingAfter: preview.outstandingAfter,
+  };
+}
+
+// "Ubah nominal": back to the entry with the amount still in the field.
+export function changePartialAmount(mode: PartialPayMode): PartialPayMode {
+  if (mode.kind !== "chosen") return mode;
+  return { kind: "entry", text: mode.text };
+}
+
+// "Ubah nominal" shows only while no QR is being made, live or being checked.
+export function canChangePartialAmount(card: QrisCard): boolean {
+  return (
+    card.kind === "idle" ||
+    card.kind === "expired" ||
+    card.kind === "unavailable"
+  );
+}
+
+const QR_IN_FLIGHT: ReadonlySet<QrisCard["kind"]> = new Set([
+  "creating",
+  "waiting",
+  "pending",
+  "checking",
+]);
+
+// After the card changes: a chosen amount whose QR was paid (the card went back to idle without
+// an alert, and the page is read again) returns to the full page, so the tenant sees what is
+// left. A failed create comes back to idle with an alert and keeps the chosen amount.
+export function partialModeAfterCard(
+  mode: PartialPayMode,
+  previous: QrisCard,
+  next: QrisModel,
+): PartialPayMode {
+  if (mode.kind !== "chosen") return mode;
+  if (!QR_IN_FLIGHT.has(previous.kind)) return mode;
+  if (next.card.kind !== "idle" || next.alert !== null) return mode;
+  return FULL_MODE;
 }

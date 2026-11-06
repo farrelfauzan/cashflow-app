@@ -60,6 +60,67 @@ export type QrisOfferView = {
   limitNote: string | null;
   // "qris-kamar-07.png": the name "Unduh QR" saves under; never holds the token.
   downloadName: string;
+  // "Total tagihan Rp2.250.000", under the "Bayar sebagian" title.
+  totalLine: string;
+  // The amounts "Bayar sebagian" offers to fill in with one tap.
+  quickAmounts: QuickAmountView[];
+};
+
+// One quick-amount button of "Bayar sebagian".
+export type QuickAmountView = {
+  // Integer rupiah the button fills in: an API balance, or a fixed round amount.
+  amount: number;
+  // "Sisa Oktober 2026 · Rp750.000", "Rp500.000".
+  label: string;
+};
+
+// Which part of the QRIS flow the page shows. The field text of "Bayar sebagian" stays while the
+// tenant moves between the entry and the chosen amount, and goes when they leave.
+export type PartialPayMode =
+  // Today's page: everything owed, "Bayar QRIS Rp…" for the total.
+  | { kind: "full" }
+  // "Bayar sebagian": the amount field, quick amounts and the preview.
+  | { kind: "entry"; text: string }
+  // A chosen amount, paid by QRIS. `outstandingAfter` is the preview's, kept when it was chosen.
+  | { kind: "chosen"; text: string; amount: number; outstandingAfter: number };
+
+// What the amount field of "Bayar sebagian" holds, checked by comparison only.
+export type PartialAmountCheck =
+  // Nothing (or 0) typed: no preview, no message, the primary waits.
+  | { kind: "empty" }
+  // Typed but not payable by QRIS: the message under the field.
+  | { kind: "invalid"; message: string }
+  | { kind: "valid"; amount: number };
+
+// What a failed preview read means on screen.
+export type PreviewErrorView =
+  // The link stopped working: the page shows "Link tidak berlaku".
+  | { kind: "link-gone" }
+  // The API refused the amount (above what is owed): its message under the field.
+  | { kind: "field"; message: string }
+  // Rate limit, network, anything else: an alert.
+  | { kind: "alert"; message: string };
+
+// One invoice the previewed amount reaches, as the API answered it.
+export type PreviewRowView = {
+  id: string;
+  // "Oktober 2026", or "Tagihan akhir Oktober 2026".
+  name: string;
+  // "Lunas", or "sisa Rp1.250.000".
+  chip: string;
+  paidInFull: boolean;
+  // What the amount pays on it: "Rp750.000".
+  applied: string;
+};
+
+// The "Uang ini dipakai untuk" card.
+export type PreviewView = {
+  // The amount the API previewed; the primary waits until it is the field's amount.
+  amount: number;
+  rows: PreviewRowView[];
+  // "Sisa tagihan setelah ini Rp1.250.000"; null when the amount pays everything.
+  outstandingAfterLine: string | null;
+  outstandingAfter: number;
 };
 
 // The link's invoice under "Rincian" on Lunas.
@@ -177,8 +238,8 @@ export type QrisDetailRow = {
 export type QrisPayment = {
   model: QrisModel;
   // "Bayar QRIS", or "Buat QR baru" (`afterExpiry` reads the page again first, for the current
-  // total).
-  start: (afterExpiry: boolean) => void;
+  // total). `chosen` is the amount of "Bayar sebagian", or null for the total.
+  start: (afterExpiry: boolean, chosen: number | null) => void;
   // "Saya sudah bayar".
   check: () => void;
   // Reads the status once now (the countdown reached zero, the image did not load).

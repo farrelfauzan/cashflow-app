@@ -23,6 +23,7 @@ import {
   canCheckQris,
   canStartQris,
   qrisCreateAmount,
+  qrisPartialAmount,
   qrisStep,
   readsStatus,
   statusPollInterval,
@@ -112,7 +113,9 @@ export function useQrisPayment({
     void status.refetch();
   }
 
-  async function start(afterExpiry: boolean) {
+  // `chosen`: the amount of "Bayar sebagian", or null for the total. Either way capped by what is
+  // owed now (read again after an expiry) and by one QR's most.
+  async function start(afterExpiry: boolean, chosen: number | null) {
     if (!canStartQris(current.current)) return;
     apply({ type: "create-started" });
 
@@ -121,7 +124,10 @@ export function useQrisPayment({
       const page = await refetchPage();
       if (page !== undefined) outstanding = page.paid ? 0 : page.outstanding;
     }
-    const amount = qrisCreateAmount(outstanding);
+    const amount =
+      chosen === null
+        ? qrisCreateAmount(outstanding)
+        : qrisPartialAmount(chosen, outstanding);
     if (amount === null) {
       apply({ type: "create-skipped" });
       return;
@@ -158,7 +164,7 @@ export function useQrisPayment({
 
   return {
     model,
-    start: (afterExpiry) => void start(afterExpiry),
+    start: (afterExpiry, chosen) => void start(afterExpiry, chosen),
     check: () => void check(),
     pollNow,
     selectTab: (tab) => {
