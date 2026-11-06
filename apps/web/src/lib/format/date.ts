@@ -19,6 +19,13 @@ const calendarDayMonthParts = new Intl.DateTimeFormat("id-ID", {
   month: "short",
 });
 
+const calendarWeekdayDayMonthParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "UTC",
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+
 const calendarMonthYearParts = new Intl.DateTimeFormat("id-ID", {
   timeZone: "UTC",
   month: "long",
@@ -59,6 +66,12 @@ const jakartaDateTimeParts = new Intl.DateTimeFormat("id-ID", {
   hour: "2-digit",
   minute: "2-digit",
   hourCycle: "h23",
+});
+
+const jakartaDayMonthParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: JAKARTA,
+  day: "numeric",
+  month: "short",
 });
 
 const jakartaDateParts = new Intl.DateTimeFormat("id-ID", {
@@ -132,6 +145,19 @@ export function formatDayMonth(date: string): string {
     calendarDateToUtc(date, "formatDayMonth"),
   );
   return `${part(parts, "day")} ${part(parts, "month")}`;
+}
+
+/**
+ * Formats an API calendar date as its short weekday, day and month, for a promised day:
+ * `"2026-12-12"` gives `"Sab, 12 Des"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatWeekdayDayMonth(date: string): string {
+  const parts = calendarWeekdayDayMonthParts.formatToParts(
+    calendarDateToUtc(date, "formatWeekdayDayMonth"),
+  );
+  return `${part(parts, "weekday")}, ${part(parts, "day")} ${part(parts, "month")}`;
 }
 
 /**
@@ -224,6 +250,19 @@ export function formatTimestampDate(timestamp: string | Date): string {
     toInstant(timestamp, "formatTimestampDate"),
   );
   return `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
+}
+
+/**
+ * Formats the Jakarta calendar day of an API timestamp without its year, for short notes:
+ * `"2026-11-24T18:30:00Z"` gives `"25 Nov"`.
+ *
+ * @throws RangeError when the value is not a valid timestamp with a zone.
+ */
+export function formatTimestampDayMonth(timestamp: string | Date): string {
+  const parts = jakartaDayMonthParts.formatToParts(
+    toInstant(timestamp, "formatTimestampDayMonth"),
+  );
+  return `${part(parts, "day")} ${part(parts, "month")}`;
 }
 
 function toInstant(timestamp: string | Date, caller: string): Date {

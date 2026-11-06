@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import type { PaymentPage } from "@/lib/api/generated/model";
-import { formatRupiah } from "@/lib/format/rupiah";
 
 import { BankTransferMethod } from "./bank-transfer-method";
 import { ChosenAmountCard } from "./chosen-amount-card";

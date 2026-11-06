@@ -8,6 +8,8 @@ import {
   formatMonth,
   formatMonthYear,
   formatTimestampDate,
+  formatTimestampDayMonth,
+  formatWeekdayDayMonth,
   jakartaHour,
   jakartaToday,
 } from "./date";
@@ -151,6 +153,55 @@ describe("formatDayMonth", () => {
     { name: "a date that does not exist", input: "2026-02-30" },
   ])("throws on $name", ({ input }) => {
     expect(() => formatDayMonth(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatWeekdayDayMonth", () => {
+  it.each([
+    { input: "2026-12-12", want: "Sab, 12 Des" },
+    { input: "2026-12-13", want: "Min, 13 Des" },
+    { input: "2026-11-02", want: "Sen, 2 Nov" },
+    { input: "2026-10-28", want: "Rab, 28 Okt" },
+    { input: "2028-02-29", want: "Sel, 29 Feb" },
+  ])("formats $input as $want", ({ input, want }) => {
+    expect(formatWeekdayDayMonth(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "an empty string", input: "" },
+    { name: "a timestamp", input: "2026-10-25T00:00:00Z" },
+    { name: "a date that does not exist", input: "2026-02-30" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatWeekdayDayMonth(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatTimestampDayMonth", () => {
+  it.each([
+    {
+      name: "an afternoon in Jakarta",
+      input: "2026-11-25T07:00:00Z",
+      want: "25 Nov",
+    },
+    {
+      name: "an evening in UTC that is the next day in Jakarta",
+      input: "2026-11-24T18:30:00Z",
+      want: "25 Nov",
+    },
+    {
+      name: "a timestamp with an offset",
+      input: "2026-10-05T23:30:00+07:00",
+      want: "5 Okt",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampDayMonth(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "a timestamp without a zone", input: "2026-10-27T07:00:00" },
+    { name: "a calendar date", input: "2026-10-27" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatTimestampDayMonth(input)).toThrow(RangeError);
   });
 });
 

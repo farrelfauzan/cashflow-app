@@ -4,11 +4,18 @@ import { useAbility } from "@casl/react";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
+import { PromiseDialog } from "@/components/client/billing/promise-dialog";
 import { TenantAccountSection } from "@/components/client/billing/tenant-account-section";
-import type { CorrectionRequest } from "@/components/client/billing/type";
+import type {
+  CorrectionRequest,
+  PromiseDialogState,
+} from "@/components/client/billing/type";
 import {
   canCreateCorrection,
+  canCreatePromise,
   canReadAccount,
+  PROMISE_SAVED_NOTICE,
+  promiseDialogView,
 } from "@/components/client/billing/utils";
 import { FormAlert } from "@/components/client/form/form-alert";
 import {
@@ -24,7 +31,10 @@ import {
 } from "@/components/client/payment-link/utils";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
-import { useListTenantOpenInvoices } from "@/lib/api/generated/money/money";
+import {
+  useGetTenantAccount,
+  useListTenantOpenInvoices,
+} from "@/lib/api/generated/money/money";
 import { useGetTenant } from "@/lib/api/generated/tenants/tenants";
 import type { AppAbility } from "@/lib/capabilities";
 import { jakartaToday } from "@/lib/format/date";
@@ -57,7 +67,8 @@ type TenantDetailViewProps = {
 // pembayaran" (payment:record), "Ubah penyewa" and, for a tenant without an active lease,
 // "Sewakan unit", and "Catat meteran" on a lease that expects metered amounts (charge:record),
 // each shown from the member's capabilities (getOrgMe). "Salin link bayar" (invoice:read and
-// invoice:share) copies a new payment link for the tenant's newest open invoice.
+// invoice:share) copies a new payment link for the tenant's newest open invoice. "Catat janji"
+// (promise:create, while a promise can be made) records the tenant's payment promise.
 // The API answers 404 for a tenant that does not exist and 403 for one the member may not see;
 // both read "Penyewa tidak ditemukan".
 export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
@@ -86,6 +97,15 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
   });
   const shareInvoice = payLinkInvoice(canShare, openInvoices.data);
   const payLink = useCopyPayLink(orgId, setNotice);
+  // "Catat janji" needs what a promise may name now, from the account the money section reads
+  // (one query, shared); it shows only where that section does.
+  const canPromise = showAccount && canCreatePromise(ability);
+  const account = useGetTenantAccount(orgId, tenantId, {
+    query: { enabled: canPromise },
+  });
+  const [promiseDialog, setPromiseDialog] = useState<PromiseDialogState | null>(
+    null,
+  );
 
   if (tenant.isError) {
     if (isNotFound(tenant.error)) return <TenantNotFound orgId={orgId} />;
@@ -106,6 +126,15 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
     setPanel(next);
   }
   const rent = () => openPanel({ kind: "lease", tenant: data });
+  const promiseView =
+    canPromise && account.data !== undefined
+      ? promiseDialogView(account.data, data.name)
+      : null;
+  function closePromise() {
+    setPromiseDialog((previous) =>
+      previous === null ? null : { ...previous, open: false },
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3.5 md:gap-[22px]">
@@ -131,7 +160,35 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
                 onCopy: () => payLink.copy(shareInvoice.id),
               }
         }
+        onRecordPromise={
+          promiseView === null
+            ? null
+            : () => {
+                setNotice("");
+                setPromiseDialog((previous) => ({
+                  view: promiseView,
+                  open: true,
+                  opening: (previous?.opening ?? 0) + 1,
+                }));
+              }
+        }
       />
+      {promiseDialog !== null && (
+        <PromiseDialog
+          key={promiseDialog.opening}
+          orgId={orgId}
+          tenantId={tenantId}
+          view={promiseDialog.view}
+          open={promiseDialog.open}
+          onOpenChange={(open) => {
+            if (!open) closePromise();
+          }}
+          onSaved={() => {
+            closePromise();
+            setNotice(PROMISE_SAVED_NOTICE);
+          }}
+        />
+      )}
       {payLink.error !== null && <FormAlert message={payLink.error} />}
       {payLink.fallbackUrl !== null && (
         <PayLinkFallback

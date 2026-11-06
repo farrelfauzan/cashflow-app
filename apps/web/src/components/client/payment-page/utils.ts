@@ -19,7 +19,6 @@ import {
   formatDate,
   formatDateTime,
   formatLongDate,
-  formatMonth,
   formatMonthYear,
 } from "@/lib/format/date";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
@@ -36,6 +35,8 @@ import type {
   PayChoice,
   PayFlowMode,
   PromiseDraft,
+  PromiseDraftCheck,
+  PromiseDraftField,
   PromiseErrorTarget,
   PromiseErrorView,
   PromiseFormView,
@@ -1381,7 +1382,7 @@ export function defaultPromiseDraft(offer: PromiseOfferView): PromiseDraft {
 // "Ubah janji": the fields as the active promise has them. A "Bareng tagihan" promise that is no
 // longer offered becomes its date, chosen by hand.
 export function prefilledPromiseDraft(
-  promise: PaymentPromise,
+  promise: Pick<PaymentPromise, "kind" | "promisedDate" | "promisedAmount">,
   offer: PromiseOfferView,
 ): PromiseDraft {
   const kind = offeredPromiseKind(promise.kind, offer);
@@ -1488,61 +1489,77 @@ export function promiseAmountMaxText(rest: number): string {
 // mapped to them by promiseFormError.
 export const PROMISE_FORM_API_FIELDS = ["kind", "date", "amountText"] as const;
 
-// "Simpan janji": the request it sends, or the first field that is wrong by comparison (a
-// missing or out-of-range date, an amount of 0 or above the rest) with its message under it. The
-// API checks everything again and its message wins. The date is sent only for "Pilih tanggal
-// sendiri", the amount only when typed (empty is everything left), payingNow only when something
-// is paid right after. A kind no longer offered is sent as "Pilih tanggal sendiri".
+// A promise's fields checked by comparison, for the tenant's Janji screen and staff's "Catat
+// janji": the request they make, or the first field that is wrong (a missing or out-of-range date,
+// an amount of 0 or above the rest) with its message. The API checks everything again and its
+// message wins. The date is sent only for "Pilih tanggal sendiri", the amount only when typed
+// (empty is everything left), payingNow only when something is paid right after. A kind no longer
+// offered is sent as "Pilih tanggal sendiri".
+export function checkPromiseDraft(
+  draft: PromiseDraft,
+  offer: PromiseOfferView,
+  paying: PromisePaying | null,
+): PromiseDraftCheck {
+  const invalid = (
+    field: PromiseDraftField,
+    message: string,
+  ): PromiseDraftCheck => ({ ok: false, field, message });
+  const kind = offeredPromiseKind(draft.kind, offer);
+  const body: MakePaymentPromiseRequest = { kind };
+  if (kind === PromiseKind.specific_date) {
+    if (draft.date === "") return invalid("date", PROMISE_DATE_REQUIRED_TEXT);
+    if (draft.date < offer.earliest || draft.date > offer.latest) {
+      return invalid(
+        "date",
+        promiseDateRangeText(offer.earliest, offer.latest),
+      );
+    }
+    body.promisedDate = draft.date;
+  }
+  if (draft.amountText.trim() !== "") {
+    const amount = parseRupiahInput(draft.amountText);
+    if (amount === null || amount < 1) {
+      return invalid("amountText", PROMISE_AMOUNT_MIN_TEXT);
+    }
+    const rest = promiseRest(offer, paying);
+    if (amount > rest) {
+      return invalid("amountText", promiseAmountMaxText(rest));
+    }
+    body.promisedAmount = amount;
+  }
+  if (paying !== null) body.payingNow = paying.amount;
+  return { ok: true, body };
+}
+
+// The draft's fields, as the Janji form holds them.
+export const promiseDraftShape = {
+  kind: z.enum(PromiseKind),
+  date: z.string(),
+  amountText: z.string(),
+};
+
+// "Simpan janji": the request checkPromiseDraft makes, or its message under the field.
 export function promiseSchema(
   offer: PromiseOfferView,
   paying: PromisePaying | null,
 ) {
   return z
-    .object({
-      kind: z.enum(PromiseKind),
-      date: z.string(),
-      amountText: z.string(),
-    })
+    .object(promiseDraftShape)
     .transform((draft, ctx): MakePaymentPromiseRequest => {
-      const invalid = (
-        field: (typeof PROMISE_FORM_API_FIELDS)[number],
-        message: string,
-      ) => {
-        ctx.addIssue({ code: "custom", path: [field], message });
-        return z.NEVER;
-      };
-      const kind = offeredPromiseKind(draft.kind, offer);
-      const body: MakePaymentPromiseRequest = { kind };
-      if (kind === PromiseKind.specific_date) {
-        if (draft.date === "")
-          return invalid("date", PROMISE_DATE_REQUIRED_TEXT);
-        if (draft.date < offer.earliest || draft.date > offer.latest) {
-          return invalid(
-            "date",
-            promiseDateRangeText(offer.earliest, offer.latest),
-          );
-        }
-        body.promisedDate = draft.date;
-      }
-      if (draft.amountText.trim() !== "") {
-        const amount = parseRupiahInput(draft.amountText);
-        if (amount === null || amount < 1) {
-          return invalid("amountText", PROMISE_AMOUNT_MIN_TEXT);
-        }
-        const rest = promiseRest(offer, paying);
-        if (amount > rest) {
-          return invalid("amountText", promiseAmountMaxText(rest));
-        }
-        body.promisedAmount = amount;
-      }
-      if (paying !== null) body.payingNow = paying.amount;
-      return body;
+      const checked = checkPromiseDraft(draft, offer, paying);
+      if (checked.ok) return checked.body;
+      ctx.addIssue({
+        code: "custom",
+        path: [checked.field],
+        message: checked.message,
+      });
+      return z.NEVER;
     });
 }
 
 // Answers after which what the page shows is out of date: nothing is owed any more, the amount
 // owed changed, the next invoice or the date range moved.
-const PROMISE_REFETCH_CODES: ReadonlySet<string> = new Set([
+export const PROMISE_REFETCH_CODES: ReadonlySet<string> = new Set([
   "promise_nothing_owed",
   "promise_amount_above_outstanding",
   "promise_no_next_invoice",

@@ -124,6 +124,14 @@ export type PromiseDraft = {
   amountText: string;
 };
 
+// A field of the promise draft a check can fault.
+export type PromiseDraftField = "date" | "amountText";
+
+// checkPromiseDraft's answer: the request to send, or the first wrong field and its message.
+export type PromiseDraftCheck =
+  | { ok: true; body: MakePaymentPromiseRequest }
+  | { ok: false; field: PromiseDraftField; message: string };
+
 // What the tenant pays right after saving the promise ("Simpan janji, lalu bayar Rp…"): the
 // amount of "Bayar sebagian", its field text, and what its preview said would be left.
 export type PromisePaying = {

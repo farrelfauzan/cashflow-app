@@ -59,6 +59,7 @@ import {
   promiseRecordedView,
   promiseFormError,
   promiseSchema,
+  checkPromiseDraft,
   promiseSaved,
   showsPayBack,
   toPayChoice,
@@ -2879,5 +2880,45 @@ describe("Janji tercatat", () => {
         promise: saved,
       }).outstandingLine,
     ).toBeNull();
+  });
+});
+
+describe("checkPromiseDraft", () => {
+  it("makes the request, or names the first wrong field", () => {
+    expect(
+      checkPromiseDraft(
+        { kind: "specific_date", date: OFFER.earliest, amountText: "1.000" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({
+      ok: true,
+      body: {
+        kind: "specific_date",
+        promisedDate: OFFER.earliest,
+        promisedAmount: 1_000,
+      },
+    });
+    expect(
+      checkPromiseDraft(
+        { kind: "specific_date", date: "", amountText: "0" },
+        OFFER,
+        null,
+      ),
+    ).toEqual({
+      ok: false,
+      field: "date",
+      message: "Pilih tanggal pelunasan.",
+    });
+  });
+
+  it("sends a kind no longer offered as a date of the tenant's own", () => {
+    expect(
+      checkPromiseDraft(
+        { kind: "with_next_invoice", date: "", amountText: "" },
+        NO_NEXT_OFFER,
+        null,
+      ),
+    ).toMatchObject({ ok: false, field: "date" });
   });
 });

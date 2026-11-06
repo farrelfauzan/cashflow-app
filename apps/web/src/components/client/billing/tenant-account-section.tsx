@@ -14,6 +14,7 @@ import {
   ACCOUNT_REGION_LABEL,
   accountTiles,
   canCreateCorrection,
+  canReadPromises,
   correctionDialogView,
   correctionRows,
   correctionSavedNotice,
@@ -27,6 +28,7 @@ import { CorrectionDialog } from "./correction-dialog";
 import { CorrectionList } from "./correction-list";
 import { InvoiceList } from "./invoice-list";
 import { PaymentList } from "./payment-list";
+import { PromiseHistory } from "./promise-history";
 
 type TenantAccountSectionProps = {
   orgId: string;
@@ -50,8 +52,9 @@ type CorrectionDialogState = {
   opening: number;
 };
 
-// The tenant's money on Detail penyewa (board "iPad · Detail penyewa"): the totals as tiles,
-// "Tagihan", "Pembayaran dan alokasi" and "Koreksi nominal". Every figure comes from
+// The tenant's money on Detail penyewa (board "iPad · Detail penyewa"): the totals and the active
+// promise as tiles, "Tagihan", "Pembayaran dan alokasi", "Riwayat janji" (for a member with
+// promise:read) and "Koreksi nominal". Every figure comes from
 // getTenantAccount. The caller renders it only for a member with invoice:read and payment:read.
 // A member with correction:create gets "Koreksi" on each invoice and payment, which opens the
 // board "iPad · Koreksi nominal" for it.
@@ -64,7 +67,9 @@ export function TenantAccountSection({
   correctionRequest,
 }: TenantAccountSectionProps) {
   const account = useGetTenantAccount(orgId, tenantId);
-  const canCorrect = canCreateCorrection(useAbility<AppAbility>());
+  const ability = useAbility<AppAbility>();
+  const canCorrect = canCreateCorrection(ability);
+  const showPromises = canReadPromises(ability);
   const [dialog, setDialog] = useState<CorrectionDialogState | null>(null);
   // The last outside request acted on. A new one opens the dialog for its invoice, with a fresh
   // opening (and so its own requestId), as a "Koreksi" button would.
@@ -136,8 +141,8 @@ export function TenantAccountSection({
       aria-label={ACCOUNT_REGION_LABEL}
       className="flex flex-col gap-3.5 md:gap-[22px]"
     >
-      {/* Phone: "Tunggakan" across the top, the other two side by side; iPad: one row of three. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+      {/* Phone: "Tunggakan" across the top, the others in pairs; iPad: one row of four. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         {accountTiles(data, today).map((tile, index) => (
           <AccountTile
             key={tile.label}
@@ -153,6 +158,7 @@ export function TenantAccountSection({
         />
         <PaymentList payments={paymentRows(data)} onCorrect={correctPayment} />
       </div>
+      {showPromises && <PromiseHistory orgId={orgId} tenantId={tenantId} />}
       <CorrectionList corrections={correctionRows(data)} />
       {dialog !== null && dialogView !== null && (
         <CorrectionDialog
