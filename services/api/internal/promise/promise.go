@@ -402,5 +402,15 @@ func LoadPageTx(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID, outstan
 	return out, nil
 }
 
+// Offer is the window a promise made now may use, nil when none can be made: the tenant owes
+// nothing, or the active promise reached its 60-day bound. The payment page and the staff views
+// both take promiseDates and nextInvoiceDueDate from it (Earliest, Latest, NextDueInRange).
+func (st PageState) Offer() *Window {
+	if st.Window == nil || st.Window.Empty() {
+		return nil
+	}
+	return st.Window
+}
+
 // jakartaDay is the calendar day of t in Asia/Jakarta, as midnight UTC like a date column.
 func jakartaDay(t time.Time) time.Time { return calendarDay(t.In(clock.Jakarta)) }

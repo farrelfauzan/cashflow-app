@@ -109,6 +109,11 @@ type InvoiceListItem struct {
 	OverdueDays    int // 0 when nothing is overdue
 	PastPlannedEnd bool
 	Lines          []AccountLine
+	// Promise is the tenant's active promise when its newest version covers this invoice, with
+	// only the covered invoices the caller may see; nil otherwise.
+	Promise *ActivePromise
+	// BrokenPromises is how many promises the tenant broke, ever.
+	BrokenPromises int
 }
 
 // OldestOverdue is the oldest debt now, with the unit of that invoice.
@@ -128,6 +133,8 @@ type InvoiceSummary struct {
 	Paid               int64
 	Outstanding        int64
 	TenantsOutstanding int
+	// TenantsWithPromise is how many of the TenantsOutstanding tenants have an active promise.
+	TenantsWithPromise int
 	OldestOverdue      *OldestOverdue
 }
 
@@ -228,6 +235,9 @@ func (s *Service) ListInvoices(ctx context.Context, p authz.Principal, iq Invoic
 		if out.Items, err = loadInvoicePage(ctx, q, args); err != nil {
 			return err
 		}
+		if err := s.addPromises(ctx, tx, org, out.Items, vis.leaseIDs); err != nil {
+			return err
+		}
 		out.Summary, err = loadInvoiceSummary(ctx, q, args)
 		return err
 	})
@@ -235,6 +245,34 @@ func (s *Service) ListInvoices(ctx context.Context, p authz.Principal, iq Invoic
 		return InvoiceList{}, err
 	}
 	return out, nil
+}
+
+// addPromises sets each row's tenant promise and broken count, in one read for the whole page.
+// Covered invoices are kept only in leaseIDs, the leases the caller may see.
+func (s *Service) addPromises(ctx context.Context, tx pgx.Tx, org uuid.UUID, items []InvoiceListItem, leaseIDs []uuid.UUID) error {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := map[uuid.UUID]bool{}
+	var tenants []uuid.UUID
+	for _, it := range items {
+		if !seen[it.TenantID] {
+			seen[it.TenantID] = true
+			tenants = append(tenants, it.TenantID)
+		}
+	}
+	byTenant, err := s.promises.PromiseSummariesTx(ctx, tx, org, tenants, leaseIDs)
+	if err != nil {
+		return fmt.Errorf("loading the tenants' promises: %w", err)
+	}
+	for i := range items {
+		sum := byTenant[items[i].TenantID]
+		items[i].BrokenPromises = sum.Broken
+		if sum.Active.Covers(items[i].ID) {
+			items[i].Promise = sum.Active
+		}
+	}
+	return nil
 }
 
 // visible is what a member may see of the organization's money: the leases whose invoices they
@@ -380,7 +418,10 @@ func loadInvoiceSummary(ctx context.Context, q *dbgen.Queries, args dbgen.ListIn
 	if err != nil {
 		return InvoiceSummary{}, fmt.Errorf("summing the month's invoices: %w", err)
 	}
-	out := InvoiceSummary{Billed: sum.Billed, Paid: sum.Paid, Outstanding: sum.Outstanding, TenantsOutstanding: int(sum.TenantsOutstanding)}
+	out := InvoiceSummary{
+		Billed: sum.Billed, Paid: sum.Paid, Outstanding: sum.Outstanding,
+		TenantsOutstanding: int(sum.TenantsOutstanding), TenantsWithPromise: int(sum.TenantsWithPromise),
+	}
 	oldest, err := q.GetOldestOverdue(ctx, dbgen.GetOldestOverdueParams{
 		OrganizationID: args.OrganizationID, LeaseIds: args.LeaseIds, Today: args.Today, PropertyID: args.PropertyID,
 	})

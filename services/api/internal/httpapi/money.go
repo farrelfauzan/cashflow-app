@@ -31,9 +31,18 @@ func (s *Server) getTenantAccount(w http.ResponseWriter, r *http.Request) {
 	totals := toAPITotals(acct.Totals)
 	out := apigen.TenantAccount{
 		TenantId: acct.TenantID, Outstanding: totals.Outstanding, Overdue: totals.Overdue, OldestUnpaidDueDate: totals.OldestUnpaidDueDate,
-		Credit:   totals.Credit,
-		Invoices: make([]apigen.AccountInvoice, len(acct.Invoices)),
-		Payments: make([]apigen.AccountPayment, len(acct.Payments)),
+		Credit:         totals.Credit,
+		Invoices:       make([]apigen.AccountInvoice, len(acct.Invoices)),
+		Payments:       make([]apigen.AccountPayment, len(acct.Payments)),
+		ActivePromise:  toAPIActivePromise(acct.Promises.Active),
+		BrokenPromises: acct.Promises.Broken,
+	}
+	if d := acct.Promises.Dates; d != nil {
+		out.PromiseDates = &apigen.PromiseDates{Earliest: date(d.Earliest), Latest: date(d.Latest)}
+	}
+	if due := acct.Promises.NextInvoiceDueDate; due != nil {
+		d := date(*due)
+		out.NextInvoiceDueDate = &d
 	}
 	for i, inv := range acct.Invoices {
 		out.Invoices[i] = toAPIAccountInvoice(inv)

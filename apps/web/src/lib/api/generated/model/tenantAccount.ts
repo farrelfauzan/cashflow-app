@@ -7,11 +7,27 @@
 import type { AccountInvoice } from './accountInvoice';
 import type { AccountPayment } from './accountPayment';
 import type { AccountTotals } from './accountTotals';
+import type { ActivePromise } from './activePromise';
+import type { PromiseDates } from './promiseDates';
 
-export type TenantAccount = AccountTotals & {
+export type TenantAccount = AccountTotals & ({
   tenantId: string;
   /** Oldest period first, cancelled ones included. */
   invoices: AccountInvoice[];
   /** Oldest received first. */
   payments: AccountPayment[];
-};
+  /** The newest version of the tenant's active payment promise, or null when the tenant has none. It stays active until it is closed, even once everything is paid. */
+  activePromise: ActivePromise | null;
+  /**
+     * How many of the tenant's promises closed broken, ever; 0 when none did.
+     * @minimum 0
+     */
+  brokenPromises: number;
+  /** The days a promise made now may name, exactly as the payment page gives them: for an edit of the active promise, no later than 60 days from its first version. Null when no promise can be made now: the tenant owes nothing, or the active promise has reached that bound. */
+  promiseDates: PromiseDates | null;
+  /**
+     * The due date a with_next_invoice promise made now would take, the same value as the payment page's nextInvoiceDueDate. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest (or promiseDates is null).
+     * @nullable
+     */
+  nextInvoiceDueDate: string | null;
+});

@@ -4,6 +4,7 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { ActivePromise } from './activePromise';
 import type { InvoiceKind } from './invoiceKind';
 import type { InvoiceLine } from './invoiceLine';
 import type { InvoiceStatus } from './invoiceStatus';
@@ -32,4 +33,11 @@ export interface InvoiceListItem {
   /** The lease is still active after its planned end date (Lewat rencana keluar): the admin should record the move-out or change the date. */
   pastPlannedEnd: boolean;
   lines: InvoiceLine[];
+  /** The tenant's active payment promise when its newest version covers this invoice (the invoice still owed something when that version was made); null when the tenant has no active promise or it does not cover this invoice. Its coveredInvoiceIds list only the invoices the caller may see. */
+  promise: ActivePromise | null;
+  /**
+     * How many of the tenant's promises closed broken, ever; 0 when none did.
+     * @minimum 0
+     */
+  brokenPromises: number;
 }

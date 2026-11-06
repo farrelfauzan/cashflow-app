@@ -15,5 +15,7 @@ export interface InvoiceListSummary {
   outstanding: number;
   /** Tenants with a month's invoice still owing something. */
   tenantsOutstanding: number;
+  /** Of the tenants counted in tenantsOutstanding, those with an active payment promise (9 penyewa, 3 ada janji). */
+  tenantsWithPromise: number;
   oldestOverdue?: OldestOverdue;
 }
