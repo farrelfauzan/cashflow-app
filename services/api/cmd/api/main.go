@@ -35,6 +35,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
@@ -118,10 +119,16 @@ func run() error {
 	})
 
 	payLinks := paylink.NewService(st, az, clk, cfg.PublicWebOrigin)
-	qrisSvc, err := newQRIS(cfg, st, payLinks, az, limiter, clk, log)
+	keys, err := cfg.Secrets.Keyring()
 	if err != nil {
 		return err
 	}
+	accounts := autogopay.NewService(st, keys, az, clk)
+	qrisSvc, err := newQRIS(cfg, st, payLinks, accounts, az, limiter, clk, log)
+	if err != nil {
+		return err
+	}
+	webhooks := qris.NewWebhook(accounts, qristask.NewPaidClient(queueClient), log)
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,
@@ -135,6 +142,7 @@ func run() error {
 		Billing:        billingSvc,
 		PayLinks:       payLinks,
 		QRIS:           qrisSvc,
+		Webhooks:       webhooks,
 		PublicLimiter:  limiter,
 		CookieSecure:   cookieSecure,
 		AllowedOrigins: allowedOrigins,
@@ -210,21 +218,17 @@ func healthcheck() error {
 	return nil
 }
 
-// newQRIS builds the QRIS service: AutoGoPay's client, the organizations' keys decrypted with the
-// secrets keyring, and the Redis counters that cap generates and checks per tenant.
-func newQRIS(cfg config.API, st *store.Store, links qris.LinkOpener, az *authz.Service,
+// newQRIS builds the QRIS service: AutoGoPay's client, the organizations' keys, and the Redis
+// counters that cap generates and checks per tenant.
+func newQRIS(cfg config.API, st *store.Store, links qris.LinkOpener, accounts *autogopay.Service, az *authz.Service,
 	limiter qris.Limiter, clk clock.Clock, log *slog.Logger) (*qris.Service, error) {
-	keys, err := cfg.Secrets.Keyring()
-	if err != nil {
-		return nil, err
-	}
 	gateway, err := autogopay.NewClient(autogopay.Config{BaseURL: cfg.AutoGoPayBaseURL})
 	if err != nil {
 		return nil, err
 	}
 	return qris.NewService(qris.Deps{
 		Store: st, Links: links, Clock: clk, Gateway: gateway,
-		Keys: autogopay.NewService(st, keys, az, clk), Limiter: limiter, Audit: az, Log: log,
+		Keys: accounts, Limiter: limiter, Audit: az, Log: log,
 		MaxConcurrentCalls: cfg.QRISMaxConcurrent,
 	}), nil
 }

@@ -73,3 +73,10 @@ WHERE organization_id = @organization_id AND status = 'pending'
   AND (expires_at <= @now OR check_requested_at IS NOT NULL)
 ORDER BY created_at, id
 LIMIT @max_rows;
+
+-- name: GetQrisAttemptByTransactionID :one
+-- The attempt AutoGoPay's webhook names, inside the organization its URL belongs to.
+SELECT id, organization_id, tenant_id, payment_link_id, amount, transaction_id, qr_string, status,
+       expires_at, created_at, closed_at, check_requested_at
+FROM qris_attempt
+WHERE organization_id = @organization_id AND transaction_id = @transaction_id;

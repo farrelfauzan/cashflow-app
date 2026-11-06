@@ -82,14 +82,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	qrisSvc := qris.NewService(qris.Deps{
+		Store: st, Clock: clk, Gateway: gateway, Keys: autogopay.NewService(st, keys, az, clk), Audit: az, Log: log,
+	})
 	reconcile := qristask.Worker{
-		Reconciler: qris.NewService(qris.Deps{
-			Store: st, Clock: clk, Gateway: gateway, Keys: autogopay.NewService(st, keys, az, clk), Audit: az, Log: log,
-		}),
-		Orgs:     st,
-		Enqueuer: qristask.NewClient(client),
-		Clock:    clk,
-		Log:      log,
+		Reconciler: qrisSvc,
+		Settler:    qrisSvc,
+		Orgs:       st,
+		Enqueuer:   qristask.NewClient(client),
+		Clock:      clk,
+		Log:        log,
 	}
 	if err := reconcile.Register(mux, sched); err != nil {
 		return err

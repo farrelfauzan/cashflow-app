@@ -54,6 +54,8 @@ type Deps struct {
 	PayLinks *paylink.Service
 	// QRIS makes, reads and checks the tenant's QRIS attempts behind a payment link.
 	QRIS *qris.Service
+	// Webhooks handles AutoGoPay's callbacks.
+	Webhooks *qris.Webhook
 	// PublicLimiter rate-limits the public payment page per token and per client address.
 	PublicLimiter ratelimit.Limiter
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
@@ -88,6 +90,10 @@ func New(d Deps) *Server {
 		r.Get("/docs", s.docsPage)
 		r.Get("/docs/openapi.yaml", s.docsSpec)
 	}
+
+	// AutoGoPay's callbacks: no session and no origin check (a server calls them); the webhook id
+	// in the path finds the organization and its key checks the signature.
+	r.Post("/webhooks/autogopay/{webhookID}", s.autogopayWebhook)
 
 	r.Route("/api", func(r chi.Router) {
 		r.NotFound(s.notFound)

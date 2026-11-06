@@ -25,7 +25,9 @@ import (
 //
 // paidAmount is what AutoGoPay says was paid. Its status answer carries no amount, so the check
 // and reconcile pass the attempt's own amount; the webhook (S3-6) passes the amount it reports.
-func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attempt, paidAmount int64) error {
+//
+// It returns the amount of the recorded payment and whether this call inserted it.
+func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attempt, paidAmount int64) (int64, bool, error) {
 	q := dbgen.New(tx)
 	ref := a.TransactionID
 	now := s.clock.Now()
@@ -33,14 +35,15 @@ func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attem
 		ID: uuid.New(), OrganizationID: org, TenantID: a.TenantID, Amount: paidAmount,
 		Method: billing.MethodQRIS, ReceivedAt: now, Source: billing.SourceQRIS, SourceRef: &ref,
 	})
+	inserted := err == nil
 	switch {
-	case err == nil:
+	case inserted:
 		if _, err := billing.Allocate(ctx, tx, org, a.TenantID); err != nil {
-			return fmt.Errorf("qris: allocating the payment of attempt %s: %w", a.ID, err)
+			return 0, false, fmt.Errorf("qris: allocating the payment of attempt %s: %w", a.ID, err)
 		}
 		if err := s.audit.RecordSystemAction(ctx, tx, org, authz.ActionPaymentRecord,
 			authz.Resource{Type: "payment", ID: pay.ID.String()}); err != nil {
-			return fmt.Errorf("qris: auditing the payment of attempt %s: %w", a.ID, err)
+			return 0, false, fmt.Errorf("qris: auditing the payment of attempt %s: %w", a.ID, err)
 		}
 	case errors.Is(err, pgx.ErrNoRows):
 		// An earlier settle recorded it.
@@ -48,19 +51,19 @@ func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attem
 			OrganizationID: org, Source: billing.SourceQRIS, SourceRef: &ref,
 		})
 		if err != nil {
-			return fmt.Errorf("qris: loading the recorded payment of attempt %s: %w", a.ID, err)
+			return 0, false, fmt.Errorf("qris: loading the recorded payment of attempt %s: %w", a.ID, err)
 		}
 	default:
-		return fmt.Errorf("qris: recording the payment of attempt %s: %w", a.ID, err)
+		return 0, false, fmt.Errorf("qris: recording the payment of attempt %s: %w", a.ID, err)
 	}
 	paid := pay.Amount
 	if _, err := q.MarkQrisAttemptPaid(ctx, dbgen.MarkQrisAttemptPaidParams{
 		OrganizationID: org, ID: a.ID, PaidAmount: &paid, Now: &now,
 	}); err != nil {
-		return fmt.Errorf("qris: marking attempt %s paid: %w", a.ID, err)
+		return 0, false, fmt.Errorf("qris: marking attempt %s paid: %w", a.ID, err)
 	}
 	a.Status = AttemptPaid
-	return nil
+	return paid, inserted, nil
 }
 
 // record applies what AutoGoPay said about attempt a: a payment is settled, an expiry or a cancel
@@ -68,7 +71,8 @@ func (s *Service) settle(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attem
 func (s *Service) record(ctx context.Context, tx pgx.Tx, org uuid.UUID, a *Attempt, o outcome) error {
 	switch o {
 	case outcomePaid:
-		return s.settle(ctx, tx, org, a, a.Amount)
+		_, _, err := s.settle(ctx, tx, org, a, a.Amount)
+		return err
 	case outcomeExpired:
 		return s.close(ctx, tx, org, a, AttemptExpired)
 	case outcomeCancelled:
