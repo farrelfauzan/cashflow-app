@@ -32,6 +32,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
@@ -59,6 +60,8 @@ type Deps struct {
 	PastTenants    *tenant.Service
 	// PayLinks sets the organization's bank account, as cmd/admin set-bank-account does.
 	PayLinks *paylink.Service
+	// AutoGoPay stores DemoAutoGoPayKey for the organizations whose spec has QRIS; nil skips it.
+	AutoGoPay *autogopay.Service
 }
 
 // Login is one staff member who can sign in to one organization.
@@ -129,6 +132,9 @@ func (s *seeder) run(ctx context.Context) error {
 	if err := s.ensureBankAccount(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureAutoGoPay(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureProperties(ctx); err != nil {
 		return err
 	}
@@ -194,6 +200,29 @@ func (s *seeder) ensureBankAccount(ctx context.Context) error {
 	}
 	if _, err := s.d.PayLinks.SetBankAccount(ctx, s.p.OrganizationID, *s.spec.BankAccount); err != nil {
 		return fmt.Errorf("setting the bank account: %w", err)
+	}
+	return nil
+}
+
+// ensureAutoGoPay stores DemoAutoGoPayKey when the spec asks for QRIS and the organization has no
+// AutoGoPay account yet. An account that exists, a real key set by hand included, is left alone.
+func (s *seeder) ensureAutoGoPay(ctx context.Context) error {
+	if !s.spec.QRIS || s.d.AutoGoPay == nil {
+		return nil
+	}
+	org := s.p.OrganizationID
+	err := s.d.Store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		_, err := s.d.AutoGoPay.APIKey(ctx, tx, org)
+		return err
+	})
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, autogopay.ErrNoAccount) {
+		return fmt.Errorf("reading the AutoGoPay account: %w", err)
+	}
+	if _, err := s.d.AutoGoPay.SetAPIKey(ctx, org, DemoAutoGoPayKey); err != nil {
+		return fmt.Errorf("setting the demo AutoGoPay key: %w", err)
 	}
 	return nil
 }

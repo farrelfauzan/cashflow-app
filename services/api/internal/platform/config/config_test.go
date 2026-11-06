@@ -464,3 +464,29 @@ func TestEnvExampleSecretsKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dev-only", ring.CurrentKeyID())
 }
+
+func TestLoadFakeAutoGoPay(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		wantAddr string
+		wantErr  string
+	}{
+		{name: "loopback by default in development", env: map[string]string{}, wantAddr: "127.0.0.1:8091"},
+		{name: "another address", env: map[string]string{"FAKE_AUTOGOPAY_ADDR": "127.0.0.1:9999"}, wantAddr: "127.0.0.1:9999"},
+		{name: "refused in staging", env: map[string]string{"APP_ENV": "staging"}, wantErr: "only runs in development"},
+		{name: "refused in production", env: map[string]string{"APP_ENV": "production"}, wantErr: "only runs in development"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := loadFakeAutoGoPay(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantAddr, got.Addr)
+		})
+	}
+}

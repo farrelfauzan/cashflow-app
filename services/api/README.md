@@ -122,6 +122,30 @@ It prints the organization id and the organization's webhook path,
 Setting the key again replaces it and keeps the same path. Each setting is in the organization's
 audit log as `settings:update` on `autogopay_account/<organization id>`.
 
+### The AutoGoPay stand-in (development only)
+
+Locally and in the web's end-to-end tests nothing calls the real AutoGoPay. `make fake-autogopay`
+runs `cmd/fakeautogopay` on `127.0.0.1:8091` (`FAKE_AUTOGOPAY_ADDR` to change it): it answers
+AutoGoPay's `/qris/generate`, `/qris/status` and `/qris/cancel` with the real response shapes,
+accepts any key, and keeps its QRs in memory (they expire after 15 minutes, and a restart forgets
+them). Start the API and the worker with `AUTOGOPAY_BASE_URL=http://127.0.0.1:8091` so both see
+the same QRs. It refuses to start unless `APP_ENV=development`.
+
+`seed-demo` gives Griya Sejahtera a made-up key (`demoseed.DemoAutoGoPayKey`) that only the
+stand-in accepts, so its payment page offers QRIS; Kost Putri Anggrek has none and shows bank
+transfer only. A key already set, a real one included, is never replaced.
+
+Tests act like a tenant or an outage through its control routes (no authentication, so keep it on
+loopback):
+
+- `GET /_control/transactions`: every QR, newest first (`transactionId`, `amount`, `status`,
+  `createdAt`, `expiresAt`).
+- `POST /_control/pay` and `POST /_control/expire` with `{"transactionId"?}`: the QR is paid or
+  expires now; without an id, the newest pending QR.
+- `POST /_control/fail-next` with `{"method": "generate" | "status" | "cancel", "amount"?}`: the
+  next call of that method answers HTTP 503; with an amount, only a generate for it.
+- `POST /_control/reset`: forget every QR and queued failure.
+
 ### Set an organization's bank account
 
 The tenant payment page shows the organization's bank account for a manual transfer (decision
