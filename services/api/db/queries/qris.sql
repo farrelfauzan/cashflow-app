@@ -11,12 +11,15 @@ INSERT INTO qris_attempt (
 );
 
 -- name: GetLatestQrisAttempt :one
--- A tenant's newest attempt, whichever of the tenant's links it came from.
+-- A tenant's newest attempt, whichever of the tenant's links it came from. The pending attempt,
+-- when there is one (at most one per tenant), comes first: created_at comes from the app's clock,
+-- so a closed attempt can share it or, after a clock step, be later, and must never hide the QR
+-- that can still be paid.
 SELECT id, organization_id, tenant_id, payment_link_id, amount, transaction_id, qr_string, status,
        expires_at, created_at, closed_at, check_requested_at
 FROM qris_attempt
 WHERE organization_id = @organization_id AND tenant_id = @tenant_id
-ORDER BY created_at DESC, id DESC
+ORDER BY (status = 'pending') DESC, created_at DESC, id DESC
 LIMIT 1;
 
 -- name: GetInvoicePlace :one
