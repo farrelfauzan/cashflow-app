@@ -60,6 +60,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeError(w, http.StatusNotFound, "payment_link_not_found", "Link pembayaran tidak ditemukan atau sudah tidak berlaku.")
 	case errors.Is(err, paylink.ErrLinkExpired):
 		s.writeError(w, http.StatusGone, "payment_link_expired", "Link pembayaran ini sudah kedaluwarsa. Minta link baru ke pengelola.")
+	case errors.Is(err, billing.ErrPreviewAmountInvalid):
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", previewAmountMessage, "amount")
+	case errors.Is(err, billing.ErrAmountAboveOutstanding):
+		s.writeErrorField(w, http.StatusBadRequest, "amount_above_outstanding", "Nominal melebihi sisa tagihan.", "amount")
 	case errors.Is(err, qris.ErrNoAttempt):
 		s.writeError(w, http.StatusNotFound, "qris_not_found", "Belum ada QR untuk tagihan ini.")
 	case errors.Is(err, qris.ErrQRGone):
