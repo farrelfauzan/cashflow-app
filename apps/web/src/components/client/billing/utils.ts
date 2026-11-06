@@ -1,23 +1,44 @@
 import type { QueryKey } from "@tanstack/react-query";
 import { z } from "zod";
 
+import {
+  checkPromiseDraft,
+  defaultPromiseDraft,
+  prefilledPromiseDraft,
+  PROMISE_REFETCH_CODES,
+  promiseAmountText,
+  promiseDraftShape,
+  PROMISE_ALL_REST_TEXT,
+  promiseFormView,
+} from "@/components/client/payment-page/utils";
+import type { PromiseOfferView } from "@/components/client/payment-page/type";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 import type {
   AccountInvoice,
   AccountPayment,
+  ActivePromise,
   Correction,
   CorrectionInput,
   InvoiceKind,
+  MakeTenantPromiseRequest,
   PaymentMethod,
+  PromiseSource,
+  PromiseStatus,
+  StaffRef,
   TenantAccount,
+  TenantPromise,
+  TenantPromiseList,
 } from "@/lib/api/generated/model";
+import { PromiseKind } from "@/lib/api/generated/model";
 import {
   formatDate,
   formatDayMonth,
   formatMonth,
   formatMonthYear,
   formatTimestampDate,
+  formatTimestampDayMonth,
+  formatWeekdayDayMonth,
 } from "@/lib/format/date";
 import {
   formatRupiah,
@@ -36,6 +57,9 @@ import type {
   InvoiceRowView,
   InvoiceStatusView,
   PaymentRowView,
+  PromiseDialogView,
+  PromiseHistoryRowView,
+  PromiseStatusView,
 } from "./type";
 
 // The tenant's money on Detail penyewa. Every amount shown is a field the API sent, only
@@ -162,8 +186,8 @@ export function debtAgeText(dueDate: string, today: string): string {
   return `${Math.max(1, monthsBetween(dueDate, today))} bulan`;
 }
 
-// The three tiles, from the account's totals. The overdue months and the oldest overdue period
-// name invoices, but every amount is one of the totals.
+// The four tiles, from the account's totals and its active promise. The overdue months and the
+// oldest overdue period name invoices, but every amount is one the API sent.
 export function accountTiles(
   account: TenantAccount,
   today: string,
@@ -199,6 +223,7 @@ export function accountTiles(
       tone: inDebt ? "warning" : "default",
     },
     { label: "Tunggakan tertua", value: age, notes: ageNotes, tone: "default" },
+    activePromiseTile(account),
     {
       label: "Saldo lebih bayar",
       value: formatRupiah(account.credit),
@@ -572,4 +597,244 @@ export function isInvoicesQuery(queryKey: QueryKey, orgId: string): boolean {
     (url === `/orgs/${orgId}/invoices` ||
       url.startsWith(`/orgs/${orgId}/invoices/`))
   );
+}
+
+// Janji pelunasan on Detail penyewa: the "Janji aktif" tile, "Riwayat janji" and "Catat janji"
+// (no board for its form: it follows the tenant's Janji screen, built from the same helpers).
+// Dates compare as YYYY-MM-DD strings and amounts are only compared; the API checks everything.
+
+export const ACTIVE_PROMISE_LABEL = "Janji aktif";
+export const NO_ACTIVE_PROMISE_TEXT = "Tidak ada janji aktif";
+
+// "dibuat penyewa" for a promise the tenant made on the payment page, "dicatat Pak Hendra Gunawan"
+// for one a member recorded; null when the API names nobody.
+export function promiseByText(
+  source: PromiseSource,
+  createdBy: StaffRef | null,
+): string | null {
+  if (source === "tenant_page") return "dibuat penyewa";
+  return createdBy === null ? null : `dicatat ${createdBy.name}`;
+}
+
+// "Janji lewat 2× (sejak awal)": every promise the tenant ever broke; null for none.
+export function brokenPromisesNote(count: number): string | null {
+  return count > 0 ? `Janji lewat ${count}× (sejak awal)` : null;
+}
+
+// "Janji aktif": the promised day, then what and who ("Rp1.250.000 · dibuat penyewa"), the
+// member's note, and the broken count as history.
+export function activePromiseTile(account: TenantAccount): AccountTileView {
+  const broken = brokenPromisesNote(account.brokenPromises);
+  const promise = account.activePromise;
+  const notes: string[] = [];
+  if (promise === null) {
+    notes.push(NO_ACTIVE_PROMISE_TEXT);
+  } else {
+    const by = promiseByText(promise.source, promise.createdBy);
+    const amount = promiseAmountText(promise.promisedAmount);
+    notes.push(by === null ? amount : `${amount} · ${by}`);
+    if (promise.note !== null && promise.note !== "") notes.push(promise.note);
+  }
+  if (broken !== null) notes.push(broken);
+  return {
+    label: ACTIVE_PROMISE_LABEL,
+    value: promise === null ? "—" : formatWeekdayDayMonth(promise.promisedDate),
+    notes,
+    tone: "default",
+  };
+}
+
+export const PROMISE_HISTORY_TITLE = "Riwayat janji";
+export const PROMISE_HISTORY_LIST_LABEL = "Daftar janji";
+export const NO_PROMISES_TEXT = "Belum ada janji.";
+export const PROMISES_LOADING_TEXT = "Memuat janji…";
+export const PROMISES_FORBIDDEN_TEXT =
+  "Anda tidak bisa melihat janji penyewa ini.";
+// "Riwayat janji" shows the first page only.
+export const PROMISE_HISTORY_PAGE_SIZE = 20;
+
+export const PROMISE_STATUS_VIEWS: Record<PromiseStatus, PromiseStatusView> = {
+  active: { label: "Aktif", tone: "upcoming" },
+  kept: { label: "Ditepati", tone: "active" },
+  partially_kept: { label: "Ditepati sebagian", tone: "neutral" },
+  broken: { label: "Tidak ditepati", tone: "warning" },
+};
+
+// The rows of "Riwayat janji" in the API's order (newest first), each from its newest version:
+// when and how much, who made it and when, and how often it was changed.
+export function promiseHistoryRows(
+  promises: readonly TenantPromise[],
+): PromiseHistoryRowView[] {
+  return promises.flatMap((promise) => {
+    const newest = promise.versions.at(-1);
+    if (newest === undefined) return [];
+    const by = promiseByText(newest.source, newest.createdBy);
+    const day = formatTimestampDayMonth(newest.createdAt);
+    const edits = promise.versions.length - 1;
+    const made = by === null ? `dicatat ${day}` : `${by} ${day}`;
+    return [
+      {
+        id: promise.id,
+        title: `${formatWeekdayDayMonth(newest.promisedDate)} · ${promiseAmountText(newest.promisedAmount)}`,
+        byline: edits > 0 ? `${made} · diubah ${edits}×` : made,
+        status: PROMISE_STATUS_VIEWS[promise.status],
+      },
+    ];
+  });
+}
+
+// "Menampilkan 20 dari 23" when the first page does not hold every promise; null when it does.
+export function promiseHistoryCountNote(
+  list: TenantPromiseList,
+): string | null {
+  return list.total > list.items.length
+    ? `Menampilkan ${list.items.length} dari ${list.total}`
+    : null;
+}
+
+// "Riwayat janji" shows for a member who may read promises, on some tenants or all. Never by role
+// name.
+export function canReadPromises(ability: AppAbility): boolean {
+  return ability.can("read", "promise");
+}
+
+// "Catat janji" shows for a member who may create promises, on some tenants or all
+// ("conditional" shows it and the API answers 403 per tenant). Never by role name.
+export function canCreatePromise(ability: AppAbility): boolean {
+  return ability.can("create", "promise");
+}
+
+export const RECORD_PROMISE_TEXT = "Catat janji";
+export const PROMISE_SAVED_NOTICE = "Janji tercatat.";
+export const PROMISE_NOTE_LABEL = "Catatan (tidak wajib)";
+export const PROMISE_NOTE_MAX_LENGTH = 500;
+export const PROMISE_NOTE_TOO_LONG_MESSAGE =
+  "Catatan paling banyak 500 karakter.";
+
+// What a promise recorded now may name, from the account as the API sent it; null when none can
+// be made (nothing is owed, or the active promise reached its last day).
+export function staffPromiseOffer(
+  account: TenantAccount,
+): PromiseOfferView | null {
+  if (account.promiseDates === null) return null;
+  return {
+    outstanding: account.outstanding,
+    earliest: account.promiseDates.earliest,
+    latest: account.promiseDates.latest,
+    nextInvoiceDueDate: account.nextInvoiceDueDate,
+  };
+}
+
+// "Janji aktif Sab, 12 Des, Rp1.250.000 akan diganti.": saving adds a version to the active
+// promise.
+export function activePromiseReplacesLine(promise: ActivePromise): string {
+  const amount =
+    promise.promisedAmount === null
+      ? PROMISE_ALL_REST_TEXT.toLowerCase()
+      : formatRupiah(promise.promisedAmount);
+  return `${ACTIVE_PROMISE_LABEL} ${formatWeekdayDayMonth(promise.promisedDate)}, ${amount} akan diganti.`;
+}
+
+// "Catat janji" for the account as it is when the dialog opens: empty, or filled from the active
+// promise (its note is not carried over: each version has its own). Null when no promise can be
+// made now.
+export function promiseDialogView(
+  account: TenantAccount,
+  tenantName: string,
+): PromiseDialogView | null {
+  const offer = staffPromiseOffer(account);
+  if (offer === null) return null;
+  const active = account.activePromise;
+  const form = promiseFormView(offer, null, active !== null, null);
+  const draft =
+    active === null
+      ? defaultPromiseDraft(offer)
+      : prefilledPromiseDraft(active, offer);
+  return {
+    subtitle: tenantName,
+    replacesLine: active === null ? null : activePromiseReplacesLine(active),
+    offer,
+    kindOptions: form.kindOptions,
+    dateMin: form.dateMin,
+    dateMax: form.dateMax,
+    amountHint: form.amountHint,
+    primaryLabel: form.primaryLabel,
+    defaults: { ...draft, note: "" },
+  };
+}
+
+// "Simpan janji": the tenant's Janji checks (date in range, amount from Rp1 to what is owed) plus
+// the note, trimmed, at most 500 letters, sent only when not blank. Never payingNow.
+export function staffPromiseSchema(offer: PromiseOfferView) {
+  return z
+    .object({ ...promiseDraftShape, note: z.string() })
+    .transform((values, ctx): MakeTenantPromiseRequest => {
+      const note = values.note.trim();
+      if (note.length > PROMISE_NOTE_MAX_LENGTH) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["note"],
+          message: PROMISE_NOTE_TOO_LONG_MESSAGE,
+        });
+      }
+      const checked = checkPromiseDraft(values, offer, null);
+      if (!checked.ok) {
+        ctx.addIssue({
+          code: "custom",
+          path: [checked.field],
+          message: checked.message,
+        });
+        return z.NEVER;
+      }
+      const { kind, promisedDate, promisedAmount } = checked.body;
+      const body: MakeTenantPromiseRequest = { kind };
+      if (promisedDate !== undefined) body.promisedDate = promisedDate;
+      if (promisedAmount !== undefined) body.promisedAmount = promisedAmount;
+      if (note !== "") body.note = note;
+      return body;
+    });
+}
+
+// The dialog's fields an API error can go under.
+export const STAFF_PROMISE_FORM_FIELDS = [
+  "kind",
+  "date",
+  "amountText",
+  "note",
+] as const;
+
+// Each API field the dialog shows, by the form field it goes under.
+const STAFF_PROMISE_API_FIELDS: Record<
+  string,
+  (typeof STAFF_PROMISE_FORM_FIELDS)[number]
+> = {
+  kind: "kind",
+  promisedDate: "date",
+  promisedAmount: "amountText",
+  note: "note",
+};
+
+// Where "Catat janji" shows a refused makeTenantPromise sent with this kind: under the field the
+// API names (the date only while its input shows), else in the alert (promise_nothing_owed, a
+// refusal, anything unexpected).
+export function staffPromiseFormError(
+  error: unknown,
+  kind: PromiseKind,
+): FormError {
+  const failed = toFormError(error, Object.keys(STAFF_PROMISE_API_FIELDS));
+  const field =
+    failed.field === null ? undefined : STAFF_PROMISE_API_FIELDS[failed.field];
+  if (
+    field === undefined ||
+    (field === "date" && kind !== PromiseKind.specific_date)
+  ) {
+    return { field: null, message: failed.message };
+  }
+  return { field, message: failed.message };
+}
+
+// A refusal after which the account is out of date (nothing owed now, the amount owed, the next
+// invoice or the dates moved): the page reads it again, the dialog keeps its message.
+export function isPromiseStaleError(error: unknown): boolean {
+  return error instanceof ApiError && PROMISE_REFETCH_CODES.has(error.code);
 }

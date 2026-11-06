@@ -23,10 +23,15 @@ import type {
   TenantAccount,
   Unit,
 } from "../src/lib/api/generated/model";
-import { formatDate, jakartaToday } from "../src/lib/format/date";
+import {
+  formatDate,
+  formatDayMonth,
+  jakartaToday,
+} from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
 import {
   attachFullPageScreenshot,
+  attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
 import { findOrCreateProperty } from "./support/property-fixtures";
@@ -256,6 +261,22 @@ test.describe("Admin of the whole organization", () => {
       receivedOn: today,
       note: "Titip ke Mas Dimas",
     });
+    // The rest is promised for the first day a promise may name, as the admin's "Catat janji"
+    // would record it: the row says "Janji <date>".
+    const promised = await call<TenantAccount>(page, "GET", accountPath, 200);
+    const promiseDay = promised.promiseDates?.earliest;
+    if (promiseDay === undefined)
+      throw new Error("a tenant who owes can promise");
+    await call(
+      page,
+      "POST",
+      `/orgs/${orgId}/tenants/${tenant.id}/promises`,
+      200,
+      {
+        kind: "specific_date",
+        promisedDate: promiseDay,
+      },
+    );
 
     // From the menu, as an admin opens it. The month defaults to this one and stays out of the
     // URL.
@@ -291,6 +312,10 @@ test.describe("Admin of the whole organization", () => {
     await expect(rows).toHaveCount(1);
     const row = rows.first();
     await expect(row).toContainText("Sebagian");
+    expect(item.promise?.promisedDate).toBe(promiseDay);
+    await expect(row).toContainText(`Janji ${formatDayMonth(promiseDay)}`);
+    await row.scrollIntoViewIfNeeded();
+    await attachViewportScreenshot(page, testInfo, "billing-promise");
     await expect(row).toContainText(item.unitLabel);
     await expect(row).toContainText(item.propertyName);
     await expect(row).toContainText(formatDate(item.dueDate));

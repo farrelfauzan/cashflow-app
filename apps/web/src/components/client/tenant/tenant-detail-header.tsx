@@ -3,6 +3,7 @@
 import { ChevronLeft, Plus } from "lucide-react";
 import Link from "next/link";
 
+import { RECORD_PROMISE_TEXT } from "@/components/client/billing/utils";
 import { COPY_PAY_LINK_TEXT } from "@/components/client/payment-link/utils";
 import { Button } from "@/components/ui/button";
 import { formatPhone } from "@/lib/format/phone";
@@ -22,10 +23,13 @@ type TenantDetailHeaderProps = {
   // invoice:share (allow or conditional) and an open invoice: "Salin link bayar", an outline
   // button; null hides it. `busy` while a link is being made, so one press makes one link.
   copyPayLink: { busy: boolean; onCopy: () => void } | null;
+  // promise:create (allow or conditional) and a promise can be made now: "Catat janji", an
+  // outline button; null hides it.
+  onRecordPromise: (() => void) | null;
 };
 
 // The back link, the tenant's name and their number, "Catat pembayaran" (the page's one primary
-// action), "Ubah penyewa" and "Salin link bayar" (outline buttons). The board's "WhatsApp aktif"
+// action), "Ubah penyewa", "Catat janji" and "Salin link bayar" (outline buttons). The board's "WhatsApp aktif"
 // is left out: the API has no such field.
 export function TenantDetailHeader({
   orgId,
@@ -36,6 +40,7 @@ export function TenantDetailHeader({
   canRecordPayment,
   onRecordPayment,
   copyPayLink,
+  onRecordPromise,
 }: TenantDetailHeaderProps) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-5">
@@ -58,7 +63,10 @@ export function TenantDetailHeader({
           {formatPhone(phone)}
         </p>
       </div>
-      {(canEdit || canRecordPayment || copyPayLink !== null) && (
+      {(canEdit ||
+        canRecordPayment ||
+        copyPayLink !== null ||
+        onRecordPromise !== null) && (
         <div className="flex shrink-0 flex-col gap-2.5 lg:flex-row-reverse">
           {canRecordPayment && (
             <Button
@@ -78,6 +86,16 @@ export function TenantDetailHeader({
               className="h-12 w-full rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
             >
               Ubah penyewa
+            </Button>
+          )}
+          {onRecordPromise !== null && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onRecordPromise}
+              className="h-12 w-full rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
+            >
+              {RECORD_PROMISE_TEXT}
             </Button>
           )}
           {copyPayLink !== null && (

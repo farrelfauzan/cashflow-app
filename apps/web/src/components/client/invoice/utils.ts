@@ -205,7 +205,9 @@ export function summaryTiles(
   const outstandingNote =
     summary.outstanding === 0 && summary.billed > 0
       ? "Semua sudah lunas"
-      : `${summary.tenantsOutstanding} penyewa`;
+      : summary.tenantsWithPromise > 0
+        ? `${summary.tenantsOutstanding} penyewa, ${summary.tenantsWithPromise} ada janji`
+        : `${summary.tenantsOutstanding} penyewa`;
   const oldest = summary.oldestOverdue;
   return [
     {
@@ -240,19 +242,49 @@ export function summaryTiles(
 
 export const PAST_PLANNED_END_CHIP = "Lewat rencana keluar";
 
+// "Janji 12 Des": the tenant's active promise covers this invoice (board "Penagihan").
+export function promiseChipLabel(promisedDate: string): string {
+  return `Janji ${formatDayMonth(promisedDate)}`;
+}
+
+// "Janji lewat 2×": how many of the tenant's promises were broken, ever (the API's count).
+export function brokenPromisesChipLabel(count: number): string {
+  return `Janji lewat ${count}×`;
+}
+
 // The status chip, from the API's fields: overdueDays is the API's own count (0 on the due date
 // itself, since debt starts the day after), and pastPlannedEnd adds a second chip. The final
 // invoice (made at move-out for metered usage) says so in a chip of its own, since the list
-// names no month per row.
+// names no month per row. While the invoice is still owed, the tenant's active promise that
+// covers it and their broken promises follow (board "Penagihan": "Janji 12 Des", "janji lewat
+// 2×"); a paid or cancelled invoice needs neither.
 export function invoiceChips(
   invoice: Pick<
     InvoiceListItem,
-    "kind" | "status" | "overdueDays" | "pastPlannedEnd"
+    | "kind"
+    | "status"
+    | "overdueDays"
+    | "pastPlannedEnd"
+    | "promise"
+    | "brokenPromises"
   >,
 ): InvoiceChip[] {
   const chips: InvoiceChip[] = [statusChip(invoice)];
   if (invoice.kind === "final") {
     chips.push({ label: FINAL_INVOICE_LABEL, tone: "neutral" });
+  }
+  const owed = invoice.status === "open" || invoice.status === "partial";
+  if (owed && invoice.promise !== null) {
+    chips.push({
+      label: promiseChipLabel(invoice.promise.promisedDate),
+      tone: "upcoming",
+    });
+  }
+  if (owed && invoice.brokenPromises > 0) {
+    chips.push({
+      label: brokenPromisesChipLabel(invoice.brokenPromises),
+      tone: "warning",
+    });
   }
   if (invoice.pastPlannedEnd) {
     chips.push({ label: PAST_PLANNED_END_CHIP, tone: "warning" });
