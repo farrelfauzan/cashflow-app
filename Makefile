@@ -22,6 +22,12 @@ env: ## Create services/api/.env from the example if it is missing
 		printf '\n# Added by make env: development-only key from .env.example.\n' >> $(API_DIR)/.env; \
 		grep '^SECRETS_KEY=' $(API_DIR)/.env.example >> $(API_DIR)/.env; \
 		echo "make env: added the development SECRETS_KEY to $(API_DIR)/.env"; }
+	@# A .env made before the AutoGoPay stand-in existed points at it, so local runs never reach
+	@# the real AutoGoPay. A line already there, set or cleared, is left alone.
+	@grep -q '^AUTOGOPAY_BASE_URL=' $(API_DIR)/.env || { \
+		printf '\n# Added by make env: the AutoGoPay stand-in (make fake-autogopay).\n' >> $(API_DIR)/.env; \
+		grep '^AUTOGOPAY_BASE_URL=' $(API_DIR)/.env.example >> $(API_DIR)/.env; \
+		echo "make env: pointed AUTOGOPAY_BASE_URL at the stand-in in $(API_DIR)/.env"; }
 
 .PHONY: dev-up
 dev-up: ## Start PostgreSQL and Redis for local development
@@ -58,7 +64,7 @@ worker-run: env ## Run the worker
 	$(WITH_ENV) go run ./cmd/worker
 
 .PHONY: fake-autogopay
-fake-autogopay: ## Run the AutoGoPay stand-in on 127.0.0.1:8091 (development only; set AUTOGOPAY_BASE_URL=http://127.0.0.1:8091 for the API and worker)
+fake-autogopay: ## Run the AutoGoPay stand-in on 127.0.0.1:8091 (development only; the development .env points the API and worker at it)
 	cd $(API_DIR) && APP_ENV=development go run ./cmd/fakeautogopay
 
 .PHONY: admin

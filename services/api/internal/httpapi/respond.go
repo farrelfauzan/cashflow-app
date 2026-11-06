@@ -64,6 +64,23 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeError(w, http.StatusNotFound, "qris_not_found", "Belum ada QR untuk tagihan ini.")
 	case errors.Is(err, qris.ErrQRGone):
 		s.writeError(w, http.StatusGone, "qris_expired", "QR sudah tidak berlaku. Buat QR baru.")
+	case errors.Is(err, qris.ErrInvalidAmount):
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", "Jumlah harus lebih dari Rp0.", "amount")
+	case errors.Is(err, qris.ErrAmountAboveLimit):
+		s.writeErrorField(w, http.StatusBadRequest, "qris_amount_above_limit",
+			"QRIS paling banyak Rp10.000.000 sekali bayar. Bayar sisanya dengan QR berikutnya atau transfer bank.", "amount")
+	case errors.Is(err, qris.ErrAmountAboveOutstanding):
+		s.writeErrorField(w, http.StatusBadRequest, "qris_amount_above_outstanding", "Jumlah melebihi sisa tagihan.", "amount")
+	case errors.Is(err, qris.ErrNothingToPay):
+		s.writeError(w, http.StatusConflict, "nothing_to_pay", "Tidak ada tagihan yang perlu dibayar.")
+	case errors.Is(err, qris.ErrBusy):
+		s.writeError(w, http.StatusConflict, "qris_busy", "QR sedang diproses. Tunggu sebentar.")
+	case errors.Is(err, qris.ErrGenerateLimit):
+		s.writeError(w, http.StatusTooManyRequests, "qris_limit",
+			"Batas pembuatan QR hari ini sudah tercapai. Bayar lewat transfer bank atau coba lagi besok.")
+	case errors.Is(err, qris.ErrUnavailable):
+		s.writeError(w, http.StatusServiceUnavailable, "qris_unavailable",
+			"QRIS sedang gangguan. Silakan bayar lewat transfer bank.")
 	case errors.Is(err, paylink.ErrInvoicePastWindow):
 		s.writeError(w, http.StatusConflict, "payment_link_expired_invoice",
 			"Tagihan ini sudah lunas atau dibatalkan lebih dari 30 hari yang lalu, jadi link pembayaran baru tidak bisa dibuat.")

@@ -24,6 +24,7 @@ const (
 	MethodQRIS     = "qris"
 	MethodVA       = "va"
 	SourceManual   = "manual"
+	SourceQRIS     = "qris"
 )
 
 var (

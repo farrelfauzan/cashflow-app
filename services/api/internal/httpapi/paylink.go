@@ -119,6 +119,7 @@ func toAPIPaymentPage(p paylink.Page) apigen.PaymentPage {
 		Credit:           p.Credit,
 		Paid:             p.Paid,
 		OpenInvoices:     make([]apigen.PaymentPageInvoice, len(p.OpenInvoices)),
+		QrisAvailable:    p.QRISAvailable,
 	}
 	for i, inv := range p.OpenInvoices {
 		out.OpenInvoices[i] = toAPIPaymentPageInvoice(inv)

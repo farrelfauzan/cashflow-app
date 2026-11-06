@@ -31,6 +31,18 @@ func (q *Queries) GetAutogopayAccount(ctx context.Context, organizationID uuid.U
 	return i, err
 }
 
+const hasAutogopayAccount = `-- name: HasAutogopayAccount :one
+SELECT EXISTS (SELECT 1 FROM autogopay_account WHERE organization_id = $1) AS has_account
+`
+
+// Whether the organization has an AutoGoPay account, so the payment page knows QRIS is offered.
+func (q *Queries) HasAutogopayAccount(ctx context.Context, organizationID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasAutogopayAccount, organizationID)
+	var has_account bool
+	err := row.Scan(&has_account)
+	return has_account, err
+}
+
 const upsertAutogopayAccount = `-- name: UpsertAutogopayAccount :one
 INSERT INTO autogopay_account (
     organization_id, api_key_ciphertext, key_id, webhook_id, created_at, updated_at, updated_by_staff_user_id

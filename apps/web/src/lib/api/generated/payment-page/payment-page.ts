@@ -24,6 +24,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CreateQrisRequest,
   Error,
   ErrorResponse,
   PaymentLink,
@@ -33,7 +34,7 @@ import type {
 } from '../model';
 
 import { apiRequest } from '../../client';
-import type { ErrorType } from '../../client';
+import type { ErrorType , BodyType } from '../../client';
 import { apiQueryKey } from '../../query-key';
 
 
@@ -461,3 +462,142 @@ export function useGetPaymentQRImage<TData = Awaited<ReturnType<typeof getPaymen
 
 
 
+/**
+ * No session: the token is the access, and link errors answer as for getPaymentPage. The amount is whole rupiah, Rp1 to Rp10.000.000 (AutoGoPay's limit; above it the tenant pays in parts or by bank transfer) and at most what the tenant owes now. Paying through any of the tenant's links pays the oldest invoice first.
+ *
+ * AutoGoPay can block a merchant whose account makes QRs in a loop, so the tenant's live QR is reused: when it is for the same amount and has more than two minutes left, it is answered again and nothing is generated. Otherwise the tenant's pending QR is cancelled at AutoGoPay and a new one is made. If that shows the previous QR was paid meanwhile, the payment is recorded, no new QR is made and the answer is status paid: reload getPaymentPage for what is left. A pending QR whose tenant asked for a check and that is reused answers checking. On pending, show the image from getPaymentQRImage and poll getPaymentStatus.
+ *
+ * At most 5 new QRs per tenant in 24 hours (429 qris_limit); failed attempts count, reuses do not. Never retry automatically. 503 qris_unavailable ("QRIS gangguan") when AutoGoPay fails or the organization has no AutoGoPay account: offer bank transfer. 409 qris_busy when another request for the same tenant is making or checking a QR right now (a double tap): poll getPaymentStatus. The request takes up to about 20 seconds; if the page gives up, what AutoGoPay answered is still recorded and getPaymentStatus shows it. Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * @summary Get a QRIS code for an amount (public; "Bayar QRIS")
+ */
+export const createPaymentQris = (
+    token: string,
+    createQrisRequest: BodyType<CreateQrisRequest>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<QrisStatus>(
+      {url: `/t/${token}/qris`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: createQrisRequest, signal
+    },
+      options);
+    }
+
+
+
+
+export const getCreatePaymentQrisMutationKey = () => ['createPaymentQris'] as const;
+
+export const getCreatePaymentQrisMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPaymentQris>>, TError,CreatePaymentQrisMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPaymentQris>>, TError,CreatePaymentQrisMutationVariables, TContext> => {
+
+const mutationKey = getCreatePaymentQrisMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPaymentQris>>, CreatePaymentQrisMutationVariables> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  createPaymentQris(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePaymentQrisMutationResult = NonNullable<Awaited<ReturnType<typeof createPaymentQris>>>
+    export type CreatePaymentQrisMutationBody = BodyType<CreateQrisRequest>
+    export type CreatePaymentQrisMutationError = ErrorType<Error>
+    export type CreatePaymentQrisMutationVariables = {token: string;data: BodyType<CreateQrisRequest>}
+
+    /**
+ * @summary Get a QRIS code for an amount (public; "Bayar QRIS")
+ */
+export const useCreatePaymentQris = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPaymentQris>>, TError,CreatePaymentQrisMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createPaymentQris>>,
+        TError,
+        CreatePaymentQrisMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreatePaymentQrisMutationOptions(options), queryClient);
+    }
+    /**
+ * No session: the token is the access, and link errors answer as for getPaymentPage. The tenant's latest QR, when still pending, is marked as being checked (getPaymentStatus answers checking from then on, "Sedang dicek") and AutoGoPay is asked about it once: paid records the payment (answer paid), expired or cancelled closes it (answer expired), still pending answers checking and reconcile asks again within 30 minutes. When AutoGoPay cannot answer, or the tenant checked 5 times in 10 minutes, the answer is checking and reconcile resolves it. A QR that is no longer pending answers its status. While checking, a QR that has not expired can still be shown from getPaymentQRImage. 404 qris_not_found when the tenant has no QR; 409 qris_busy as for createPaymentQris. Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * @summary The tenant says they paid their QR (public; "Saya sudah bayar")
+ */
+export const checkPaymentQris = (
+    token: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<QrisStatus>(
+      {url: `/t/${token}/check`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+
+export const getCheckPaymentQrisMutationKey = () => ['checkPaymentQris'] as const;
+
+export const getCheckPaymentQrisMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkPaymentQris>>, TError,CheckPaymentQrisMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkPaymentQris>>, TError,CheckPaymentQrisMutationVariables, TContext> => {
+
+const mutationKey = getCheckPaymentQrisMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkPaymentQris>>, CheckPaymentQrisMutationVariables> = (props) => {
+          const {token} = props ?? {};
+
+          return  checkPaymentQris(token,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckPaymentQrisMutationResult = NonNullable<Awaited<ReturnType<typeof checkPaymentQris>>>
+
+    export type CheckPaymentQrisMutationError = ErrorType<Error | ErrorResponse>
+    export type CheckPaymentQrisMutationVariables = {token: string}
+
+    /**
+ * @summary The tenant says they paid their QR (public; "Saya sudah bayar")
+ */
+export const useCheckPaymentQris = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkPaymentQris>>, TError,CheckPaymentQrisMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof checkPaymentQris>>,
+        TError,
+        CheckPaymentQrisMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCheckPaymentQrisMutationOptions(options), queryClient);
+    }

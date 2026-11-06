@@ -249,6 +249,8 @@ type QrisAttempt struct {
 	CreatedAt        time.Time
 	ClosedAt         *time.Time
 	CheckRequestedAt *time.Time
+	PaidAmount       *int64
+	AmountMismatch   bool
 }
 
 type Role struct {

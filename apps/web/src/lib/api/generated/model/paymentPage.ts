@@ -8,6 +8,8 @@ import type { BankAccount } from './bankAccount';
 import type { PaymentPageInvoice } from './paymentPageInvoice';
 
 export interface PaymentPage {
+  /** True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that. */
+  qrisAvailable: boolean;
   /** The organization's display name: who bills the tenant. */
   organizationName: string;
   tenantName: string;

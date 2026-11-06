@@ -64,6 +64,16 @@ type API struct {
 	// AuthSecret keys the HMAC of login codes. At least 32 bytes, random, never committed.
 	AuthSecret string  `env:"AUTH_SECRET, required"`
 	Secrets    Secrets `env:", prefix=SECRETS_"`
+	// AutoGoPayBaseURL is AUTOGOPAY_BASE_URL, AutoGoPay's gateway; empty uses
+	// autogopay.DefaultBaseURL. It must be https outside development.
+	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
+	// DatabaseMaxConns is DATABASE_MAX_CONNS, the size of the API's connection pool.
+	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=10"`
+	// QRISMaxConcurrent is QRIS_MAX_CONCURRENT: how many payment page requests may wait on
+	// AutoGoPay at once, each holding a database connection. It stays below DatabaseMaxConns, so a
+	// slow AutoGoPay can never take every connection and the page (and its bank transfer fallback)
+	// keeps loading; a request past it answers qris_unavailable at once.
+	QRISMaxConcurrent int `env:"QRIS_MAX_CONCURRENT, default=3"`
 	// AllowedOrigins is a comma-separated list of browser origins allowed to send
 	// state-changing requests.
 	AllowedOrigins string `env:"ALLOWED_ORIGINS, default=http://localhost:3000"`
@@ -209,6 +219,16 @@ func (c API) validate() error {
 	if err := c.Secrets.validate(); err != nil {
 		return err
 	}
+	if err := validAutoGoPayURL(c.AutoGoPayBaseURL, c.Env); err != nil {
+		return err
+	}
+	if c.DatabaseMaxConns < 2 {
+		return fmt.Errorf("DATABASE_MAX_CONNS must be at least 2, got %d", c.DatabaseMaxConns)
+	}
+	if c.QRISMaxConcurrent < 1 || int64(c.QRISMaxConcurrent) >= int64(c.DatabaseMaxConns) {
+		return fmt.Errorf("QRIS_MAX_CONCURRENT must be 1 to DATABASE_MAX_CONNS-1 (%d), got %d",
+			c.DatabaseMaxConns-1, c.QRISMaxConcurrent)
+	}
 	if len(c.AuthSecret) < 32 {
 		return fmt.Errorf("AUTH_SECRET must be at least 32 bytes, got %d", len(c.AuthSecret))
 	}
@@ -285,13 +305,41 @@ type Worker struct {
 	DatabaseURL string  `env:"DATABASE_URL, required"`
 	RedisAddr   string  `env:"REDIS_ADDR, default=localhost:6379"`
 	Secrets     Secrets `env:", prefix=SECRETS_"`
+	// AutoGoPayBaseURL is as in API: reconcile asks AutoGoPay about pending QRs.
+	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
+	// DatabaseMaxConns is DATABASE_MAX_CONNS, the size of the worker's connection pool.
+	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=10"`
 }
 
 func (c Worker) validate() error {
 	if err := c.Common.validate(); err != nil {
 		return err
 	}
+	if err := validAutoGoPayURL(c.AutoGoPayBaseURL, c.Env); err != nil {
+		return err
+	}
+	if c.DatabaseMaxConns < 2 {
+		return fmt.Errorf("DATABASE_MAX_CONNS must be at least 2, got %d", c.DatabaseMaxConns)
+	}
 	return c.Secrets.validate()
+}
+
+// validAutoGoPayURL checks AUTOGOPAY_BASE_URL: empty (AutoGoPay's own gateway), or an absolute
+// URL with no path, query or credentials, https outside development. The organization's key is
+// sent to it.
+func validAutoGoPayURL(raw, env string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
+		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("AUTOGOPAY_BASE_URL must be an absolute http(s) URL with no path, got %q", raw)
+	}
+	if env != "development" && u.Scheme != "https" {
+		return fmt.Errorf("AUTOGOPAY_BASE_URL must use https in %s", env)
+	}
+	return nil
 }
 
 // FakeAutoGoPay is the configuration of cmd/fakeautogopay, the AutoGoPay stand-in for local runs

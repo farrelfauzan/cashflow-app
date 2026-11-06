@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "message": "Transaction successful",
+  "data": {
+    "transaction_status": "settlement",
+    "transaction_time": "2026-11-06 08:38:21"
+  }
+}

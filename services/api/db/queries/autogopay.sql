@@ -16,3 +16,7 @@ RETURNING webhook_id;
 
 -- name: GetAutogopayAccount :one
 SELECT * FROM autogopay_account WHERE organization_id = @organization_id;
+
+-- name: HasAutogopayAccount :one
+-- Whether the organization has an AutoGoPay account, so the payment page knows QRIS is offered.
+SELECT EXISTS (SELECT 1 FROM autogopay_account WHERE organization_id = @organization_id) AS has_account;

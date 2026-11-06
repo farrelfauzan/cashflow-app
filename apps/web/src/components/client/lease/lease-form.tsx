@@ -20,6 +20,7 @@ import {
   useListCollectorCandidates,
 } from "@/lib/api/generated/members/members";
 import type { Lease, Tenant } from "@/lib/api/generated/model";
+import { getListTenantOpenInvoicesQueryKey } from "@/lib/api/generated/money/money";
 import {
   getGetPropertyQueryKey,
   getListPropertiesQueryKey,
@@ -192,12 +193,14 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
 
   const create = useCreateLease({
     mutation: {
-      // A new lease changes the tenant, the tenant list, the unit's and property's occupancy, and
+      // A new lease changes the tenant, its open invoices (a lease starting soon is invoiced when
+      // saved), the tenant list, the unit's and property's occupancy, and
       // its collector's lease count in the member list.
       onSuccess: () =>
         Promise.all(
           [
             getGetTenantQueryKey(orgId, tenant.id),
+            getListTenantOpenInvoicesQueryKey(orgId, tenant.id),
             getListTenantsQueryKey(orgId),
             getListUnitsQueryKey(orgId, propertyId),
             getListPropertiesQueryKey(orgId),

@@ -14,15 +14,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qrimage"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 )
 
 var (
@@ -31,6 +35,22 @@ var (
 	// ErrQRGone means the tenant's latest QR can no longer be paid: it expired, was paid or was
 	// cancelled. The tenant makes a new one.
 	ErrQRGone = errors.New("qris: QR no longer valid")
+	// ErrInvalidAmount means the amount is below Rp1.
+	ErrInvalidAmount = errors.New("qris: amount must be at least Rp1")
+	// ErrAmountAboveLimit means the amount is above AutoGoPay's Rp10.000.000; the rest is paid by
+	// another QR or bank transfer.
+	ErrAmountAboveLimit = errors.New("qris: amount above the QRIS limit")
+	// ErrAmountAboveOutstanding means the amount is more than the tenant owes.
+	ErrAmountAboveOutstanding = errors.New("qris: amount above what the tenant owes")
+	// ErrNothingToPay means the tenant owes nothing.
+	ErrNothingToPay = errors.New("qris: nothing to pay")
+	// ErrGenerateLimit means the tenant made MaxGeneratesPerDay QRs in GenerateWindow.
+	ErrGenerateLimit = errors.New("qris: too many QRs made")
+	// ErrBusy means another request is making or checking the tenant's QR right now.
+	ErrBusy = errors.New("qris: busy")
+	// ErrUnavailable means AutoGoPay failed, or the organization has no AutoGoPay key: QRIS is
+	// down for now ("QRIS gangguan") and the page offers bank transfer.
+	ErrUnavailable = errors.New("qris: QRIS unavailable")
 )
 
 // Attempt statuses as stored in qris_attempt.status.
@@ -60,9 +80,11 @@ const (
 	StatusExpired Status = "expired"
 )
 
-// Attempt is one QRIS attempt as the page needs it.
+// Attempt is one QRIS attempt.
 type Attempt struct {
 	ID               uuid.UUID
+	TenantID         uuid.UUID
+	TransactionID    string // AutoGoPay's id for the QR
 	Amount           int64
 	QRString         string
 	Status           string // AttemptPending, AttemptPaid, AttemptExpired or AttemptCancelled
@@ -103,17 +125,98 @@ type LinkOpener interface {
 	OpenLink(ctx context.Context, tx pgx.Tx, org, linkID uuid.UUID) (tenantID, invoiceID uuid.UUID, err error)
 }
 
-// Service reads a tenant's QRIS attempts behind a payment link.
-type Service struct {
-	store *store.Store
-	links LinkOpener
-	clock clock.Clock
+// Gateway is the AutoGoPay QRIS API: autogopay.Client, or autogopaytest.Fake in tests. Every call
+// takes the organization's own key.
+type Gateway interface {
+	Generate(ctx context.Context, key secret.Value, amount int64) (autogopay.QRIS, error)
+	Status(ctx context.Context, key secret.Value, transactionID string) (autogopay.Transaction, error)
+	Cancel(ctx context.Context, key secret.Value, transactionID string) (autogopay.Transaction, error)
 }
 
-// NewService returns a Service. links resolves and opens payment links; c decides "now" for
-// expiry.
-func NewService(st *store.Store, links LinkOpener, c clock.Clock) *Service {
-	return &Service{store: st, links: links, clock: c}
+// KeyReader decrypts an organization's AutoGoPay key inside a transaction scoped to it.
+// autogopay.Service implements it.
+type KeyReader interface {
+	APIKey(ctx context.Context, tx pgx.Tx, org uuid.UUID) (secret.Value, error)
+}
+
+// Limiter counts events under a key in a window. ratelimit.Redis implements it.
+type Limiter interface {
+	Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error)
+}
+
+// Auditor writes the audit row of a change the system makes with no acting member.
+// authz.Service implements it.
+type Auditor interface {
+	RecordSystemAction(ctx context.Context, tx pgx.Tx, org uuid.UUID, action string, res authz.Resource) error
+}
+
+// Deps is what a Service needs. The public reads use Store, Links and Clock; making and checking
+// a QR also Gateway, Keys, Limiter and Audit; reconcile (the worker) Store, Clock, Gateway, Keys
+// and Audit, with no Links or Limiter.
+type Deps struct {
+	Store   *store.Store
+	Links   LinkOpener
+	Clock   clock.Clock
+	Gateway Gateway
+	Keys    KeyReader
+	Limiter Limiter
+	Audit   Auditor
+	Log     *slog.Logger
+	// MaxConcurrentCalls bounds how many MakeQR and Check calls may wait on AutoGoPay at once.
+	// Each holds a database connection while it waits, so the API sets it below its pool size:
+	// a slow AutoGoPay then never takes every connection, and the payment page with its bank
+	// transfer fallback keeps loading. 0 means no bound (tests, the worker).
+	MaxConcurrentCalls int
+}
+
+// Service makes, reads, checks and settles a tenant's QRIS attempts.
+type Service struct {
+	store   *store.Store
+	links   LinkOpener
+	clock   clock.Clock
+	gateway Gateway
+	keys    KeyReader
+	limiter Limiter
+	audit   Auditor
+	log     *slog.Logger
+	// gate holds one token per call waiting on AutoGoPay; nil when unbounded.
+	gate chan struct{}
+}
+
+// NewService returns a Service.
+func NewService(d Deps) *Service {
+	log := d.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	s := &Service{
+		store: d.Store, links: d.Links, clock: d.Clock, gateway: d.Gateway, keys: d.Keys,
+		limiter: d.Limiter, audit: d.Audit, log: log,
+	}
+	if d.MaxConcurrentCalls > 0 {
+		s.gate = make(chan struct{}, d.MaxConcurrentCalls)
+	}
+	return s
+}
+
+// enterGateway takes a place among the calls waiting on AutoGoPay, without waiting for one: false
+// means MaxConcurrentCalls are already waiting. A true answer must be paired with leaveGateway.
+func (s *Service) enterGateway() bool {
+	if s.gate == nil {
+		return true
+	}
+	select {
+	case s.gate <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) leaveGateway() {
+	if s.gate != nil {
+		<-s.gate
+	}
 }
 
 // PublicView is what GET /api/t/{token}/status answers. Amount and ExpiresAt are those of the
@@ -122,6 +225,8 @@ type PublicView struct {
 	Status    Status
 	Amount    int64
 	ExpiresAt time.Time
+	// CheckedAt is when the tenant said they paid; set only while Status is StatusChecking.
+	CheckedAt *time.Time
 }
 
 // PublicStatus reads what the page shows about the latest attempt of the tenant behind token.
@@ -129,10 +234,7 @@ type PublicView struct {
 func (s *Service) PublicStatus(ctx context.Context, token string) (PublicView, error) {
 	var out PublicView
 	err := s.withLink(ctx, token, func(_ *dbgen.Queries, _, _ uuid.UUID, a *Attempt) error {
-		out.Status = PublicStatus(a, s.clock.Now())
-		if a != nil {
-			out.Amount, out.ExpiresAt = a.Amount, a.ExpiresAt
-		}
+		out = view(a, s.clock.Now())
 		return nil
 	})
 	if err != nil {
@@ -204,7 +306,7 @@ func latestAttempt(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUI
 		return nil, fmt.Errorf("qris: loading the latest attempt: %w", err)
 	}
 	return &Attempt{
-		ID: row.ID, Amount: row.Amount, QRString: row.QrString, Status: row.Status,
-		ExpiresAt: row.ExpiresAt, CheckRequestedAt: row.CheckRequestedAt,
+		ID: row.ID, TenantID: row.TenantID, TransactionID: row.TransactionID, Amount: row.Amount,
+		QRString: row.QrString, Status: row.Status, ExpiresAt: row.ExpiresAt, CheckRequestedAt: row.CheckRequestedAt,
 	}, nil
 }

@@ -205,12 +205,15 @@ func TestTransaction(t *testing.T) {
 		cancel     bool
 		file       string
 		wantStatus autogopay.TransactionStatus
+		wantTime   string // default 2026-11-04 11:39:49
 		wantErr    error
 	}{
 		{name: "status pending", file: "status_pending.json", wantStatus: autogopay.StatusPending},
 		{name: "cancel answers cancelled", cancel: true, file: "cancel.json", wantStatus: autogopay.StatusCancelled},
 		{name: "status after cancel", file: "status_after_cancel.json", wantStatus: autogopay.StatusCancelled},
 		{name: "settlement is paid", file: "status_settlement.json", wantStatus: autogopay.StatusPaid},
+		{name: "a real paid answer, with no transaction id, is paid", file: "status_settlement_real.json", wantStatus: autogopay.StatusPaid,
+			wantTime: "2026-11-06 08:38:21"},
 		{name: "PAID is paid", file: "status_paid.json", wantStatus: autogopay.StatusPaid},
 		{name: "cancel of a paid QR reports paid", cancel: true, file: "status_settlement.json", wantStatus: autogopay.StatusPaid},
 		{name: "expire is expired", file: "status_expire.json", wantStatus: autogopay.StatusExpired},
@@ -234,9 +237,11 @@ func TestTransaction(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, autogopay.Transaction{
-				ID: txID, Status: tc.wantStatus, Time: jakarta("2026-11-04 11:39:49"),
-			}, got)
+			at := tc.wantTime
+			if at == "" {
+				at = "2026-11-04 11:39:49"
+			}
+			require.Equal(t, autogopay.Transaction{ID: txID, Status: tc.wantStatus, Time: jakarta(at)}, got)
 		})
 	}
 }

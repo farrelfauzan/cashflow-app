@@ -12,6 +12,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
@@ -19,6 +20,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/queue"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 )
 
 func main() {
@@ -42,7 +45,7 @@ func run() error {
 	}
 	log = log.With("service", "worker", "env", cfg.Env)
 
-	st, err := store.Open(ctx, cfg.DatabaseURL, log)
+	st, err := store.Open(ctx, cfg.DatabaseURL, log, store.WithMaxConns(cfg.DatabaseMaxConns))
 	if err != nil {
 		return err
 	}
@@ -69,6 +72,26 @@ func run() error {
 		Log:       log,
 	}
 	if err := invoices.Register(mux, sched); err != nil {
+		return err
+	}
+	keys, err := cfg.Secrets.Keyring()
+	if err != nil {
+		return err
+	}
+	gateway, err := autogopay.NewClient(autogopay.Config{BaseURL: cfg.AutoGoPayBaseURL})
+	if err != nil {
+		return err
+	}
+	reconcile := qristask.Worker{
+		Reconciler: qris.NewService(qris.Deps{
+			Store: st, Clock: clk, Gateway: gateway, Keys: autogopay.NewService(st, keys, az, clk), Audit: az, Log: log,
+		}),
+		Orgs:     st,
+		Enqueuer: qristask.NewClient(client),
+		Clock:    clk,
+		Log:      log,
+	}
+	if err := reconcile.Register(mux, sched); err != nil {
 		return err
 	}
 
