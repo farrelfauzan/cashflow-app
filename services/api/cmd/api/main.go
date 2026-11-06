@@ -108,7 +108,8 @@ func run() error {
 	az := authz.NewService(st, clk, log)
 	props := property.NewService(st, az, clk)
 	leaseQueue := invoicetask.NewLeaseQueue(invoicetask.NewClient(queueClient), log)
-	billingSvc := billing.NewService(st, az, clk, log)
+	// A manual payment that keeps a tenant's promise closes it in the payment's transaction.
+	billingSvc := billing.NewService(st, az, clk, log, promise.NewCloser(st, clk, log))
 	tenants := tenant.NewService(st, az, clk, billingSvc, leaseQueue)
 	imports := tenantimport.NewService(st, az, props, tenants, clk)
 	cookieSecure := cfg.CookieSecure()

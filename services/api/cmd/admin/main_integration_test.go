@@ -11,15 +11,21 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 )
 
@@ -161,6 +167,94 @@ func TestSetBankAccount(t *testing.T) {
 		missing := uuid.New()
 		out, err := set("-org", missing.String(), "-bank", "BCA", "-number", "1234567890", "-holder", "Suhwendi")
 		require.ErrorIs(t, err, paylink.ErrOrganizationNotFound)
+		require.ErrorContains(t, err, missing.String())
+		require.Empty(t, out)
+	})
+}
+
+// TestSetBrokenPromiseThreshold runs set-broken-promise-threshold as an operator would: it stores
+// the threshold, prints it, audits it as a platform action, and with 1 a tenant's first broken
+// promise puts them on the visit list.
+func TestSetBrokenPromiseThreshold(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.New(t)
+	te.Clock.Set(time.Date(2026, 11, 2, 9, 0, 0, 0, clock.Jakarta))
+	o := te.CreateOrg(t, "Griya Sejahtera", "0812403")
+
+	raw := make([]byte, 32)
+	_, err := rand.Read(raw)
+	require.NoError(t, err)
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("DATABASE_URL", te.URLs.App)
+	t.Setenv("SECRETS_KEY", "ops-1:"+base64.StdEncoding.EncodeToString(raw))
+	t.Setenv("SECRETS_KEY_PREVIOUS", "")
+
+	set := func(args ...string) (string, error) {
+		var out, errOut bytes.Buffer
+		err := run(ctx, append([]string{"set-broken-promise-threshold"}, args...), env{
+			lookup: os.LookupEnv, connect: connect, stdout: &out, stderr: &errOut,
+		})
+		return out.String(), err
+	}
+
+	got, err := te.Orgs.BrokenPromiseThreshold(ctx, o.ID)
+	require.NoError(t, err)
+	require.Equal(t, org.DefaultBrokenPromiseThreshold, got)
+
+	out, err := set("-org", o.ID.String(), "-n", "1")
+	require.NoError(t, err)
+	require.Equal(t, "organization "+o.ID.String()+"\nbroken-promise threshold 1\n", out)
+	got, err = te.Orgs.BrokenPromiseThreshold(ctx, o.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, got)
+
+	var audited int
+	for _, a := range te.AuditLog(t, o.ID) {
+		if a.Action == "settings:update" && a.Resource == "organization/"+o.ID.String() {
+			require.Equal(t, "allow", a.Decision)
+			require.False(t, a.ActorStaffUserID.Valid, "the operator tool has no acting member")
+			audited++
+		}
+	}
+	require.Equal(t, 1, audited)
+
+	t.Run("with 1, the first broken promise opens a visit task", func(t *testing.T) {
+		admin := te.Principal(t, o.ID, o.Admin.UserID)
+		kos, err := te.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
+		require.NoError(t, err)
+		unit, err := te.Properties.CreateUnit(ctx, admin, kos.ID, property.UnitInput{Label: "Kamar 1", Terms: testenv.Monthly(700_000)})
+		require.NoError(t, err)
+		rina, err := te.Tenants.Create(ctx, admin, tenant.Input{Name: "Rina Wulandari", Phone: "081240305001"})
+		require.NoError(t, err)
+		_, err = te.Tenants.CreateLease(ctx, admin, tenant.NewLease{
+			TenantID: rina.ID, UnitID: unit.ID, TermMonths: 1, Terms: tenant.Terms{StartDate: tenant.Today(te.Clock)},
+		})
+		require.NoError(t, err)
+		_, err = te.Billing.GenerateOrg(ctx, o.ID)
+		require.NoError(t, err)
+		promises := promise.NewService(promise.Deps{Store: te.Store, Tenants: te.Billing, Clock: te.Clock})
+		date := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+		_, err = promises.MakeForTenant(ctx, admin, rina.ID, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: &date})
+		require.NoError(t, err)
+
+		te.Clock.Set(time.Date(2026, 11, 4, 0, 30, 0, 0, clock.Jakarta))
+		res, err := te.Promises.CloseDue(ctx, o.ID)
+		require.NoError(t, err)
+		require.Equal(t, promise.CloseResult{Due: 1, Broken: 1, VisitTasks: 1}, res)
+	})
+
+	t.Run("a threshold out of range is refused and nothing changes", func(t *testing.T) {
+		_, err := set("-org", o.ID.String(), "-n", "11")
+		require.ErrorContains(t, err, "-n must be 1 to 10")
+		got, err := te.Orgs.BrokenPromiseThreshold(ctx, o.ID)
+		require.NoError(t, err)
+		require.Equal(t, 1, got)
+	})
+
+	t.Run("an organization that does not exist", func(t *testing.T) {
+		missing := uuid.New()
+		out, err := set("-org", missing.String(), "-n", "3")
+		require.ErrorIs(t, err, org.ErrOrganizationNotFound)
 		require.ErrorContains(t, err, missing.String())
 		require.Empty(t, out)
 	})

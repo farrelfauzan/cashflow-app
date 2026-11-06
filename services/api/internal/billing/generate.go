@@ -28,8 +28,8 @@ import (
 //     bills them, the move-out locks those still unbilled after that before it puts them on the
 //     final invoice (createFinal), and RecordMeteredCharge locks the one it edits (it takes no
 //     unit lock);
-//  4. the tenant row, FOR NO KEY UPDATE, last (billing.Allocate, and the trigger that checks a
-//     correction).
+//  4. the tenant row, FOR NO KEY UPDATE, last (billing.Allocate, a payment insert before it
+//     inserts, a promise version, and the trigger that checks a correction).
 //
 // Inserting an invoice or a correction takes FOR KEY SHARE on the lease, tenant and invoice it
 // refers to; FOR NO KEY UPDATE does not conflict with that, which is why neither the lease nor the
@@ -41,15 +41,29 @@ import (
 // action. The lease hooks (PlannedEndChanged, MovedOut) run as the acting member and authorize
 // each correction.
 type Service struct {
-	store *store.Store
-	authz *authz.Service
-	clock clock.Clock
-	log   *slog.Logger
+	store    *store.Store
+	authz    *authz.Service
+	clock    clock.Clock
+	log      *slog.Logger
+	payments PaymentHook
 }
 
-// NewService returns a Service. c decides "today" in Asia/Jakarta.
-func NewService(st *store.Store, az *authz.Service, c clock.Clock, log *slog.Logger) *Service {
-	return &Service{store: st, authz: az, clock: c, log: log}
+// PaymentHook runs inside the transaction of every manual payment RecordPayment inserts, after
+// the payment is allocated and while the tenant's allocation lock is held. promise.Closer
+// implements it: a payment that keeps the tenant's active promise closes it as kept at once
+// (decision 41.3). Package promise imports billing, so billing reaches it only through this hook.
+type PaymentHook interface {
+	PaymentRecorded(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID) error
+}
+
+// NewService returns a Service. c decides "today" in Asia/Jakarta. payments is required: a
+// Service without it would record payments that never close the promise they keep, so a nil one
+// stops the program at wiring time.
+func NewService(st *store.Store, az *authz.Service, c clock.Clock, log *slog.Logger, payments PaymentHook) *Service {
+	if payments == nil {
+		panic("billing.NewService: a PaymentHook is required (promise.NewCloser)")
+	}
+	return &Service{store: st, authz: az, clock: c, log: log, payments: payments}
 }
 
 // Result counts what one generation run did.

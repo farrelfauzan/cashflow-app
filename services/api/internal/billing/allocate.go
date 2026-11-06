@@ -25,13 +25,8 @@ var ErrTenantNotFound = errors.New("billing: tenant not found")
 // permission; the caller authorizes the change that made allocation necessary.
 func Allocate(ctx context.Context, tx pgx.Tx, orgID, tenantID uuid.UUID) ([]Row, error) {
 	q := dbgen.New(tx)
-	if _, err := q.LockTenantForAllocation(ctx, dbgen.LockTenantForAllocationParams{
-		OrganizationID: orgID, TenantID: tenantID,
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrTenantNotFound
-		}
-		return nil, fmt.Errorf("locking tenant %s for allocation: %w", tenantID, err)
+	if err := LockTenant(ctx, q, orgID, tenantID); err != nil {
+		return nil, err
 	}
 
 	payments, invoices, existing, err := loadAllocationState(ctx, q, orgID, tenantID)
@@ -81,4 +76,20 @@ func loadAllocationState(ctx context.Context, q *dbgen.Queries, orgID, tenantID 
 		existing[i] = Allocation{Seq: r.Seq, PaymentID: r.PaymentID, InvoiceID: r.InvoiceID, Amount: r.Amount}
 	}
 	return payments, invoices, existing, nil
+}
+
+// LockTenant takes the tenant's allocation lock for the transaction of q, as Allocate does first.
+// A payment insert takes it before inserting (RecordPayment, the QRIS settle), so payments of one
+// tenant are inserted one transaction at a time, in the order of their seq. Taking it again in the
+// same transaction changes nothing. A tenant missing from the organization is ErrTenantNotFound.
+func LockTenant(ctx context.Context, q *dbgen.Queries, orgID, tenantID uuid.UUID) error {
+	if _, err := q.LockTenantForAllocation(ctx, dbgen.LockTenantForAllocationParams{
+		OrganizationID: orgID, TenantID: tenantID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrTenantNotFound
+		}
+		return fmt.Errorf("locking tenant %s for allocation: %w", tenantID, err)
+	}
+	return nil
 }

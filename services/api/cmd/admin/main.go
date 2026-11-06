@@ -38,6 +38,13 @@
 // The account number is 5 to 34 digits, spaces or '-'. Setting it again replaces it. These
 // values are not secret. It runs in every environment.
 //
+// It sets how many broken payment promises put one of an organization's tenants on the karyawan
+// visit list (1 to 10, default 2; decision 41.4) until the settings screen exists:
+//
+//	admin set-broken-promise-threshold -org 6f1c... -n 3
+//
+// It applies from the next promise that closes broken. It runs in every environment.
+//
 // Every command needs DATABASE_URL (the app role) and SECRETS_KEY.
 package main
 
@@ -68,6 +75,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
@@ -78,7 +86,8 @@ const usage = `usage:
   admin seed-demo   (development only: APP_ENV=development)
   admin generate-invoices   (development only: invoices and payments of the demo organizations)
   admin set-autogopay-key -org ORGANIZATION_ID   (reads the API key as one line from stdin)
-  admin set-bank-account -org ORGANIZATION_ID -bank NAME -number NUMBER -holder NAME`
+  admin set-bank-account -org ORGANIZATION_ID -bank NAME -number NUMBER -holder NAME
+  admin set-broken-promise-threshold -org ORGANIZATION_ID -n 1..10`
 
 // errNotDevelopment stops the demo commands anywhere but an explicit development environment.
 var errNotDevelopment = errors.New("demo commands only run with APP_ENV=development")
@@ -128,6 +137,8 @@ func run(ctx context.Context, args []string, e env) error {
 		return setAutoGoPayKey(ctx, args[1:], e)
 	case "set-bank-account":
 		return setBankAccount(ctx, args[1:], e)
+	case "set-broken-promise-threshold":
+		return setBrokenPromiseThreshold(ctx, args[1:], e)
 	}
 	return errors.New(usage)
 }
@@ -214,7 +225,7 @@ func seedDemo(ctx context.Context, args []string, e env) error {
 	// The services that create units and leases read a clock 40 days back, so the leases are
 	// entered then; the rest read the real one.
 	past := demoseed.Behind(c, demoseed.EntryDays)
-	money := billing.NewService(st, az, c, log)
+	money := billing.NewService(st, az, c, log, promise.NewCloser(st, c, log))
 	res, err := demoseed.Run(ctx, demoseed.Deps{
 		Store:          st,
 		Authz:          az,
@@ -260,7 +271,7 @@ func generateInvoices(ctx context.Context, args []string, e env) error {
 	c := clock.System()
 	az := authz.NewService(st, c, log)
 	sums, err := demoseed.GenerateInvoices(ctx, demoseed.GenerateDeps{
-		Store: st, Authz: az, Orgs: org.NewService(st, az), Billing: billing.NewService(st, az, c, log),
+		Store: st, Authz: az, Orgs: org.NewService(st, az), Billing: billing.NewService(st, az, c, log, promise.NewCloser(st, c, log)),
 	}, c)
 	if err != nil {
 		return err
@@ -385,6 +396,44 @@ func setBankAccount(ctx context.Context, args []string, e env) error {
 	}
 	_, err = fmt.Fprintf(e.stdout, "organization %s\nbank %s\naccount number %s\naccount holder %s\n",
 		orgID, stored.BankName, stored.AccountNumber, stored.AccountHolder)
+	return err
+}
+
+// setBrokenPromiseThreshold sets an organization's broken-promise threshold and prints it. The
+// flags are checked before it connects to the database.
+func setBrokenPromiseThreshold(ctx context.Context, args []string, e env) error {
+	fs := flag.NewFlagSet("set-broken-promise-threshold", flag.ContinueOnError)
+	fs.SetOutput(e.stderr)
+	orgFlag := fs.String("org", "", "the organization id")
+	n := fs.Int("n", 0, "how many broken promises put a tenant on the visit list, 1 to 10")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("set-broken-promise-threshold takes no arguments besides its flags\n%s", usage)
+	}
+	if *orgFlag == "" {
+		return fmt.Errorf("set-broken-promise-threshold needs -org and -n\n%s", usage)
+	}
+	orgID, err := uuid.Parse(*orgFlag)
+	if err != nil || orgID == uuid.Nil {
+		return errors.New("set-broken-promise-threshold: -org must be an organization id (a UUID)")
+	}
+	if *n < org.MinBrokenPromiseThreshold || *n > org.MaxBrokenPromiseThreshold {
+		return fmt.Errorf("set-broken-promise-threshold: -n must be %d to %d", org.MinBrokenPromiseThreshold, org.MaxBrokenPromiseThreshold)
+	}
+
+	cn, err := e.connect(ctx, e.stderr)
+	if err != nil {
+		return err
+	}
+	defer cn.store.Close()
+
+	clk := clock.System()
+	if err := org.NewService(cn.store, authz.NewService(cn.store, clk, cn.log)).SetBrokenPromiseThreshold(ctx, orgID, *n); err != nil {
+		return fmt.Errorf("setting the broken-promise threshold of organization %s: %w", orgID, err)
+	}
+	_, err = fmt.Fprintf(e.stdout, "organization %s\nbroken-promise threshold %d\n", orgID, *n)
 	return err
 }
 

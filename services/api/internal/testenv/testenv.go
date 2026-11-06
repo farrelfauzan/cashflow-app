@@ -31,6 +31,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/pgtest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
@@ -58,8 +59,11 @@ type Env struct {
 	Orgs       *org.Service
 	Properties *property.Service
 	Billing    *billing.Service
-	Tenants    *tenant.Service
-	Imports    *tenantimport.Service
+	// Promises closes payment promises; Billing runs it after every manual payment, as cmd/api
+	// wires it.
+	Promises *promise.Closer
+	Tenants  *tenant.Service
+	Imports  *tenantimport.Service
 	// AutoGoPay stores organizations' AutoGoPay keys, encrypted with Keyring; SetAutoGoPayKey
 	// gives an organization one.
 	AutoGoPay *autogopay.Service
@@ -97,7 +101,8 @@ func New(t *testing.T) *Env {
 	})
 	e.Orgs = org.NewService(st, e.Authz)
 	e.Properties = property.NewService(st, e.Authz, e.Clock)
-	e.Billing = billing.NewService(st, e.Authz, e.Clock, log)
+	e.Promises = promise.NewCloser(st, e.Clock, log)
+	e.Billing = billing.NewService(st, e.Authz, e.Clock, log, e.Promises)
 	e.Queue = &invoicetasktest.Fake{}
 	e.Tenants = tenant.NewService(st, e.Authz, e.Clock, e.Billing, invoicetask.NewLeaseQueue(e.Queue, log))
 	e.Imports = tenantimport.NewService(st, e.Authz, e.Properties, e.Tenants, e.Clock)

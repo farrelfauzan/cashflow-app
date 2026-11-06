@@ -12,6 +12,72 @@ import (
 	"github.com/google/uuid"
 )
 
+const closePromise = `-- name: ClosePromise :execrows
+UPDATE payment_promise SET status = $1, closed_at = $2
+WHERE organization_id = $3 AND id = $4 AND status = 'active'
+`
+
+type ClosePromiseParams struct {
+	Status         string
+	ClosedAt       *time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Closes an active promise as kept, partially kept or broken. A closed one is left alone (and a
+// trigger refuses to change it).
+func (q *Queries) ClosePromise(ctx context.Context, arg ClosePromiseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, closePromise,
+		arg.Status,
+		arg.ClosedAt,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countCoveredInvoicesOwing = `-- name: CountCoveredInvoicesOwing :one
+SELECT count(*)
+FROM promise_covered_invoice c
+JOIN invoice_balance b ON b.organization_id = c.organization_id AND b.invoice_id = c.invoice_id
+WHERE c.organization_id = $1 AND c.promise_version_id = $2
+  AND b.outstanding > 0
+`
+
+type CountCoveredInvoicesOwingParams struct {
+	OrganizationID   uuid.UUID
+	PromiseVersionID uuid.UUID
+}
+
+// How many of a version's covered invoices still owe something now. A cancelled invoice owes
+// nothing.
+func (q *Queries) CountCoveredInvoicesOwing(ctx context.Context, arg CountCoveredInvoicesOwingParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCoveredInvoicesOwing, arg.OrganizationID, arg.PromiseVersionID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTenantBrokenPromises = `-- name: CountTenantBrokenPromises :one
+SELECT count(*) FROM payment_promise
+WHERE organization_id = $1 AND tenant_id = $2 AND status = 'broken'
+`
+
+type CountTenantBrokenPromisesParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+func (q *Queries) CountTenantBrokenPromises(ctx context.Context, arg CountTenantBrokenPromisesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenantBrokenPromises, arg.OrganizationID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTenantPromises = `-- name: CountTenantPromises :one
 SELECT count(*) FROM payment_promise
 WHERE organization_id = $1 AND tenant_id = $2
@@ -32,7 +98,7 @@ func (q *Queries) CountTenantPromises(ctx context.Context, arg CountTenantPromis
 const getActivePromise = `-- name: GetActivePromise :one
 SELECT p.id AS promise_id, p.created_at AS promise_created_at,
        v.id, v.version, v.kind, v.promised_date, v.promised_amount, v.paying_now, v.outstanding_at,
-       v.source, v.created_at
+       v.source, v.created_at, v.payment_seq_mark
 FROM payment_promise p
 JOIN promise_version v ON v.organization_id = p.organization_id AND v.promise_id = p.id
 WHERE p.organization_id = $1 AND p.tenant_id = $2 AND p.status = 'active'
@@ -57,6 +123,7 @@ type GetActivePromiseRow struct {
 	OutstandingAt    int64
 	Source           string
 	CreatedAt        time.Time
+	PaymentSeqMark   *int64
 }
 
 // The tenant's active promise with its newest version. Making a promise reads it after taking the
@@ -76,6 +143,7 @@ func (q *Queries) GetActivePromise(ctx context.Context, arg GetActivePromisePara
 		&i.OutstandingAt,
 		&i.Source,
 		&i.CreatedAt,
+		&i.PaymentSeqMark,
 	)
 	return i, err
 }
@@ -128,11 +196,13 @@ func (q *Queries) InsertPromiseCoveredInvoices(ctx context.Context, arg InsertPr
 const insertPromiseVersion = `-- name: InsertPromiseVersion :exec
 INSERT INTO promise_version (
     id, organization_id, promise_id, tenant_id, version, kind, promised_date, promised_amount,
-    paying_now, outstanding_at, source, note, created_by_staff_user_id, payment_link_id, created_at
+    paying_now, outstanding_at, source, note, created_by_staff_user_id, payment_link_id, created_at,
+    payment_seq_mark
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12,
-    $13, $14, $15
+    $13, $14, $15,
+    $16::bigint
 )
 `
 
@@ -152,6 +222,7 @@ type InsertPromiseVersionParams struct {
 	CreatedByStaffUserID uuid.NullUUID
 	PaymentLinkID        uuid.NullUUID
 	CreatedAt            time.Time
+	PaymentSeqMark       int64
 }
 
 func (q *Queries) InsertPromiseVersion(ctx context.Context, arg InsertPromiseVersionParams) error {
@@ -171,6 +242,7 @@ func (q *Queries) InsertPromiseVersion(ctx context.Context, arg InsertPromiseVer
 		arg.CreatedByStaffUserID,
 		arg.PaymentLinkID,
 		arg.CreatedAt,
+		arg.PaymentSeqMark,
 	)
 	return err
 }
@@ -384,4 +456,97 @@ func (q *Queries) ListTenantPromisePage(ctx context.Context, arg ListTenantPromi
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTenantsWithDuePromise = `-- name: ListTenantsWithDuePromise :many
+SELECT p.tenant_id
+FROM payment_promise p
+JOIN LATERAL (
+    SELECT v.promised_date FROM promise_version v
+    WHERE v.organization_id = p.organization_id AND v.promise_id = p.id
+    ORDER BY v.version DESC
+    LIMIT 1
+) latest ON true
+WHERE p.organization_id = $1 AND p.status = 'active' AND latest.promised_date < $2::date
+ORDER BY p.tenant_id
+`
+
+type ListTenantsWithDuePromiseParams struct {
+	OrganizationID uuid.UUID
+	Today          time.Time
+}
+
+// The tenants whose active promise's newest version promised a day before today (Asia/Jakarta):
+// the day ended, so the promise is closed.
+func (q *Queries) ListTenantsWithDuePromise(ctx context.Context, arg ListTenantsWithDuePromiseParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTenantsWithDuePromise, arg.OrganizationID, arg.Today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var tenant_id uuid.UUID
+		if err := rows.Scan(&tenant_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tenant_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sumTenantPaymentsSince = `-- name: SumTenantPaymentsSince :one
+SELECT coalesce(sum(p.amount + coalesce((
+           SELECT sum(c.amount_delta) FROM correction c
+           WHERE c.organization_id = p.organization_id AND c.payment_id = p.id), 0)), 0)::bigint AS paid
+FROM payment p
+WHERE p.organization_id = $1 AND p.tenant_id = $2
+  AND CASE WHEN $3::bigint IS NULL THEN p.created_at >= $4
+           ELSE p.seq > $3::bigint END
+`
+
+type SumTenantPaymentsSinceParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	SeqMark        *int64
+	MadeAt         time.Time
+}
+
+// What the tenant paid since a version was made, after corrections to those payments: their
+// payments with a seq above the version's mark, or, for a version made before marks existed
+// (seq_mark NULL), those created at or after made_at.
+func (q *Queries) SumTenantPaymentsSince(ctx context.Context, arg SumTenantPaymentsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumTenantPaymentsSince,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.SeqMark,
+		arg.MadeAt,
+	)
+	var paid int64
+	err := row.Scan(&paid)
+	return paid, err
+}
+
+const tenantPaymentSeqMark = `-- name: TenantPaymentSeqMark :one
+SELECT coalesce(max(seq), 0)::bigint AS mark
+FROM payment
+WHERE organization_id = $1 AND tenant_id = $2
+`
+
+type TenantPaymentSeqMarkParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+// The tenant's highest payment seq, 0 when they have none: a version's payment_seq_mark. Read
+// under the tenant's allocation lock, which every payment insert holds too, so a payment the
+// mark does not cover gets a higher seq.
+func (q *Queries) TenantPaymentSeqMark(ctx context.Context, arg TenantPaymentSeqMarkParams) (int64, error) {
+	row := q.db.QueryRow(ctx, tenantPaymentSeqMark, arg.OrganizationID, arg.TenantID)
+	var mark int64
+	err := row.Scan(&mark)
+	return mark, err
 }

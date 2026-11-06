@@ -40,9 +40,10 @@ type PaymentResult struct {
 }
 
 // RecordPayment records a cash or transfer payment from a tenant and allocates it FIFO over
-// all the tenant's invoices; what is left is credit. It needs payment:record (audited) with the
-// amount, for the whole organization or through every lease the tenant has or had, since FIFO
-// may pay any of them.
+// all the tenant's invoices; what is left is credit. When the payment keeps the tenant's active
+// promise, the PaymentHook closes it as kept in the same transaction. It needs payment:record
+// (audited) with the amount, for the whole organization or through every lease the tenant has or
+// had, since FIFO may pay any of them.
 //
 // The same requestId with the same input records nothing and returns the payment with Created
 // false; with any other input it returns ErrRequestIDReused. Two identical requests at the same
@@ -68,6 +69,12 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 			return err
 		}
 
+		// The tenant's allocation lock before the insert, not only in Allocate after it: a promise
+		// version made meanwhile marks the tenant's last payment seq under the same lock, so a
+		// payment it does not see always gets a higher seq.
+		if err := LockTenant(ctx, q, org, in.TenantID); err != nil {
+			return err
+		}
 		row, created, err := insertManualPayment(ctx, q, org, p.UserID, in)
 		if err != nil {
 			return err
@@ -75,6 +82,9 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 		if created {
 			if _, err := Allocate(ctx, tx, org, in.TenantID); err != nil {
 				return err
+			}
+			if err := s.payments.PaymentRecorded(ctx, tx, org, in.TenantID); err != nil {
+				return fmt.Errorf("closing the tenant's promise after a payment: %w", err)
 			}
 		}
 		acct, err := loadAccount(ctx, q, org, in.TenantID, tenant.Today(s.clock))

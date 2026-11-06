@@ -14,7 +14,7 @@ import (
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organization (id, name, display_name)
 VALUES ($1, $2, $3)
-RETURNING id, name, display_name, created_at
+RETURNING id, name, display_name, created_at, broken_promise_threshold
 `
 
 type CreateOrganizationParams struct {
@@ -31,12 +31,24 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.Name,
 		&i.DisplayName,
 		&i.CreatedAt,
+		&i.BrokenPromiseThreshold,
 	)
 	return i, err
 }
 
+const getBrokenPromiseThreshold = `-- name: GetBrokenPromiseThreshold :one
+SELECT broken_promise_threshold FROM organization WHERE id = $1
+`
+
+func (q *Queries) GetBrokenPromiseThreshold(ctx context.Context, id uuid.UUID) (int16, error) {
+	row := q.db.QueryRow(ctx, getBrokenPromiseThreshold, id)
+	var broken_promise_threshold int16
+	err := row.Scan(&broken_promise_threshold)
+	return broken_promise_threshold, err
+}
+
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, name, display_name, created_at FROM organization WHERE id = $1
+SELECT id, name, display_name, created_at, broken_promise_threshold FROM organization WHERE id = $1
 `
 
 func (q *Queries) GetOrganization(ctx context.Context, id uuid.UUID) (Organization, error) {
@@ -47,6 +59,24 @@ func (q *Queries) GetOrganization(ctx context.Context, id uuid.UUID) (Organizati
 		&i.Name,
 		&i.DisplayName,
 		&i.CreatedAt,
+		&i.BrokenPromiseThreshold,
 	)
 	return i, err
+}
+
+const setBrokenPromiseThreshold = `-- name: SetBrokenPromiseThreshold :execrows
+UPDATE organization SET broken_promise_threshold = $1 WHERE id = $2
+`
+
+type SetBrokenPromiseThresholdParams struct {
+	Threshold int16
+	ID        uuid.UUID
+}
+
+func (q *Queries) SetBrokenPromiseThreshold(ctx context.Context, arg SetBrokenPromiseThresholdParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setBrokenPromiseThreshold, arg.Threshold, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

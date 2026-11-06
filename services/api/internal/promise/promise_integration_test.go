@@ -178,23 +178,30 @@ func TestMakeFromLink(t *testing.T) {
 		require.Equal(t, uuid.NullUUID{UUID: rina.linkID, Valid: true}, link, "the version names the link it was made through")
 	})
 
-	t.Run("making it again is an edit: version 2 of the same promise, covering what is open now", func(t *testing.T) {
-		// The second month's invoice is made on 25 Nov (7 days ahead of 2 Dec), and the first is paid.
+	t.Run("making it again is an edit: the next version of the same promise, covering what is open now", func(t *testing.T) {
+		// The second month's invoice is made on 25 Nov (7 days ahead of 2 Dec). Rina first moves
+		// her date, so paying the first invoice next does not keep the promise: version 2 covers
+		// both invoices and promised no amount (paying version 1's Rp700.000 target would have
+		// closed it as kept).
 		env.Clock.Set(time.Date(2026, 11, 26, 9, 0, 0, 0, clock.Jakarta))
 		_, err := env.Billing.GenerateOrg(ctx, w.org.ID)
 		require.NoError(t, err)
-		w.pay(t, rina, 700_000)
 		acct, err := env.Billing.Account(ctx, w.admin, rina.tenantID)
 		require.NoError(t, err)
 		require.Len(t, acct.Invoices, 2)
 		second := acct.Invoices[1].ID
+		moved := w.make(t, rina, onDay(day(2026, 11, 30)))
+		require.Equal(t, first.ID, moved.ID)
+		require.Equal(t, []uuid.UUID{rina.invoiceID, second}, moved.Latest().CoveredInvoiceIDs)
+		w.pay(t, rina, 700_000)
+		require.Equal(t, promise.StatusActive, w.list(t, rina)[0].Status, "the second invoice is still owed")
 
 		got := w.make(t, rina, promise.Input{Kind: promise.KindWithNextInvoice})
 		require.Equal(t, first.ID, got.ID)
-		require.Len(t, got.Versions, 2)
+		require.Len(t, got.Versions, 3)
 		require.Equal(t, first.Versions[0].ID, got.Versions[0].ID, "version 1 is kept as it was")
 		v := got.Latest()
-		require.Equal(t, 2, v.Number)
+		require.Equal(t, 3, v.Number)
 		require.Equal(t, promise.KindWithNextInvoice, v.Kind)
 		require.Equal(t, day(2026, 12, 2), v.PromisedDate, "the next invoice's due date, set by the server")
 		require.Nil(t, v.PromisedAmount)
@@ -211,7 +218,7 @@ func TestMakeFromLink(t *testing.T) {
 		page, err := w.links.PublicPage(ctx, rina.token)
 		require.NoError(t, err)
 		require.NotNil(t, page.Promise.Active)
-		require.Equal(t, 2, page.Promise.Active.Number)
+		require.Equal(t, 3, page.Promise.Active.Number)
 		require.Equal(t, day(2026, 12, 2), page.Promise.Active.PromisedDate)
 		require.NotNil(t, page.Promise.Window)
 		require.Equal(t, day(2026, 11, 27), page.Promise.Window.Earliest)
@@ -229,7 +236,7 @@ func TestMakeFromLink(t *testing.T) {
 		require.Equal(t, "promisedDate", fe.Field)
 
 		got := w.make(t, rina, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: ptr(day(2027, 1, 1))})
-		require.Equal(t, 3, got.Latest().Number)
+		require.Equal(t, 4, got.Latest().Number)
 		require.Equal(t, day(2027, 1, 1), got.Latest().PromisedDate)
 
 		// On the bound itself no later day is left: the page offers no dates and an edit is refused.

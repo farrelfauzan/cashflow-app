@@ -303,3 +303,68 @@ func TestSetBankAccountConnectsWithAValidRequest(t *testing.T) {
 	require.ErrorIs(t, err, connectErr)
 	require.True(t, connected)
 }
+
+// TestSetBrokenPromiseThresholdRefusesBeforeConnecting: a missing or bad -org, a threshold
+// outside 1 to 10 and a stray argument all fail before the database is opened.
+func TestSetBrokenPromiseThresholdRefusesBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	const org = "6f1c2a3e-0000-4000-8000-000000000001"
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "no flags", args: nil, wantErr: "needs -org and -n"},
+		{name: "no -org", args: []string{"-n", "3"}, wantErr: "needs -org"},
+		{name: "-org is not a uuid", args: []string{"-org", "griya", "-n", "3"}, wantErr: "-org must be an organization id"},
+		{name: "-org is the nil uuid", args: []string{"-org", "00000000-0000-0000-0000-000000000000", "-n", "3"}, wantErr: "-org must be an organization id"},
+		{name: "no -n", args: []string{"-org", org}, wantErr: "-n must be 1 to 10"},
+		{name: "-n of 0", args: []string{"-org", org, "-n", "0"}, wantErr: "-n must be 1 to 10"},
+		{name: "-n of 11", args: []string{"-org", org, "-n", "11"}, wantErr: "-n must be 1 to 10"},
+		{name: "-n below zero", args: []string{"-org", org, "-n", "-2"}, wantErr: "-n must be 1 to 10"},
+		{name: "-n that is not a number", args: []string{"-org", org, "-n", "dua"}, wantErr: "invalid value"},
+		{name: "a stray argument", args: []string{"-org", org, "-n", "3", "4"}, wantErr: "takes no arguments"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var out, errOut bytes.Buffer
+			e := env{
+				lookup: func(string) (string, bool) { return "", false },
+				connect: func(context.Context, io.Writer) (conn, error) {
+					t.Fatal("must not connect")
+					return conn{}, nil
+				},
+				stdout: &out,
+				stderr: &errOut,
+			}
+			err := run(context.Background(), append([]string{"set-broken-promise-threshold"}, tc.args...), e)
+			require.ErrorContains(t, err, tc.wantErr)
+			require.Empty(t, out.String())
+		})
+	}
+}
+
+func TestSetBrokenPromiseThresholdConnectsWithAValidRequest(t *testing.T) {
+	t.Parallel()
+	for _, n := range []string{"1", "10"} {
+		t.Run(n, func(t *testing.T) {
+			t.Parallel()
+			connectErr := errors.New("no database in unit tests")
+			connected := false
+			e := env{
+				lookup: func(string) (string, bool) { return "", false },
+				connect: func(context.Context, io.Writer) (conn, error) {
+					connected = true
+					return conn{}, connectErr
+				},
+				stderr: io.Discard,
+			}
+			err := run(context.Background(), []string{
+				"set-broken-promise-threshold", "-org", "6f1c2a3e-0000-4000-8000-000000000001", "-n", n,
+			}, e)
+			require.ErrorIs(t, err, connectErr)
+			require.True(t, connected)
+		})
+	}
+}
