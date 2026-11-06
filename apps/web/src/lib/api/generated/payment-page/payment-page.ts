@@ -34,7 +34,8 @@ import type {
   PaymentPage,
   PaymentPreview,
   PaymentPromise,
-  QrisStatus
+  QrisStatus,
+  TelegramDeepLink
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -196,7 +197,7 @@ export const useRevokePaymentLinks = <TError = ErrorType<ErrorResponse>,
       return useMutation(getRevokePaymentLinksMutationOptions(options), queryClient);
     }
     /**
- * No session: the token alone grants the page, and only for the link's own tenant. It shows who bills them, the tenant's name and the link's invoice (so a forwarded link is obvious), everything the tenant owes with the open invoices oldest first, the bank account for a manual transfer, and the tenant's active payment promise with the dates a new one may name (makePaymentPromise). Nothing else: no phone number, payment history, staff name or note. A malformed, unknown or revoked token all answer the same 404. Limited per token and per client address (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * No session: the token alone grants the page, and only for the link's own tenant. It shows who bills them, the tenant's name and the link's invoice (so a forwarded link is obvious), everything the tenant owes with the open invoices oldest first, the bank account for a manual transfer, the tenant's active payment promise with the dates a new one may name (makePaymentPromise), and whether the tenant can link or has linked Telegram (linkPaymentPageTelegram). Nothing else: no phone number, payment history, staff name or note. A malformed, unknown or revoked token all answer the same 404. Limited per token and per client address (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
  * @summary The tenant payment page behind a link (public; the token is the access)
  */
 export const getPaymentPage = (
@@ -773,4 +774,70 @@ export const useMakePaymentPromise = <TError = ErrorType<Error | ErrorResponse>,
         TContext
       > => {
       return useMutation(getMakePaymentPromiseMutationOptions(options), queryClient);
+    }
+    /**
+ * Telegram is a demo channel (decision 42): development and staging, with test accounts. No session: the token grants it, and link errors answer as for getPaymentPage. Answers the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness, never the link token or anything derived from it; it works once and for 10 minutes, and asking again makes another without cancelling the first. Opening the link and pressing Start in Telegram links that chat to the tenant (getPaymentPage then shows telegram.linked); a new link replaces the tenant's older one, and /stop in the chat unlinks it. 404 telegram_unavailable when the environment has no bot, so the page hides the button (getPaymentPage's telegram.available is false then). Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer. The deep link holds the code: open it, never log it or send it anywhere else.
+ * @summary A one-time deep link to the Telegram bot, to get messages there (public; "Hubungkan Telegram")
+ */
+export const linkPaymentPageTelegram = (
+    token: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<TelegramDeepLink>(
+      {url: `/t/${token}/telegram`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+
+export const getLinkPaymentPageTelegramMutationKey = () => ['linkPaymentPageTelegram'] as const;
+
+export const getLinkPaymentPageTelegramMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkPaymentPageTelegram>>, TError,LinkPaymentPageTelegramMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof linkPaymentPageTelegram>>, TError,LinkPaymentPageTelegramMutationVariables, TContext> => {
+
+const mutationKey = getLinkPaymentPageTelegramMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkPaymentPageTelegram>>, LinkPaymentPageTelegramMutationVariables> = (props) => {
+          const {token} = props ?? {};
+
+          return  linkPaymentPageTelegram(token,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LinkPaymentPageTelegramMutationResult = NonNullable<Awaited<ReturnType<typeof linkPaymentPageTelegram>>>
+
+    export type LinkPaymentPageTelegramMutationError = ErrorType<Error | ErrorResponse>
+    export type LinkPaymentPageTelegramMutationVariables = {token: string}
+
+    /**
+ * @summary A one-time deep link to the Telegram bot, to get messages there (public; "Hubungkan Telegram")
+ */
+export const useLinkPaymentPageTelegram = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkPaymentPageTelegram>>, TError,LinkPaymentPageTelegramMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof linkPaymentPageTelegram>>,
+        TError,
+        LinkPaymentPageTelegramMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLinkPaymentPageTelegramMutationOptions(options), queryClient);
     }

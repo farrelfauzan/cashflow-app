@@ -1585,8 +1585,11 @@ type PaymentPage struct {
 	PromiseDates *PromiseDates `json:"promiseDates"`
 
 	// QrisAvailable True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
-	QrisAvailable bool   `json:"qrisAvailable"`
-	TenantName    string `json:"tenantName"`
+	QrisAvailable bool `json:"qrisAvailable"`
+
+	// Telegram The Telegram demo channel (decision 42) on the payment page: "Hubungkan Telegram", or "Terhubung" once linked.
+	Telegram   PaymentPageTelegram `json:"telegram"`
+	TenantName string              `json:"tenantName"`
 }
 
 // PaymentPageInvoice defines model for PaymentPageInvoice.
@@ -1619,6 +1622,15 @@ type PaymentPageLine struct {
 
 	// Label Example: Sewa 15 Okt 2026 – 14 Nov 2026
 	Label string `json:"label"`
+}
+
+// PaymentPageTelegram The Telegram demo channel (decision 42) on the payment page: "Hubungkan Telegram", or "Terhubung" once linked.
+type PaymentPageTelegram struct {
+	// Available True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram.
+	Available bool `json:"available"`
+
+	// Linked True when the tenant has a live Telegram link in this organization. Always false when available is false.
+	Linked bool `json:"linked"`
 }
 
 // PaymentPreview defines model for PaymentPreview.
@@ -1847,6 +1859,14 @@ type StaffRef struct {
 type StatusResponse struct {
 	// Status Example: sent
 	Status string `json:"status"`
+}
+
+// TelegramDeepLink defines model for TelegramDeepLink.
+type TelegramDeepLink struct {
+	// DeepLink https://t.me/<bot>?start=<code>, with a one-time code valid for 10 minutes.
+	//
+	// Example: https://t.me/cashflow_dev_bot?start=Xk3v9q2LrT7mWb8NcY1pZs4uHf6gJd0eKa5oVi2nQwE
+	DeepLink string `json:"deepLink"`
 }
 
 // Tenant defines model for Tenant.

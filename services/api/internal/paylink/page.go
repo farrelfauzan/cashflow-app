@@ -40,6 +40,9 @@ type Page struct {
 	// Promise is the tenant's active payment promise and what a promise made now may say
 	// ("Janji pelunasan"), read in the same snapshot.
 	Promise promise.PageState
+	// TelegramLinked is true when the tenant has a live Telegram link in this organization
+	// (decision 42). Whether the bot is configured at all is the caller's to say.
+	TelegramLinked bool
 }
 
 // PageInvoice is one invoice as the tenant sees it.
@@ -143,6 +146,11 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 		return Page{}, fmt.Errorf("paylink: checking for an AutoGoPay account: %w", err)
 	}
 
+	telegramLinked, err := q.TenantHasTelegramLink(ctx, dbgen.TenantHasTelegramLinkParams{OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return Page{}, fmt.Errorf("paylink: checking for a Telegram link: %w", err)
+	}
+
 	out := Page{
 		OrganizationName: o.DisplayName,
 		TenantName:       t.Name,
@@ -153,6 +161,7 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 		BankAccount:      bank,
 		QRISAvailable:    qrisAvailable,
 		Promise:          promises,
+		TelegramLinked:   telegramLinked,
 	}
 	found := false
 	for _, inv := range acct.Invoices {

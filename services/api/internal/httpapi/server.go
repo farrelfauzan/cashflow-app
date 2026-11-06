@@ -19,11 +19,13 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -59,6 +61,16 @@ type Deps struct {
 	Promises *promise.Service
 	// Webhooks handles AutoGoPay's callbacks.
 	Webhooks *qris.Webhook
+	// TelegramCodes makes the payment page's one-time Telegram deep links (decision 42, demo
+	// only). Nil when this environment has no bot: the page then says telegram.available false and
+	// linkPaymentPageTelegram answers telegram_unavailable.
+	TelegramCodes *telegramlink.Codes
+	// TelegramUpdates handles the bot's updates from /webhooks/telegram. The route exists only when
+	// it and TelegramWebhookSecret are both set.
+	TelegramUpdates telegram.UpdateHandler
+	// TelegramWebhookSecret is TELEGRAM_WEBHOOK_SECRET, which Telegram sends back in the
+	// X-Telegram-Bot-Api-Secret-Token header. A secret: never log it.
+	TelegramWebhookSecret string
 	// PublicLimiter rate-limits the public payment page per token and per client address.
 	PublicLimiter ratelimit.Limiter
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
@@ -97,6 +109,11 @@ func New(d Deps) *Server {
 	// AutoGoPay's callbacks: no session and no origin check (a server calls them); the webhook id
 	// in the path finds the organization and its key checks the signature.
 	r.Post("/webhooks/autogopay/{webhookID}", s.autogopayWebhook)
+	// The Telegram bot's updates (decision 42, demo only): the secret header proves Telegram sent
+	// them. Without a bot or a secret the route does not exist (404).
+	if d.TelegramUpdates != nil && d.TelegramWebhookSecret != "" {
+		r.Post("/webhooks/telegram", s.telegramWebhook)
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		r.NotFound(s.notFound)
@@ -111,6 +128,7 @@ func New(d Deps) *Server {
 		r.With(publicPageHeaders).Post("/t/{token}/qris", s.createPaymentQris)
 		r.With(publicPageHeaders).Post("/t/{token}/check", s.checkPaymentQris)
 		r.With(publicPageHeaders).Post("/t/{token}/promise", s.makePaymentPromise)
+		r.With(publicPageHeaders).Post("/t/{token}/telegram", s.linkPaymentPageTelegram)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireSession)
