@@ -68,12 +68,13 @@ type API struct {
 	// autogopay.DefaultBaseURL. It must be https outside development.
 	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
 	// DatabaseMaxConns is DATABASE_MAX_CONNS, the size of the API's connection pool.
-	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=10"`
+	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=20"`
 	// QRISMaxConcurrent is QRIS_MAX_CONCURRENT: how many payment page requests may wait on
 	// AutoGoPay at once, each holding a database connection. It stays below DatabaseMaxConns, so a
 	// slow AutoGoPay can never take every connection and the page (and its bank transfer fallback)
-	// keeps loading; a request past it answers qris_unavailable at once.
-	QRISMaxConcurrent int `env:"QRIS_MAX_CONCURRENT, default=3"`
+	// keeps loading; a request past it answers qris_overloaded at once. A normal AutoGoPay call
+	// takes about a second, so the places fill only when AutoGoPay hangs.
+	QRISMaxConcurrent int `env:"QRIS_MAX_CONCURRENT, default=10"`
 	// AllowedOrigins is a comma-separated list of browser origins allowed to send
 	// state-changing requests.
 	AllowedOrigins string `env:"ALLOWED_ORIGINS, default=http://localhost:3000"`
@@ -308,7 +309,7 @@ type Worker struct {
 	// AutoGoPayBaseURL is as in API: reconcile asks AutoGoPay about pending QRs.
 	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
 	// DatabaseMaxConns is DATABASE_MAX_CONNS, the size of the worker's connection pool.
-	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=10"`
+	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=20"`
 }
 
 func (c Worker) validate() error {

@@ -47,7 +47,8 @@ const (
 //
 // Generates per tenant are capped (ErrGenerateLimit, counted before the live QR is cancelled, so
 // it stays payable) and never retried. Any AutoGoPay failure is ErrUnavailable: the page offers
-// bank transfer. So is a call that finds MaxConcurrentCalls already waiting on AutoGoPay. A QR generated but not recorded (the answer was
+// bank transfer. A call that finds MaxConcurrentCalls already waiting on AutoGoPay is
+// ErrOverloaded: nothing reached AutoGoPay, and the page may try again in a moment. A QR generated but not recorded (the answer was
 // unusable, or saving it failed) is cancelled once.
 //
 // Once a request reaches AutoGoPay, what AutoGoPay answered is recorded even if the tenant's
@@ -104,8 +105,8 @@ func (s *Service) MakeQR(ctx context.Context, token string, amount int64) (Publi
 		}
 		// From here this transaction waits on AutoGoPay while it holds a connection.
 		if !s.enterGateway() {
-			s.log.WarnContext(ctx, "too many QRIS requests waiting on AutoGoPay; answering unavailable", "organization", org)
-			return fmt.Errorf("%w: too many requests waiting on AutoGoPay", ErrUnavailable)
+			s.log.WarnContext(ctx, "too many QRIS requests waiting on AutoGoPay; answering overloaded", "organization", org)
+			return ErrOverloaded
 		}
 		entered = true
 		if key, err = s.apiKey(ctx, tx, org); err != nil {

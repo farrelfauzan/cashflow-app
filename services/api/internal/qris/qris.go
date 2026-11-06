@@ -48,6 +48,9 @@ var (
 	ErrGenerateLimit = errors.New("qris: too many QRs made")
 	// ErrBusy means another request is making or checking the tenant's QR right now.
 	ErrBusy = errors.New("qris: busy")
+	// ErrOverloaded means MaxConcurrentCalls requests are already waiting on AutoGoPay. Nothing
+	// reached AutoGoPay, so the page may try again in a moment before it offers bank transfer.
+	ErrOverloaded = errors.New("qris: too many requests waiting on AutoGoPay")
 	// ErrUnavailable means AutoGoPay failed, or the organization has no AutoGoPay key: QRIS is
 	// down for now ("QRIS gangguan") and the page offers bank transfer.
 	ErrUnavailable = errors.New("qris: QRIS unavailable")

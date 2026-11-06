@@ -33,7 +33,7 @@ func TestLoadAPI(t *testing.T) {
 				RedisAddr:        "localhost:6379",
 				AuthSecret:       testSecret,
 				Secrets:          Secrets{Key: testKey},
-				DatabaseMaxConns: 10, QRISMaxConcurrent: 3,
+				DatabaseMaxConns: 20, QRISMaxConcurrent: 10,
 				AllowedOrigins:   "http://localhost:3000",
 				PublicWebOrigin:  "http://localhost:3000",
 				WhatsAppProvider: "devlog",
@@ -64,7 +64,7 @@ func TestLoadAPI(t *testing.T) {
 				RedisAddr:        "redis:6379",
 				AuthSecret:       testSecret,
 				Secrets:          Secrets{Key: testKey},
-				DatabaseMaxConns: 10, QRISMaxConcurrent: 3,
+				DatabaseMaxConns: 20, QRISMaxConcurrent: 10,
 				AllowedOrigins:   "https://app.example.id",
 				PublicWebOrigin:  "https://app.example.id",
 				WhatsAppProvider: "gowa",
@@ -348,7 +348,7 @@ func TestLoadWorker(t *testing.T) {
 				DatabaseURL:      "postgres://app@db/cashflow",
 				RedisAddr:        "localhost:6379",
 				Secrets:          Secrets{Key: testKey},
-				DatabaseMaxConns: 10,
+				DatabaseMaxConns: 20,
 			},
 		},
 		{
@@ -534,7 +534,7 @@ func TestPoolAndQRISBound(t *testing.T) {
 		wantQRIS  int
 		wantErr   string
 	}{
-		{name: "defaults", env: env(), wantConns: 10, wantQRIS: 3},
+		{name: "defaults", env: env(), wantConns: 20, wantQRIS: 10},
 		{name: "set both", env: env("DATABASE_MAX_CONNS", "20", "QRIS_MAX_CONCURRENT", "5"), wantConns: 20, wantQRIS: 5},
 		{name: "QRIS as many as the pool", env: env("DATABASE_MAX_CONNS", "4", "QRIS_MAX_CONCURRENT", "4"), wantErr: "QRIS_MAX_CONCURRENT must be 1 to DATABASE_MAX_CONNS-1 (3)"},
 		{name: "QRIS zero", env: env("QRIS_MAX_CONCURRENT", "0"), wantErr: "QRIS_MAX_CONCURRENT"},
