@@ -126,7 +126,7 @@ func newTelegramServer(t *testing.T, env *testenv.Env, logs io.Writer, opt tgOpt
 		client, err := telegram.New(telegram.Config{Token: tgBotToken, BaseURL: opt.bot.srv.URL})
 		require.NoError(t, err)
 		deps.TelegramCodes = telegramlink.NewCodes(env.Store, links, env.Clock, tgBotUsername)
-		deps.TelegramUpdates = telegramlink.NewHandler(env.Store, client, env.Clock, log)
+		deps.TelegramUpdates = telegramlink.NewHandler(env.Store, client, nil, env.Clock, log)
 	}
 	srv := httptest.NewServer(httpapi.New(deps).Handler())
 	t.Cleanup(srv.Close)

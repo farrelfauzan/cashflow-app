@@ -363,12 +363,25 @@ reaches the database (it links and unlinks chats as the app role).
 To get a linked tenant's messages in that chat, also set `TELEGRAM_MESSAGES=linked` for the API
 and the worker. The router (`internal/messaging/router`) then sends each reminder and promise
 confirmation for a tenant with a live link to their chat, as plain text with the pay link as a
-button; other tenants, login codes and invitations still go to `WHATSAPP_PROVIDER`. Telegram
+button; other tenants and invitations still go to `WHATSAPP_PROVIDER`. Telegram
 messages are not held by the WhatsApp pacing guard (decision 41.6), because they do not use the
 shared number. When Telegram says the chat cannot be reached (the bot was blocked), the link ends
 and the tenant's next message goes to WhatsApp; nothing falls back within one send. The quickest to
 see: link a test tenant, then make a promise on their payment page; the "janji tercatat"
 confirmation arrives in the chat, and the worker logs "message sent" with `"channel":"telegram"`.
+
+Test staff link the same way, for their login codes (TG-4). Signed in, `POST /api/me/telegram`
+("Hubungkan Telegram" on the account) answers the bot's deep link with a one-time code (10
+minutes, used once, at most 5 per staff member per 15 minutes); pressing Start links that chat to
+the staff user (`internal/auth`'s `TelegramStaff`, in the auth scope), and the bot answers
+"Terhubung. Kode masuk untuk <nama> akan dikirim ke sini." `GET /api/me/telegram` says whether it
+is linked (`available` is false without a bot), `DELETE` unlinks, and `/stop` in the chat unlinks
+its tenants and staff alike. A newer link replaces the older one and the older chat is told. With
+`TELEGRAM_MESSAGES=linked` the API sends a linked staff member's login code to their chat;
+`whatsappOnly: true` on `POST /api/auth/otp/request` ("Kirim lewat WhatsApp") sends it on
+WhatsApp instead, under the same limit of 3 per number per 15 minutes. The 202 is the same for
+every number: its `telegramAvailable` only says whether this environment sends codes to linked
+chats (a bot and `TELEGRAM_MESSAGES=linked`), never whether this number is linked or registered.
 
 If it stops with "getUpdates is blocked", the bot has a webhook set (Telegram allows either a
 webhook or polling, not both) or another poller is running with the same token. Delete the
@@ -396,7 +409,8 @@ replay Bot API answers.
 - `internal/platform/store`: the database pool, `WithOrgTx` and `WithAuthTx`. Every query
   runs inside one of them.
 - `db/migrations`: goose SQL migrations. `db/queries`: the SQL that sqlc turns into Go.
-- `internal/auth`: WhatsApp login codes and sessions.
+- `internal/auth`: WhatsApp login codes and sessions, and staff members' Telegram links for login
+  codes in demo environments (`TelegramStaff`).
 - `internal/authz`: the IAM-style policy engine, built-in roles, guardrails and the action
   catalog, plus loading principals and writing the audit log.
 - `internal/member` and `internal/org`: members and their roles; creating organizations.
@@ -406,7 +420,8 @@ replay Bot API answers.
   and the test fake in `messagingtest`. `telegram` is the Telegram Bot API client (send to a
   chat, `getMe`, `getUpdates`, the development poll loop); it sends to a chat id, so it is not a
   WhatsApp provider. `router` is the provider in front of WhatsApp when `TELEGRAM_MESSAGES=linked`:
-  it sends a linked tenant's messages to their Telegram chat.
+  it sends a linked tenant's messages, and a linked staff member's login codes, to their Telegram
+  chat.
 - `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
   key rotation, and `secret.Value`, which prints as `[redacted]`.
 - `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook

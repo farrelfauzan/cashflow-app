@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
@@ -344,7 +345,7 @@ func TestFirstSignInAt(t *testing.T) {
 	require.Nil(t, sari.FirstSignInAt)
 
 	t.Run("signing in alone records nothing", func(t *testing.T) {
-		require.NoError(t, env.Auth.RequestCode(ctx, "0812-3870-0001"))
+		require.NoError(t, env.Auth.RequestCode(ctx, "0812-3870-0001", auth.CodeOptions{}))
 		_, _, err := env.Auth.VerifyCode(ctx, "0812-3870-0001", env.LastCode(t))
 		require.NoError(t, err)
 		require.Nil(t, memberByID(t, env, admin, sari.ID).FirstSignInAt)

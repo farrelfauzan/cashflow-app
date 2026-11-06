@@ -13,17 +13,16 @@
 // code, never from a phone number. An update finds its organization through the code or the
 // chat's stored links (two narrow SECURITY DEFINER lookups), never from the sender alone.
 //
+// A staff member links the same way from the app (TG-4): their code is made and stored by
+// auth.TelegramStaff, in the auth scope, and a /start whose code no tenant has is handed to it
+// (StaffLinker). The code's shape and the deep link come from package linkcode for both.
+//
 // Nothing here logs a code, a token, message text, or a chat id next to a name.
 package telegramlink
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
-	"net/url"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -31,20 +30,11 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink/linkcode"
 )
 
-// CodeLifetime is how long a linking code works after it is made.
-const CodeLifetime = 10 * time.Minute
-
-// codeBytes is the entropy of a code; codeLength is its base64url length, within the 64
-// characters of [A-Za-z0-9_-] Telegram allows in a start parameter.
-const (
-	codeBytes  = 32
-	codeLength = 43
-)
-
-// codeEncoding refuses a non-canonical last character, so each code has exactly one spelling.
-var codeEncoding = base64.RawURLEncoding.Strict()
+// CodeLifetime is how long a linking code works after it is made, for tenants and staff alike.
+const CodeLifetime = linkcode.Lifetime
 
 // Links resolves a payment link token and checks that the link still works. paylink.Service
 // implements it.
@@ -78,7 +68,7 @@ func (c *Codes) DeepLink(ctx context.Context, token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	code, hash, err := newCode()
+	code, hash, err := linkcode.New()
 	if err != nil {
 		return "", err
 	}
@@ -100,30 +90,5 @@ func (c *Codes) DeepLink(ctx context.Context, token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "https://t.me/" + url.PathEscape(c.botUsername) + "?start=" + code, nil
-}
-
-// newCode returns a fresh code and the hash to store. The bytes come from crypto/rand alone, so
-// nothing about the payment link token is in them.
-func newCode() (code string, hash []byte, err error) {
-	raw := make([]byte, codeBytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", nil, fmt.Errorf("telegramlink: reading random bytes for a code: %w", err)
-	}
-	sum := sha256.Sum256(raw)
-	return codeEncoding.EncodeToString(raw), sum[:], nil
-}
-
-// codeHash checks that code has the shape of a linking code and returns the SHA-256 of the 32
-// bytes it encodes, which is what the database stores. ok is false for anything else.
-func codeHash(code string) (hash []byte, ok bool) {
-	if len(code) != codeLength {
-		return nil, false
-	}
-	raw, err := codeEncoding.DecodeString(code)
-	if err != nil || len(raw) != codeBytes {
-		return nil, false
-	}
-	sum := sha256.Sum256(raw)
-	return sum[:], true
+	return linkcode.DeepLink(c.botUsername, code), nil
 }

@@ -1,5 +1,6 @@
 // Package auth signs staff in with a one-time code sent over WhatsApp and keeps them signed in
-// with a server-side session.
+// with a server-side session. In development and staging a test staff member may link a Telegram
+// chat (TelegramStaff, decision 42) and get the code there instead.
 //
 // Login codes are 6 digits, valid for 5 minutes and for 5 tries, and only their HMAC is
 // stored. Asking for a new code cancels the previous one. Session tokens are 32 random bytes;
@@ -92,10 +93,20 @@ func NewService(st *store.Store, msg messaging.Provider, limiter ratelimit.Limit
 	return &Service{store: st, msg: msg, limiter: limiter, clock: c, log: log, secret: secret}, nil
 }
 
+// CodeOptions are the choices a login code request may make.
+type CodeOptions struct {
+	// WhatsAppOnly sends the code on WhatsApp even when the staff user has linked a Telegram chat
+	// ("Kirim lewat WhatsApp" on the login screen). Without it the message names the staff user,
+	// so the messaging router sends it to their linked chat when that demo channel is on
+	// (decision 42).
+	WhatsAppOnly bool
+}
+
 // RequestCode sends a login code to the number if it belongs to a staff user with at least one
-// active membership. It returns nil whether or not a code was sent, so the response does not
-// reveal which numbers are registered.
-func (s *Service) RequestCode(ctx context.Context, rawPhone string) error {
+// active membership. It returns nil whether or not a code was sent, and whichever channel carried
+// it, so the response does not reveal which numbers are registered or which have linked Telegram.
+// opts count against the same per-phone limit either way.
+func (s *Service) RequestCode(ctx context.Context, rawPhone string, opts CodeOptions) error {
 	number, err := phone.Normalize(rawPhone)
 	if err != nil {
 		return ErrInvalidPhone
@@ -136,11 +147,15 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone string) error {
 		return fmt.Errorf("storing login code: %w", err)
 	}
 
-	_, err = s.msg.SendTemplate(ctx, messaging.Message{
+	m := messaging.Message{
 		To:       number,
 		Template: messaging.TemplateLoginCode,
 		Params:   map[string]string{"code": code},
-	})
+	}
+	if !opts.WhatsAppOnly {
+		m.StaffUserID = user.ID
+	}
+	_, err = s.msg.SendTemplate(ctx, m)
 	if err != nil {
 		return fmt.Errorf("sending login code to %s: %w", phone.Mask(number), err)
 	}

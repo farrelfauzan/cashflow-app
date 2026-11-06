@@ -8,4 +8,6 @@
 export interface LoginCodeRequest {
   /** Any common Indonesian format, for example 0812-3456-7890 or +62 812 3456 7890. */
   phone: string;
+  /** "Kirim lewat WhatsApp": send the code over WhatsApp even when the staff member linked Telegram. Counts against the same per-number limit. */
+  whatsappOnly?: boolean;
 }

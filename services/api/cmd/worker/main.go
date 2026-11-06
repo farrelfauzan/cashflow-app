@@ -121,7 +121,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), log)
+	// The worker sends no staff messages yet (TG-5), so it has no staff links.
+	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), nil, log)
 	if err != nil {
 		return err
 	}

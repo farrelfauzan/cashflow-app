@@ -2,7 +2,8 @@
 // delivers updates to a webhook on a public HTTPS address in staging and production; locally
 // this command asks getUpdates instead, so no tunnel is needed, and hands each update to the
 // same handler the webhook uses (telegramlink): "/start <code>" from the payment page's
-// "Hubungkan Telegram" links a test tenant's chat, "/stop" unlinks it.
+// "Hubungkan Telegram" links a test tenant's chat, the same from a staff member's account links
+// theirs for login codes, and "/stop" unlinks the chat.
 //
 //	make telegram-poll        # reads TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME and DATABASE_URL from services/api/.env
 //
@@ -18,12 +19,14 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/logging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 )
 
@@ -68,7 +71,11 @@ func run() error {
 		return err
 	}
 	defer st.Close()
-	handler := telegramlink.NewHandler(st, client, clock.System(), log)
+	clk := clock.System()
+	// The poller only links and unlinks chats; NewLinkCode, the one limited call, runs in the API,
+	// so an in-process limiter is enough here and the poller needs no Redis.
+	staff := auth.NewTelegramStaff(st, ratelimit.NewMemory(clk), clk, log)
+	handler := telegramlink.NewHandler(st, client, staff, clk, log)
 
 	err = telegram.Poll(ctx, client, handler, log, telegram.PollConfig{})
 	switch {

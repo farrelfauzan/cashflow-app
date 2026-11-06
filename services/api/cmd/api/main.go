@@ -99,12 +99,17 @@ func run() error {
 	}()
 
 	clk := clock.System()
-	// Login codes and invitations name no tenant, so the router sends them on WhatsApp.
-	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), log)
+	limiter := ratelimit.NewRedis(rdb)
+	// The staff side of the Telegram demo channel (decision 42): staff users' links, read and
+	// ended by the router and the bot, and made from GET/POST/DELETE /api/me/telegram. Built in
+	// every environment (it is only the auth-scope tables); nothing links a chat without a bot.
+	tgStaff := auth.NewTelegramStaff(st, limiter, clk, log)
+	// With TELEGRAM_MESSAGES=linked a linked staff user's login code goes to their chat;
+	// invitations name no recipient, so the router sends them on WhatsApp.
+	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), tgStaff, log)
 	if err != nil {
 		return err
 	}
-	limiter := ratelimit.NewRedis(rdb)
 	authSvc, err := auth.NewService(st, msg, limiter, clk, log, []byte(cfg.AuthSecret))
 	if err != nil {
 		return err
@@ -140,7 +145,7 @@ func run() error {
 		Store: st, Links: payLinks, Tenants: billingSvc, Clock: clk,
 		Confirms: remindertask.NewSendClient(queueClient), Log: log,
 	})
-	tgCodes, tgUpdates, err := newTelegram(cfg, st, payLinks, clk, log)
+	tgCodes, tgUpdates, err := newTelegram(cfg, st, payLinks, tgStaff, clk, log)
 	if err != nil {
 		return err
 	}
@@ -163,6 +168,10 @@ func run() error {
 		// A nil *Handler must stay a nil interface, so the route is not registered without a bot.
 		TelegramUpdates:       updateHandler(tgUpdates),
 		TelegramWebhookSecret: cfg.Telegram.WebhookSecret,
+		TelegramStaff:         tgStaff,
+		TelegramBotUsername:   telegramBotUsername(cfg.Telegram),
+		// The login screen says "Telegram" only where codes can go there.
+		LoginCodesViaTelegram: cfg.Telegram.SendsToLinked(),
 		PublicLimiter:         limiter,
 		CookieSecure:          cookieSecure,
 		AllowedOrigins:        allowedOrigins,
@@ -176,10 +185,10 @@ func run() error {
 }
 
 // newTelegram builds the Telegram demo channel (decision 42) when the environment has a bot: the
-// payment page's deep-link codes and the webhook's update handler. Without a bot both are nil, so
-// the page offers no Telegram and /webhooks/telegram does not exist. config.LoadAPI has already
-// refused a bot in production.
-func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, clk clock.Clock, log *slog.Logger) (*telegramlink.Codes, *telegramlink.Handler, error) {
+// payment page's deep-link codes and the webhook's update handler, which links tenants and staff.
+// Without a bot both are nil, so the page offers no Telegram and /webhooks/telegram does not
+// exist. config.LoadAPI has already refused a bot in production.
+func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, staff *auth.TelegramStaff, clk clock.Clock, log *slog.Logger) (*telegramlink.Codes, *telegramlink.Handler, error) {
 	if !cfg.Telegram.Enabled() {
 		return nil, nil, nil
 	}
@@ -189,7 +198,16 @@ func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, clk cl
 	}
 	log.Info("telegram demo channel on", "telegram", cfg.Telegram)
 	return telegramlink.NewCodes(st, links, clk, cfg.Telegram.BotUsername),
-		telegramlink.NewHandler(st, bot, clk, log), nil
+		telegramlink.NewHandler(st, bot, staff, clk, log), nil
+}
+
+// telegramBotUsername is the bot's username when the environment has a bot, and empty otherwise,
+// so /api/me/telegram says Telegram is unavailable.
+func telegramBotUsername(t config.Telegram) string {
+	if !t.Enabled() {
+		return ""
+	}
+	return t.BotUsername
 }
 
 // updateHandler turns a nil *telegramlink.Handler into a nil interface.

@@ -56,16 +56,16 @@ func TestWithTelegramWrapsOnlyWhenSendingToLinkedChats(t *testing.T) {
 	whatsapp := &messagingtest.Fake{}
 
 	for _, messages := range []string{"", "off"} {
-		got, err := provider.WithTelegram(whatsapp, config.Telegram{BotToken: token, BotUsername: "CashflowDevBot", Messages: messages}, nil, log)
+		got, err := provider.WithTelegram(whatsapp, config.Telegram{BotToken: token, BotUsername: "CashflowDevBot", Messages: messages}, nil, nil, log)
 		require.NoError(t, err)
 		require.Same(t, whatsapp, got, "TELEGRAM_MESSAGES=%q leaves WhatsApp as it is", messages)
 	}
 
-	got, err := provider.WithTelegram(whatsapp, config.Telegram{BotToken: token, BotUsername: "CashflowDevBot", Messages: "linked"}, nil, log)
+	got, err := provider.WithTelegram(whatsapp, config.Telegram{BotToken: token, BotUsername: "CashflowDevBot", Messages: "linked"}, nil, nil, log)
 	require.NoError(t, err)
 	require.IsType(t, &router.Router{}, got)
 
-	_, err = provider.WithTelegram(whatsapp, config.Telegram{BotToken: "not-a-token", Messages: "linked"}, nil, log)
+	_, err = provider.WithTelegram(whatsapp, config.Telegram{BotToken: "not-a-token", Messages: "linked"}, nil, nil, log)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "not-a-token")
 }

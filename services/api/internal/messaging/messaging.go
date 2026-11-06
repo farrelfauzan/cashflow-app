@@ -52,9 +52,16 @@ type Button struct {
 // promise confirmations); uuid.Nil otherwise (login codes, invitations). The router sends a
 // tenant's message to their linked Telegram chat when that channel is on (decision 42); To is
 // used otherwise.
+//
+// StaffUserID names the staff user the message is for, when it is for one and may go to their
+// linked Telegram chat (login codes, unless the user asked for WhatsApp); uuid.Nil otherwise. It
+// is platform-level, so it needs no OrganizationID. The router sends to the staff user's linked
+// chat when that channel is on (decision 42); To is used otherwise. TenantID wins when both are
+// set.
 type Message struct {
 	OrganizationID uuid.UUID
 	TenantID       uuid.UUID
+	StaffUserID    uuid.UUID
 	To             string // E.164 phone number, for example +628123456789
 	Template       string
 	Params         map[string]string

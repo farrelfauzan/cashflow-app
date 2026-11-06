@@ -20,16 +20,16 @@ func TestLoginWithAWhatsAppCode(t *testing.T) {
 	o := env.CreateOrg(t, "Griya Sejahtera", "0812111")
 
 	t.Run("an unknown number gets the same answer and no message", func(t *testing.T) {
-		require.NoError(t, env.Auth.RequestCode(ctx, "0899-0000-0000"))
+		require.NoError(t, env.Auth.RequestCode(ctx, "0899-0000-0000", auth.CodeOptions{}))
 		require.Empty(t, env.Messenger.Sent())
 	})
 
 	t.Run("a malformed number is rejected", func(t *testing.T) {
-		require.ErrorIs(t, env.Auth.RequestCode(ctx, "021-555-1234"), auth.ErrInvalidPhone)
+		require.ErrorIs(t, env.Auth.RequestCode(ctx, "021-555-1234", auth.CodeOptions{}), auth.ErrInvalidPhone)
 	})
 
 	t.Run("a member gets a 6-digit code and can sign in once", func(t *testing.T) {
-		require.NoError(t, env.Auth.RequestCode(ctx, "+62 812 111 002"))
+		require.NoError(t, env.Auth.RequestCode(ctx, "+62 812 111 002", auth.CodeOptions{}))
 		sent := env.Messenger.Sent()
 		require.Len(t, sent, 1)
 		require.Equal(t, "+62812111002", sent[0].To)
@@ -84,7 +84,7 @@ func TestLoginCodeLimits(t *testing.T) {
 	o := env.CreateOrg(t, "Kos Melati", "0812222")
 
 	t.Run("a code expires after 5 minutes", func(t *testing.T) {
-		require.NoError(t, env.Auth.RequestCode(ctx, o.Admin.Phone))
+		require.NoError(t, env.Auth.RequestCode(ctx, o.Admin.Phone, auth.CodeOptions{}))
 		code := env.LastCode(t)
 		env.Clock.Advance(5 * time.Minute)
 		_, _, err := env.Auth.VerifyCode(ctx, o.Admin.Phone, code)
@@ -92,7 +92,7 @@ func TestLoginCodeLimits(t *testing.T) {
 	})
 
 	t.Run("five wrong guesses burn the code", func(t *testing.T) {
-		require.NoError(t, env.Auth.RequestCode(ctx, o.Supervisor.Phone))
+		require.NoError(t, env.Auth.RequestCode(ctx, o.Supervisor.Phone, auth.CodeOptions{}))
 		code := env.LastCode(t)
 		wrong := "000000"
 		if code == wrong {
@@ -108,9 +108,9 @@ func TestLoginCodeLimits(t *testing.T) {
 
 	t.Run("a new code cancels the previous one", func(t *testing.T) {
 		env.Clock.Advance(16 * time.Minute) // a fresh rate-limit window
-		require.NoError(t, env.Auth.RequestCode(ctx, o.Karyawan.Phone))
+		require.NoError(t, env.Auth.RequestCode(ctx, o.Karyawan.Phone, auth.CodeOptions{}))
 		first := env.LastCode(t)
-		require.NoError(t, env.Auth.RequestCode(ctx, o.Karyawan.Phone))
+		require.NoError(t, env.Auth.RequestCode(ctx, o.Karyawan.Phone, auth.CodeOptions{}))
 		second := env.LastCode(t)
 		if first != second {
 			_, _, err := env.Auth.VerifyCode(ctx, o.Karyawan.Phone, first)
@@ -123,23 +123,23 @@ func TestLoginCodeLimits(t *testing.T) {
 	t.Run("more than 3 code requests in 15 minutes are refused", func(t *testing.T) {
 		env.Clock.Advance(16 * time.Minute)
 		for range 3 {
-			require.NoError(t, env.Auth.RequestCode(ctx, o.Admin.Phone))
+			require.NoError(t, env.Auth.RequestCode(ctx, o.Admin.Phone, auth.CodeOptions{}))
 		}
-		require.ErrorIs(t, env.Auth.RequestCode(ctx, o.Admin.Phone), auth.ErrRateLimited)
+		require.ErrorIs(t, env.Auth.RequestCode(ctx, o.Admin.Phone, auth.CodeOptions{}), auth.ErrRateLimited)
 	})
 
 	t.Run("a failed send is reported", func(t *testing.T) {
 		env.Clock.Advance(16 * time.Minute)
 		env.Messenger.FailWith(messaging.ErrUndeliverable)
 		t.Cleanup(func() { env.Messenger.FailWith(nil) })
-		require.ErrorIs(t, env.Auth.RequestCode(ctx, o.Admin.Phone), messaging.ErrUndeliverable)
+		require.ErrorIs(t, env.Auth.RequestCode(ctx, o.Admin.Phone, auth.CodeOptions{}), messaging.ErrUndeliverable)
 	})
 }
 
 func signIn(t *testing.T, env *testenv.Env, phone string) (auth.Session, auth.Identity) {
 	t.Helper()
 	ctx := context.Background()
-	require.NoError(t, env.Auth.RequestCode(ctx, phone))
+	require.NoError(t, env.Auth.RequestCode(ctx, phone, auth.CodeOptions{}))
 	sess, id, err := env.Auth.VerifyCode(ctx, phone, env.LastCode(t))
 	require.NoError(t, err)
 	return sess, id
