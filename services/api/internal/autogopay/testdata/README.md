@@ -16,6 +16,10 @@ values that are clearly synthetic:
 
 Every other field and value is exactly as recorded.
 
+`status_settlement_real.json` is the real status answer for a paid Rp1 QR (2026-11-06):
+`success: true`, and `data` holds only `transaction_status` and `transaction_time`, with no
+`transaction_id`, amount or paid time. Nothing in it needed scrubbing.
+
 ## Derived from the public API doc (no real example yet)
 
 No paid or expired QR, refused call or rejected generate has been recorded, so these are built

@@ -64,6 +64,7 @@ function page(overrides: Partial<PaymentPage> = {}): PaymentPage {
       accountNumber: "0123 456 789",
       accountHolder: "Ani Rahmawati",
     },
+    qrisAvailable: false,
     ...overrides,
   };
 }

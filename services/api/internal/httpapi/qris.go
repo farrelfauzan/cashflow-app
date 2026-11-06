@@ -46,11 +46,46 @@ func (s *Server) getPaymentQRImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// createPaymentQris gives the tenant a QR for an amount, reusing their live one when it fits.
+// Public like getPaymentPage, with the same rate limits counted before the token is looked up;
+// the cap on generates per tenant is the qris service's.
+func (s *Server) createPaymentQris(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if !s.allowPaymentPage(w, r, token) {
+		return
+	}
+	var body apigen.CreateQrisRequest
+	if !s.decode(w, r, &body) {
+		return
+	}
+	v, err := s.QRIS.MakeQR(r.Context(), token, body.Amount)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIQrisStatus(v))
+}
+
+// checkPaymentQris is "Saya sudah bayar". Public like getPaymentPage, with the same rate limits.
+func (s *Server) checkPaymentQris(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if !s.allowPaymentPage(w, r, token) {
+		return
+	}
+	v, err := s.QRIS.Check(r.Context(), token)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIQrisStatus(v))
+}
+
 func toAPIQrisStatus(v qris.PublicView) apigen.QrisStatus {
 	out := apigen.QrisStatus{Status: apigen.QrisStatusStatus(v.Status)}
 	if v.Status != qris.StatusNone {
 		amount, expires := v.Amount, v.ExpiresAt
 		out.Amount, out.ExpiresAt = &amount, &expires
 	}
+	out.CheckedAt = v.CheckedAt
 	return out
 }

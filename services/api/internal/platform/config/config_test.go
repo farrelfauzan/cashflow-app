@@ -33,6 +33,7 @@ func TestLoadAPI(t *testing.T) {
 				RedisAddr:        "localhost:6379",
 				AuthSecret:       testSecret,
 				Secrets:          Secrets{Key: testKey},
+				DatabaseMaxConns: 10, QRISMaxConcurrent: 3,
 				AllowedOrigins:   "http://localhost:3000",
 				PublicWebOrigin:  "http://localhost:3000",
 				WhatsAppProvider: "devlog",
@@ -63,6 +64,7 @@ func TestLoadAPI(t *testing.T) {
 				RedisAddr:        "redis:6379",
 				AuthSecret:       testSecret,
 				Secrets:          Secrets{Key: testKey},
+				DatabaseMaxConns: 10, QRISMaxConcurrent: 3,
 				AllowedOrigins:   "https://app.example.id",
 				PublicWebOrigin:  "https://app.example.id",
 				WhatsAppProvider: "gowa",
@@ -342,10 +344,11 @@ func TestLoadWorker(t *testing.T) {
 			name: "defaults apply when only the database url and secrets key are set",
 			env:  map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey},
 			want: Worker{
-				Common:      Common{Env: "development", LogLevel: "info"},
-				DatabaseURL: "postgres://app@db/cashflow",
-				RedisAddr:   "localhost:6379",
-				Secrets:     Secrets{Key: testKey},
+				Common:           Common{Env: "development", LogLevel: "info"},
+				DatabaseURL:      "postgres://app@db/cashflow",
+				RedisAddr:        "localhost:6379",
+				Secrets:          Secrets{Key: testKey},
+				DatabaseMaxConns: 10,
 			},
 		},
 		{
@@ -463,4 +466,93 @@ func TestEnvExampleSecretsKey(t *testing.T) {
 	ring, err := Secrets{Key: vars["SECRETS_KEY"], Previous: vars["SECRETS_KEY_PREVIOUS"]}.Keyring()
 	require.NoError(t, err)
 	require.Equal(t, "dev-only", ring.CurrentKeyID())
+}
+
+func TestAutoGoPayBaseURL(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+		"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
+		"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+	}
+	env := func(appEnv, url string) map[string]string {
+		m := map[string]string{"APP_ENV": appEnv, "AUTOGOPAY_BASE_URL": url}
+		for k, v := range base {
+			m[k] = v
+		}
+		return m
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "empty uses AutoGoPay's gateway", env: env("production", "")},
+		{name: "https in production", env: env("production", "https://v1-gateway.autogopay.site")},
+		{name: "a trailing slash", env: env("production", "https://v1-gateway.autogopay.site/")},
+		{name: "a local stub over http in development", env: env("development", "http://localhost:9090")},
+		{name: "http outside development", env: env("staging", "http://gateway.test"), wantErr: "must use https in staging"},
+		{name: "a path", env: env("production", "https://gateway.test/v1"), wantErr: "no path"},
+		{name: "credentials", env: env("production", "https://u:p@gateway.test"), wantErr: "no path"},
+		{name: "a query", env: env("production", "https://gateway.test?x=1"), wantErr: "no path"},
+		{name: "not absolute", env: env("production", "gateway.test"), wantErr: "no path"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, apiErr := loadAPI(context.Background(), envconfig.MapLookuper(tc.env))
+			_, workerErr := loadWorker(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, apiErr, tc.wantErr)
+				require.ErrorContains(t, workerErr, tc.wantErr)
+				return
+			}
+			require.NoError(t, apiErr)
+			require.NoError(t, workerErr)
+			require.Equal(t, tc.env["AUTOGOPAY_BASE_URL"], got.AutoGoPayBaseURL)
+		})
+	}
+}
+
+func TestPoolAndQRISBound(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+	}
+	env := func(kv ...string) map[string]string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	tests := []struct {
+		name      string
+		env       map[string]string
+		wantConns int32
+		wantQRIS  int
+		wantErr   string
+	}{
+		{name: "defaults", env: env(), wantConns: 10, wantQRIS: 3},
+		{name: "set both", env: env("DATABASE_MAX_CONNS", "20", "QRIS_MAX_CONCURRENT", "5"), wantConns: 20, wantQRIS: 5},
+		{name: "QRIS as many as the pool", env: env("DATABASE_MAX_CONNS", "4", "QRIS_MAX_CONCURRENT", "4"), wantErr: "QRIS_MAX_CONCURRENT must be 1 to DATABASE_MAX_CONNS-1 (3)"},
+		{name: "QRIS zero", env: env("QRIS_MAX_CONCURRENT", "0"), wantErr: "QRIS_MAX_CONCURRENT"},
+		{name: "a pool of one", env: env("DATABASE_MAX_CONNS", "1"), wantErr: "DATABASE_MAX_CONNS must be at least 2"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := loadAPI(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantConns, got.DatabaseMaxConns)
+			require.Equal(t, tc.wantQRIS, got.QRISMaxConcurrent)
+		})
+	}
+	_, err := loadWorker(context.Background(), envconfig.MapLookuper(env("DATABASE_MAX_CONNS", "1")))
+	require.ErrorContains(t, err, "DATABASE_MAX_CONNS must be at least 2")
 }

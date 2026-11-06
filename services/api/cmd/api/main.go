@@ -18,6 +18,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi"
@@ -70,7 +71,7 @@ func run() error {
 		return err
 	}
 
-	st, err := store.Open(ctx, cfg.DatabaseURL, log)
+	st, err := store.Open(ctx, cfg.DatabaseURL, log, store.WithMaxConns(cfg.DatabaseMaxConns))
 	if err != nil {
 		return err
 	}
@@ -117,6 +118,10 @@ func run() error {
 	})
 
 	payLinks := paylink.NewService(st, az, clk, cfg.PublicWebOrigin)
+	qrisSvc, err := newQRIS(cfg, st, payLinks, az, limiter, clk, log)
+	if err != nil {
+		return err
+	}
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:            log,
@@ -129,7 +134,7 @@ func run() error {
 		Imports:        imports,
 		Billing:        billingSvc,
 		PayLinks:       payLinks,
-		QRIS:           qris.NewService(st, payLinks, clk),
+		QRIS:           qrisSvc,
 		PublicLimiter:  limiter,
 		CookieSecure:   cookieSecure,
 		AllowedOrigins: allowedOrigins,
@@ -203,4 +208,23 @@ func healthcheck() error {
 		return fmt.Errorf("healthcheck returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// newQRIS builds the QRIS service: AutoGoPay's client, the organizations' keys decrypted with the
+// secrets keyring, and the Redis counters that cap generates and checks per tenant.
+func newQRIS(cfg config.API, st *store.Store, links qris.LinkOpener, az *authz.Service,
+	limiter qris.Limiter, clk clock.Clock, log *slog.Logger) (*qris.Service, error) {
+	keys, err := cfg.Secrets.Keyring()
+	if err != nil {
+		return nil, err
+	}
+	gateway, err := autogopay.NewClient(autogopay.Config{BaseURL: cfg.AutoGoPayBaseURL})
+	if err != nil {
+		return nil, err
+	}
+	return qris.NewService(qris.Deps{
+		Store: st, Links: links, Clock: clk, Gateway: gateway,
+		Keys: autogopay.NewService(st, keys, az, clk), Limiter: limiter, Audit: az, Log: log,
+		MaxConcurrentCalls: cfg.QRISMaxConcurrent,
+	}), nil
 }

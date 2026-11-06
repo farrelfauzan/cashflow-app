@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay/autogopaytest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
@@ -97,16 +98,26 @@ func (lo *linkOrg) rent(t *testing.T, tenantName string, collector uuid.UUID) (t
 	return tn.ID, acct.Invoices[0].ID
 }
 
-// newLinkServer serves the API with the payment link and QRIS services, logging to logs.
+// newLinkServer serves the API with the payment link and QRIS services, logging to logs, with a
+// fake AutoGoPay of its own.
 func newLinkServer(t *testing.T, env *testenv.Env, logs io.Writer) *httptest.Server {
+	t.Helper()
+	return newLinkServerWith(t, env, logs, autogopaytest.New(env.Clock))
+}
+
+// newLinkServerWith is newLinkServer with the fake AutoGoPay gw.
+func newLinkServerWith(t *testing.T, env *testenv.Env, logs io.Writer, gw *autogopaytest.Fake) *httptest.Server {
 	t.Helper()
 	log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	links := paylink.NewService(env.Store, env.Authz, env.Clock, linkOrigin)
 	srv := httptest.NewServer(httpapi.New(httpapi.Deps{
 		Log: log, DB: env.Store, Auth: env.Auth, Authz: env.Authz, Members: env.Members,
 		Properties: env.Properties, Tenants: env.Tenants, Billing: env.Billing,
-		PayLinks:      links,
-		QRIS:          qris.NewService(env.Store, links, env.Clock),
+		PayLinks: links,
+		QRIS: qris.NewService(qris.Deps{
+			Store: env.Store, Links: links, Clock: env.Clock, Gateway: gw, Keys: env.AutoGoPay,
+			Limiter: env.Limiter, Audit: env.Authz, Log: log,
+		}),
 		PublicLimiter: env.Limiter,
 		CookieSecure:  false, AllowedOrigins: []string{origin},
 	}).Handler())

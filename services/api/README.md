@@ -122,6 +122,20 @@ It prints the organization id and the organization's webhook path,
 Setting the key again replaces it and keeps the same path. Each setting is in the organization's
 audit log as `settings:update` on `autogopay_account/<organization id>`.
 
+The API and the worker call AutoGoPay at `AUTOGOPAY_BASE_URL`, by default its gateway
+(`https://v1-gateway.autogopay.site`); outside development it must be https. The development
+`.env` (from `.env.example`, and added by `make env` to an older one) points it at the local
+stand-in, `http://127.0.0.1:8091` (`make fake-autogopay`), so nothing local reaches AutoGoPay. Tests never call it:
+they use the fake in `internal/autogopay/autogopaytest`. In development an organization without a
+key answers the payment page's "Bayar QRIS" with `qris_unavailable` (bank transfer), and nothing
+reaches AutoGoPay. With a real key, every QR made locally is a real QR on that account: AutoGoPay
+can block an account that makes QRs in a loop, so make them by hand only.
+
+A payment page request that waits on AutoGoPay holds a database connection for up to about 20
+seconds. At most `QRIS_MAX_CONCURRENT` (default 3) do so at once, below the pool's
+`DATABASE_MAX_CONNS` (default 10); one more answers `qris_unavailable` at once, so a hanging
+AutoGoPay never stops the page and its bank transfer details from loading.
+
 ### Set an organization's bank account
 
 The tenant payment page shows the organization's bank account for a manual transfer (decision
@@ -305,8 +319,10 @@ https://www.twilio.com/docs/api/errors.
   key rotation, and `secret.Value`, which prints as `[redacted]`.
 - `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook
   id) and the QRIS client (generate, status, cancel), with its fake in `autogopaytest`.
-- `internal/qris`: a tenant's QRIS attempts behind a payment link: the status the payment page
-  polls (`/api/t/{token}/status`) and the QR image (`/api/t/{token}/qris.png`).
+- `internal/qris`: a tenant's QRIS attempts behind a payment link: making a QR (reusing the live
+  one, capped per tenant), "Saya sudah bayar", the status the payment page polls, the QR image,
+  recording a paid QR once per transaction id, and the reconcile that asks AutoGoPay about pending
+  attempts. `qristask` runs reconcile from the worker every 30 minutes.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.

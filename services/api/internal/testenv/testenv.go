@@ -6,8 +6,10 @@ package testenv
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask/invoicetasktest"
@@ -30,6 +33,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 )
@@ -56,6 +60,10 @@ type Env struct {
 	Billing    *billing.Service
 	Tenants    *tenant.Service
 	Imports    *tenantimport.Service
+	// AutoGoPay stores organizations' AutoGoPay keys, encrypted with Keyring; SetAutoGoPayKey
+	// gives an organization one.
+	AutoGoPay *autogopay.Service
+	Keyring   *secret.Keyring
 	// Queue records the invoices:generate tasks enqueued after a lease is saved; nothing runs
 	// them. Tests call Billing.GenerateOrg to run one.
 	Queue *invoicetasktest.Fake
@@ -93,7 +101,20 @@ func New(t *testing.T) *Env {
 	e.Queue = &invoicetasktest.Fake{}
 	e.Tenants = tenant.NewService(st, e.Authz, e.Clock, e.Billing, invoicetask.NewLeaseQueue(e.Queue, log))
 	e.Imports = tenantimport.NewService(st, e.Authz, e.Properties, e.Tenants, e.Clock)
+	e.Keyring, err = secret.ParseKeyring(SecretsKey, "")
+	require.NoError(t, err)
+	e.AutoGoPay = autogopay.NewService(st, e.Keyring, e.Authz, e.Clock)
 	return e
+}
+
+// SecretsKey is the SECRETS_KEY used in tests: the id "test" and 32 bytes of 'k'.
+var SecretsKey = "test:" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+
+// SetAutoGoPayKey gives org an AutoGoPay account with key.
+func (e *Env) SetAutoGoPayKey(t *testing.T, org uuid.UUID, key string) {
+	t.Helper()
+	_, err := e.AutoGoPay.SetAPIKey(context.Background(), org, key)
+	require.NoError(t, err)
 }
 
 // Person is a staff member created by CreateOrg.

@@ -52,7 +52,7 @@ type Deps struct {
 	Billing *billing.Service
 	// PayLinks mints and revokes tenant payment links and reads the public payment page.
 	PayLinks *paylink.Service
-	// QRIS reads the tenant's latest QRIS attempt behind a payment link: its status and image.
+	// QRIS makes, reads and checks the tenant's QRIS attempts behind a payment link.
 	QRIS *qris.Service
 	// PublicLimiter rate-limits the public payment page per token and per client address.
 	PublicLimiter ratelimit.Limiter
@@ -98,6 +98,8 @@ func New(d Deps) *Server {
 		r.With(publicPageHeaders).Get("/t/{token}", s.getPaymentPage)
 		r.With(publicPageHeaders).Get("/t/{token}/status", s.getPaymentStatus)
 		r.With(publicPageHeaders).Get("/t/{token}/qris.png", s.getPaymentQRImage)
+		r.With(publicPageHeaders).Post("/t/{token}/qris", s.createPaymentQris)
+		r.With(publicPageHeaders).Post("/t/{token}/check", s.checkPaymentQris)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireSession)
