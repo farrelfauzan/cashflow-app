@@ -158,9 +158,18 @@ jobs:
       - name: Install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
+      # The browser only, without --with-deps: the runner image already has every library
+      # Chromium needs, and --with-deps then only adds CJK, Thai and X11 font packages the
+      # Indonesian UI never uses, fetched from the Ubuntu mirror. That fetch once took 12 minutes
+      # and ran the job out of time; the browser itself downloads in seconds. Should a runner
+      # image drop a library, Chromium fails to launch with Playwright's "Host system is missing
+      # dependencies" message, naming the install-deps command. The browser is not cached:
+      # Playwright advises against it (a restore takes about as long as the download), and the
+      # slow part was apt, which no cache covers.
       - name: Install Chromium
         working-directory: apps/web
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 5
+        run: pnpm exec playwright install chromium
       - name: End-to-end tests
         working-directory: apps/web
         run: pnpm e2e
