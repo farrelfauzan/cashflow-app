@@ -102,6 +102,14 @@ summarizes, reminds and reports.
   RLS policies read the scope through `app_org_id()`, `app_user_id()` and `app_in_auth_scope()`,
   which return NULL when unset, so a missing scope matches no rows. The app role does not own
   the tables and has no BYPASSRLS. Migrations run as a separate owner role.
+  Three narrow lookups run before any scope exists (decision 39): `active_organization_ids()`
+  (the worker's per-organization fan-out), `payment_link_lookup(token hash)` (the tenant payment
+  page) and `autogopay_webhook_lookup(webhook id)` (AutoGoPay's callbacks). Each is a `SECURITY
+  DEFINER` function that returns ids only (organization, link), never another column, so not a
+  key or its ciphertext; everything after it runs in `WithOrgTx` for that organization. They are
+  not a third scope: no other query runs without one. Each turns on its own setting, and one
+  policy lets only the migration role read its one table while it is on.
+  `TestActiveOrganizationIDsIsTheOnlySecurityDefiner` lists them, so a new one is reviewed.
 - **Queue**: asynq on Redis with `appendonly yes` and `maxmemory-policy noeviction`. The
   scheduler runs in Asia/Jakarta. A task ID only blocks duplicates while the first task is
   pending, so correctness comes from database unique keys and idempotent handlers. Reconcile

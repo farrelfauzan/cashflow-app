@@ -119,7 +119,17 @@ make admin ARGS='set-autogopay-key -org <organization id>' < autogopay-key.txt
 
 It prints the organization id and the organization's webhook path,
 `/webhooks/autogopay/<webhook id>`, to register at AutoGoPay (with the public origin in front).
-Setting the key again replaces it and keeps the same path. Each setting is in the organization's
+Setting the key again replaces it and keeps the same path.
+
+The landlord (or the operator, signed in to their AutoGoPay dashboard) pastes the full URL,
+`https://<public origin>/webhooks/autogopay/<webhook id>`, as the callback URL. AutoGoPay checks
+it on save with a signed `verification.challenge` call, which the API answers with
+`{"success": true}`; the dashboard refuses the URL if it cannot reach it. From then on a paid QR
+arrives as a signed `transaction.received` callback: the API checks `X-Signature` (hex
+HMAC-SHA256 of the raw body with that organization's key) before reading anything, and queues
+`qris:paid`, which the worker records once per transaction id. A wrong id or signature gets the
+same `401 {"success": false}`. If a callback is lost, reconcile records the payment within 30
+minutes. Each setting is in the organization's
 audit log as `settings:update` on `autogopay_account/<organization id>`.
 
 The API and the worker call AutoGoPay at `AUTOGOPAY_BASE_URL`, by default its gateway
