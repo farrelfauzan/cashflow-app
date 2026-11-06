@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -92,6 +93,8 @@ type API struct {
 	DevlogFile string `env:"DEVLOG_FILE"`
 	GOWA       GOWA   `env:", prefix=GOWA_"`
 	Twilio     Twilio `env:", prefix=TWILIO_"`
+	// Telegram is the platform bot (decision 42). Optional; validated when set.
+	Telegram Telegram `env:", prefix=TELEGRAM_"`
 	// OpenAPISpec is the spec file Swagger UI shows at /docs. Only development serves it; the
 	// default works when the API runs from services/api, as `make api-run` does.
 	OpenAPISpec string `env:"OPENAPI_SPEC, default=../../api/openapi.yaml"`
@@ -223,6 +226,9 @@ func (c API) validate() error {
 	if err := validAutoGoPayURL(c.AutoGoPayBaseURL, c.Env); err != nil {
 		return err
 	}
+	if err := c.Telegram.validate(c.Env); err != nil {
+		return err
+	}
 	if c.DatabaseMaxConns < 2 {
 		return fmt.Errorf("DATABASE_MAX_CONNS must be at least 2, got %d", c.DatabaseMaxConns)
 	}
@@ -310,6 +316,8 @@ type Worker struct {
 	AutoGoPayBaseURL string `env:"AUTOGOPAY_BASE_URL"`
 	// DatabaseMaxConns is DATABASE_MAX_CONNS, the size of the worker's connection pool.
 	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=20"`
+	// Telegram is as in API.
+	Telegram Telegram `env:", prefix=TELEGRAM_"`
 }
 
 func (c Worker) validate() error {
@@ -317,6 +325,9 @@ func (c Worker) validate() error {
 		return err
 	}
 	if err := validAutoGoPayURL(c.AutoGoPayBaseURL, c.Env); err != nil {
+		return err
+	}
+	if err := c.Telegram.validate(c.Env); err != nil {
 		return err
 	}
 	if c.DatabaseMaxConns < 2 {
@@ -329,18 +340,125 @@ func (c Worker) validate() error {
 // URL with no path, query or credentials, https outside development. The organization's key is
 // sent to it.
 func validAutoGoPayURL(raw, env string) error {
+	return validBaseURL("AUTOGOPAY_BASE_URL", raw, env, true)
+}
+
+// validBaseURL checks a provider base URL setting named name: empty (the provider's default), or
+// an absolute URL with no path, query or credentials, https outside development, since a secret
+// is sent to it. echo quotes the value in the error; it is off where a secret could have been
+// pasted into the URL (the Bot API puts its token in the path).
+func validBaseURL(name, raw, env string, echo bool) error {
 	if raw == "" {
 		return nil
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
 		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("AUTOGOPAY_BASE_URL must be an absolute http(s) URL with no path, got %q", raw)
+		if !echo {
+			return fmt.Errorf("%s must be an absolute http(s) URL with no path", name)
+		}
+		return fmt.Errorf("%s must be an absolute http(s) URL with no path, got %q", name, raw)
 	}
 	if env != "development" && u.Scheme != "https" {
-		return fmt.Errorf("AUTOGOPAY_BASE_URL must use https in %s", env)
+		return fmt.Errorf("%s must use https in %s", name, env)
 	}
 	return nil
+}
+
+// Telegram is the platform's Telegram bot (decision 42). Every setting is optional until the bot
+// is used; a value that is set is checked at startup. BotToken and WebhookSecret are secrets:
+// never log them (LogValue hides them) and never echo them in an error.
+type Telegram struct {
+	// BotToken is TELEGRAM_BOT_TOKEN, from BotFather: digits, a colon, then the secret.
+	BotToken string `env:"BOT_TOKEN"`
+	// BotUsername is TELEGRAM_BOT_USERNAME, without the @; required with a token, for deep links.
+	BotUsername string `env:"BOT_USERNAME"`
+	// WebhookSecret is TELEGRAM_WEBHOOK_SECRET, which Telegram sends back in the
+	// X-Telegram-Bot-Api-Secret-Token header of each webhook call (used from TG-2).
+	WebhookSecret string `env:"WEBHOOK_SECRET"`
+	// APIBaseURL is TELEGRAM_API_BASE_URL; empty uses https://api.telegram.org. It must be https
+	// outside development, since the token is in every request path.
+	APIBaseURL string `env:"API_BASE_URL"`
+}
+
+var (
+	// telegramToken is the Bot API token shape; telegram.ValidToken applies the same rule.
+	telegramToken         = regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]{30,}$`)
+	telegramUsername      = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
+	telegramWebhookSecret = regexp.MustCompile(`^[A-Za-z0-9_-]{1,256}$`)
+)
+
+// Enabled reports whether a bot token is set.
+func (t Telegram) Enabled() bool { return t.BotToken != "" }
+
+// LogValue keeps the token and the webhook secret out of logs.
+func (t Telegram) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.Bool("enabled", t.Enabled()),
+		slog.String("bot_username", t.BotUsername),
+		slog.Bool("webhook_secret_set", t.WebhookSecret != ""),
+		slog.String("api_base_url", t.APIBaseURL),
+	)
+}
+
+// validate checks each setting that is set. Errors name the setting, never its secret value.
+func (t Telegram) validate(env string) error {
+	// Telegram is a demo channel (decision 42), like the Twilio sandbox: development and staging
+	// with test accounts only. Production stays WhatsApp.
+	if env == "production" && (t.BotToken != "" || t.BotUsername != "" || t.WebhookSecret != "" || t.APIBaseURL != "") {
+		return errors.New("Telegram is a demo channel for development and staging (decision 42); unset the TELEGRAM_* settings in production")
+	}
+	if t.BotToken != "" && !telegramToken.MatchString(t.BotToken) {
+		return errors.New("TELEGRAM_BOT_TOKEN must be the token BotFather gives: digits, a colon, then at least 30 letters, digits, _ or -")
+	}
+	if t.BotToken != "" && t.BotUsername == "" {
+		return errors.New("TELEGRAM_BOT_USERNAME is required when TELEGRAM_BOT_TOKEN is set")
+	}
+	if t.BotUsername != "" &&
+		(!telegramUsername.MatchString(t.BotUsername) || !strings.HasSuffix(strings.ToLower(t.BotUsername), "bot")) {
+		// The value is not echoed, in case a token was pasted into the wrong setting.
+		return errors.New("TELEGRAM_BOT_USERNAME must be letters, digits or _ ending in \"bot\", without the @")
+	}
+	if t.WebhookSecret != "" && !telegramWebhookSecret.MatchString(t.WebhookSecret) {
+		return errors.New("TELEGRAM_WEBHOOK_SECRET must be 1 to 256 characters of A-Z, a-z, 0-9, _ and -")
+	}
+	return validBaseURL("TELEGRAM_API_BASE_URL", t.APIBaseURL, env, false)
+}
+
+// TelegramPoll is the configuration of cmd/telegrampoll, which long-polls the development bot.
+// It runs in development only and needs the bot token.
+type TelegramPoll struct {
+	Common
+	Telegram Telegram `env:", prefix=TELEGRAM_"`
+}
+
+func (c TelegramPoll) validate() error {
+	if err := c.Common.validate(); err != nil {
+		return err
+	}
+	if c.Env != "development" {
+		return fmt.Errorf("the Telegram poller only runs in development, not %s; staging uses the webhook", c.Env)
+	}
+	if !c.Telegram.Enabled() {
+		return errors.New("the Telegram poller needs TELEGRAM_BOT_TOKEN (and TELEGRAM_BOT_USERNAME) in services/api/.env")
+	}
+	return c.Telegram.validate(c.Env)
+}
+
+// LoadTelegramPoll reads the poller's configuration from the process environment.
+func LoadTelegramPoll(ctx context.Context) (TelegramPoll, error) {
+	return loadTelegramPoll(ctx, envconfig.OsLookuper())
+}
+
+func loadTelegramPoll(ctx context.Context, l envconfig.Lookuper) (TelegramPoll, error) {
+	var c TelegramPoll
+	if err := process(ctx, l, &c); err != nil {
+		return TelegramPoll{}, fmt.Errorf("loading telegram poller config: %w", err)
+	}
+	if err := c.validate(); err != nil {
+		return TelegramPoll{}, fmt.Errorf("loading telegram poller config: %w", err)
+	}
+	return c, nil
 }
 
 // FakeAutoGoPay is the configuration of cmd/fakeautogopay, the AutoGoPay stand-in for local runs

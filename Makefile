@@ -67,6 +67,10 @@ worker-run: env ## Run the worker
 fake-autogopay: ## Run the AutoGoPay stand-in on 127.0.0.1:8091 (development only; the development .env points the API and worker at it)
 	cd $(API_DIR) && APP_ENV=development go run ./cmd/fakeautogopay
 
+.PHONY: telegram-poll
+telegram-poll: env ## Long-poll the development Telegram bot (development only; needs TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME in services/api/.env)
+	$(WITH_ENV) go run ./cmd/telegrampoll
+
 .PHONY: admin
 admin: env ## Run the operator tool, e.g. make admin ARGS='create-org -name ... -member ...'
 	$(WITH_ENV) go run ./cmd/admin $(ARGS)
