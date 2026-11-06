@@ -34,6 +34,8 @@ import type {
   ListInvoicesParams,
   ListLeaseMeteredChargesParams,
   ListMissingMeterReadingsParams,
+  ListTenantPromisesParams,
+  MakeTenantPromiseRequest,
   MeteredCharge,
   MeteredChargeInput,
   MeteredChargeList,
@@ -41,7 +43,9 @@ import type {
   PaymentInput,
   PaymentResult,
   TenantAccount,
-  TenantOpenInvoice
+  TenantOpenInvoice,
+  TenantPromise,
+  TenantPromiseList
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -538,6 +542,181 @@ export function useListTenantOpenInvoices<TData = Awaited<ReturnType<typeof list
 
 
 /**
+ * The tenant's promises ("Janji pelunasan"), newest first with the id breaking ties, each with all its versions oldest first: an edit adds a version, nothing is overwritten. Each version names the invoices it covers (those still owing when it was made). At most one promise is active. Needs promise:read on the tenant, checked as getTenantAccount checks its reads: a member limited to some properties needs it through every lease the tenant has or had; otherwise 403. 404 not_found when the tenant does not exist in the organization.
+ * @summary A tenant's payment promises, newest first, with every version (needs promise:read)
+ */
+export const listTenantPromises = (
+    orgId: string,
+    tenantId: string,
+    params?: ListTenantPromisesParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<TenantPromiseList>(
+      {url: `/orgs/${orgId}/tenants/${tenantId}/promises`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListTenantPromisesQueryKey = (orgId: string,
+    tenantId: string,
+    params?: ListTenantPromisesParams,) =>
+    apiQueryKey({ orgId,tenantId,params }, { url: `/orgs/${orgId}/tenants/${tenantId}/promises` });
+
+
+export const useListTenantPromisesQueryOptions = <TData = Awaited<ReturnType<typeof listTenantPromises>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    tenantId: string,
+    params?: ListTenantPromisesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantPromises>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,tenantId,params }, { url: `/orgs/${orgId}/tenants/${tenantId}/promises`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenantPromises>>> = ({ signal }) => listTenantPromises(orgId,tenantId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && tenantId !== null && tenantId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTenantPromises>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTenantPromisesQueryResult = NonNullable<Awaited<ReturnType<typeof listTenantPromises>>>
+export type ListTenantPromisesQueryError = ErrorType<ErrorResponse>
+
+
+export function useListTenantPromises<TData = Awaited<ReturnType<typeof listTenantPromises>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params: undefined |  ListTenantPromisesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantPromises>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTenantPromises>>,
+          TError,
+          Awaited<ReturnType<typeof listTenantPromises>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTenantPromises<TData = Awaited<ReturnType<typeof listTenantPromises>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params?: ListTenantPromisesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantPromises>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTenantPromises>>,
+          TError,
+          Awaited<ReturnType<typeof listTenantPromises>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListTenantPromises<TData = Awaited<ReturnType<typeof listTenantPromises>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params?: ListTenantPromisesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantPromises>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary A tenant's payment promises, newest first, with every version (needs promise:read)
+ */
+
+export function useListTenantPromises<TData = Awaited<ReturnType<typeof listTenantPromises>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params?: ListTenantPromisesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantPromises>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListTenantPromisesQueryOptions(orgId,tenantId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * The same rules as makePaymentPromise on the payment page, recorded by a member (source admin) with an optional note. When the tenant has an active promise this adds its next version (an edit); otherwise it makes a new promise. Needs promise:create on the tenant, checked like listTenantPromises (403 otherwise); allowed and denied checks are audited. The answer is the promise with all its versions.
+ * @summary Record a tenant's payment promise, or edit the active one (needs promise:create; audited)
+ */
+export const makeTenantPromise = (
+    orgId: string,
+    tenantId: string,
+    makeTenantPromiseRequest: BodyType<MakeTenantPromiseRequest>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<TenantPromise>(
+      {url: `/orgs/${orgId}/tenants/${tenantId}/promises`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: makeTenantPromiseRequest, signal
+    },
+      options);
+    }
+
+
+
+
+export const getMakeTenantPromiseMutationKey = () => ['makeTenantPromise'] as const;
+
+export const getMakeTenantPromiseMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof makeTenantPromise>>, TError,MakeTenantPromiseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof makeTenantPromise>>, TError,MakeTenantPromiseMutationVariables, TContext> => {
+
+const mutationKey = getMakeTenantPromiseMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof makeTenantPromise>>, MakeTenantPromiseMutationVariables> = (props) => {
+          const {orgId,tenantId,data} = props ?? {};
+
+          return  makeTenantPromise(orgId,tenantId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MakeTenantPromiseMutationResult = NonNullable<Awaited<ReturnType<typeof makeTenantPromise>>>
+    export type MakeTenantPromiseMutationBody = BodyType<MakeTenantPromiseRequest>
+    export type MakeTenantPromiseMutationError = ErrorType<Error | ErrorResponse>
+    export type MakeTenantPromiseMutationVariables = {orgId: string;tenantId: string;data: BodyType<MakeTenantPromiseRequest>}
+
+    /**
+ * @summary Record a tenant's payment promise, or edit the active one (needs promise:create; audited)
+ */
+export const useMakeTenantPromise = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof makeTenantPromise>>, TError,MakeTenantPromiseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof makeTenantPromise>>,
+        TError,
+        MakeTenantPromiseMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMakeTenantPromiseMutationOptions(options), queryClient);
+    }
+    /**
  * The month's money and who is in arrears now. The month's figures cover the invoices of that month: an invoice belongs to the month of its period (Tagihan November), which for a regular invoice is the month of its due date. Arrears are not tied to the month: every invoice still owed after its due date (debt from the day after it, Asia/Jakarta). A member limited to some properties sees, and every figure counts, only the invoices of leases in their properties.
  * @summary The Supervisor's home, Beranda (needs report:read)
  */

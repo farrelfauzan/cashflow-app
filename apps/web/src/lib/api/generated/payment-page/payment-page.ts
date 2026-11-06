@@ -28,10 +28,12 @@ import type {
   Error,
   ErrorResponse,
   GetPaymentPreviewParams,
+  MakePaymentPromiseRequest,
   PaymentLink,
   PaymentLinksRevoked,
   PaymentPage,
   PaymentPreview,
+  PaymentPromise,
   QrisStatus
 } from '../model';
 
@@ -194,7 +196,7 @@ export const useRevokePaymentLinks = <TError = ErrorType<ErrorResponse>,
       return useMutation(getRevokePaymentLinksMutationOptions(options), queryClient);
     }
     /**
- * No session: the token alone grants the page, and only for the link's own tenant. It shows who bills them, the tenant's name and the link's invoice (so a forwarded link is obvious), everything the tenant owes with the open invoices oldest first, and the bank account for a manual transfer. Nothing else: no phone number, payment history, staff name or note. A malformed, unknown or revoked token all answer the same 404. Limited per token and per client address (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * No session: the token alone grants the page, and only for the link's own tenant. It shows who bills them, the tenant's name and the link's invoice (so a forwarded link is obvious), everything the tenant owes with the open invoices oldest first, the bank account for a manual transfer, and the tenant's active payment promise with the dates a new one may name (makePaymentPromise). Nothing else: no phone number, payment history, staff name or note. A malformed, unknown or revoked token all answer the same 404. Limited per token and per client address (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
  * @summary The tenant payment page behind a link (public; the token is the access)
  */
 export const getPaymentPage = (
@@ -700,4 +702,75 @@ export const useCheckPaymentQris = <TError = ErrorType<Error | ErrorResponse>,
         TContext
       > => {
       return useMutation(getCheckPaymentQrisMutationOptions(options), queryClient);
+    }
+    /**
+ * No session: the token grants it, and link errors answer as for getPaymentPage. A promise belongs to the tenant and covers every invoice still owing now, whichever of the tenant's links is used. When the tenant has an active promise this adds its next version (an edit, "Ubah janji"); otherwise it makes a new one. Saved before paying (decision 41.1): payingNow is what the tenant pays right after saving ("Simpan janji, lalu bayar Rp X"), so it is not part of the promised rest; empty promisedAmount means everything still owed after it.
+ *
+ * specific_date takes promisedDate from tomorrow to 60 days ahead (Asia/Jakarta), the bounds getPaymentPage gives as promiseDates. with_next_invoice takes no date: the server uses the next invoice's due date, which getPaymentPage gives as nextInvoiceDueDate (null when the tenant has none within the range, so the page does not offer it). Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer.
+ * @summary The tenant promises to pay what is left (public; "Simpan janji")
+ */
+export const makePaymentPromise = (
+    token: string,
+    makePaymentPromiseRequest: BodyType<MakePaymentPromiseRequest>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<PaymentPromise>(
+      {url: `/t/${token}/promise`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: makePaymentPromiseRequest, signal
+    },
+      options);
+    }
+
+
+
+
+export const getMakePaymentPromiseMutationKey = () => ['makePaymentPromise'] as const;
+
+export const getMakePaymentPromiseMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof makePaymentPromise>>, TError,MakePaymentPromiseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof makePaymentPromise>>, TError,MakePaymentPromiseMutationVariables, TContext> => {
+
+const mutationKey = getMakePaymentPromiseMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof makePaymentPromise>>, MakePaymentPromiseMutationVariables> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  makePaymentPromise(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MakePaymentPromiseMutationResult = NonNullable<Awaited<ReturnType<typeof makePaymentPromise>>>
+    export type MakePaymentPromiseMutationBody = BodyType<MakePaymentPromiseRequest>
+    export type MakePaymentPromiseMutationError = ErrorType<Error | ErrorResponse>
+    export type MakePaymentPromiseMutationVariables = {token: string;data: BodyType<MakePaymentPromiseRequest>}
+
+    /**
+ * @summary The tenant promises to pay what is left (public; "Simpan janji")
+ */
+export const useMakePaymentPromise = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof makePaymentPromise>>, TError,MakePaymentPromiseMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof makePaymentPromise>>,
+        TError,
+        MakePaymentPromiseMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMakePaymentPromiseMutationOptions(options), queryClient);
     }

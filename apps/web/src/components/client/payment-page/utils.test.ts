@@ -111,6 +111,9 @@ function page(overrides: Partial<PaymentPage> = {}): PaymentPage {
       accountHolder: "Ani Rahmawati",
     },
     qrisAvailable: false,
+    promise: null,
+    promiseDates: { earliest: "2026-11-03", latest: "2027-01-01" },
+    nextInvoiceDueDate: "2026-12-01",
     ...overrides,
   };
 }
