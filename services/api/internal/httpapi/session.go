@@ -81,6 +81,9 @@ func (s *Server) checkOrigin(next http.Handler) http.Handler {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
 			if origin := r.Header.Get("Origin"); origin != "" && !slices.Contains(s.AllowedOrigins, origin) {
+				// Refused before any route's own headers run, so the payment page's routes, whose
+				// URL holds a token, still answer without a referrer.
+				w.Header().Set("Referrer-Policy", "no-referrer")
 				s.writeError(w, http.StatusForbidden, "bad_origin", "Permintaan ditolak.")
 				return
 			}

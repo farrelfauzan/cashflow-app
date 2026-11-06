@@ -1603,9 +1603,10 @@ paths:
               schema: { $ref: "#/components/schemas/QrisStatus" }
         "400":
           description: >
-            Field amount: below Rp1 or not a whole number (code invalid_input), above Rp10.000.000
+            Field amount: missing or below Rp1 (code invalid_input), above Rp10.000.000
             (code qris_amount_above_limit), or above what the tenant owes (code
-            qris_amount_above_outstanding)
+            qris_amount_above_outstanding). An amount that is not a whole number, or a body that is
+            not the documented JSON, is invalid_json with no field.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
