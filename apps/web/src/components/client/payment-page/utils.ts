@@ -6,19 +6,43 @@ import {
   INVALID_PATH_CODE,
 } from "@/lib/api/errors";
 import type {
+  MakePaymentPromiseRequest,
   PaymentPage,
   PaymentPageInvoice,
   PaymentPreview,
+  PaymentPromise,
   QrisStatus,
 } from "@/lib/api/generated/model";
-import { formatDateTime, formatMonthYear } from "@/lib/format/date";
+import { PromiseKind } from "@/lib/api/generated/model";
+import type { FormError } from "@/lib/api/form-error";
+import {
+  formatDate,
+  formatDateTime,
+  formatLongDate,
+  formatMonth,
+  formatMonthYear,
+} from "@/lib/format/date";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { groupRupiahDigits } from "@/lib/format/rupiah-input";
+import { z } from "zod";
 
 import type {
+  ActivePromiseView,
+  ChoiceOptionView,
   ChosenAmountView,
+  ChosenFlowMode,
   CopyStatus,
   OpenPaymentPageView,
+  PayChoice,
+  PayFlowMode,
+  PromiseDraft,
+  PromiseErrorTarget,
+  PromiseErrorView,
+  PromiseFormView,
+  PromiseOfferView,
+  PromisePaying,
+  RecordedView,
+  RecordedFlowMode,
   PaidPaymentPageView,
   PaymentPageErrorKind,
   PaymentPageHeaderView,
@@ -26,7 +50,6 @@ import type {
   PaymentPageState,
   PaymentPageView,
   PartialAmountCheck,
-  PartialPayMode,
   PaymentTab,
   PreviewErrorView,
   PreviewView,
@@ -235,6 +258,10 @@ function openView(page: PaymentPage): OpenPaymentPageView {
     transfer: transferView(page),
     noTransferText: noTransferText(page.organizationName),
     qris: qrisOfferView(page),
+    tenantName: page.tenantName,
+    outstanding: page.outstanding,
+    promise: promiseOfferView(page),
+    activePromise: activePromiseView(page.promise),
   };
 }
 
@@ -618,7 +645,9 @@ function followQr(model: QrisModel, status: QrisStatus): QrisStep {
     case "checking":
       return step(withCard(model, checkingCard(status, fallback)));
     case "paid":
-      return step(withCard(model, { kind: "idle" }), { refetchPage: true });
+      return step(withCard(model, { kind: "idle", paid: true }), {
+        refetchPage: true,
+      });
     case "expired":
       return step(
         withCard(model, {
@@ -661,7 +690,9 @@ function statusRead(
         return step(withCard(model, checkingCard(status, null)));
       }
       if (status.status === "paid") {
-        return step(withCard(model, { kind: "idle" }), { refetchPage: true });
+        return step(withCard(model, { kind: "idle", paid: true }), {
+          refetchPage: true,
+        });
       }
       if (now >= card.until) {
         return step(withCard(model, { kind: "idle" }, QRIS_CREATE_FAILED_TEXT));
@@ -704,7 +735,9 @@ function created(model: QrisModel, status: QrisStatus): QrisStep {
     return step(withCard(model, checkingCard(status, null)));
   }
   if (status.status === "paid") {
-    return step(withCard(model, { kind: "idle" }), { refetchPage: true });
+    return step(withCard(model, { kind: "idle", paid: true }), {
+      refetchPage: true,
+    });
   }
   return step(withCard(model, { kind: "idle" }, QRIS_CREATE_FAILED_TEXT));
 }
@@ -766,7 +799,9 @@ function checked(model: QrisModel, status: QrisStatus): QrisStep {
     case "checking":
       return step(withCard(done, checkingCard(status, fallback)));
     case "paid":
-      return step(withCard(done, { kind: "idle" }), { refetchPage: true });
+      return step(withCard(done, { kind: "idle", paid: true }), {
+        refetchPage: true,
+      });
     case "expired":
       return step(
         withCard(done, { kind: "expired", amount: amountOf(status, fallback) }),
@@ -861,8 +896,6 @@ export function toPaymentTab(value: string): PaymentTab {
 // are compared, never added or subtracted: what the amount pays and what is left are the API's.
 
 export const PARTIAL_TITLE = "Bayar sebagian";
-export const PARTIAL_OPEN_TEXT = "Bayar sebagian";
-export const PARTIAL_BACK_TEXT = "Kembali";
 export const PARTIAL_AMOUNT_LABEL = "Nominal yang dibayar sekarang";
 export const PARTIAL_AMOUNT_HINT = "Bebas berapa pun, tanpa minimum.";
 export const PARTIAL_QUICK_LABEL = "Pilih nominal";
@@ -948,14 +981,14 @@ export function chosenRemainderLine(outstandingAfter: number): string | null {
 }
 
 // The chosen-amount card: the amount of the QR once there is one, since a QR is capped at what is
-// owed when it is made (a payment recorded meanwhile makes the next QR smaller). The remainder
-// line came from the preview of the chosen amount, so it shows only while the QR's amount is that
-// amount. Comparisons only.
+// owed when it is made (a payment recorded meanwhile makes the next QR smaller). The line under it
+// (what stays owed, or the promised rest) came from the preview of the chosen amount, so it shows
+// only while the QR's amount is that amount. Comparisons only.
 export function chosenAmountView(
-  chosen: number,
-  outstandingAfter: number,
+  mode: ChosenFlowMode,
   card: QrisCard,
 ): ChosenAmountView {
+  const chosen = mode.amount;
   const qrAmount =
     (card.kind === "pending" ||
       card.kind === "checking" ||
@@ -965,8 +998,7 @@ export function chosenAmountView(
       : chosen;
   return {
     amount: formatRupiah(qrAmount),
-    remainderLine:
-      qrAmount === chosen ? chosenRemainderLine(outstandingAfter) : null,
+    remainderLine: qrAmount === chosen ? chosenRemainder(mode) : null,
   };
 }
 
@@ -1006,29 +1038,205 @@ export function previewErrorView(error: unknown): PreviewErrorView {
   return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
 }
 
-export const FULL_MODE: PartialPayMode = { kind: "full" };
+// "Lanjut pilih tanggal pelunasan": the entry's primary when the amount leaves something owed and
+// a promise can be made, so the tenant says when the rest comes before paying.
+export const PROMISE_NEXT_TEXT = "Lanjut pilih tanggal pelunasan";
 
-// "Bayar sebagian" under "Bayar QRIS": the entry with an empty field.
-export function openPartialEntry(): PartialPayMode {
-  return { kind: "entry", text: "" };
+// Whether the entry's primary goes on to the Janji screen: a promise can be made and the amount
+// leaves something owed. The preview's outstandingAfter decides once it is for exactly this
+// amount; until then the amount is compared with what is owed (a comparison, no math).
+export function entryLeadsToPromise(input: {
+  amount: number | null;
+  preview: PreviewView | null;
+  outstanding: number;
+  promiseOffered: boolean;
+}): boolean {
+  const { amount, preview, outstanding, promiseOffered } = input;
+  if (!promiseOffered || amount === null) return false;
+  if (preview !== null && preview.amount === amount) {
+    return preview.outstandingAfter > 0;
+  }
+  return amount < outstanding;
 }
 
-// The primary of the entry: the amount and what the preview said would be left.
-export function choosePartial(
-  mode: PartialPayMode,
+// The entry's primary: "Lanjut pilih tanggal pelunasan", or "Bayar QRIS Rp…" when the amount
+// pays everything (or no promise can be made).
+export function entryPrimaryLabel(
+  amount: number | null,
+  leadsToPromise: boolean,
+): string {
+  return leadsToPromise ? PROMISE_NEXT_TEXT : partialPayLabel(amount);
+}
+
+// "Berikutnya: pilih kapan sisa Rp1.250.000 dilunasi." under the preview, when the next step is
+// the Janji screen.
+export function entryNextLine(
+  preview: PreviewView | null,
+  leadsToPromise: boolean,
+): string | null {
+  if (!leadsToPromise || preview === null || preview.outstandingAfter <= 0) {
+    return null;
+  }
+  return `Berikutnya: pilih kapan sisa ${formatRupiah(preview.outstandingAfter)} dilunasi.`;
+}
+
+// "Sisa Rp1.250.000 dijanjikan Selasa, 1 Desember 2026." under a chosen amount whose rest was
+// promised just before. A promise of part of the rest names both amounts.
+export function chosenPromiseLine(
+  outstandingAfter: number,
+  promise: PaymentPromise,
+): string {
+  const rest = formatRupiah(outstandingAfter);
+  const date = formatLongDate(promise.promisedDate);
+  if (
+    promise.promisedAmount === null ||
+    promise.promisedAmount >= outstandingAfter
+  ) {
+    return `Sisa ${rest} dijanjikan ${date}.`;
+  }
+  return `Sisa ${rest}, ${formatRupiah(promise.promisedAmount)} dijanjikan ${date}.`;
+}
+
+// The line under the chosen amount: the promised rest, or "Sisa … tetap jadi tagihan.", or
+// nothing when the amount pays everything.
+export function chosenRemainder(mode: ChosenFlowMode): string | null {
+  return mode.promise === null
+    ? chosenRemainderLine(mode.outstandingAfter)
+    : chosenPromiseLine(mode.outstandingAfter, mode.promise);
+}
+
+// Bayar-Pilih (board "Bayar-Pilih"): what the tenant does with what they owe. Pay it all, pay a
+// part of it by QRIS, or promise when they will.
+
+export const BACK_TEXT = "Kembali";
+export const CONTINUE_TEXT = "Lanjut";
+export const CHOICE_LEGEND = "Mau bayar berapa?";
+export const CHOICE_ALL_LABEL = "Bayar semua";
+export const CHOICE_PARTIAL_LABEL = "Bayar sebagian";
+export const CHOICE_PARTIAL_SUB = "Tentukan sendiri nominalnya, berapa pun";
+export const CHOICE_LATER_LABEL = "Belum bisa bayar sekarang";
+export const CHOICE_LATER_SUB = "Catat kapan Anda akan melunasi";
+
+export const PAY_MODE: PayFlowMode = { kind: "pay" };
+
+export function choiceMode(selected: PayChoice): PayFlowMode {
+  return { kind: "choice", selected };
+}
+
+// "Bayar semua" always; "Bayar sebagian" only with QRIS (a part is paid by QRIS for now);
+// "Belum bisa bayar sekarang" only when the API gives the dates a promise may name.
+export function payChoices(view: OpenPaymentPageView): ChoiceOptionView[] {
+  const choices: ChoiceOptionView[] = [
+    {
+      value: "all",
+      label: CHOICE_ALL_LABEL,
+      sub: `${view.total}, langsung lunas`,
+    },
+  ];
+  if (view.qris !== null) {
+    choices.push({
+      value: "partial",
+      label: CHOICE_PARTIAL_LABEL,
+      sub: CHOICE_PARTIAL_SUB,
+    });
+  }
+  if (view.promise !== null) {
+    choices.push({
+      value: "later",
+      label: CHOICE_LATER_LABEL,
+      sub: CHOICE_LATER_SUB,
+    });
+  }
+  return choices;
+}
+
+// Radix RadioGroup hands back the value as a string.
+export function toPayChoice(value: string): PayChoice | null {
+  return value === "all" || value === "partial" || value === "later"
+    ? value
+    : null;
+}
+
+// The picked choice while it is still offered (a re-read page can drop one), else "Bayar semua".
+export function offeredChoice(
+  selected: PayChoice,
+  choices: readonly ChoiceOptionView[],
+): PayChoice {
+  return choices.some((choice) => choice.value === selected) ? selected : "all";
+}
+
+// The one primary under the choices: "Lanjut bayar Rp2.250.000", or "Lanjut".
+export function choicePrimaryLabel(choice: PayChoice, total: string): string {
+  return choice === "all" ? `Lanjut bayar ${total}` : CONTINUE_TEXT;
+}
+
+// The first view: the choice, or straight to paying when "Bayar semua" is the only one.
+export function initialFlowMode(view: OpenPaymentPageView): PayFlowMode {
+  return payChoices(view).length > 1 ? choiceMode("all") : PAY_MODE;
+}
+
+// "Kembali" under the pay view: there is a choice to go back to, and no QR is being made, live
+// or checked (`card` is null without QRIS).
+export function showsPayBack(
+  view: OpenPaymentPageView,
+  card: QrisCard | null,
+): boolean {
+  if (payChoices(view).length < 2) return false;
+  return card === null || canChangePartialAmount(card);
+}
+
+// The primary of the choice.
+export function nextFromChoice(
+  choice: PayChoice,
+  view: OpenPaymentPageView,
+): PayFlowMode {
+  if (choice === "partial" && view.qris !== null) {
+    return { kind: "entry", text: "" };
+  }
+  if (choice === "later" && view.promise !== null) {
+    return {
+      kind: "promise",
+      draft: defaultPromiseDraft(view.promise),
+      paying: null,
+      editing: false,
+      back: choiceMode("later"),
+    };
+  }
+  return PAY_MODE;
+}
+
+// The entry's primary, once the API has previewed exactly its amount: on to the Janji screen when
+// something stays owed and a promise can be made, otherwise straight to the QR.
+export function chooseFromEntry(
+  mode: PayFlowMode,
   preview: PreviewView,
-): PartialPayMode {
+  promise: PromiseOfferView | null,
+): PayFlowMode {
   if (mode.kind !== "entry") return mode;
+  if (preview.outstandingAfter > 0 && promise !== null) {
+    return {
+      kind: "promise",
+      draft: defaultPromiseDraft(promise),
+      paying: {
+        amount: preview.amount,
+        text: mode.text,
+        outstandingAfter: preview.outstandingAfter,
+      },
+      editing: false,
+      back: mode,
+    };
+  }
   return {
     kind: "chosen",
     text: mode.text,
     amount: preview.amount,
     outstandingAfter: preview.outstandingAfter,
+    promise: null,
   };
 }
 
 // "Ubah nominal": back to the entry with the amount still in the field.
-export function changePartialAmount(mode: PartialPayMode): PartialPayMode {
+export function changePartialAmount(mode: PayFlowMode): PayFlowMode {
   if (mode.kind !== "chosen") return mode;
   return { kind: "entry", text: mode.text };
 }
@@ -1049,17 +1257,404 @@ const QR_IN_FLIGHT: ReadonlySet<QrisCard["kind"]> = new Set([
   "checking",
 ]);
 
-// After the card changes: a chosen amount whose QR is paid or gone (the card went back to idle
-// without an alert: paid, a status of "none", or a check's qris_not_found) returns to the full
-// page, which shows what is owed now. A failed create comes back to idle with an alert and keeps
-// the chosen amount.
-export function partialModeAfterCard(
-  mode: PartialPayMode,
+const QR_RESUMED: ReadonlySet<QrisCard["kind"]> = new Set([
+  "waiting",
+  "pending",
+  "checking",
+]);
+
+// After the card changes:
+// - a QR found on load (pending or being checked) skips the choice and shows the pay view;
+// - a chosen amount whose QR was paid (the card went back to idle marked paid, and the page is
+//   read again) shows Janji tercatat when its rest was promised, else the choice, so the tenant
+//   sees what is left;
+// - a chosen amount whose QR is gone unpaid (status "none", a check's qris_not_found) or whose
+//   create failed (idle with an alert) stays, so "Bayar QRIS" makes a new QR for it.
+export function flowModeAfterCard(
+  mode: PayFlowMode,
   previous: QrisCard,
   next: QrisModel,
-): PartialPayMode {
+): PayFlowMode {
+  if (mode.kind === "choice") {
+    return previous.kind === "resuming" && QR_RESUMED.has(next.card.kind)
+      ? PAY_MODE
+      : mode;
+  }
   if (mode.kind !== "chosen") return mode;
   if (!QR_IN_FLIGHT.has(previous.kind)) return mode;
-  if (next.card.kind !== "idle" || next.alert !== null) return mode;
-  return FULL_MODE;
+  if (next.card.kind !== "idle" || next.card.paid !== true) return mode;
+  if (mode.promise === null) return choiceMode("all");
+  return {
+    kind: "recorded",
+    paidAmount: cardAmount(previous) ?? mode.amount,
+    promise: mode.promise,
+  };
+}
+
+// Janji (boards "Janji", "Janji tercatat"): the tenant says when they pay what is left, with no
+// approval. A promise covers everything owed now; saving while one is active adds a version
+// ("Ubah janji"). Dates are compared as YYYY-MM-DD strings, amounts only compared.
+
+export const PROMISE_TITLE = "Kapan sisanya dilunasi?";
+export const PROMISE_KIND_LEGEND = "Pilihan tanggal";
+// Labelled by its due date only: the next bill to fall due may be a late-entered period of an
+// earlier month (period October, due 4 November), so a month name could be wrong.
+export const PROMISE_NEXT_DUE_LABEL = "Bareng tagihan berikutnya";
+export const PROMISE_OWN_DATE_LABEL = "Pilih tanggal sendiri";
+export const PROMISE_DATE_LABEL = "Tanggal pelunasan";
+export const PROMISE_AMOUNT_LABEL = "Nominal janji (boleh dikosongkan)";
+export const PROMISE_SAVE_TEXT = "Simpan janji";
+export const PROMISE_EDIT_SAVE_TEXT = "Simpan perubahan";
+export const PROMISE_SAVING_TEXT = "Menyimpan…";
+export const PROMISE_DATE_REQUIRED_TEXT = "Pilih tanggal pelunasan.";
+export const PROMISE_AMOUNT_MIN_TEXT =
+  "Isi nominal minimal Rp1, atau kosongkan untuk semua sisa.";
+export const PROMISE_CARD_LABEL = "Janji pelunasan";
+export const PROMISE_ALL_REST_TEXT = "Semua sisa tagihan";
+export const EDIT_PROMISE_TEXT = "Ubah janji";
+export const RECORDED_TITLE = "Janji tercatat";
+export const RECORDED_REMINDER_TEXT =
+  "Kami kirim pengingat sehari sebelum tanggal ini. Pengingat tunggakan berhenti sampai tanggal ini; tagihan baru tetap dikirim.";
+
+// Null when no promise can be made: the API sends no dates when nothing is owed.
+export function promiseOfferView(page: PaymentPage): PromiseOfferView | null {
+  if (page.promiseDates === null) return null;
+  return {
+    outstanding: page.outstanding,
+    earliest: page.promiseDates.earliest,
+    latest: page.promiseDates.latest,
+    nextInvoiceDueDate: page.nextInvoiceDueDate,
+  };
+}
+
+// "Rp500.000", or "Semua sisa tagihan" for a promise of everything left.
+export function promiseAmountText(promisedAmount: number | null): string {
+  return promisedAmount === null
+    ? PROMISE_ALL_REST_TEXT
+    : formatRupiah(promisedAmount);
+}
+
+// "Janji pelunasan 1 Des 2026 · Semua sisa tagihan"; null without an active promise.
+export function activePromiseView(
+  promise: PaymentPromise | null,
+): ActivePromiseView | null {
+  if (promise === null || promise.status !== "active") return null;
+  return {
+    text: `${PROMISE_CARD_LABEL} ${formatDate(promise.promisedDate)} · ${promiseAmountText(promise.promisedAmount)}`,
+    promise,
+  };
+}
+
+// What the promise is of when it is left empty: what stays after paying now, or everything owed.
+// Choosing one of two API amounts, no math.
+export function promiseRest(
+  offer: PromiseOfferView,
+  paying: PromisePaying | null,
+): number {
+  return paying === null ? offer.outstanding : paying.outstandingAfter;
+}
+
+// "Bareng tagihan …" is offered only while the API gives the next due date; a kind it no longer
+// offers falls back to "Pilih tanggal sendiri".
+export function offeredPromiseKind(
+  kind: PromiseKind,
+  offer: PromiseOfferView,
+): PromiseKind {
+  return kind === PromiseKind.with_next_invoice &&
+    offer.nextInvoiceDueDate === null
+    ? PromiseKind.specific_date
+    : kind;
+}
+
+// A new promise: "Bareng tagihan …" when offered, else "Pilih tanggal sendiri"; no date, no amount.
+export function defaultPromiseDraft(offer: PromiseOfferView): PromiseDraft {
+  return {
+    kind:
+      offer.nextInvoiceDueDate === null
+        ? PromiseKind.specific_date
+        : PromiseKind.with_next_invoice,
+    date: "",
+    amountText: "",
+  };
+}
+
+// "Ubah janji": the fields as the active promise has them. A "Bareng tagihan" promise that is no
+// longer offered becomes its date, chosen by hand.
+export function prefilledPromiseDraft(
+  promise: PaymentPromise,
+  offer: PromiseOfferView,
+): PromiseDraft {
+  const kind = offeredPromiseKind(promise.kind, offer);
+  return {
+    kind,
+    date: kind === PromiseKind.specific_date ? promise.promisedDate : "",
+    amountText:
+      promise.promisedAmount === null
+        ? ""
+        : partialFieldText(promise.promisedAmount),
+  };
+}
+
+// "Ubah janji" from the active promise card or from Janji tercatat: nothing is paid now, and
+// "Kembali" returns to `back`.
+export function editPromise(
+  promise: PaymentPromise,
+  offer: PromiseOfferView,
+  back: PayFlowMode,
+): PayFlowMode {
+  return {
+    kind: "promise",
+    draft: prefilledPromiseDraft(promise, offer),
+    paying: null,
+    editing: true,
+    back,
+  };
+}
+
+// "Kembali" on the Janji screen.
+export function backFromPromise(mode: PayFlowMode): PayFlowMode {
+  return mode.kind === "promise" ? mode.back : mode;
+}
+
+// "Janji sebelumnya 1 Des 2026, semua sisa tagihan akan diganti.": a new promise adds a version to
+// the active one, so a form that does not start from it says so.
+export function promiseReplacesLine(promise: PaymentPromise): string {
+  const amount =
+    promise.promisedAmount === null
+      ? PROMISE_ALL_REST_TEXT.toLowerCase()
+      : formatRupiah(promise.promisedAmount);
+  return `Janji sebelumnya ${formatDate(promise.promisedDate)}, ${amount} akan diganti.`;
+}
+
+// The Janji screen. `active`: the tenant's active promise, which saving replaces.
+export function promiseFormView(
+  offer: PromiseOfferView,
+  paying: PromisePaying | null,
+  editing: boolean,
+  active: PaymentPromise | null,
+): PromiseFormView {
+  const kindOptions: ChoiceOptionView[] = [];
+  if (offer.nextInvoiceDueDate !== null) {
+    kindOptions.push({
+      value: PromiseKind.with_next_invoice,
+      label: PROMISE_NEXT_DUE_LABEL,
+      sub: `Jatuh tempo ${formatDate(offer.nextInvoiceDueDate)}`,
+    });
+  }
+  kindOptions.push({
+    value: PromiseKind.specific_date,
+    label: PROMISE_OWN_DATE_LABEL,
+    sub: `Paling lambat ${formatDate(offer.latest)}, tanpa denda`,
+  });
+  return {
+    replacesLine:
+      active !== null && !editing ? promiseReplacesLine(active) : null,
+    subline:
+      paying === null
+        ? `${TOTAL_LABEL} ${formatRupiah(offer.outstanding)}`
+        : `Sisa setelah bayar hari ini: ${formatRupiah(paying.outstandingAfter)}`,
+    kindOptions,
+    dateMin: offer.earliest,
+    dateMax: offer.latest,
+    amountHint: `Kosongkan untuk semua sisa, ${formatRupiah(promiseRest(offer, paying))}.`,
+    primaryLabel:
+      paying !== null
+        ? `${PROMISE_SAVE_TEXT}, lalu bayar ${formatRupiah(paying.amount)}`
+        : editing
+          ? PROMISE_EDIT_SAVE_TEXT
+          : PROMISE_SAVE_TEXT,
+  };
+}
+
+// Radix RadioGroup hands back the value as a string.
+export function toPromiseKind(value: string): PromiseKind | null {
+  return value === PromiseKind.specific_date ||
+    value === PromiseKind.with_next_invoice
+    ? value
+    : null;
+}
+
+// "Pilih tanggal dari 3 Nov 2026 sampai 1 Jan 2027."
+export function promiseDateRangeText(earliest: string, latest: string): string {
+  return `Pilih tanggal dari ${formatDate(earliest)} sampai ${formatDate(latest)}.`;
+}
+
+// "Nominal janji paling banyak Rp1.250.000."
+export function promiseAmountMaxText(rest: number): string {
+  return `Nominal janji paling banyak ${formatRupiah(rest)}.`;
+}
+
+// The form fields of "Janji pelunasan" that a message can go under, the API's own field names
+// mapped to them by promiseFormError.
+export const PROMISE_FORM_API_FIELDS = ["kind", "date", "amountText"] as const;
+
+// "Simpan janji": the request it sends, or the first field that is wrong by comparison (a
+// missing or out-of-range date, an amount of 0 or above the rest) with its message under it. The
+// API checks everything again and its message wins. The date is sent only for "Pilih tanggal
+// sendiri", the amount only when typed (empty is everything left), payingNow only when something
+// is paid right after. A kind no longer offered is sent as "Pilih tanggal sendiri".
+export function promiseSchema(
+  offer: PromiseOfferView,
+  paying: PromisePaying | null,
+) {
+  return z
+    .object({
+      kind: z.enum(PromiseKind),
+      date: z.string(),
+      amountText: z.string(),
+    })
+    .transform((draft, ctx): MakePaymentPromiseRequest => {
+      const invalid = (
+        field: (typeof PROMISE_FORM_API_FIELDS)[number],
+        message: string,
+      ) => {
+        ctx.addIssue({ code: "custom", path: [field], message });
+        return z.NEVER;
+      };
+      const kind = offeredPromiseKind(draft.kind, offer);
+      const body: MakePaymentPromiseRequest = { kind };
+      if (kind === PromiseKind.specific_date) {
+        if (draft.date === "")
+          return invalid("date", PROMISE_DATE_REQUIRED_TEXT);
+        if (draft.date < offer.earliest || draft.date > offer.latest) {
+          return invalid(
+            "date",
+            promiseDateRangeText(offer.earliest, offer.latest),
+          );
+        }
+        body.promisedDate = draft.date;
+      }
+      if (draft.amountText.trim() !== "") {
+        const amount = parseRupiahInput(draft.amountText);
+        if (amount === null || amount < 1) {
+          return invalid("amountText", PROMISE_AMOUNT_MIN_TEXT);
+        }
+        const rest = promiseRest(offer, paying);
+        if (amount > rest) {
+          return invalid("amountText", promiseAmountMaxText(rest));
+        }
+        body.promisedAmount = amount;
+      }
+      if (paying !== null) body.payingNow = paying.amount;
+      return body;
+    });
+}
+
+// Answers after which what the page shows is out of date: nothing is owed any more, the amount
+// owed changed, the next invoice or the date range moved.
+const PROMISE_REFETCH_CODES: ReadonlySet<string> = new Set([
+  "promise_nothing_owed",
+  "promise_amount_above_outstanding",
+  "promise_no_next_invoice",
+  "promise_date_out_of_range",
+]);
+
+// The field an API error names, on this screen: the date only while its input shows; payingNow
+// (the amount of "Bayar sebagian", not on this screen) and anything else in the alert.
+function promiseErrorTarget(
+  field: string | undefined,
+  kind: PromiseKind,
+): PromiseErrorTarget {
+  switch (field) {
+    case "kind":
+      return "kind";
+    case "promisedDate":
+      return kind === PromiseKind.specific_date ? "promisedDate" : "alert";
+    case "promisedAmount":
+      return "promisedAmount";
+    default:
+      return "alert";
+  }
+}
+
+// What a refused makePaymentPromise shows: a link that stopped working replaces the page; the
+// API's message goes under the field it names or in the alert (a rate limit too, never retried);
+// anything that is not the API's answer shows the generic message.
+export function promiseErrorView(
+  error: unknown,
+  kind: PromiseKind,
+): PromiseErrorView {
+  if (isLinkError(error)) return { kind: "link-gone" };
+  if (!(error instanceof ApiError)) {
+    return {
+      kind: "shown",
+      error: { target: "alert", message: GENERIC_ERROR_MESSAGE },
+      refetchPage: false,
+    };
+  }
+  const target =
+    error.status === 400 ? promiseErrorTarget(error.field, kind) : "alert";
+  return {
+    kind: "shown",
+    error: { target, message: error.message },
+    refetchPage: PROMISE_REFETCH_CODES.has(error.code),
+  };
+}
+
+// The form field each place of promiseErrorView is shown in; null for the alert.
+const PROMISE_ERROR_FIELDS: Record<
+  PromiseErrorTarget,
+  (typeof PROMISE_FORM_API_FIELDS)[number] | null
+> = {
+  kind: "kind",
+  promisedDate: "date",
+  promisedAmount: "amountText",
+  alert: null,
+};
+
+// Where the Janji form shows a refused makePaymentPromise of this kind, as promiseErrorView
+// places it. A link that stopped working replaces the page, so it never reaches the form.
+export function promiseFormError(error: unknown, kind: PromiseKind): FormError {
+  const view = promiseErrorView(error, kind);
+  if (view.kind !== "shown") {
+    return { field: null, message: GENERIC_ERROR_MESSAGE };
+  }
+  return {
+    field: PROMISE_ERROR_FIELDS[view.error.target],
+    message: view.error.message,
+  };
+}
+
+// After "Simpan janji": paying now goes on to the chosen amount's QR (the caller starts it), with
+// the promise on its card; otherwise Janji tercatat. An edit from Janji tercatat keeps what this
+// visit paid.
+export function promiseSaved(
+  mode: PayFlowMode,
+  saved: PaymentPromise,
+): PayFlowMode {
+  if (mode.kind !== "promise") return mode;
+  if (mode.paying !== null) {
+    return {
+      kind: "chosen",
+      text: mode.paying.text,
+      amount: mode.paying.amount,
+      outstandingAfter: mode.paying.outstandingAfter,
+      promise: saved,
+    };
+  }
+  return {
+    kind: "recorded",
+    paidAmount: mode.back.kind === "recorded" ? mode.back.paidAmount : null,
+    promise: saved,
+  };
+}
+
+// Janji tercatat, from the page as last read and the promise just saved. No breakdown of what the
+// payment paid: no API gives the real allocation.
+export function promiseRecordedView(
+  view: OpenPaymentPageView,
+  mode: RecordedFlowMode,
+): RecordedView {
+  return {
+    paidLine:
+      mode.paidAmount === null
+        ? null
+        : `Pembayaran ${formatRupiah(mode.paidAmount)} sudah diterima. Terima kasih, ${view.tenantName}.`,
+    outstandingLine:
+      view.outstanding > 0
+        ? `Sisa tagihan ${formatRupiah(view.outstanding)}`
+        : null,
+    date: formatLongDate(mode.promise.promisedDate),
+    amount: promiseAmountText(mode.promise.promisedAmount),
+  };
 }

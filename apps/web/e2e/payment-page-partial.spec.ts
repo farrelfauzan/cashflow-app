@@ -34,6 +34,8 @@ import { HENDRA } from "./support/staff";
 // payment-page-qris.spec.ts. This spec's tenants: numbers 0815-2…, rooms "Kamar Sebagian".
 
 const STAND_IN = process.env.AUTOGOPAY_CONTROL_URL ?? "http://127.0.0.1:8091";
+const REMINDER_TEXT =
+  "Kami kirim pengingat sehari sebelum tanggal ini. Pengingat tunggakan berhenti sampai tanggal ini; tagihan baru tetap dikirim.";
 const LIMIT_TEXT = "QRIS paling banyak Rp10.000.000 sekali bayar.";
 
 test.use({
@@ -108,15 +110,19 @@ function monthOf(fixture: PartialFixture, index: number): string {
   return formatMonthYear(invoice.period);
 }
 
-async function openEntry(page: Page, fixture: PartialFixture) {
-  await expect(
-    page.getByRole("button", {
-      name: `Bayar QRIS ${formatRupiah(fixture.page.outstanding)}`,
-    }),
-  ).toBeVisible();
-  const open = page.getByRole("button", { name: "Bayar sebagian" });
-  await expectTouchTarget(open);
-  await open.click();
+// Bayar-Pilih: one of the radios, then its "Lanjut".
+async function choose(page: Page, label: RegExp) {
+  const radio = page
+    .getByRole("radiogroup", { name: "Mau bayar berapa?" })
+    .getByRole("radio", { name: label });
+  await radio.check();
+  const next = page.getByRole("button", { name: "Lanjut", exact: true });
+  await expectTouchTarget(next);
+  await next.click();
+}
+
+async function openEntry(page: Page) {
+  await choose(page, /^Bayar sebagian/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Bayar sebagian" }),
   ).toBeVisible();
@@ -131,7 +137,7 @@ test("Bayar sebagian previews an amount, makes its QR, and a paid QR leaves the 
 }, testInfo) => {
   const fixture = await openPartialPage(page, testInfo, 1);
   const { price } = fixture;
-  await openEntry(page, fixture);
+  await openEntry(page);
 
   await expect(
     page.getByText(`Total tagihan ${formatRupiah(price * 2)}`),
@@ -172,22 +178,49 @@ test("Bayar sebagian previews an amount, makes its QR, and a paid QR leaves the 
     `Sisa tagihan setelah ini ${formatRupiah(price - 100_000)}`,
   );
 
-  const pay = page.getByRole("button", {
-    name: `Bayar QRIS ${formatRupiah(amount)}`,
+  // Something stays owed, so the next step is when it is paid.
+  const rest = formatRupiah(price - 100_000);
+  await expect(
+    page.getByText(`Berikutnya: pilih kapan sisa ${rest} dilunasi.`),
+  ).toBeVisible();
+  const next = page.getByRole("button", {
+    name: "Lanjut pilih tanggal pelunasan",
   });
-  await expect(pay).toBeEnabled();
-  await expectTouchTarget(pay);
+  await expect(next).toBeEnabled();
+  await expectTouchTarget(next);
   await expectTouchTarget(page.getByRole("button", { name: "Kembali" }));
   await attachViewportScreenshot(page, testInfo, "payment-partial-entry");
 
-  // The QR is for the chosen amount, under "Jumlah" and what stays owed.
-  await pay.click();
+  // Janji pelunasan: the rest by the next invoice's due date, the default when offered.
+  await next.click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Kapan sisanya dilunasi?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(`Sisa setelah bayar hari ini: ${rest}`),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("radio", { name: /^Bareng tagihan/ }),
+  ).toBeChecked();
+  await expect(
+    page.getByText(`Kosongkan untuk semua sisa, ${rest}.`),
+  ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-promise-form");
+  await page
+    .getByRole("button", {
+      name: `Simpan janji, lalu bayar ${formatRupiah(amount)}`,
+    })
+    .click();
+
+  // The QR is for the chosen amount, under "Jumlah" and the promise for the rest.
   const qr = page.getByRole("img", {
     name: `Kode QRIS ${formatRupiah(amount)}`,
   });
   await expect(qr).toBeVisible();
   await expect(
-    page.getByText(`Sisa ${formatRupiah(price - 100_000)} tetap jadi tagihan.`),
+    page.getByText(
+      new RegExp(`^Sisa ${rest.replace(/\./g, "\\.")} dijanjikan .+\\.$`),
+    ),
   ).toBeVisible();
   // A QR is live: the amount cannot change under it.
   await expect(page.getByRole("button", { name: "Ubah nominal" })).toHaveCount(
@@ -198,7 +231,7 @@ test("Bayar sebagian previews an amount, makes its QR, and a paid QR leaves the 
     .toBeGreaterThan(0);
   await attachViewportScreenshot(page, testInfo, "payment-partial-qr");
 
-  // Paid on the stand-in: the page goes back to the whole total, now what is left.
+  // Paid on the stand-in: Janji tercatat, with the payment, what is left and the promise.
   const standIn = await playwrightRequest.newContext({ baseURL: STAND_IN });
   const transactionId = await findQr(standIn, amount);
   const paid = await standIn.post("/_control/pay", {
@@ -209,13 +242,19 @@ test("Bayar sebagian previews an amount, makes its QR, and a paid QR leaves the 
   await page.getByRole("button", { name: "Saya sudah bayar" }).click();
 
   await expect(
-    page.getByRole("button", {
-      name: `Bayar QRIS ${formatRupiah(price - 100_000)}`,
-    }),
+    page.getByRole("heading", { level: 1, name: "Janji tercatat" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Bayar sebagian" }),
-  ).toHaveCount(0);
+    page.getByText(
+      `Pembayaran ${formatRupiah(amount)} sudah diterima. Terima kasih, ${fixture.page.tenantName}.`,
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(`Sisa tagihan ${rest}`)).toBeVisible();
+  await expect(page.getByText("Semua sisa tagihan")).toBeVisible();
+  await expect(page.getByText(REMINDER_TEXT)).toBeVisible();
+  await expect(page.getByText(/kwitansi/i)).toHaveCount(0);
+  await expectTouchTarget(page.getByRole("button", { name: "Ubah janji" }));
+  await attachViewportScreenshot(page, testInfo, "payment-promise-recorded");
   finish(fixture);
 });
 
@@ -223,8 +262,16 @@ test("Bayar sebagian refuses an amount above the total or one QR's most, and Kem
   page,
 }, testInfo) => {
   const fixture = await openPartialPage(page, testInfo, 2);
-  await openEntry(page, fixture);
+  await openEntry(page);
   const field = amountField(page);
+
+  // The whole total leaves nothing to promise: straight to its QR.
+  await field.fill(String(fixture.page.outstanding));
+  await expect(
+    page.getByRole("button", {
+      name: `Bayar QRIS ${formatRupiah(fixture.page.outstanding)}`,
+    }),
+  ).toBeEnabled();
 
   // Above what is owed: the API's message under the field, no preview, no QR.
   await field.fill(String(fixture.price * 2 + 1));
@@ -233,7 +280,7 @@ test("Bayar sebagian refuses an amount above the total or one QR's most, and Kem
     page.getByRole("region", { name: "Uang ini dipakai untuk" }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: /^Bayar QRIS/ }),
+    page.getByRole("button", { name: /^(Bayar QRIS|Lanjut pilih)/ }),
   ).toBeDisabled();
   await attachViewportScreenshot(page, testInfo, "payment-partial-above-total");
 
@@ -241,7 +288,7 @@ test("Bayar sebagian refuses an amount above the total or one QR's most, and Kem
   await field.fill("10000001");
   await expect(page.getByText(LIMIT_TEXT)).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /^Bayar QRIS/ }),
+    page.getByRole("button", { name: /^(Bayar QRIS|Lanjut pilih)/ }),
   ).toBeDisabled();
 
   // Empty: nothing to say, nothing to pay.
@@ -249,12 +296,91 @@ test("Bayar sebagian refuses an amount above the total or one QR's most, and Kem
   await expect(page.getByText(LIMIT_TEXT)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Bayar QRIS" })).toBeDisabled();
 
+  // Kembali: the choice again, still on "Bayar sebagian".
   await page.getByRole("button", { name: "Kembali" }).click();
   await expect(
-    page.getByRole("button", {
-      name: `Bayar QRIS ${formatRupiah(fixture.page.outstanding)}`,
-    }),
+    page.getByRole("radio", { name: /^Bayar sebagian/ }),
+  ).toBeChecked();
+  finish(fixture);
+});
+
+test("Belum bisa bayar sekarang records a promise by a chosen date, and Ubah janji changes it", async ({
+  page,
+}, testInfo) => {
+  const fixture = await openPartialPage(page, testInfo, 3);
+  const dates = fixture.page.promiseDates;
+  if (dates === null) throw new Error("a tenant who owes has promise dates");
+  const total = formatRupiah(fixture.page.outstanding);
+  await choose(page, /^Belum bisa bayar sekarang/);
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Kapan sisanya dilunasi?" }),
   ).toBeVisible();
+  await expect(page.getByText(`Total tagihan ${total}`)).toBeVisible();
+  await page.getByRole("radio", { name: /^Pilih tanggal sendiri/ }).check();
+  const save = page.getByRole("button", { name: "Simpan janji", exact: true });
+
+  // Checked before sending: a date is needed, and the amount is at most the rest.
+  await save.click();
+  await expect(page.getByText("Pilih tanggal pelunasan.")).toBeVisible();
+  const date = page.getByLabel("Tanggal pelunasan");
+  await date.fill(dates.earliest);
+  const amount = page.getByLabel("Nominal janji (boleh dikosongkan)");
+  await amount.fill(String(fixture.page.outstanding + 1));
+  await save.click();
+  await expect(
+    page.getByText(`Nominal janji paling banyak ${total}.`),
+  ).toBeVisible();
+  await amount.fill("500000");
+  await attachViewportScreenshot(page, testInfo, "payment-promise-own-date");
+  await save.click();
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Janji tercatat" }),
+  ).toBeVisible();
+  await expect(page.getByText(/sudah diterima/)).toHaveCount(0);
+  await expect(page.getByText(formatRupiah(500_000))).toBeVisible();
+  await expect(page.getByText(REMINDER_TEXT)).toBeVisible();
+
+  // Opened again (a reminder's link): the promise above the choice, with Ubah janji.
+  await page.reload();
+  await expect(
+    page.getByText(
+      new RegExp(
+        `^Janji pelunasan .+ · ${formatRupiah(500_000).replace(/\./g, "\\.")}$`,
+      ),
+    ),
+  ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-promise-active");
+
+  // A new promise from the choice replaces the active one, and the form says so.
+  const replaces = page.getByText(
+    /^Janji sebelumnya .+, Rp500\.000 akan diganti\.$/,
+  );
+  await choose(page, /^Belum bisa bayar sekarang/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Kapan sisanya dilunasi?" }),
+  ).toBeVisible();
+  await expect(replaces).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Simpan janji", exact: true }),
+  ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-promise-replace");
+  await page.getByRole("button", { name: "Kembali" }).click();
+
+  // Ubah janji starts from the promise itself, so it needs no such line.
+  await page.getByRole("button", { name: "Ubah janji" }).click();
+  await expect(page.getByLabel("Tanggal pelunasan")).toHaveValue(
+    dates.earliest,
+  );
+  await expect(replaces).toHaveCount(0);
+  await page.getByRole("radio", { name: /^Bareng tagihan/ }).check();
+  await page.getByLabel("Nominal janji (boleh dikosongkan)").fill("");
+  await page.getByRole("button", { name: "Simpan perubahan" }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Janji tercatat" }),
+  ).toBeVisible();
+  await expect(page.getByText("Semua sisa tagihan")).toBeVisible();
   finish(fixture);
 });
 

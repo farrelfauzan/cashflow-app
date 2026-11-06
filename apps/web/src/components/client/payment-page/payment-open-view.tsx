@@ -2,8 +2,7 @@
 
 import type { PaymentPage } from "@/lib/api/generated/model";
 
-import { BankTransferMethod } from "./bank-transfer-method";
-import { PaymentFullView } from "./payment-full-view";
+import { PaymentFlow } from "./payment-flow";
 import { QrisPaymentFlow } from "./qris-payment-flow";
 import type { OpenPaymentPageView } from "./type";
 
@@ -14,8 +13,8 @@ type PaymentOpenViewProps = {
   onLinkGone: () => void;
 };
 
-// The tenant owes something. With QRIS set up, the QRIS flow (the whole total, or "Bayar
-// sebagian"); without it, bank transfer only, as before.
+// The tenant owes something: the choice (pay it all, a part, or promise), with the QRIS state
+// when QRIS is set up, bank transfer alone when it is not.
 export function PaymentOpenView({
   view,
   token,
@@ -24,14 +23,12 @@ export function PaymentOpenView({
 }: PaymentOpenViewProps) {
   if (view.qris === null) {
     return (
-      <PaymentFullView
+      <PaymentFlow
         view={view}
-        methods={
-          <BankTransferMethod
-            transfer={view.transfer}
-            noTransferText={view.noTransferText}
-          />
-        }
+        token={token}
+        qris={null}
+        refetchPage={refetchPage}
+        onLinkGone={onLinkGone}
       />
     );
   }

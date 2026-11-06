@@ -22,6 +22,7 @@ import {
   call,
   expectTouchTarget,
   makeLink,
+  payAll,
   projectDigit,
   readPage,
   rentSinceLastMonth,
@@ -135,6 +136,7 @@ async function openQrisPage(
   const outside = trackOutsideRequests(page);
   const leaks = trackTokenLeaks(page, path, token);
   await page.goto(path);
+  await payAll(page, expected.outstanding);
   await expect(page.getByRole("tablist", { name: "Cara bayar" })).toBeVisible();
 
   const standIn = await playwrightRequest.newContext({ baseURL: STAND_IN });
@@ -335,8 +337,9 @@ test("an expired QR shows QR kedaluwarsa, and Buat QR baru makes a new one", asy
   const again = page.getByRole("button", { name: "Buat QR baru" });
   await expect(again).toBeVisible();
   await expectTouchTarget(again);
-  // The one primary action: no other button.
-  await expect(page.getByRole("button")).toHaveCount(1);
+  // The one primary action, and "Kembali" to the choice.
+  await expect(page.getByRole("button", { name: "Kembali" })).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(2);
   await attachViewportScreenshot(page, testInfo, "payment-qris-expired");
 
   await again.click();
@@ -425,7 +428,8 @@ test("when QRIS fails, the page switches to bank transfer with a warning", async
   await expect(
     page.getByRole("button", { name: "Salin nomor rekening" }),
   ).toBeVisible();
-  await expect(page.getByRole("button")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Kembali" })).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(2);
   expect(await qrsFor(fixture)).toEqual([]);
   await attachViewportScreenshot(page, testInfo, "payment-qris-unavailable");
 
@@ -473,7 +477,9 @@ test("an expired QR from an earlier visit does not show on a new one", async ({
   await page.getByRole("button", { name: "Saya sudah bayar" }).click();
   await expect(page.getByText(EXPIRED_TEXT)).toBeVisible();
 
+  // A new visit starts on the choice, not on the old QR.
   await page.goto(fixture.path);
+  await payAll(page, fixture.expected.outstanding);
   await expect(payButton(page, fixture)).toBeVisible();
   await expect(page.getByText(EXPIRED_TEXT)).toHaveCount(0);
   await expect(page.getByText(EXPIRED_NOTE)).toHaveCount(0);

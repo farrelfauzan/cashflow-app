@@ -16,8 +16,6 @@ type PaymentMethodsProps = {
   qris: QrisPayment;
   // The amount of "Bayar sebagian", or null for the total.
   chosen: number | null;
-  // Opens "Bayar sebagian"; null where it is not offered.
-  onPartial: (() => void) | null;
   transfer: TransferView | null;
   noTransferText: string;
 };
@@ -30,7 +28,6 @@ export function PaymentMethods({
   offer,
   qris,
   chosen,
-  onPartial,
   transfer,
   noTransferText,
 }: PaymentMethodsProps) {
@@ -53,7 +50,6 @@ export function PaymentMethods({
               offer={offer}
               qris={qris}
               chosen={chosen}
-              onPartial={onPartial}
             />
           }
           transfer={

@@ -19,6 +19,7 @@ import type {
   Unit,
 } from "../../src/lib/api/generated/model";
 import { jakartaToday } from "../../src/lib/format/date";
+import { formatRupiah } from "../../src/lib/format/rupiah";
 import { findOrCreateProperty } from "./property-fixtures";
 import type { SeededStaff } from "./staff";
 
@@ -250,8 +251,9 @@ export async function readPage(page: Page, path: string): Promise<PaymentPage> {
 
 // Every request the page makes that carries the token where it does not belong. It belongs only
 // in the paths of the page document and of the page's own API calls: the page read, the QR
-// status, making a QR, the QR image, "Saya sudah bayar" and the "Bayar sebagian" preview. Never
-// in a query string, a referer or a body. Paths are logged with the token masked.
+// status, making a QR, the QR image, "Saya sudah bayar", the "Bayar sebagian" preview and
+// "Simpan janji". Never in a query string, a referer or a body. Paths are logged with the token
+// masked.
 export function trackTokenLeaks(
   page: Page,
   path: string,
@@ -265,6 +267,7 @@ export function trackTokenLeaks(
     `GET ${api}/qris.png`,
     `POST ${api}/check`,
     `GET ${api}/preview`,
+    `POST ${api}/promise`,
   ]);
   const leaks: string[] = [];
   page.on("request", (request) => {
@@ -309,4 +312,13 @@ export function tenantClientAddress(
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return `198.${spec}.${(hash >>> 8) & 0xff}.${hash & 0xff}`;
+}
+
+// Bayar-Pilih: keeps "Bayar semua" and presses "Lanjut bayar Rp…", which opens how to pay it.
+export async function payAll(page: Page, outstanding: number): Promise<void> {
+  const next = page.getByRole("button", {
+    name: `Lanjut bayar ${formatRupiah(outstanding)}`,
+  });
+  await expectTouchTarget(next);
+  await next.click();
 }

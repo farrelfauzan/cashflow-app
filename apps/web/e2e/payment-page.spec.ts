@@ -7,6 +7,7 @@ import { formatMonthYear } from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
 import {
   attachFullPageScreenshot,
+  attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
 import {
@@ -17,6 +18,7 @@ import {
   expectTouchTarget,
   firstOfMonth,
   makeLink,
+  payAll,
   orgIdByName,
   readPage,
   recordCash,
@@ -139,6 +141,21 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
     MIN_BODY_FONT_PX[testInfo.project.name] ?? 16,
   );
 
+  // Bayar-Pilih: pay everything, a part, or not yet, with "Bayar semua" picked and one primary.
+  const choices = page.getByRole("radiogroup", { name: "Mau bayar berapa?" });
+  await expect(choices.getByRole("radio")).toHaveCount(3);
+  await expect(
+    choices.getByRole("radio", { name: /^Bayar semua/ }),
+  ).toBeChecked();
+  await expect(
+    choices.getByRole("radio", { name: /^Bayar sebagian/ }),
+  ).toBeVisible();
+  await expect(
+    choices.getByRole("radio", { name: /^Belum bisa bayar sekarang/ }),
+  ).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "payment-choice");
+  await payAll(page, expected.outstanding);
+
   // Griya Sejahtera has QRIS: two tabs, QRIS first, with "Bayar QRIS" for the total as its
   // one primary action. Bank transfer is the other tab.
   const tabs = page.getByRole("tablist", { name: "Cara bayar" });
@@ -153,10 +170,8 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
     name: `Bayar QRIS ${formatRupiah(expected.outstanding)}`,
   });
   await expect(payQris).toBeVisible();
-  // "Bayar QRIS" is the one primary; "Bayar sebagian" under it is a text button.
-  await expect(
-    page.getByRole("button", { name: "Bayar sebagian" }),
-  ).toBeVisible();
+  // "Bayar QRIS" is the one primary; "Kembali" goes back to the choice.
+  await expect(page.getByRole("button", { name: "Kembali" })).toBeVisible();
   await expect(page.getByRole("button")).toHaveCount(2);
   await expect(page.getByRole("region", { name: "Transfer bank" })).toHaveCount(
     0,
@@ -189,9 +204,9 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   ).toBeVisible();
   await expect(page.getByText("Cara bayar belum diatur")).toHaveCount(0);
 
-  // The one primary action.
+  // The one primary action, and "Kembali".
   const copy = page.getByRole("button", { name: "Salin nomor rekening" });
-  await expect(page.getByRole("button")).toHaveCount(1);
+  await expect(page.getByRole("button")).toHaveCount(2);
   await expectTouchTarget(copy);
   await copy.click();
   await expect(transfer.getByRole("status")).toHaveText(
@@ -359,6 +374,7 @@ test("tells the tenant whom to contact when no bank account is set", async ({
 
   await page.goto(path);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await payAll(page, expected.outstanding);
   await expect(
     page.getByText(
       `Cara bayar belum diatur. Hubungi ${BULANAN} untuk membayar.`,
@@ -372,7 +388,8 @@ test("tells the tenant whom to contact when no bank account is set", async ({
   await expect(page.getByRole("region", { name: "Transfer bank" })).toHaveCount(
     0,
   );
-  await expect(page.getByRole("button")).toHaveCount(0);
+  // Nothing to press but "Kembali" to the choice.
+  await expect(page.getByRole("button")).toHaveCount(1);
   // No QRIS set up: no tabs and no QRIS at all.
   await expect(page.getByRole("tablist")).toHaveCount(0);
   await expect(page.getByText("QRIS")).toHaveCount(0);
