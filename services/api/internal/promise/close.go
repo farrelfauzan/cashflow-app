@@ -14,6 +14,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
@@ -29,14 +30,28 @@ const VisitReasonBrokenPromises = "broken_promises"
 // It writes no audit row either: a promise is not money, and its status and closed_at are the
 // record.
 type Closer struct {
-	store *store.Store
-	clock clock.Clock
-	log   *slog.Logger
+	store   *store.Store
+	clock   clock.Clock
+	log     *slog.Logger
+	notices StaffNotices
+}
+
+// CloserOption adjusts a Closer.
+type CloserOption func(*Closer)
+
+// NotifyStaff makes CloseDue record a staff notice (TG-5) of each promise it closes as broken and
+// each visit task it opens, in the transaction that does it; n nil records none.
+func NotifyStaff(n StaffNotices) CloserOption {
+	return func(c *Closer) { c.notices = n }
 }
 
 // NewCloser returns a Closer. c decides today in Asia/Jakarta and the closing time.
-func NewCloser(st *store.Store, c clock.Clock, log *slog.Logger) *Closer {
-	return &Closer{store: st, clock: c, log: log}
+func NewCloser(st *store.Store, c clock.Clock, log *slog.Logger, opts ...CloserOption) *Closer {
+	cl := &Closer{store: st, clock: c, log: log}
+	for _, opt := range opts {
+		opt(cl)
+	}
+	return cl
 }
 
 // PaymentRecorded implements billing.PaymentHook: after a manual payment is inserted and
@@ -136,11 +151,15 @@ func (c *Closer) CloseDue(ctx context.Context, org uuid.UUID) (CloseResult, erro
 
 // closeDueTenant closes the tenant's active promise when its day ended before today, under the
 // tenant's allocation lock, and returns the status it closed with ("" when there was nothing to
-// close: an edit moved the date, or it closed meanwhile) and whether it opened a visit task.
+// close: an edit moved the date, or it closed meanwhile) and whether it opened a visit task. With
+// staff notices on, a broken promise and an opened visit task each record one in the same
+// transaction, enqueued once it commits.
 func (c *Closer) closeDueTenant(ctx context.Context, org, tenantID uuid.UUID, today time.Time) (string, bool, error) {
 	var status string
 	var opened bool
+	var notices []uuid.UUID
 	err := c.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		notices = nil // a retried transaction starts again
 		q := dbgen.New(tx)
 		if err := billing.LockTenant(ctx, q, org, tenantID); err != nil {
 			return err
@@ -165,40 +184,69 @@ func (c *Closer) closeDueTenant(ctx context.Context, org, tenantID uuid.UUID, to
 			return err
 		}
 		status = outcome
-		if outcome == StatusBroken {
-			opened, err = openVisitIfThreshold(ctx, q, org, tenantID, now)
+		if outcome != StatusBroken {
+			return nil
 		}
-		return err
+		var visitID uuid.UUID
+		visitID, err = openVisitIfThreshold(ctx, q, org, tenantID, now)
+		if err != nil {
+			return err
+		}
+		opened = visitID != uuid.Nil
+		if c.notices == nil {
+			return nil
+		}
+		events := []staffnotice.Event{staffnotice.PromiseBroken(org, tenantID, active.PromiseID)}
+		if opened {
+			events = append(events, staffnotice.VisitTaskOpened(org, tenantID, visitID))
+		}
+		for _, e := range events {
+			id, err := c.notices.RecordTx(ctx, tx, e)
+			if err != nil {
+				return err
+			}
+			if id != uuid.Nil {
+				notices = append(notices, id)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return "", false, err
+	}
+	for _, id := range notices {
+		c.notices.Enqueue(ctx, org, id)
 	}
 	return status, opened, nil
 }
 
 // openVisitIfThreshold opens the tenant's broken_promises visit task when their broken promises
 // since their last resolved broken_promises task (all of them when none was resolved) reach the
-// organization's threshold. It reports whether it
-// opened one; an open one already there is left as it is.
-func openVisitIfThreshold(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, now time.Time) (bool, error) {
+// organization's threshold. It returns the id of the task it opened, uuid.Nil when it opened none;
+// an open one already there is left as it is.
+func openVisitIfThreshold(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, now time.Time) (uuid.UUID, error) {
 	broken, err := q.CountTenantBrokenPromisesSinceVisit(ctx, dbgen.CountTenantBrokenPromisesSinceVisitParams{OrganizationID: org, TenantID: tenantID})
 	if err != nil {
-		return false, fmt.Errorf("promise: counting broken promises: %w", err)
+		return uuid.Nil, fmt.Errorf("promise: counting broken promises: %w", err)
 	}
 	threshold, err := q.GetBrokenPromiseThreshold(ctx, org)
 	if err != nil {
-		return false, fmt.Errorf("promise: reading the broken-promise threshold: %w", err)
+		return uuid.Nil, fmt.Errorf("promise: reading the broken-promise threshold: %w", err)
 	}
 	if broken < int64(threshold) {
-		return false, nil
+		return uuid.Nil, nil
 	}
+	id := uuid.New()
 	n, err := q.OpenVisitTask(ctx, dbgen.OpenVisitTaskParams{
-		ID: uuid.New(), OrganizationID: org, TenantID: tenantID, Reason: VisitReasonBrokenPromises, CreatedAt: now,
+		ID: id, OrganizationID: org, TenantID: tenantID, Reason: VisitReasonBrokenPromises, CreatedAt: now,
 	})
 	if err != nil {
-		return false, fmt.Errorf("promise: opening the visit task: %w", err)
+		return uuid.Nil, fmt.Errorf("promise: opening the visit task: %w", err)
 	}
-	return n == 1, nil
+	if n != 1 {
+		return uuid.Nil, nil
+	}
+	return id, nil
 }
 
 // progressOf reads where the active promise's newest version v stands.

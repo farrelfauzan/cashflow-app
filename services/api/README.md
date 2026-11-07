@@ -385,6 +385,19 @@ WhatsApp instead, under the same limit of 3 per number per 15 minutes. The 202 i
 every number: its `telegramAvailable` only says whether this environment sends codes to linked
 chats (a bot and `TELEGRAM_MESSAGES=linked`), never whether this number is linked or registered.
 
+With `TELEGRAM_MESSAGES=linked`, linked staff also get staff notices (TG-5, `internal/staffnotice`):
+when a tenant makes or edits a promise on the payment page (not one a member saves), when a
+promise closes as broken, and when a tenant joins the visit list (H+7, or too many broken
+promises). A notice goes to the collectors of the tenant's active leases and to every active
+member allowed `payment:record` on the tenant through one of them (Admins of that property or of
+the whole organization; not a Supervisor unless they collect), and only to those with a live
+Telegram link: never on WhatsApp, which comes for staff in slice 5. The notice is recorded with
+its event and sent once by the worker's `staff:notice` task between 08:00 and 21:59 (a promise
+broken at 00:30 is told at 08:00, by `reminders:sweep`), and is skipped when it no longer applies
+(the promise was edited again, the visit task was resolved). With the setting off nothing is
+recorded. The worker logs "staff notice sent" with the number of recipients, those delivered and
+those not linked.
+
 If it stops with "getUpdates is blocked", the bot has a webhook set (Telegram allows either a
 webhook or polling, not both) or another poller is running with the same token. Delete the
 webhook with the Bot API's `deleteWebhook` method, or stop the other poller. A token Telegram
@@ -423,7 +436,9 @@ replay Bot API answers.
   chat, `getMe`, `getUpdates`, the development poll loop); it sends to a chat id, so it is not a
   WhatsApp provider. `router` is the provider in front of WhatsApp when `TELEGRAM_MESSAGES=linked`:
   it sends a linked tenant's messages, and a linked staff member's login codes, to their Telegram
-  chat.
+  chat, and a `TelegramOnly` message (staff notices) there or nowhere.
+- `internal/staffnotice`: staff notices on Telegram in demo environments (TG-5): recording them
+  with their event, choosing the recipients, sending; `noticetask` is the `staff:notice` task.
 - `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
   key rotation, and `secret.Value`, which prints as `[redacted]`.
 - `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook

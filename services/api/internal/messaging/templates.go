@@ -23,6 +23,18 @@ const (
 	TemplatePromiseReminder = "promise_reminder"  // H-1 of a promised date
 	TemplatePromiseBroken   = "promise_broken"    // a promise's day passed without it being kept
 	TemplatePromiseRecorded = "promise_recorded"  // a promise (or an edit) was saved
+
+	// Staff notices (TG-5, decision 42: demo only, Telegram only). Each names the organization,
+	// the tenant and their unit, and carries no button.
+	TemplateStaffPromiseMade   = "staff_promise_made"   // a tenant made or edited a promise on the payment page
+	TemplateStaffPromiseBroken = "staff_promise_broken" // a tenant's promise closed as broken
+	TemplateStaffVisitTask     = "staff_visit_task"     // a tenant joined the visit list
+)
+
+// Verbs of TemplateStaffPromiseMade's action parameter.
+const (
+	StaffPromiseMade   = "membuat"  // the promise's first version
+	StaffPromiseEdited = "mengubah" // a later version
 )
 
 // Button titles of the tenant messages.
@@ -108,6 +120,33 @@ func init() {
 	})
 
 	registerTenantTemplates()
+	registerStaffTemplates()
+}
+
+// registerStaffTemplates adds the staff notices (TG-5). organization is its display name; tenant
+// is the tenant's name and unit their unit with its property, for example "Kamar 3, Kos Melati"
+// (several separated by "; "). Dates are formatted with Date and amounts with Rupiah.
+func registerStaffTemplates() {
+	// action is StaffPromiseMade or StaffPromiseEdited; amount is the promised amount or
+	// AllOutstanding.
+	register(Template{
+		Name:   TemplateStaffPromiseMade,
+		Params: []string{"organization", "tenant", "unit", "action", "amount", "date"},
+		Text: "*{{.organization}}*: {{.tenant}} ({{.unit}}) {{.action}} janji bayar {{.amount}} " +
+			"paling lambat *{{.date}}* lewat halaman pembayaran.",
+	})
+	// date is the promised day that passed.
+	register(Template{
+		Name:   TemplateStaffPromiseBroken,
+		Params: []string{"organization", "tenant", "unit", "date"},
+		Text:   "*{{.organization}}*: janji bayar {{.tenant}} ({{.unit}}) untuk {{.date}} tidak ditepati.",
+	})
+	// reason says why, for example "tunggakan lewat 7 hari".
+	register(Template{
+		Name:   TemplateStaffVisitTask,
+		Params: []string{"organization", "tenant", "unit", "reason"},
+		Text:   "*{{.organization}}*: {{.tenant}} ({{.unit}}) masuk daftar kunjungan karena {{.reason}}.",
+	})
 }
 
 // registerTenantTemplates adds the tenant reminder and promise messages. Parameters are single

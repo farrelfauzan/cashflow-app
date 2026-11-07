@@ -166,3 +166,43 @@ func TestHandleSendAndConfirm(t *testing.T) {
 		})
 	}
 }
+
+// orgSweep is a fake extra sweep: it enqueues n rows per organization, or fails on errOrg.
+type orgSweep struct {
+	n      map[uuid.UUID]int
+	errOrg uuid.UUID
+	swept  []uuid.UUID
+}
+
+func (s *orgSweep) SweepOrg(_ context.Context, org uuid.UUID) (int, error) {
+	s.swept = append(s.swept, org)
+	if org == s.errOrg {
+		return 0, errors.New("redis down")
+	}
+	return s.n[org], nil
+}
+
+func TestSweepAlsoSweepsOtherRows(t *testing.T) {
+	t.Parallel()
+	a, b := uuid.New(), uuid.New()
+	tests := []struct {
+		name    string
+		also    *orgSweep
+		wantN   int
+		wantErr bool
+	}{
+		{name: "every organization's extra rows count", also: &orgSweep{n: map[uuid.UUID]int{a: 2, b: 1}}, wantN: 4},
+		{name: "one organization failing does not stop the other", also: &orgSweep{n: map[uuid.UUID]int{b: 1}, errOrg: a}, wantN: 2, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := &sender{reminders: map[uuid.UUID][]uuid.UUID{a: {uuid.New()}}}
+			q := &sendQueue{}
+			n, err := remindertask.Sweep(context.Background(), orgs{ids: []uuid.UUID{a, b}}, s, q, tc.also)
+			require.Equal(t, tc.wantErr, err != nil, "error: %v", err)
+			require.Equal(t, tc.wantN, n)
+			require.Equal(t, []uuid.UUID{a, b}, tc.also.swept)
+		})
+	}
+}

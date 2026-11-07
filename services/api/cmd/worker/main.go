@@ -11,6 +11,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
@@ -26,8 +27,11 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise/promisetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice/noticetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 )
 
@@ -71,7 +75,16 @@ func run() error {
 	// Handlers and cron entries are registered here as each slice adds jobs.
 	mux := asynq.NewServeMux()
 	sched := queue.NewScheduler(cfg.RedisAddr, clock.Jakarta, log)
-	closer := promise.NewCloser(st, clk, log)
+	// Staff notices (TG-5) are recorded and sent only with TELEGRAM_MESSAGES=linked, and then only
+	// to staff with a live Telegram link; otherwise the closer and the decider record none.
+	var closerOpts []promise.CloserOption
+	var deciderOpts []reminder.DeciderOption
+	if cfg.Telegram.SendsToLinked() {
+		notices := staffnotice.NewNotices(clk, noticetask.NewClient(client), log)
+		closerOpts = append(closerOpts, promise.NotifyStaff(notices))
+		deciderOpts = append(deciderOpts, reminder.NotifyStaff(notices))
+	}
+	closer := promise.NewCloser(st, clk, log, closerOpts...)
 	invoices := invoicetask.Worker{
 		Generator: billing.NewService(st, az, clk, log, closer),
 		Orgs:      st,
@@ -121,14 +134,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// The worker sends no staff messages yet (TG-5), so it has no staff links.
-	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), nil, log)
+	// Staff notices (TG-5) go to staff users' linked chats, so the router reads staff links too.
+	// The worker never makes link codes, so their limiter is never used.
+	tgStaff := auth.NewTelegramStaff(st, ratelimit.NewMemory(clk), clk, log)
+	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), tgStaff, log)
 	if err != nil {
 		return err
 	}
 	sendQueue := remindertask.NewSendClient(client)
 	reminders := remindertask.Worker{
-		Decider:  reminder.NewDecider(st, clk, log, sendQueue),
+		Decider:  reminder.NewDecider(st, clk, log, sendQueue, deciderOpts...),
 		Orgs:     st,
 		Enqueuer: remindertask.NewClient(client),
 		Clock:    clk,
@@ -148,6 +163,12 @@ func run() error {
 		Orgs:  st,
 		Queue: sendQueue,
 		Log:   log,
+	}
+	if cfg.Telegram.SendsToLinked() {
+		// msg is the router here, so a notice reaches only linked chats, never WhatsApp.
+		notices := staffnotice.NewSender(staffnotice.SenderDeps{Store: st, Principals: az, Provider: msg, Clock: clk, Log: log})
+		noticetask.Worker{Sender: notices, Log: log}.Register(mux)
+		sending.Also = append(sending.Also, noticetask.Sweeper{Sender: notices, Queue: noticetask.NewClient(client)})
 	}
 	if err := sending.Register(mux, sched); err != nil {
 		return err

@@ -3,7 +3,7 @@
 // tenant whose chat is linked goes to that chat on Telegram, and so does a message for a staff user
 // whose chat is linked (login codes, TG-4); every other message (a recipient with no live link,
 // invitations, a login code the user asked to get on WhatsApp) goes to the WhatsApp provider
-// unchanged.
+// unchanged. A TelegramOnly message (staff notices, TG-5) goes to the linked chat or nowhere.
 //
 // There is no fallback between channels: when Telegram refuses a send, the send fails like any
 // other. When the refusal says the chat cannot be reached (the bot was blocked, the chat is gone),
@@ -56,8 +56,8 @@ type Router struct {
 var _ messaging.Provider = (*Router)(nil)
 
 // New returns a router that sends to linked tenants and staff users through tg and everything else
-// through whatsapp. staff may be nil (the worker sends no staff messages): then a message for a
-// staff user goes to whatsapp.
+// through whatsapp. staff may be nil: then a message for a staff user goes to whatsapp, or, when
+// it is TelegramOnly, nowhere (messaging.ErrNoTelegramChat).
 func New(whatsapp messaging.Provider, tg Telegram, links Links, staff StaffLinks, log *slog.Logger) *Router {
 	return &Router{whatsapp: whatsapp, telegram: tg, links: links, staff: staff, log: log}
 }
@@ -65,18 +65,30 @@ func New(whatsapp messaging.Provider, tg Telegram, links Links, staff StaffLinks
 // SendTemplate sends m on Telegram when it is for a tenant (m.OrganizationID and m.TenantID) with a
 // live link, or else for a staff user (m.StaffUserID) with a live link, and on WhatsApp otherwise.
 // A failed link lookup fails the send rather than guessing a channel.
+//
+// A TelegramOnly message (staff notices, TG-5) never goes to WhatsApp: with no live link, or no
+// recipient the router can look up, nothing is sent and the error is messaging.ErrNoTelegramChat.
 func (r *Router) SendTemplate(ctx context.Context, m messaging.Message) (messaging.Receipt, error) {
 	switch {
 	case m.TenantID != uuid.Nil:
 		if m.OrganizationID == uuid.Nil {
-			return r.whatsapp.SendTemplate(ctx, m)
+			return r.notLinked(ctx, m)
 		}
 		return r.sendToTenant(ctx, m)
 	case m.StaffUserID != uuid.Nil && r.staff != nil:
 		return r.sendToStaff(ctx, m)
 	default:
-		return r.whatsapp.SendTemplate(ctx, m)
+		return r.notLinked(ctx, m)
 	}
+}
+
+// notLinked sends m, whose recipient has no live Telegram link, on WhatsApp, unless m is
+// TelegramOnly: then nothing is sent.
+func (r *Router) notLinked(ctx context.Context, m messaging.Message) (messaging.Receipt, error) {
+	if m.TelegramOnly {
+		return messaging.Receipt{}, messaging.ErrNoTelegramChat
+	}
+	return r.whatsapp.SendTemplate(ctx, m)
 }
 
 func (r *Router) sendToTenant(ctx context.Context, m messaging.Message) (messaging.Receipt, error) {
@@ -85,7 +97,7 @@ func (r *Router) sendToTenant(ctx context.Context, m messaging.Message) (messagi
 		return messaging.Receipt{}, fmt.Errorf("router: finding the tenant's Telegram link: %w", err)
 	}
 	if !linked {
-		return r.whatsapp.SendTemplate(ctx, m)
+		return r.notLinked(ctx, m)
 	}
 	receipt, err := r.telegram.Send(ctx, chatID, m)
 	if err == nil {
@@ -110,7 +122,7 @@ func (r *Router) sendToStaff(ctx context.Context, m messaging.Message) (messagin
 		return messaging.Receipt{}, fmt.Errorf("router: finding the staff user's Telegram link: %w", err)
 	}
 	if !linked {
-		return r.whatsapp.SendTemplate(ctx, m)
+		return r.notLinked(ctx, m)
 	}
 	receipt, err := r.telegram.Send(ctx, chatID, m)
 	if err == nil {

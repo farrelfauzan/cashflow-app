@@ -51,5 +51,17 @@ func Samples() map[string]messaging.Message {
 		messaging.TemplatePromiseRecorded: {Template: messaging.TemplatePromiseRecorded, Buttons: change, Params: map[string]string{
 			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "amount": "Rp500.000", "date": "20 November 2026",
 		}},
+		// Staff notices carry no button.
+		messaging.TemplateStaffPromiseMade: {Template: messaging.TemplateStaffPromiseMade, Params: map[string]string{
+			"organization": "Griya Sejahtera", "tenant": "Rina Wulandari", "unit": "Kamar 3, Kos Melati",
+			"action": messaging.StaffPromiseMade, "amount": "Rp500.000", "date": "20 November 2026",
+		}},
+		messaging.TemplateStaffPromiseBroken: {Template: messaging.TemplateStaffPromiseBroken, Params: map[string]string{
+			"organization": "Griya Sejahtera", "tenant": "Rina Wulandari", "unit": "Kamar 3, Kos Melati", "date": "20 November 2026",
+		}},
+		messaging.TemplateStaffVisitTask: {Template: messaging.TemplateStaffVisitTask, Params: map[string]string{
+			"organization": "Griya Sejahtera", "tenant": "Rina Wulandari", "unit": "Kamar 3, Kos Melati",
+			"reason": "tunggakan lewat 7 hari",
+		}},
 	}
 }

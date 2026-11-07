@@ -93,12 +93,22 @@ type Sender interface {
 	Pending(ctx context.Context, org uuid.UUID) (reminders, confirmations []uuid.UUID, err error)
 }
 
+// OrgSweep is one more kind of pending row the sweep enqueues again for each organization, such
+// as staff notices (TG-5, noticetask.Sweeper).
+type OrgSweep interface {
+	// SweepOrg enqueues org's rows still pending and returns how many it enqueued.
+	SweepOrg(ctx context.Context, org uuid.UUID) (int, error)
+}
+
 // SendWorker holds what the sending handlers need.
 type SendWorker struct {
 	Sender Sender
 	Orgs   OrgLister
 	Queue  Queue
-	Log    *slog.Logger
+	// Also are swept with the reminders and confirmations; empty when there are none (staff
+	// notices are off without TELEGRAM_MESSAGES=linked).
+	Also []OrgSweep
+	Log  *slog.Logger
 }
 
 // Register adds the sending handlers to mux and the sweep to the scheduler, which must run in
@@ -157,7 +167,7 @@ func decode(t *asynq.Task) (sendPayload, error) {
 // HandleSweep enqueues the send task of every organization's reminders and confirmations still
 // pending reminder.SweepAfter after they were recorded.
 func (w SendWorker) HandleSweep(ctx context.Context, _ *asynq.Task) error {
-	n, err := Sweep(ctx, w.Orgs, w.Sender, w.Queue)
+	n, err := Sweep(ctx, w.Orgs, w.Sender, w.Queue, w.Also...)
 	if n > 0 || err != nil {
 		w.Log.InfoContext(ctx, "pending reminders enqueued again", "tasks", n)
 	}
@@ -168,9 +178,9 @@ func (w SendWorker) HandleSweep(ctx context.Context, _ *asynq.Task) error {
 }
 
 // Sweep enqueues, for every organization, the tasks of its reminders and promise confirmations
-// still pending, and returns how many it enqueued. A failure on one organization or task does not
-// stop the others; they come back joined.
-func Sweep(ctx context.Context, orgs OrgLister, s Sender, q Queue) (int, error) {
+// still pending, and those of each of also, and returns how many it enqueued. A failure on one
+// organization or task does not stop the others; they come back joined.
+func Sweep(ctx context.Context, orgs OrgLister, s Sender, q Queue, also ...OrgSweep) (int, error) {
 	ids, err := orgs.ActiveOrganizationIDs(ctx)
 	if err != nil {
 		return 0, err
@@ -196,6 +206,13 @@ func Sweep(ctx context.Context, orgs OrgLister, s Sender, q Queue) (int, error) 
 				continue
 			}
 			n++
+		}
+		for _, a := range also {
+			k, err := a.SweepOrg(ctx, org)
+			n += k
+			if err != nil {
+				errs = append(errs, fmt.Errorf("organization %s: %w", org, err))
+			}
 		}
 	}
 	return n, errors.Join(errs...)

@@ -260,3 +260,60 @@ func TestStripBold(t *testing.T) {
 	}
 	require.Panics(t, func() { stripBold("t", "{{.x") }, "unclosed action")
 }
+
+// TestRenderStaffNotices: the staff notices (TG-5) as Telegram shows them (RenderPlain), each
+// naming the organization, the tenant and their unit, with no button.
+func TestRenderStaffNotices(t *testing.T) {
+	t.Parallel()
+	who := map[string]string{"organization": "Griya Sejahtera", "tenant": "Rina Wulandari", "unit": "Kamar 3, Kos Melati"}
+	with := func(extra map[string]string) map[string]string {
+		out := map[string]string{}
+		for k, v := range who {
+			out[k] = v
+		}
+		for k, v := range extra {
+			out[k] = v
+		}
+		return out
+	}
+	tests := []struct {
+		name string
+		msg  Message
+		want string
+	}{
+		{
+			name: "a new promise with an amount",
+			msg: Message{Template: TemplateStaffPromiseMade, Params: with(map[string]string{
+				"action": StaffPromiseMade, "amount": "Rp500.000", "date": "20 November 2026",
+			})},
+			want: "Griya Sejahtera: Rina Wulandari (Kamar 3, Kos Melati) membuat janji bayar Rp500.000 " +
+				"paling lambat 20 November 2026 lewat halaman pembayaran.",
+		},
+		{
+			name: "an edited promise for everything owed",
+			msg: Message{Template: TemplateStaffPromiseMade, Params: with(map[string]string{
+				"action": StaffPromiseEdited, "amount": AllOutstanding, "date": "20 November 2026",
+			})},
+			want: "Griya Sejahtera: Rina Wulandari (Kamar 3, Kos Melati) mengubah janji bayar seluruh sisa tagihan " +
+				"paling lambat 20 November 2026 lewat halaman pembayaran.",
+		},
+		{
+			name: "a broken promise",
+			msg:  Message{Template: TemplateStaffPromiseBroken, Params: with(map[string]string{"date": "20 November 2026"})},
+			want: "Griya Sejahtera: janji bayar Rina Wulandari (Kamar 3, Kos Melati) untuk 20 November 2026 tidak ditepati.",
+		},
+		{
+			name: "a visit task",
+			msg:  Message{Template: TemplateStaffVisitTask, Params: with(map[string]string{"reason": "tunggakan lewat 7 hari"})},
+			want: "Griya Sejahtera: Rina Wulandari (Kamar 3, Kos Melati) masuk daftar kunjungan karena tunggakan lewat 7 hari.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			text, err := RenderPlain(tc.msg)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, text)
+		})
+	}
+}

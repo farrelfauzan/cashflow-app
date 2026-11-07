@@ -58,17 +58,10 @@ func (s *Service) LoadPrincipal(ctx context.Context, org, user uuid.UUID) (Princ
 		}
 		p = Principal{UserID: user, OrganizationID: org, MembershipID: m.ID}
 		for _, row := range rows {
-			role, ok := s.roleFromRow(ctx, row)
-			if !ok {
-				continue
-			}
-			if row.PropertyID.Valid {
-				role.Property = row.PropertyID.UUID
-				if !slices.Contains(p.Properties, role.Property) {
-					p.Properties = append(p.Properties, role.Property)
-				}
-			}
-			p.Roles = append(p.Roles, role)
+			s.addRole(ctx, &p, assignment{
+				ID: row.ID, BuiltinRole: row.BuiltinRole, RoleID: row.RoleID, PropertyID: row.PropertyID,
+				RoleName: row.RoleName, RolePolicy: row.RolePolicy,
+			})
 		}
 		SortRoles(p.Roles, func(r Role) string { return r.Key }, func(r Role) string { return r.Name })
 		return nil
@@ -76,7 +69,62 @@ func (s *Service) LoadPrincipal(ctx context.Context, org, user uuid.UUID) (Princ
 	return p, err
 }
 
-func (s *Service) roleFromRow(ctx context.Context, row dbgen.ListRoleAssignmentsForMembershipRow) (Role, bool) {
+// ActivePrincipalsTx returns the principal of every active member of org, read inside tx (which
+// must be scoped to org), ordered by staff user id. It is for the platform's own decisions about
+// who may act on a record, such as who a staff notice goes to (TG-5): decide them with Evaluate,
+// which records nothing, never with Authorize or Check, whose denials would be audited as if the
+// member had tried. A disabled member is not listed.
+func (s *Service) ActivePrincipalsTx(ctx context.Context, tx pgx.Tx, org uuid.UUID) ([]Principal, error) {
+	rows, err := dbgen.New(tx).ListActiveMemberRoleAssignments(ctx, org)
+	if err != nil {
+		return nil, fmt.Errorf("loading the active members' roles: %w", err)
+	}
+	var out []Principal
+	for _, row := range rows {
+		if len(out) == 0 || out[len(out)-1].MembershipID != row.MembershipID {
+			out = append(out, Principal{UserID: row.StaffUserID, OrganizationID: org, MembershipID: row.MembershipID})
+		}
+		if !row.AssignmentID.Valid {
+			continue // a member with no role
+		}
+		s.addRole(ctx, &out[len(out)-1], assignment{
+			ID: row.AssignmentID.UUID, BuiltinRole: row.BuiltinRole, RoleID: row.RoleID, PropertyID: row.PropertyID,
+			RoleName: row.RoleName, RolePolicy: row.RolePolicy,
+		})
+	}
+	for i := range out {
+		SortRoles(out[i].Roles, func(r Role) string { return r.Key }, func(r Role) string { return r.Name })
+	}
+	return out, nil
+}
+
+// assignment is one role assignment as the queries read it.
+type assignment struct {
+	ID          uuid.UUID
+	BuiltinRole *string
+	RoleID      uuid.NullUUID
+	PropertyID  uuid.NullUUID
+	RoleName    *string
+	RolePolicy  []byte
+}
+
+// addRole adds the role of a to p, limited to its property when it names one. A role that cannot
+// be read grants nothing and is logged.
+func (s *Service) addRole(ctx context.Context, p *Principal, a assignment) {
+	role, ok := s.roleFromRow(ctx, a)
+	if !ok {
+		return
+	}
+	if a.PropertyID.Valid {
+		role.Property = a.PropertyID.UUID
+		if !slices.Contains(p.Properties, role.Property) {
+			p.Properties = append(p.Properties, role.Property)
+		}
+	}
+	p.Roles = append(p.Roles, role)
+}
+
+func (s *Service) roleFromRow(ctx context.Context, row assignment) (Role, bool) {
 	if row.BuiltinRole != nil {
 		r, ok := BuiltinRole(*row.BuiltinRole)
 		if !ok {
