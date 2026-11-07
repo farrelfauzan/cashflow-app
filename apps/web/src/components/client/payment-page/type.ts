@@ -61,7 +61,29 @@ export type OpenPaymentPageView = {
   promise: PromiseOfferView | null;
   // The tenant's active promise as the compact card above the choice; null when there is none.
   activePromise: ActivePromiseView | null;
+  // "Pengingat lewat Telegram" on the choice (a demo channel, decision 42); null when this
+  // environment has no bot.
+  telegram: TelegramOfferView | null;
 };
+
+// The Telegram card: offer "Hubungkan Telegram", or say the tenant is linked.
+export type TelegramOfferView = { linked: boolean };
+
+// "Hubungkan Telegram" asks the API for a one-time deep link, then shows it as "Buka Telegram"
+// (a browser blocks a new tab opened after a request, so the tenant opens it themselves). The
+// link is shown until its code expires (expiresAt, ms since the epoch), then the card offers
+// "Hubungkan Telegram" again.
+export type TelegramLinkState =
+  | { kind: "idle" }
+  | { kind: "asking" }
+  | { kind: "ready"; deepLink: string; expiresAt: number };
+
+// What a failed linkPaymentPageTelegram shows: the link stopped working (the page's not-found
+// state), no bot here after all (the card goes), or a message in the card.
+export type TelegramErrorView =
+  | { kind: "link-gone" }
+  | { kind: "hidden" }
+  | { kind: "alert"; message: string };
 
 // What a promise made now may name, from getPaymentPage as is.
 export type PromiseOfferView = {

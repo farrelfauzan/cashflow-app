@@ -101,6 +101,11 @@ import {
   paymentPageView,
   remainderLabel,
   summaryRowLabel,
+  isTelegramDeepLink,
+  telegramLinkDelay,
+  telegramLinkExpiresAt,
+  telegramErrorView,
+  telegramOfferView,
 } from "./utils";
 
 const TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
@@ -402,6 +407,7 @@ describe("paymentPageView, open", () => {
         nextInvoiceDueDate: "2026-12-01",
       },
       activePromise: null,
+      telegram: null,
     });
   });
 
@@ -2921,5 +2927,87 @@ describe("checkPromiseDraft", () => {
         null,
       ),
     ).toMatchObject({ ok: false, field: "date" });
+  });
+});
+
+describe("Telegram on Bayar-Pilih", () => {
+  it("offers it only where the environment has a bot", () => {
+    expect(telegramOfferView(page())).toBeNull();
+    expect(
+      telegramOfferView(page({ telegram: { available: true, linked: false } })),
+    ).toEqual({ linked: false });
+    expect(
+      telegramOfferView(page({ telegram: { available: true, linked: true } })),
+    ).toEqual({ linked: true });
+    expect(
+      openView({ telegram: { available: true, linked: false } }).telegram,
+    ).toEqual({ linked: false });
+  });
+
+  it("opens only the bot's own https://t.me deep link", () => {
+    expect(
+      isTelegramDeepLink("https://t.me/CashflowDemoBot?start=Ab3_x-9"),
+    ).toBe(true);
+    expect(isTelegramDeepLink("http://t.me/CashflowDemoBot?start=abc")).toBe(
+      false,
+    );
+    expect(isTelegramDeepLink("https://t.me.evil.example/Bot?start=abc")).toBe(
+      false,
+    );
+    expect(isTelegramDeepLink("javascript:alert(1)")).toBe(false);
+    expect(isTelegramDeepLink("https://t.me/CashflowDemoBot")).toBe(false);
+  });
+
+  it("stops showing a deep link when its 10-minute code expires", () => {
+    const askedAt = Date.UTC(2026, 10, 7, 5, 0, 0);
+    const expiresAt = telegramLinkExpiresAt(askedAt);
+    expect(expiresAt - askedAt).toBe(10 * 60_000);
+    expect(telegramLinkDelay(expiresAt, askedAt + 1_000)).toBe(599_000);
+    expect(telegramLinkDelay(expiresAt, expiresAt)).toBe(0);
+    // A tab put to sleep past the expiry goes back at once when it wakes.
+    expect(telegramLinkDelay(expiresAt, expiresAt + 60_000)).toBe(0);
+  });
+
+  it("maps a refused link request", () => {
+    expect(
+      telegramErrorView(
+        new ApiError({
+          status: 404,
+          code: "telegram_unavailable",
+          message: "Telegram belum tersedia.",
+        }),
+      ),
+    ).toEqual({ kind: "hidden" });
+    expect(
+      telegramErrorView(
+        new ApiError({
+          status: 404,
+          code: "payment_link_not_found",
+          message: "Link tidak ditemukan.",
+        }),
+      ),
+    ).toEqual({ kind: "link-gone" });
+    expect(
+      telegramErrorView(
+        new ApiError({
+          status: 410,
+          code: "payment_link_expired",
+          message: "Link kedaluwarsa.",
+        }),
+      ),
+    ).toEqual({ kind: "link-gone" });
+    expect(
+      telegramErrorView(
+        new ApiError({
+          status: 429,
+          code: "rate_limited",
+          message: "Terlalu sering dibuka.",
+        }),
+      ),
+    ).toEqual({ kind: "alert", message: "Terlalu sering dibuka." });
+    expect(telegramErrorView(new Error("network"))).toEqual({
+      kind: "alert",
+      message: GENERIC_ERROR_MESSAGE,
+    });
   });
 });
