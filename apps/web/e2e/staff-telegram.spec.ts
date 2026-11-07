@@ -1,0 +1,154 @@
+import {
+  expect,
+  request as playwrightRequest,
+  test,
+  type Response,
+  type TestInfo,
+} from "@playwright/test";
+
+import type { TelegramDeepLink } from "../src/lib/api/generated/model";
+import {
+  attachViewportScreenshot,
+  trackOutsideRequests,
+} from "./support/page-checks";
+import {
+  expectTouchTarget,
+  orgIdByName,
+  projectDigit,
+  runId,
+  staffApi,
+} from "./support/payment-page";
+import { openMenu } from "./support/shell";
+import { LESTARI, SARI, type SeededStaff } from "./support/staff";
+
+// A staff member's "Telegram" in the side menu (decision 42: a demo channel, development and
+// staging). The e2e API runs with a fake bot (TELEGRAM_* in web.yml): the deep link is made
+// without calling Telegram, and "Start" is the bot's webhook update, posted here with the
+// webhook secret as Telegram would. The bot's reply goes nowhere. Login codes still go to the
+// devlog: the e2e API leaves TELEGRAM_MESSAGES off, so linking here changes no other spec.
+// Each project links its own member (SARI on iPad, LESTARI on the phone), so the two never race.
+
+const API = process.env.API_DEV_ORIGIN ?? "http://127.0.0.1:8080";
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
+const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME ?? "";
+const TEXT =
+  "Terima kode masuk dan pemberitahuan di Telegram, bukan di WhatsApp.";
+const LINKED_TEXT =
+  "Telegram terhubung. Kode masuk berikutnya dikirim di sini.";
+const OPEN_HINT = "Tekan Start di Telegram. Link ini berlaku 10 menit.";
+
+test.beforeAll(() => {
+  if (WEBHOOK_SECRET === "" || BOT_USERNAME === "") {
+    throw new Error(
+      "TELEGRAM_WEBHOOK_SECRET and TELEGRAM_BOT_USERNAME are set in the e2e environment (web.yml)",
+    );
+  }
+});
+
+function member(testInfo: TestInfo): SeededStaff {
+  return testInfo.project.name === "phone" ? LESTARI : SARI;
+}
+
+test.use({
+  storageState: async ({}, provide, testInfo) => {
+    await provide(member(testInfo).storageState);
+  },
+});
+
+// A Telegram chat id of the test's own (private chats are positive; the payment page spec's
+// start with 7).
+function chatId(testInfo: TestInfo): number {
+  return Number(`8${runId()}${projectDigit(testInfo)}${testInfo.retry}`);
+}
+
+// The member presses Start in Telegram: the bot's webhook gets "/start <code>".
+async function pressStart(testInfo: TestInfo, deepLink: string) {
+  const code = new URL(deepLink).searchParams.get("start");
+  if (code === null) throw new Error("the deep link has no start code");
+  const telegram = await playwrightRequest.newContext({ baseURL: API });
+  const id = chatId(testInfo);
+  const answer = await telegram.post("/webhooks/telegram", {
+    headers: { "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET },
+    data: {
+      update_id: id,
+      message: {
+        message_id: 1,
+        from: { id, is_bot: false },
+        chat: { id, type: "private" },
+        text: `/start ${code}`,
+      },
+    },
+  });
+  expect(answer.status()).toBe(200);
+  await telegram.dispose();
+}
+
+test("a member links Telegram from the menu, sees it linked, and unlinks it", async ({
+  page,
+}, testInfo) => {
+  const staff = member(testInfo);
+  // Unlinked to start with, whatever an earlier run left.
+  const api = await staffApi(staff, testInfo);
+  const orgId = await orgIdByName(api, staff.organizations[0] ?? "");
+  const reset = await api.delete("/api/me/telegram");
+  expect(reset.status()).toBe(204);
+  await api.dispose();
+
+  const outside = trackOutsideRequests(page);
+  await page.goto(`/o/${orgId}`);
+
+  const menu = await openMenu(page, testInfo);
+  const item = menu.getByRole("button", { name: "Telegram", exact: true });
+  await expectTouchTarget(item);
+  await item.click();
+  const dialog = page.getByRole("dialog", { name: "Telegram" });
+  await expect(dialog).toContainText(TEXT);
+  const connect = dialog.getByRole("button", { name: "Hubungkan Telegram" });
+  await expectTouchTarget(connect);
+  await attachViewportScreenshot(page, testInfo, "staff-telegram-offer");
+
+  // One request, then the member opens the link (a new tab or the app, no referrer).
+  const asked: Promise<Response> = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/me/telegram",
+  );
+  await connect.click();
+  const answer = await asked;
+  expect(answer.status()).toBe(201);
+  const { deepLink } = (await answer.json()) as TelegramDeepLink;
+  expect(deepLink).toMatch(
+    new RegExp(`^https://t\\.me/${BOT_USERNAME}\\?start=[A-Za-z0-9_-]+$`),
+  );
+  const open = dialog.getByRole("link", { name: "Buka Telegram" });
+  await expect(open).toHaveAttribute("href", deepLink);
+  await expect(open).toHaveAttribute("target", "_blank");
+  await expect(open).toHaveAttribute("rel", /noreferrer/);
+  await expectTouchTarget(open);
+  await expect(dialog).toContainText(OPEN_HINT);
+  await attachViewportScreenshot(page, testInfo, "staff-telegram-open");
+
+  // Start in Telegram; back in the tab, the focus refetch reads it again, with no reload.
+  await pressStart(testInfo, deepLink);
+  const reread: Promise<Response> = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname === "/api/me/telegram",
+  );
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event("visibilitychange")),
+  );
+  expect((await reread).status()).toBe(200);
+  await expect(dialog).toContainText(LINKED_TEXT);
+  await expect(dialog.getByRole("link")).toHaveCount(0);
+  const unlink = dialog.getByRole("button", { name: "Putuskan Telegram" });
+  await expectTouchTarget(unlink);
+  await attachViewportScreenshot(page, testInfo, "staff-telegram-linked");
+
+  // "Putuskan Telegram": unlinked at once, and "Hubungkan Telegram" is offered again.
+  await unlink.click();
+  await expect(dialog).toContainText(TEXT);
+  await expect(connect).toBeEnabled();
+
+  expect(outside).toEqual([]);
+});

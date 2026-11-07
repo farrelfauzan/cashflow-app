@@ -19,8 +19,13 @@ import { loginCodeDigits } from "@/lib/auth/login-code";
 import { clearQueryCache } from "@/lib/query/query-client";
 
 import {
-  CODE_RESENT_MESSAGE,
   LOGIN_CODE_API_FIELDS,
+  SEND_WHATSAPP_LABEL,
+  SENDING_WHATSAPP_LABEL,
+  codeFieldLabel,
+  codeResentMessage,
+  codeSentEnding,
+  loginCodeChannel,
   loginCodeSchema,
 } from "./utils";
 
@@ -28,6 +33,11 @@ type LoginCodeStepProps = {
   // As the user typed it; the API normalizes it.
   phone: string;
   redirectTo: string;
+  // The API's telegramAvailable from the latest code request: an environment setting (a demo
+  // environment, decision 42), the same for every number, so it reveals nothing about this one.
+  telegramAvailable: boolean;
+  // A resend's answer carries telegramAvailable too.
+  onTelegramAvailableChange: (telegramAvailable: boolean) => void;
   onChangePhone: () => void;
 };
 
@@ -37,6 +47,8 @@ type LoginCodeStepProps = {
 export function LoginCodeStep({
   phone,
   redirectTo,
+  telegramAvailable,
+  onTelegramAvailableChange,
   onChangePhone,
 }: LoginCodeStepProps) {
   const id = useId();
@@ -51,13 +63,20 @@ export function LoginCodeStep({
   const { clearErrors, setError, setFocus, setValue } = form;
   const fieldError = form.formState.errors.code?.message;
   const [status, setStatus] = useState("");
+  // True after "Kirim lewat WhatsApp" succeeded, until a plain resend succeeds.
+  const [whatsappOnly, setWhatsappOnly] = useState(false);
   const verify = useVerifyLoginCode();
   const resend = useRequestLoginCode();
 
   // After a successful verify the page is navigating away; keep everything disabled.
   const verifying = verify.isPending || verify.isSuccess;
   const busy = verifying || resend.isPending;
+  // Which of the two resend buttons is waiting for the API.
+  const resendingWhatsapp =
+    resend.isPending && resend.variables?.data.whatsappOnly === true;
   const typedPhone = phone.trim();
+  const channel = loginCodeChannel(telegramAvailable, whatsappOnly);
+  const sentEnding = codeSentEnding(channel);
 
   useEffect(() => {
     setFocus("code");
@@ -88,17 +107,25 @@ export function LoginCodeStep({
     () => setStatus(""),
   );
 
-  function handleResend() {
+  // whatsappOnly: "Kirim lewat WhatsApp", sent over WhatsApp even when Telegram is linked. A
+  // plain resend leaves the flag out, so the request stays as it was before Telegram.
+  function handleResend(viaWhatsappOnly: boolean) {
     if (busy) return;
 
     clearErrors();
     setStatus("");
     resend.mutate(
-      { data: { phone: typedPhone } },
       {
-        onSuccess: () => {
+        data: viaWhatsappOnly
+          ? { phone: typedPhone, whatsappOnly: true }
+          : { phone: typedPhone },
+      },
+      {
+        onSuccess: (accepted) => {
+          onTelegramAvailableChange(accepted.telegramAvailable);
+          setWhatsappOnly(viaWhatsappOnly);
           setValue("code", "");
-          setStatus(CODE_RESENT_MESSAGE);
+          setStatus(codeResentMessage(viaWhatsappOnly));
           setFocus("code");
         },
         // This step has no phone field, so every error goes to the alert.
@@ -133,8 +160,8 @@ export function LoginCodeStep({
           <b className="font-bold whitespace-nowrap text-foreground">
             {typedPhone}
           </b>{" "}
-          terdaftar, kode 6 angka sudah dikirim ke{" "}
-          <span className="whitespace-nowrap">WhatsApp-nya.</span>
+          {sentEnding.lead}{" "}
+          <span className="whitespace-nowrap">{sentEnding.tail}</span>
         </p>
       </div>
 
@@ -145,7 +172,7 @@ export function LoginCodeStep({
           htmlFor={inputId}
           className="text-[15px] leading-normal font-semibold md:text-[17px]"
         >
-          Kode dari WhatsApp
+          {codeFieldLabel(channel)}
         </Label>
         {/* Controlled, so the field keeps digits only, whatever is typed or pasted. */}
         <Controller
@@ -197,12 +224,25 @@ export function LoginCodeStep({
         <Button
           type="button"
           variant="link"
-          onClick={handleResend}
+          onClick={() => handleResend(false)}
           disabled={busy}
           className="px-3 text-base font-semibold no-underline hover:underline md:text-[17px]"
         >
-          {resend.isPending ? "Mengirim ulang…" : "Kirim ulang kode"}
+          {resend.isPending && !resendingWhatsapp
+            ? "Mengirim ulang…"
+            : "Kirim ulang kode"}
         </Button>
+        {telegramAvailable && (
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => handleResend(true)}
+            disabled={busy}
+            className="px-3 text-base font-semibold no-underline hover:underline md:text-[17px]"
+          >
+            {resendingWhatsapp ? SENDING_WHATSAPP_LABEL : SEND_WHATSAPP_LABEL}
+          </Button>
+        )}
         <p
           role="status"
           aria-live="polite"

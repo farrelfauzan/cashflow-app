@@ -19,6 +19,8 @@ export function LoginFlow({ redirectTo, tenantNote }: LoginFlowProps) {
   const [step, setStep] = useState<LoginStep>("phone");
   const [phone, setPhone] = useState("");
   const [returnedToPhone, setReturnedToPhone] = useState(false);
+  // From the latest code request's answer; false unless this is a demo environment.
+  const [telegramAvailable, setTelegramAvailable] = useState(false);
 
   return (
     <div className="flex flex-1 flex-col gap-6 md:w-[460px] md:flex-none">
@@ -27,8 +29,9 @@ export function LoginFlow({ redirectTo, tenantNote }: LoginFlowProps) {
           <LoginPhoneStep
             phone={phone}
             focusOnMount={returnedToPhone}
-            onSent={(sent) => {
+            onSent={(sent, telegram) => {
               setPhone(sent);
+              setTelegramAvailable(telegram);
               setStep("code");
             }}
           />
@@ -36,6 +39,8 @@ export function LoginFlow({ redirectTo, tenantNote }: LoginFlowProps) {
           <LoginCodeStep
             phone={phone}
             redirectTo={redirectTo}
+            telegramAvailable={telegramAvailable}
+            onTelegramAvailableChange={setTelegramAvailable}
             onChangePhone={() => {
               setReturnedToPhone(true);
               setStep("phone");

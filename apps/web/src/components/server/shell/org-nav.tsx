@@ -1,6 +1,7 @@
 import { LogoutButton } from "@/components/client/auth/logout-button";
 import { OrgNavLink } from "@/components/client/shell/org-nav-link";
 import { OrgSwitchSelect } from "@/components/client/shell/org-switch-select";
+import { TelegramMenuItem } from "@/components/client/telegram/telegram-menu-item";
 import type { OrgSwitchOption } from "@/components/client/shell/type";
 import { OrgTile } from "@/components/server/organization/org-tile";
 
@@ -19,7 +20,8 @@ type OrgNavProps = {
 
 // The side menu (board Members.dc.html): the organization and the member's roles, the sections
 // they may open, then "Ganti usaha" for a member of several organizations (a select above the
-// footer, moved there on the user's request) and who is signed in with "Keluar". The same
+// footer, moved there on the user's request) and who is signed in with "Keluar", plus "Telegram"
+// where the environment has a bot (decision 42, demo only). The same
 // content fills the phone's menu sheet, where the header leaves room for the sheet's close
 // button. On iPad, collapsed to its rail (SidebarRail), the `rail:` classes keep only the icons;
 // the texts stay for screen readers.
@@ -81,6 +83,7 @@ export function OrgNav({
         <span className="truncate px-2 text-[15px] font-semibold rail:sr-only">
           {userName}
         </span>
+        <TelegramMenuItem />
         <LogoutButton variant="menu" />
       </div>
     </nav>

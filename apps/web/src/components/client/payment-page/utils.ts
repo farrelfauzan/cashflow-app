@@ -1692,7 +1692,7 @@ export const TELEGRAM_OPEN_HINT =
 export const TELEGRAM_LINKED_TEXT =
   "Telegram terhubung. Pengingat berikutnya dikirim di sini.";
 
-const TELEGRAM_UNAVAILABLE_CODE = "telegram_unavailable";
+export const TELEGRAM_UNAVAILABLE_CODE = "telegram_unavailable";
 // The deep link's one-time code is valid 10 minutes (TelegramDeepLink in the contract).
 export const TELEGRAM_CODE_LIFETIME_MS = 10 * 60_000;
 // The bot's deep link, as the API answers it. Anything else is not opened.

@@ -17,8 +17,9 @@ type LoginPhoneStepProps = {
   phone: string;
   // True when the user came back from the code step with "Ganti nomor".
   focusOnMount: boolean;
-  // The number as typed; the code step shows it and sends it again.
-  onSent: (phone: string) => void;
+  // The number as typed (the code step shows it and sends it again), and the API's
+  // telegramAvailable: an environment setting, the same for every number.
+  onSent: (phone: string, telegramAvailable: boolean) => void;
 };
 
 // Step 1: ask for a login code. The API answers 202 whether or not the number is registered,
@@ -50,7 +51,8 @@ export function LoginPhoneStep({
     requestCode.mutate(
       { data: input },
       {
-        onSuccess: () => onSent(form.getValues("phone")),
+        onSuccess: (accepted) =>
+          onSent(form.getValues("phone"), accepted.telegramAvailable),
         onError: showApiError,
       },
     );
