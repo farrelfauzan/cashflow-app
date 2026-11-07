@@ -34,8 +34,23 @@ type MyTelegramLink = {
 // it): unlinking says so at once, and a missing bot hides the menu item.
 export function useMyTelegramLink(): MyTelegramLink {
   const queryClient = useQueryClient();
-  const link = useLinkMyTelegram();
-  const unlinkRequest = useUnlinkMyTelegram();
+  function refresh() {
+    return queryClient.invalidateQueries({
+      queryKey: getGetMyTelegramQueryKey(),
+    });
+  }
+  // The refreshes sit on the hooks, not on mutate(): TanStack runs these even after the dialog
+  // closes mid-request, so the menu item never keeps a stale "linked".
+  const link = useLinkMyTelegram({
+    mutation: {
+      onError: (error) => {
+        if (staffTelegramErrorView(error).kind === "hidden") void refresh();
+      },
+    },
+  });
+  const unlinkRequest = useUnlinkMyTelegram({
+    mutation: { onSettled: () => void refresh() },
+  });
   const [state, setState] = useState<TelegramLinkState>({ kind: "idle" });
   const [alert, setAlert] = useState<string | null>(null);
 
@@ -48,12 +63,6 @@ export function useMyTelegramLink(): MyTelegramLink {
     );
     return () => window.clearTimeout(timer);
   }, [expiresAt]);
-
-  function refresh() {
-    return queryClient.invalidateQueries({
-      queryKey: getGetMyTelegramQueryKey(),
-    });
-  }
 
   function ask() {
     if (state.kind === "asking" || unlinkRequest.isPending) return;
@@ -76,8 +85,7 @@ export function useMyTelegramLink(): MyTelegramLink {
       onError: (error) => {
         setState({ kind: "idle" });
         const view = staffTelegramErrorView(error);
-        if (view.kind === "hidden") void refresh();
-        else setAlert(view.message);
+        if (view.kind === "alert") setAlert(view.message);
       },
     });
   }
@@ -86,10 +94,7 @@ export function useMyTelegramLink(): MyTelegramLink {
     if (state.kind === "asking" || unlinkRequest.isPending) return;
     setAlert(null);
     unlinkRequest.mutate(undefined, {
-      onSuccess: () => {
-        setState({ kind: "idle" });
-        void refresh();
-      },
+      onSuccess: () => setState({ kind: "idle" }),
       onError: (error) => setAlert(toFormError(error, []).message),
     });
   }

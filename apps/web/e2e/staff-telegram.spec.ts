@@ -50,6 +50,10 @@ function member(testInfo: TestInfo): SeededStaff {
   return testInfo.project.name === "phone" ? LESTARI : SARI;
 }
 
+// Both tests link and unlink the same member, so they run one after the other in one worker
+// (fullyParallel would race them); a failure does not skip the next one.
+test.describe.configure({ mode: "default" });
+
 test.use({
   storageState: async ({}, provide, testInfo) => {
     await provide(member(testInfo).storageState);
@@ -58,16 +62,17 @@ test.use({
 
 // A Telegram chat id of the test's own (private chats are positive; the payment page spec's
 // start with 7).
-function chatId(testInfo: TestInfo): number {
-  return Number(`8${runId()}${projectDigit(testInfo)}${testInfo.retry}`);
+// test is the test's own digit, so two tests never share a chat.
+function chatId(testInfo: TestInfo, test: number): number {
+  return Number(`8${runId()}${projectDigit(testInfo)}${test}${testInfo.retry}`);
 }
 
 // The member presses Start in Telegram: the bot's webhook gets "/start <code>".
-async function pressStart(testInfo: TestInfo, deepLink: string) {
+async function pressStart(testInfo: TestInfo, deepLink: string, test = 1) {
   const code = new URL(deepLink).searchParams.get("start");
   if (code === null) throw new Error("the deep link has no start code");
   const telegram = await playwrightRequest.newContext({ baseURL: API });
-  const id = chatId(testInfo);
+  const id = chatId(testInfo, test);
   const answer = await telegram.post("/webhooks/telegram", {
     headers: { "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET },
     data: {
@@ -162,4 +167,64 @@ test("a member links Telegram from the menu, sees it linked, and unlinks it", as
   await expect(connect).toBeEnabled();
 
   expect(outside).toEqual([]);
+});
+
+test("closing the dialog while it unlinks still shows the member unlinked", async ({
+  page,
+}, testInfo) => {
+  const staff = member(testInfo);
+  // Linked through the API, as the first test does through the dialog.
+  await unlinkMember(testInfo);
+  const api = await staffApi(staff, testInfo);
+  const orgId = await orgIdByName(api, staff.organizations[0] ?? "");
+  const asked = await api.post("/api/me/telegram");
+  expect(asked.status()).toBe(201);
+  const { deepLink } = (await asked.json()) as TelegramDeepLink;
+  await api.dispose();
+  await pressStart(testInfo, deepLink, 2);
+
+  // The unlink answer is held until the dialog is closed.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/me/telegram", async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    await held;
+    await route.fallback();
+  });
+
+  await page.goto(`/o/${orgId}`);
+  const menu = await openMenu(page, testInfo);
+  const item = menu.getByRole("button", { name: "Telegram", exact: true });
+  await item.click();
+  const dialog = page.getByRole("dialog", { name: "Telegram" });
+  await expect(dialog).toContainText(LINKED_TEXT);
+  await dialog.getByRole("button", { name: "Putuskan Telegram" }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Memutuskan…" }),
+  ).toBeDisabled();
+  await dialog.getByRole("button", { name: "Tutup" }).click();
+  await expect(dialog).toBeHidden();
+
+  // The answer arrives after the dialog closed; the menu item still reads getMyTelegram again.
+  const unlinked = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      new URL(response.url()).pathname === "/api/me/telegram",
+  );
+  const reread = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname === "/api/me/telegram",
+  );
+  release();
+  expect((await unlinked).status()).toBe(204);
+  expect((await reread).status()).toBe(200);
+
+  await item.click();
+  await expect(dialog).toContainText(TEXT);
+  await expect(
+    dialog.getByRole("button", { name: "Hubungkan Telegram" }),
+  ).toBeEnabled();
 });
