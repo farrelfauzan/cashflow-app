@@ -97,6 +97,8 @@ export function PaymentFlow({
         onContinue={() => setMode(nextFromChoice(selected, view))}
         resuming={resuming}
         activePromise={active}
+        token={token}
+        onLinkGone={onLinkGone}
         onEditPromise={
           active !== null && promiseOffer !== null && !resuming
             ? () =>

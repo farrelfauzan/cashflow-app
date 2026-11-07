@@ -7,6 +7,7 @@ import { ActivePromiseCard } from "./active-promise-card";
 import { ChoiceRadioGroup } from "./choice-radio-group";
 import { PaymentPageHeader } from "./payment-page-header";
 import { PaymentSummaryCard } from "./payment-summary-card";
+import { TelegramCard } from "./telegram-card";
 import type {
   ActivePromiseView,
   ChoiceOptionView,
@@ -28,10 +29,14 @@ type PayChoiceViewProps = {
   activePromise: ActivePromiseView | null;
   // "Ubah janji" on the active promise; null when no promise can be made now.
   onEditPromise: (() => void) | null;
+  // For "Hubungkan Telegram": the link's token goes only into the generated request's path.
+  token: string;
+  onLinkGone: () => void;
 };
 
 // Bayar-Pilih (board "Bayar-Pilih"): what is owed, then "Mau bayar berapa?" with one primary that
-// follows the choice.
+// follows the choice. "Pengingat lewat Telegram" (no board) sits under the primary, so on a phone
+// the card never pushes "Lanjut bayar" below the fold.
 export function PayChoiceView({
   view,
   choices,
@@ -42,6 +47,8 @@ export function PayChoiceView({
   resuming,
   activePromise,
   onEditPromise,
+  token,
+  onLinkGone,
 }: PayChoiceViewProps) {
   return (
     <>
@@ -85,6 +92,13 @@ export function PayChoiceView({
           >
             {primaryLabel}
           </Button>
+          {view.telegram !== null && (
+            <TelegramCard
+              offer={view.telegram}
+              token={token}
+              onLinkGone={onLinkGone}
+            />
+          )}
         </>
       )}
     </>
