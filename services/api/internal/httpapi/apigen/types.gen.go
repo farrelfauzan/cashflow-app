@@ -1257,12 +1257,24 @@ type LeaseTerms struct {
 	StartDate openapi_types.Date `json:"startDate"`
 }
 
+// LoginCodeAccepted defines model for LoginCodeAccepted.
+type LoginCodeAccepted struct {
+	// Status Example: sent
+	Status string `json:"status"`
+
+	// TelegramAvailable True when this environment sends login codes to staff members' linked Telegram chats (a demo environment with a bot and TELEGRAM_MESSAGES=linked, decision 42), so the login screen says "Kode dikirim lewat Telegram atau WhatsApp" and offers "Kirim lewat WhatsApp". An environment setting: identical for every number, registered or not, linked or not, and with or without whatsappOnly. Always false in production.
+	TelegramAvailable bool `json:"telegramAvailable"`
+}
+
 // LoginCodeRequest defines model for LoginCodeRequest.
 type LoginCodeRequest struct {
 	// Phone Any common Indonesian format, for example 0812-3456-7890 or +62 812 3456 7890.
 	//
 	// Example: 0812-3456-7890
 	Phone string `json:"phone"`
+
+	// WhatsappOnly "Kirim lewat WhatsApp": send the code over WhatsApp even when the staff member linked Telegram. Counts against the same per-number limit.
+	WhatsappOnly *bool `json:"whatsappOnly,omitempty"`
 }
 
 // LoginCodeVerify defines model for LoginCodeVerify.
@@ -1451,6 +1463,15 @@ type MoveOut struct {
 	EndDate openapi_types.Date `json:"endDate"`
 }
 
+// MyTelegram The Telegram demo channel (decision 42) on the staff member's account: "Hubungkan Telegram", or "Terhubung" once linked.
+type MyTelegram struct {
+	// Available True when this environment has a Telegram bot and sends login codes to linked chats (the same as requestLoginCode's telegramAvailable), so the account offers linkMyTelegram.
+	Available bool `json:"available"`
+
+	// Linked True when the staff member has a live Telegram link. Always false when available is false.
+	Linked bool `json:"linked"`
+}
+
 // NextInvoice The next invoice generation will make for a lease, which bills every amount recorded before it is made: its period start (Tagihan November) and the Asia/Jakarta day it is made, 7 days before it is due, or today when that day is past.
 type NextInvoice struct {
 	IssuedOn openapi_types.Date `json:"issuedOn"`
@@ -1626,7 +1647,7 @@ type PaymentPageLine struct {
 
 // PaymentPageTelegram The Telegram demo channel (decision 42) on the payment page: "Hubungkan Telegram", or "Terhubung" once linked.
 type PaymentPageTelegram struct {
-	// Available True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram.
+	// Available True when this environment has a Telegram bot and sends tenants' messages to linked chats, so the page offers linkPaymentPageTelegram.
 	Available bool `json:"available"`
 
 	// Linked True when the tenant has a live Telegram link in this organization. Always false when available is false.
@@ -1853,12 +1874,6 @@ type SetRoles struct {
 type StaffRef struct {
 	MemberId openapi_types.UUID `json:"memberId"`
 	Name     string             `json:"name"`
-}
-
-// StatusResponse defines model for StatusResponse.
-type StatusResponse struct {
-	// Status Example: sent
-	Status string `json:"status"`
 }
 
 // TelegramDeepLink defines model for TelegramDeepLink.

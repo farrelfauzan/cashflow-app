@@ -20,11 +20,13 @@ func (s *Server) requestLoginCode(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	if err := s.Auth.RequestCode(r.Context(), body.Phone); err != nil {
+	opts := auth.CodeOptions{WhatsAppOnly: body.WhatsappOnly != nil && *body.WhatsappOnly}
+	if err := s.Auth.RequestCode(r.Context(), body.Phone, opts); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.writeJSON(w, http.StatusAccepted, apigen.StatusResponse{Status: "sent"})
+	// The body depends on the environment only, never on the number or the channel used.
+	s.writeJSON(w, http.StatusAccepted, apigen.LoginCodeAccepted{Status: "sent", TelegramAvailable: s.LoginCodesViaTelegram})
 }
 
 func (s *Server) verifyLoginCode(w http.ResponseWriter, r *http.Request) {

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
@@ -43,7 +44,7 @@ func TestScopesSeeOnlyWhatTheyShould(t *testing.T) {
 	env := testenv.New(t)
 	a := env.CreateOrg(t, "Kos Melati", "0812101")
 	b := env.CreateOrg(t, "Kontrakan Mawar", "0812202")
-	require.NoError(t, env.Auth.RequestCode(ctx, a.Admin.Phone)) // creates an OTP challenge
+	require.NoError(t, env.Auth.RequestCode(ctx, a.Admin.Phone, auth.CodeOptions{})) // creates an OTP challenge
 
 	count := func(t *testing.T, tx pgx.Tx, table string) int {
 		t.Helper()

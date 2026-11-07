@@ -23,11 +23,16 @@ paths:
     post:
       tags: [auth]
       operationId: requestLoginCode
-      summary: Send a login code over WhatsApp
+      summary: Send a login code over WhatsApp (or, in demo environments, the linked Telegram)
       description: >
-        Always answers 202 for a well-formed number, whether or not a code was sent, so the
-        response does not reveal which numbers are registered. Limited to 3 requests per number
-        per 15 minutes.
+        Always answers 202 with the same body for a well-formed number, whether or not a code was
+        sent and whichever channel carried it, so the response does not reveal which numbers are
+        registered or which staff members linked Telegram. In demo environments (decision 42:
+        development and staging, when telegramAvailable is true) the code goes to the staff
+        member's linked Telegram chat (linkMyTelegram) unless whatsappOnly is true; otherwise, and
+        everywhere else, it goes over WhatsApp. Limited to 3 requests per number per 15 minutes,
+        with or without whatsappOnly (they share one limit): the fourth answers 429 rate_limited
+        in the usual error shape.
       requestBody:
         required: true
         content:
@@ -35,10 +40,10 @@ paths:
             schema: { $ref: "#/components/schemas/LoginCodeRequest" }
       responses:
         "202":
-          description: Accepted
+          description: Accepted. The body depends on the environment only, never on the number.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/StatusResponse" }
+              schema: { $ref: "#/components/schemas/LoginCodeAccepted" }
         "400": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
 
@@ -83,6 +88,67 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MeResponse" }
         "401": { $ref: "#/components/responses/Error" }
+
+  /me/telegram:
+    get:
+      tags: [auth]
+      operationId: getMyTelegram
+      summary: Whether the signed-in staff member's Telegram is linked (demo environments only)
+      description: >
+        Telegram is a demo channel (decision 42): development and staging, with test accounts. The
+        "Hubungkan Telegram" card on the staff member's account. Always 200: when the environment
+        has no Telegram bot (production), or does not send to linked chats (TELEGRAM_MESSAGES off),
+        it answers {available: false, linked: false}, never 404, so the card hides itself. linked turns false after unlinkMyTelegram, after /stop in the
+        linked chat, and after Telegram reports the chat unreachable. No RBAC action: this is the
+        user's own account, not organization data; the session is the access.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyTelegram" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      operationId: linkMyTelegram
+      summary: A one-time deep link to the Telegram bot, to get login codes there ("Hubungkan Telegram")
+      description: >
+        Answers the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness;
+        it works once and for 10 minutes, and asking again makes another without cancelling the
+        first. Opening the link and pressing Start in Telegram links that chat to the signed-in
+        staff member (getMyTelegram then shows linked); a new link replaces the older one and the
+        older chat is told, and /stop in the chat unlinks it. Login codes then go to that chat when
+        requestLoginCode's telegramAvailable is true. 404 telegram_unavailable when the
+        environment has no bot or does not send to linked chats (getMyTelegram's available is false
+        then). Limited to 5 per staff member per 15 minutes (429 rate_limited).
+        The response carries Cache-Control: no-store. The deep link holds the code: open it, never
+        log it or send it anywhere else. No RBAC action: the user's own account.
+      responses:
+        "201":
+          description: The deep link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TelegramDeepLink" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No bot in this environment, or it does not send to linked chats (code telegram_unavailable)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [auth]
+      operationId: unlinkMyTelegram
+      summary: Stop sending the signed-in staff member's login codes to Telegram
+      description: >
+        Ends the staff member's live Telegram link, so login codes go over WhatsApp again. 204
+        also when nothing was linked or the environment has no bot. No RBAC action: the user's own
+        account.
+      responses:
+        "204": { description: Unlinked }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
 
   /orgs/{orgId}/me:
     parameters:
@@ -1915,7 +1981,8 @@ paths:
         again makes another without cancelling the first. Opening the link and pressing Start in
         Telegram links that chat to the tenant (getPaymentPage then shows telegram.linked); a new
         link replaces the tenant's older one, and /stop in the chat unlinks it. 404
-        telegram_unavailable when the environment has no bot, so the page hides the button
+        telegram_unavailable when the environment has no bot or does not send to linked chats
+        (TELEGRAM_MESSAGES off), so the page hides the button
         (getPaymentPage's telegram.available is false then). Limited per token and per client
         address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control:
         no-store and Referrer-Policy: no-referrer. The deep link holds the code: open it, never
@@ -1928,7 +1995,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TelegramDeepLink" }
         "404":
-          description: "No working link with this token (code payment_link_not_found), or no bot in this environment (code telegram_unavailable)"
+          description: "No working link with this token (code payment_link_not_found), or no bot in this environment or it does not send to linked chats (code telegram_unavailable)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2029,6 +2096,26 @@ components:
           type: string
           description: Any common Indonesian format, for example 0812-3456-7890 or +62 812 3456 7890.
           example: 0812-3456-7890
+        whatsappOnly:
+          type: boolean
+          default: false
+          description: >
+            "Kirim lewat WhatsApp": send the code over WhatsApp even when the staff member linked
+            Telegram. Counts against the same per-number limit.
+
+    LoginCodeAccepted:
+      type: object
+      required: [status, telegramAvailable]
+      properties:
+        status: { type: string, example: sent }
+        telegramAvailable:
+          type: boolean
+          description: >
+            True when this environment sends login codes to staff members' linked Telegram chats
+            (a demo environment with a bot and TELEGRAM_MESSAGES=linked, decision 42), so the login
+            screen says "Kode dikirim lewat Telegram atau WhatsApp" and offers "Kirim lewat
+            WhatsApp". An environment setting: identical for every number, registered or not,
+            linked or not, and with or without whatsappOnly. Always false in production.
 
     LoginCodeVerify:
       type: object
@@ -3445,10 +3532,24 @@ components:
       properties:
         available:
           type: boolean
-          description: True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram.
+          description: True when this environment has a Telegram bot and sends tenants' messages to linked chats, so the page offers linkPaymentPageTelegram.
         linked:
           type: boolean
           description: True when the tenant has a live Telegram link in this organization. Always false when available is false.
+
+    MyTelegram:
+      type: object
+      required: [available, linked]
+      description: >
+        The Telegram demo channel (decision 42) on the staff member's account: "Hubungkan
+        Telegram", or "Terhubung" once linked.
+      properties:
+        available:
+          type: boolean
+          description: True when this environment has a Telegram bot and sends login codes to linked chats (the same as requestLoginCode's telegramAvailable), so the account offers linkMyTelegram.
+        linked:
+          type: boolean
+          description: True when the staff member has a live Telegram link. Always false when available is false.
 
     TelegramDeepLink:
       type: object

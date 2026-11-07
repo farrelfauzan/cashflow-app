@@ -24,11 +24,14 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Error,
   ErrorResponse,
+  LoginCodeAccepted,
   LoginCodeRequest,
   LoginCodeVerify,
   MeResponse,
-  StatusResponse
+  MyTelegram,
+  TelegramDeepLink
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -56,8 +59,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Always answers 202 for a well-formed number, whether or not a code was sent, so the response does not reveal which numbers are registered. Limited to 3 requests per number per 15 minutes.
- * @summary Send a login code over WhatsApp
+ * Always answers 202 with the same body for a well-formed number, whether or not a code was sent and whichever channel carried it, so the response does not reveal which numbers are registered or which staff members linked Telegram. In demo environments (decision 42: development and staging, when telegramAvailable is true) the code goes to the staff member's linked Telegram chat (linkMyTelegram) unless whatsappOnly is true; otherwise, and everywhere else, it goes over WhatsApp. Limited to 3 requests per number per 15 minutes, with or without whatsappOnly (they share one limit): the fourth answers 429 rate_limited in the usual error shape.
+ * @summary Send a login code over WhatsApp (or, in demo environments, the linked Telegram)
  */
 export const requestLoginCode = (
     loginCodeRequest: BodyType<LoginCodeRequest>,
@@ -65,7 +68,7 @@ export const requestLoginCode = (
 ) => {
 
 
-      return apiRequest<StatusResponse>(
+      return apiRequest<LoginCodeAccepted>(
       {url: `/auth/otp/request`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: loginCodeRequest, signal
@@ -111,7 +114,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RequestLoginCodeMutationVariables = {data: BodyType<LoginCodeRequest>}
 
     /**
- * @summary Send a login code over WhatsApp
+ * @summary Send a login code over WhatsApp (or, in demo environments, the linked Telegram)
  */
 export const useRequestLoginCode = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,RequestLoginCodeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
@@ -345,3 +348,225 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
 
 
 
+/**
+ * Telegram is a demo channel (decision 42): development and staging, with test accounts. The "Hubungkan Telegram" card on the staff member's account. Always 200: when the environment has no Telegram bot (production), or does not send to linked chats (TELEGRAM_MESSAGES off), it answers {available: false, linked: false}, never 404, so the card hides itself. linked turns false after unlinkMyTelegram, after /stop in the linked chat, and after Telegram reports the chat unreachable. No RBAC action: this is the user's own account, not organization data; the session is the access.
+ * @summary Whether the signed-in staff member's Telegram is linked (demo environments only)
+ */
+export const getMyTelegram = (
+
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<MyTelegram>(
+      {url: `/me/telegram`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetMyTelegramQueryKey = () =>
+    apiQueryKey({  }, { url: `/me/telegram` });
+
+
+export const useGetMyTelegramQueryOptions = <TData = Awaited<ReturnType<typeof getMyTelegram>>, TError = ErrorType<ErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTelegram>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({  }, { url: `/me/telegram`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyTelegram>>> = ({ signal }) => getMyTelegram(requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyTelegram>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyTelegramQueryResult = NonNullable<Awaited<ReturnType<typeof getMyTelegram>>>
+export type GetMyTelegramQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetMyTelegram<TData = Awaited<ReturnType<typeof getMyTelegram>>, TError = ErrorType<ErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTelegram>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyTelegram>>,
+          TError,
+          Awaited<ReturnType<typeof getMyTelegram>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyTelegram<TData = Awaited<ReturnType<typeof getMyTelegram>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTelegram>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyTelegram>>,
+          TError,
+          Awaited<ReturnType<typeof getMyTelegram>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyTelegram<TData = Awaited<ReturnType<typeof getMyTelegram>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTelegram>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Whether the signed-in staff member's Telegram is linked (demo environments only)
+ */
+
+export function useGetMyTelegram<TData = Awaited<ReturnType<typeof getMyTelegram>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTelegram>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetMyTelegramQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Answers the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness; it works once and for 10 minutes, and asking again makes another without cancelling the first. Opening the link and pressing Start in Telegram links that chat to the signed-in staff member (getMyTelegram then shows linked); a new link replaces the older one and the older chat is told, and /stop in the chat unlinks it. Login codes then go to that chat when requestLoginCode's telegramAvailable is true. 404 telegram_unavailable when the environment has no bot or does not send to linked chats (getMyTelegram's available is false then). Limited to 5 per staff member per 15 minutes (429 rate_limited). The response carries Cache-Control: no-store. The deep link holds the code: open it, never log it or send it anywhere else. No RBAC action: the user's own account.
+ * @summary A one-time deep link to the Telegram bot, to get login codes there ("Hubungkan Telegram")
+ */
+export const linkMyTelegram = (
+
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<TelegramDeepLink>(
+      {url: `/me/telegram`, method: 'POST', signal
+    },
+      options);
+    }
+
+
+
+
+export const getLinkMyTelegramMutationKey = () => ['linkMyTelegram'] as const;
+
+export const getLinkMyTelegramMutationOptions = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkMyTelegram>>, TError,void, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof linkMyTelegram>>, TError,void, TContext> => {
+
+const mutationKey = getLinkMyTelegramMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkMyTelegram>>, void> = () => {
+
+
+          return  linkMyTelegram(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LinkMyTelegramMutationResult = NonNullable<Awaited<ReturnType<typeof linkMyTelegram>>>
+
+    export type LinkMyTelegramMutationError = ErrorType<ErrorResponse | Error>
+
+
+    /**
+ * @summary A one-time deep link to the Telegram bot, to get login codes there ("Hubungkan Telegram")
+ */
+export const useLinkMyTelegram = <TError = ErrorType<ErrorResponse | Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkMyTelegram>>, TError,void, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof linkMyTelegram>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLinkMyTelegramMutationOptions(options), queryClient);
+    }
+    /**
+ * Ends the staff member's live Telegram link, so login codes go over WhatsApp again. 204 also when nothing was linked or the environment has no bot. No RBAC action: the user's own account.
+ * @summary Stop sending the signed-in staff member's login codes to Telegram
+ */
+export const unlinkMyTelegram = (
+
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<void>(
+      {url: `/me/telegram`, method: 'DELETE', signal
+    },
+      options);
+    }
+
+
+
+
+export const getUnlinkMyTelegramMutationKey = () => ['unlinkMyTelegram'] as const;
+
+export const getUnlinkMyTelegramMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkMyTelegram>>, TError,void, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlinkMyTelegram>>, TError,void, TContext> => {
+
+const mutationKey = getUnlinkMyTelegramMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkMyTelegram>>, void> = () => {
+
+
+          return  unlinkMyTelegram(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlinkMyTelegramMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkMyTelegram>>>
+
+    export type UnlinkMyTelegramMutationError = ErrorType<ErrorResponse>
+
+
+    /**
+ * @summary Stop sending the signed-in staff member's login codes to Telegram
+ */
+export const useUnlinkMyTelegram = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkMyTelegram>>, TError,void, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof unlinkMyTelegram>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getUnlinkMyTelegramMutationOptions(options), queryClient);
+    }

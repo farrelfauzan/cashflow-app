@@ -49,9 +49,10 @@ func New(w config.WhatsApp, log *slog.Logger) (messaging.Provider, error) {
 
 // WithTelegram returns whatsapp unchanged when t does not send to linked chats
 // (TELEGRAM_MESSAGES=off, the default), and otherwise the router in front of it: a tenant's
-// message goes to their linked Telegram chat, everything else to whatsapp (decision 42). config
-// has already checked t, and refused it in production.
-func WithTelegram(whatsapp messaging.Provider, t config.Telegram, links router.Links, log *slog.Logger) (messaging.Provider, error) {
+// message goes to their linked Telegram chat, a staff user's (login codes) to theirs when staff is
+// not nil, everything else to whatsapp (decision 42). config has already checked t, and refused it
+// in production. Pass a nil staff as an untyped nil, never as a nil pointer.
+func WithTelegram(whatsapp messaging.Provider, t config.Telegram, links router.Links, staff router.StaffLinks, log *slog.Logger) (messaging.Provider, error) {
 	if !t.SendsToLinked() {
 		return whatsapp, nil
 	}
@@ -59,6 +60,7 @@ func WithTelegram(whatsapp messaging.Provider, t config.Telegram, links router.L
 	if err != nil {
 		return nil, err
 	}
-	log.Info("tenants' messages go to their linked Telegram chats (demo channel, decision 42)")
-	return router.New(whatsapp, bot, links, log), nil
+	log.Info("linked tenants' and staff users' messages go to their Telegram chats (demo channel, decision 42)",
+		"staff", staff != nil)
+	return router.New(whatsapp, bot, links, staff, log), nil
 }

@@ -71,6 +71,17 @@ type Deps struct {
 	// TelegramWebhookSecret is TELEGRAM_WEBHOOK_SECRET, which Telegram sends back in the
 	// X-Telegram-Bot-Api-Secret-Token header. A secret: never log it.
 	TelegramWebhookSecret string
+	// TelegramStaff reads, makes and ends the signed-in staff member's Telegram link
+	// (/api/me/telegram, decision 42). Nil in tests that do not need it: /api/me/telegram then
+	// says Telegram is unavailable.
+	TelegramStaff *auth.TelegramStaff
+	// TelegramBotUsername is the bot's username (TELEGRAM_BOT_USERNAME) when this environment has
+	// a bot, and empty otherwise: then /api/me/telegram says Telegram is unavailable.
+	TelegramBotUsername string
+	// LoginCodesViaTelegram is true when login codes go to staff members' linked Telegram chats
+	// (a bot and TELEGRAM_MESSAGES=linked). It is requestLoginCode's telegramAvailable: an
+	// environment setting, the same for every request.
+	LoginCodesViaTelegram bool
 	// PublicLimiter rate-limits the public payment page per token and per client address.
 	PublicLimiter ratelimit.Limiter
 	// CookieSecure marks the session cookie Secure. Only local development turns it off.
@@ -134,6 +145,9 @@ func New(d Deps) *Server {
 			r.Use(s.requireSession)
 			r.Post("/auth/logout", s.logout)
 			r.Get("/me", s.getMe)
+			r.Get("/me/telegram", s.getMyTelegram)
+			r.Post("/me/telegram", s.linkMyTelegram)
+			r.Delete("/me/telegram", s.unlinkMyTelegram)
 
 			r.Route("/orgs/{orgID}", func(r chi.Router) {
 				r.Use(s.requireMember)
