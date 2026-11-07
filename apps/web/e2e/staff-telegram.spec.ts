@@ -22,11 +22,12 @@ import { openMenu } from "./support/shell";
 import { LESTARI, SARI, type SeededStaff } from "./support/staff";
 
 // A staff member's "Telegram" in the side menu (decision 42: a demo channel, development and
-// staging). The e2e API runs with a fake bot (TELEGRAM_* in web.yml): the deep link is made
-// without calling Telegram, and "Start" is the bot's webhook update, posted here with the
-// webhook secret as Telegram would. The bot's reply goes nowhere. Login codes still go to the
-// devlog: the e2e API leaves TELEGRAM_MESSAGES off, so linking here changes no other spec.
-// Each project links its own member (SARI on iPad, LESTARI on the phone), so the two never race.
+// staging). The e2e API runs with a fake bot and TELEGRAM_MESSAGES=linked (web.yml): the deep
+// link is made without calling Telegram, and "Start" is the bot's webhook update, posted here
+// with the webhook secret as Telegram would. The bot's reply goes nowhere. Each project links its
+// own member (SARI on iPad, LESTARI on the phone), so the two never race. A linked member's login
+// codes would go to the fake bot, so the member is unlinked before and after the test, even when
+// it fails: the setup project signs them in at the start of every run.
 
 const API = process.env.API_DEV_ORIGIN ?? "http://127.0.0.1:8080";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
@@ -83,15 +84,25 @@ async function pressStart(testInfo: TestInfo, deepLink: string) {
   await telegram.dispose();
 }
 
+async function unlinkMember(testInfo: TestInfo): Promise<void> {
+  const api = await staffApi(member(testInfo), testInfo);
+  const answer = await api.delete("/api/me/telegram");
+  expect(answer.status()).toBe(204);
+  await api.dispose();
+}
+
+test.afterEach(async ({}, testInfo) => {
+  await unlinkMember(testInfo);
+});
+
 test("a member links Telegram from the menu, sees it linked, and unlinks it", async ({
   page,
 }, testInfo) => {
   const staff = member(testInfo);
   // Unlinked to start with, whatever an earlier run left.
+  await unlinkMember(testInfo);
   const api = await staffApi(staff, testInfo);
   const orgId = await orgIdByName(api, staff.organizations[0] ?? "");
-  const reset = await api.delete("/api/me/telegram");
-  expect(reset.status()).toBe(204);
   await api.dispose();
 
   const outside = trackOutsideRequests(page);

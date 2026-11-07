@@ -10,7 +10,10 @@ import {
   devlogOffset,
   waitForLoginCode,
 } from "./support/devlog";
-import { LOGIN_TELEGRAM_PHONES } from "./support/login-telegram";
+import {
+  LOGIN_PRODUCTION_PHONES,
+  LOGIN_TELEGRAM_PHONES,
+} from "./support/login-telegram";
 import {
   attachViewportScreenshot,
   trackOutsideRequests,
@@ -19,21 +22,24 @@ import type { SeededMember } from "./support/staff";
 import { HOME_HEADING, ORG_HOME_URL } from "./support/shell";
 
 // The login code step in a demo environment that can send login codes over Telegram (decision
-// 42). Codes are read from the API's DEVLOG_FILE: the e2e API has a bot but not
-// TELEGRAM_MESSAGES=linked, and these members linked no chat, so every code goes to the devlog.
-// login.spec.ts covers the screen as production shows it (telegramAvailable false).
+// 42): the e2e API has a fake bot with TELEGRAM_MESSAGES=linked (web.yml). Codes are read from the
+// API's DEVLOG_FILE: these members linked no chat, so every code goes there. The last test shows
+// the screen as production does (no bot), by changing only that one field of the real answer.
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const REQUEST_PATH = "/api/auth/otp/request";
 const MIN_TOUCH_TARGET_PX = 44;
 
-function memberFor(testInfo: TestInfo): SeededMember {
+function memberFor(
+  testInfo: TestInfo,
+  phones: Record<"ipad" | "phone", SeededMember> = LOGIN_TELEGRAM_PHONES,
+): SeededMember {
   const name = testInfo.project.name;
   if (name !== "ipad" && name !== "phone") {
     throw new Error(`No login phone for project ${name}`);
   }
-  return LOGIN_TELEGRAM_PHONES[name];
+  return phones[name];
 }
 
 function telegramText(phone: string): string {
@@ -64,28 +70,22 @@ test("offers Kirim lewat WhatsApp when Telegram is available, then signs in", as
   const staff = memberFor(testInfo);
   const outsideRequests = trackOutsideRequests(page);
   const sent: LoginCodeRequest[] = [];
-  // The type of each real answer's telegramAvailable, checked in the test body.
-  const answeredTypes: string[] = [];
+  // Each real answer's telegramAvailable, checked in the test body.
+  const answered: boolean[] = [];
   // Holds the next answer back until released, so the pending state can be checked.
   let holdNext: Promise<void> | undefined;
 
-  // The e2e API lacks a demo environment's Telegram setting, so this emulates it for the
-  // browser only: every code request still reaches the real API, and its real answer comes
-  // back with telegramAvailable set to true. Nothing else in the answer changes.
+  // Every code request reaches the real API and its real answer comes back unchanged; the
+  // route only records the requests and can hold an answer back.
   await page.route(`**${REQUEST_PATH}`, async (route) => {
     sent.push(route.request().postDataJSON() as LoginCodeRequest);
     const response = await route.fetch();
     if (holdNext !== undefined) await holdNext;
-    if (response.status() !== 202) {
-      await route.fulfill({ response });
-      return;
+    if (response.status() === 202) {
+      const accepted = (await response.json()) as LoginCodeAccepted;
+      answered.push(accepted.telegramAvailable);
     }
-    const accepted = (await response.json()) as LoginCodeAccepted;
-    answeredTypes.push(typeof accepted.telegramAvailable);
-    await route.fulfill({
-      response,
-      json: { ...accepted, telegramAvailable: true },
-    });
+    await route.fulfill({ response });
   });
 
   await page.goto("/login");
@@ -103,8 +103,7 @@ test("offers Kirim lewat WhatsApp when Telegram is available, then signs in", as
   await expectTouchTargets(page);
   await attachViewportScreenshot(page, testInfo, "login-code-telegram");
   expect(sent).toEqual([{ phone: staff.phone }]);
-  // The real API already sends the field (TG-4); only its value is replaced.
-  expect(answeredTypes).toEqual(["boolean"]);
+  expect(answered).toEqual([true]);
 
   // While the WhatsApp request is pending both buttons are disabled.
   let release: () => void = () => {};
@@ -127,7 +126,8 @@ test("offers Kirim lewat WhatsApp when Telegram is available, then signs in", as
     { phone: staff.phone },
     { phone: staff.phone, whatsappOnly: true },
   ]);
-  expect(answeredTypes).toEqual(["boolean", "boolean"]);
+  // The setting is the environment's: the same with whatsappOnly.
+  expect(answered).toEqual([true, true]);
   // That code went over WhatsApp only, so the screen says so.
   await expect(page.getByText(whatsappText(staff.phone))).toBeVisible();
   const codeField = page.getByLabel("Kode dari WhatsApp");
@@ -144,4 +144,37 @@ test("offers Kirim lewat WhatsApp when Telegram is available, then signs in", as
     page.getByRole("heading", { level: 1, name: HOME_HEADING }),
   ).toBeVisible();
   expect(outsideRequests).toEqual([]);
+});
+
+test("shows the screen as before where login codes cannot go over Telegram", async ({
+  page,
+}, testInfo) => {
+  const staff = memberFor(testInfo, LOGIN_PRODUCTION_PHONES);
+  // Production has no bot, so it answers telegramAvailable false. This emulates that for the
+  // browser only: the request reaches the real API, and only that one field of its real answer
+  // changes.
+  await page.route(`**${REQUEST_PATH}`, async (route) => {
+    const response = await route.fetch();
+    if (response.status() !== 202) {
+      await route.fulfill({ response });
+      return;
+    }
+    const accepted = (await response.json()) as LoginCodeAccepted;
+    await route.fulfill({
+      response,
+      json: { ...accepted, telegramAvailable: false },
+    });
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("Nomor WhatsApp").fill(staff.phone);
+  await button(page, "Kirim kode").click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Masukkan kode" }),
+  ).toBeVisible();
+  await expect(page.getByText(whatsappText(staff.phone))).toBeVisible();
+  await expect(page.getByLabel("Kode dari WhatsApp")).toBeFocused();
+  await expect(button(page, "Kirim ulang kode")).toBeVisible();
+  await expect(button(page, "Kirim lewat WhatsApp")).toHaveCount(0);
+  await expect(page.getByText("Telegram")).toHaveCount(0);
 });

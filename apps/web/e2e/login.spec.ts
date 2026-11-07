@@ -16,6 +16,10 @@ import { LOGIN_PHONES, type LoginPhones } from "./support/staff";
 
 // The staff login screen against the real Go API: codes are read from the API's DEVLOG_FILE,
 // nothing is sent to WhatsApp. Every test starts signed out and uses its own phone numbers.
+// The e2e API is a demo environment (a fake Telegram bot with TELEGRAM_MESSAGES=linked, web.yml),
+// so the code step names Telegram or WhatsApp; none of these members linked a chat, so every
+// code goes to the devlog. login-telegram.spec.ts covers "Kirim lewat WhatsApp" and the screen
+// as production shows it.
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -35,7 +39,7 @@ function phonesFor(testInfo: TestInfo): LoginPhones {
 }
 
 function codeSentText(phone: string): string {
-  return `Jika nomor ${phone} terdaftar, kode 6 angka sudah dikirim ke WhatsApp-nya.`;
+  return `Jika nomor ${phone} terdaftar, kode 6 angka sudah dikirim lewat Telegram atau WhatsApp.`;
 }
 
 function phoneField(page: Page) {
@@ -43,7 +47,7 @@ function phoneField(page: Page) {
 }
 
 function codeField(page: Page) {
-  return page.getByLabel("Kode dari WhatsApp");
+  return page.getByLabel("Kode masuk");
 }
 
 // Our own alerts only (Next.js has a route announcer with role="alert" outside <main>).
