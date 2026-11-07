@@ -4,21 +4,39 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise/promisetask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 )
 
-// demoCommands are the commands that fill a database with demo data and so run only in
-// development.
-var demoCommands = []string{"seed-demo", "generate-invoices"}
+// demoCommands are the commands that fill a database with demo data or run as if it were
+// another day, and so run only in development, each with valid arguments.
+var demoCommands = [][]string{
+	{"seed-demo"},
+	{"generate-invoices"},
+	{"run-day", "-day", "2026-11-10"},
+	{"run-day", "-day", "2026-11-10", "-org", "6f1c2a3e-0000-4000-8000-000000000001"},
+}
 
-// TestDemoCommandsRefuseOutsideDevelopment checks that seed-demo and generate-invoices stop
-// before they connect to any database unless APP_ENV is explicitly development.
+// TestDemoCommandsRefuseOutsideDevelopment checks that seed-demo, generate-invoices and run-day
+// stop before they connect to any database unless APP_ENV is explicitly development.
 func TestDemoCommandsRefuseOutsideDevelopment(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -32,7 +50,8 @@ func TestDemoCommandsRefuseOutsideDevelopment(t *testing.T) {
 		{name: "production", vars: map[string]string{"APP_ENV": "production"}, wantMsg: `APP_ENV is "production"`},
 		{name: "not exactly development", vars: map[string]string{"APP_ENV": "Development"}, wantMsg: `APP_ENV is "Development"`},
 	}
-	for _, command := range demoCommands {
+	for _, args := range demoCommands {
+		command := strings.Join(args, " ")
 		for _, tc := range tests {
 			t.Run(command+": "+tc.name, func(t *testing.T) {
 				t.Parallel()
@@ -50,7 +69,7 @@ func TestDemoCommandsRefuseOutsideDevelopment(t *testing.T) {
 					stdout: &out,
 					stderr: &out,
 				}
-				err := run(context.Background(), []string{command}, e)
+				err := run(context.Background(), args, e)
 				require.ErrorIs(t, err, errNotDevelopment)
 				require.ErrorContains(t, err, tc.wantMsg)
 				require.False(t, connected, command+" opened the database outside development")
@@ -62,8 +81,8 @@ func TestDemoCommandsRefuseOutsideDevelopment(t *testing.T) {
 
 func TestDemoCommandsInDevelopmentConnect(t *testing.T) {
 	t.Parallel()
-	for _, command := range demoCommands {
-		t.Run(command, func(t *testing.T) {
+	for _, args := range demoCommands {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			t.Parallel()
 			connectErr := errors.New("no database in unit tests")
 			connected := false
@@ -78,8 +97,9 @@ func TestDemoCommandsInDevelopmentConnect(t *testing.T) {
 					connected = true
 					return conn{}, connectErr
 				},
+				stderr: io.Discard,
 			}
-			err := run(context.Background(), []string{command}, e)
+			err := run(context.Background(), args, e)
 			require.ErrorIs(t, err, connectErr)
 			require.True(t, connected)
 		})
@@ -365,6 +385,223 @@ func TestSetBrokenPromiseThresholdConnectsWithAValidRequest(t *testing.T) {
 			}, e)
 			require.ErrorIs(t, err, connectErr)
 			require.True(t, connected)
+		})
+	}
+}
+
+// TestRunDayRefusesBadFlagsBeforeConnecting: in development, a missing or malformed -day, a bad
+// -org and a stray argument all fail before the database is opened.
+func TestRunDayRefusesBadFlagsBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "no flags", args: nil, wantErr: "run-day needs -day YYYY-MM-DD"},
+		{name: "only -org", args: []string{"-org", "6f1c2a3e-0000-4000-8000-000000000001"}, wantErr: "needs -day"},
+		{name: "an empty -day", args: []string{"-day", ""}, wantErr: "needs -day"},
+		{name: "a day first format", args: []string{"-day", "10-11-2026"}, wantErr: "-day must be a date as YYYY-MM-DD"},
+		{name: "a day that does not exist", args: []string{"-day", "2026-02-30"}, wantErr: "-day must be a date"},
+		{name: "a month that does not exist", args: []string{"-day", "2026-13-01"}, wantErr: "-day must be a date"},
+		{name: "a date with a time", args: []string{"-day", "2026-11-10T08:00"}, wantErr: "-day must be a date"},
+		{name: "-org is not a uuid", args: []string{"-day", "2026-11-10", "-org", "suhwendi"}, wantErr: "-org must be an organization id"},
+		{name: "-org is the nil uuid", args: []string{"-day", "2026-11-10", "-org", "00000000-0000-0000-0000-000000000000"}, wantErr: "-org must be an organization id"},
+		{name: "a stray argument", args: []string{"-day", "2026-11-10", "today"}, wantErr: "takes no arguments"},
+		{name: "an unknown flag", args: []string{"-day", "2026-11-10", "-force"}, wantErr: "flag provided but not defined: -force"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			e := env{
+				lookup: func(k string) (string, bool) { return "development", k == "APP_ENV" },
+				connect: func(context.Context, io.Writer) (conn, error) {
+					t.Fatal("must not connect")
+					return conn{}, nil
+				},
+				stdout: &out,
+				stderr: io.Discard,
+			}
+			err := run(context.Background(), append([]string{"run-day"}, tc.args...), e)
+			require.ErrorContains(t, err, tc.wantErr)
+			require.Empty(t, out.String())
+		})
+	}
+}
+
+func TestParseRunDayReadsAJakartaDay(t *testing.T) {
+	t.Parallel()
+	req, err := parseRunDay([]string{"-day", "2026-11-10"}, io.Discard)
+	require.NoError(t, err)
+	require.True(t, time.Date(2026, 11, 10, 0, 0, 0, 0, clock.Jakarta).Equal(req.day), "got %s", req.day)
+	require.Equal(t, uuid.Nil, req.org, "no -org means every active organization")
+
+	d := dayRunner{sys: clock.NewFake(time.Date(2026, 11, 7, 14, 0, 0, 0, clock.Jakarta)), day: req.day}
+	require.True(t, time.Date(2026, 11, 10, 8, 0, 0, 0, clock.Jakarta).Equal(d.at(remindersAt).Now()))
+}
+
+// TestRunDayWarnsAboutAFutureDay: a day after today (by the real clock, in Asia/Jakarta) prints a
+// warning to stderr before it connects; today and earlier days do not.
+func TestRunDayWarnsAboutAFutureDay(t *testing.T) {
+	t.Parallel()
+	// 23:30 on 7 November in Jakarta is still 7 November there, though 16:30 UTC.
+	now := time.Date(2026, 11, 7, 23, 30, 0, 0, clock.Jakarta)
+	tests := []struct {
+		name string
+		day  string
+		warn bool
+	}{
+		{name: "tomorrow", day: "2026-11-08", warn: true},
+		{name: "today", day: "2026-11-07", warn: false},
+		{name: "a past day", day: "2026-10-01", warn: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			connectErr := errors.New("no database in unit tests")
+			var errOut bytes.Buffer
+			e := env{
+				lookup:  func(k string) (string, bool) { return "development", k == "APP_ENV" },
+				connect: func(context.Context, io.Writer) (conn, error) { return conn{}, connectErr },
+				clock:   clock.NewFake(now),
+				stderr:  &errOut,
+			}
+			err := run(context.Background(), []string{"run-day", "-day", tc.day}, e)
+			require.ErrorIs(t, err, connectErr)
+			if tc.warn {
+				require.Contains(t, errOut.String(), "records are dated in the future; the real daily runs will treat them as done")
+			} else {
+				require.Empty(t, errOut.String())
+			}
+		})
+	}
+}
+
+// TestRunDayTimesMatchTheWorkerSchedule keeps run-day's times of day in step with the worker's
+// cron entries.
+func TestRunDayTimesMatchTheWorkerSchedule(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		cron string
+		at   time.Duration
+	}{
+		{name: "promises:daily", cron: promisetask.DailyCron, at: promisesAt},
+		{name: "invoices:daily", cron: invoicetask.DailyCron, at: invoicesAt},
+		{name: "reminders:daily", cron: remindertask.DailyCron, at: remindersAt},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			want := fmt.Sprintf("%d %d * * *", int(tc.at.Minutes())%60, int(tc.at.Hours()))
+			require.Equal(t, want, tc.cron)
+		})
+	}
+}
+
+func TestDaySummaryLine(t *testing.T) {
+	t.Parallel()
+	day := time.Date(2026, 11, 10, 0, 0, 0, 0, clock.Jakarta)
+	tests := []struct {
+		name string
+		sum  daySummary
+		want string
+	}{
+		{
+			name: "a quiet day",
+			want: "Suhwendi Corp 2026-11-10: 0 promises closed (0 kept, 0 partly kept, 0 broken), 0 invoices created, 0 reminders recorded (0 visit tasks), 0 sent",
+		},
+		{
+			name: "one of each",
+			sum: daySummary{
+				promises:  promise.CloseResult{Due: 1, Broken: 1},
+				invoices:  billing.Result{Leases: 1, Invoices: 1},
+				reminders: reminder.Result{Tenants: 1, Reminders: 1, VisitTasks: 1},
+				sent:      1,
+			},
+			want: "Suhwendi Corp 2026-11-10: 1 promise closed (0 kept, 0 partly kept, 1 broken), 1 invoice created, 1 reminder recorded (1 visit task), 1 sent",
+		},
+		{
+			name: "a busy day",
+			sum: daySummary{
+				promises:  promise.CloseResult{Due: 2, Kept: 1, Broken: 1, VisitTasks: 1},
+				invoices:  billing.Result{Leases: 9, Invoices: 3},
+				reminders: reminder.Result{Tenants: 5, Reminders: 4, VisitTasks: 1},
+				sent:      4,
+			},
+			want: "Suhwendi Corp 2026-11-10: 2 promises closed (1 kept, 0 partly kept, 1 broken), 3 invoices created, 4 reminders recorded (2 visit tasks), 4 sent",
+		},
+		{
+			name: "missing prices and failures",
+			sum: daySummary{
+				promises:  promise.CloseResult{Failed: 1},
+				invoices:  billing.Result{Skipped: 1},
+				reminders: reminder.Result{Failed: 1},
+			},
+			want: "Suhwendi Corp 2026-11-10: 0 promises closed (0 kept, 0 partly kept, 0 broken), 0 invoices created, 0 reminders recorded (0 visit tasks), 0 sent, 1 lease without a price, 2 tenants failed",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, tc.sum.line("Suhwendi Corp", day))
+		})
+	}
+}
+
+func TestCount(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		n    int
+		noun string
+		want string
+	}{
+		{name: "none", n: 0, noun: "visit task", want: "0 visit tasks"},
+		{name: "one", n: 1, noun: "visit task", want: "1 visit task"},
+		{name: "two", n: 2, noun: "visit task", want: "2 visit tasks"},
+		{name: "many", n: 12, noun: "invoice", want: "12 invoices"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, count(tc.n, tc.noun))
+		})
+	}
+}
+
+// TestRunDaySender: run-day sends through the devlog only with WHATSAPP_PROVIDER=devlog in
+// development; otherwise it has no provider and says the reminders are recorded, not sent.
+func TestRunDaySender(t *testing.T) {
+	t.Parallel()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dev := config.Common{Env: "development"}
+	tests := []struct {
+		name       string
+		cfg        config.Admin
+		wantOrigin string
+		sends      bool
+	}{
+		{name: "unset provider", cfg: config.Admin{Common: dev}},
+		{name: "gowa", cfg: config.Admin{Common: dev, WhatsAppProvider: "gowa"}},
+		{name: "twilio", cfg: config.Admin{Common: dev, WhatsAppProvider: "twilio"}},
+		{name: "devlog", cfg: config.Admin{Common: dev, WhatsAppProvider: "devlog"}, wantOrigin: "http://localhost:3000", sends: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var errOut bytes.Buffer
+			p, origin, err := runDaySender(tc.cfg, log, &errOut)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantOrigin, origin)
+			if tc.sends {
+				require.IsType(t, &devlog.Provider{}, p)
+				require.Empty(t, errOut.String())
+				return
+			}
+			require.Nil(t, p)
+			require.Equal(t, "admin: reminders recorded, not sent: run-day sends only with WHATSAPP_PROVIDER=devlog\n", errOut.String())
 		})
 	}
 }

@@ -32,6 +32,18 @@ func (system) Now() time.Time { return time.Now() }
 // System returns the real clock.
 func System() Clock { return system{} }
 
+// offset is a clock a fixed duration away from another one.
+type offset struct {
+	c Clock
+	d time.Duration
+}
+
+func (o offset) Now() time.Time { return o.c.Now().Add(o.d) }
+
+// Offset returns a clock that reads d later than c (earlier when d is negative) and moves with
+// it. A development tool gives it to the services so they run as if it were another moment.
+func Offset(c Clock, d time.Duration) Clock { return offset{c: c, d: d} }
+
 // StartOfDay returns midnight in Jakarta on the Jakarta calendar day that contains t.
 func StartOfDay(t time.Time) time.Time {
 	t = t.In(Jakarta)

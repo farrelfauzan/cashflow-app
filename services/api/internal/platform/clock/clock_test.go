@@ -51,3 +51,25 @@ func TestFakeMovesOnlyWhenTold(t *testing.T) {
 func TestSystemClockIsCurrent(t *testing.T) {
 	require.WithinDuration(t, time.Now(), System().Now(), time.Second)
 }
+
+func TestOffsetMovesWithItsClock(t *testing.T) {
+	tests := []struct {
+		name string
+		d    time.Duration
+	}{
+		{name: "later", d: 9*24*time.Hour + 30*time.Minute},
+		{name: "earlier", d: -40 * 24 * time.Hour},
+		{name: "none", d: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Date(2026, 11, 1, 8, 0, 0, 0, Jakarta)
+			f := NewFake(start)
+			o := Offset(f, tc.d)
+			require.True(t, start.Add(tc.d).Equal(o.Now()))
+
+			f.Advance(90 * time.Second)
+			require.True(t, start.Add(tc.d+90*time.Second).Equal(o.Now()))
+		})
+	}
+}

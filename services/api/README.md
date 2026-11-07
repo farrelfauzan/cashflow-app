@@ -80,6 +80,32 @@ nothing new, and a later day only bills the periods that have come due since. Li
 needs a database seeded from empty: a lease seeded earlier keeps its old dates and would bill
 every period since its start.
 
+To show what the worker's daily jobs do on a day other than today, run them for that day:
+
+```bash
+APP_ENV=development go run ./cmd/admin run-day -day 2026-11-10 [-org <organization id>]
+```
+
+Same development-only rule, checked before it touches the database. For every active
+organization, or only `-org` (any organization, Suhwendi Corp included), it closes the due payment
+promises at 00:30, generates invoices at 05:00 and decides reminders at 08:00 of that day in
+Asia/Jakarta, in that order, through the same services as the worker, each on a clock that reads
+that moment, so the rules are the production ones. It prints one line per organization, for
+example `Suhwendi Corp 2026-11-10: 1 promise closed (0 kept, 0 partly kept, 1 broken), 3 invoices
+created, 4 reminders recorded (0 visit tasks), 4 sent`. Running a day again records and sends
+nothing new.
+
+With `WHATSAPP_PROVIDER=devlog` it then sends the reminders it decided itself, through the
+worker's reminder sender on the 08:00 clock, so they appear in the devlog (and in `DEVLOG_FILE`
+when set), with payment links on `PUBLIC_WEB_ORIGIN` (default `http://localhost:3000`). It sends
+only through the devlog: never through Telegram, even with `TELEGRAM_MESSAGES=linked`, and never
+through GOWA or Twilio. With any other provider, or `WHATSAPP_PROVIDER` unset (for run-day unset
+does not mean devlog), it records the reminders and prints `reminders recorded, not sent: run-day
+sends only with WHATSAPP_PROVIDER=devlog`; the worker, which sends on the real clock only what was
+decided today, then marks them skipped. The worker itself is unchanged. Any day is allowed; a day
+after today prints a warning, because what it records is dated in the future and the real daily
+runs will treat it as done.
+
 Kos Bulanan Sejahtera is the volume organization, for trying pagination: 27 members (4 of them
 disabled, 2 still collecting on running leases), 25 properties, 95 units (30 in Kos Sejahtera
 Utama) and 45 tenants, some with a booked lease (starting in June or July 2027), some moved out

@@ -7,7 +7,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -18,12 +20,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
@@ -257,5 +262,160 @@ func TestSetBrokenPromiseThreshold(t *testing.T) {
 		require.ErrorIs(t, err, org.ErrOrganizationNotFound)
 		require.ErrorContains(t, err, missing.String())
 		require.Empty(t, out)
+	})
+}
+
+// TestRunDay runs run-day as a developer would, with the real configuration from the environment.
+// Two tenants owe a monthly invoice due 2 November; Sari promised to pay on 3 November and did
+// not. Running 4 November without devlog closes her promise broken and records reminders without
+// sending them; running 5 November (H+3) with devlog records Rina's H+3 reminder and writes it to
+// the devlog file; a rerun records and sends nothing; and 25 November (7 days before the next due
+// date) bills the next periods.
+func TestRunDay(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.New(t) // its clock reads 2 November 2026, 09:00 in Jakarta
+	o := te.CreateOrg(t, "Griya Sejahtera", "0812404")
+	te.CreateOrg(t, "Kos Lain", "0812405") // another active organization
+
+	devlogFile := filepath.Join(t.TempDir(), "devlog.jsonl")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("DATABASE_URL", te.URLs.App)
+	t.Setenv("SECRETS_KEY", testenv.SecretsKey)
+	t.Setenv("SECRETS_KEY_PREVIOUS", "")
+	t.Setenv("WHATSAPP_PROVIDER", "")
+	t.Setenv("DEVLOG_FILE", devlogFile)
+	t.Setenv("PUBLIC_WEB_ORIGIN", "http://localhost:3000")
+
+	admin := te.Principal(t, o.ID, o.Admin.UserID)
+	kos, err := te.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Melati", Kind: property.KindKos})
+	require.NoError(t, err)
+	lease := func(room, name, phone string) uuid.UUID {
+		unit, err := te.Properties.CreateUnit(ctx, admin, kos.ID, property.UnitInput{Label: room, Terms: testenv.Monthly(700_000)})
+		require.NoError(t, err)
+		tn, err := te.Tenants.Create(ctx, admin, tenant.Input{Name: name, Phone: phone})
+		require.NoError(t, err)
+		_, err = te.Tenants.CreateLease(ctx, admin, tenant.NewLease{
+			TenantID: tn.ID, UnitID: unit.ID, TermMonths: 1, Terms: tenant.Terms{StartDate: tenant.Today(te.Clock)},
+		})
+		require.NoError(t, err)
+		return tn.ID
+	}
+	rina := lease("Kamar 1", "Rina Wulandari", "081240405001")
+	sari := lease("Kamar 2", "Sari Puspita", "081240405002")
+	res, err := te.Billing.GenerateOrg(ctx, o.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, res.Invoices, "each lease's first invoice, due 2 November")
+	promises := promise.NewService(promise.Deps{Store: te.Store, Tenants: te.Billing, Clock: te.Clock})
+	promised := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	_, err = promises.MakeForTenant(ctx, admin, sari, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: &promised})
+	require.NoError(t, err)
+
+	runDay := func(args ...string) (string, string) {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		err := run(ctx, append([]string{"run-day"}, args...), env{
+			lookup: os.LookupEnv, connect: connect, stdout: &out, stderr: &errOut,
+			// The real clock: every day run here is in the past.
+			clock: clock.NewFake(time.Date(2026, 11, 30, 12, 0, 0, 0, clock.Jakarta)),
+		})
+		require.NoError(t, err, "stderr: %s", errOut.String())
+		require.NotContains(t, errOut.String(), "in the future")
+		return out.String(), errOut.String()
+	}
+	stages := func(tenantID uuid.UUID) map[string]bool {
+		t.Helper()
+		got := map[string]bool{}
+		require.NoError(t, te.Store.WithOrgTx(ctx, o.ID, func(tx pgx.Tx) error {
+			q := dbgen.New(tx)
+			owing, err := q.ListTenantOwingInvoices(ctx, dbgen.ListTenantOwingInvoicesParams{OrganizationID: o.ID, TenantID: tenantID})
+			if err != nil {
+				return err
+			}
+			ids := make([]uuid.UUID, len(owing))
+			for i, inv := range owing {
+				ids[i] = inv.InvoiceID
+			}
+			rows, err := q.ListRecordedReminderStages(ctx, dbgen.ListRecordedReminderStagesParams{OrganizationID: o.ID, InvoiceIds: ids})
+			for _, r := range rows {
+				got[r.Stage] = true
+			}
+			return err
+		}))
+		return got
+	}
+	devlogLines := func() []devlog.Line {
+		t.Helper()
+		b, err := os.ReadFile(devlogFile)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		require.NoError(t, err)
+		var lines []devlog.Line
+		for _, raw := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			var l devlog.Line
+			require.NoError(t, json.Unmarshal([]byte(raw), &l))
+			lines = append(lines, l)
+		}
+		return lines
+	}
+	orgOnly := []string{"-org", o.ID.String()}
+
+	t.Run("without devlog, the day after a promise closes it broken and sends nothing", func(t *testing.T) {
+		out, errOut := runDay(append([]string{"-day", "2026-11-04"}, orgOnly...)...)
+		require.Regexp(t, `^Griya Sejahtera 2026-11-04: 1 promise closed \(0 kept, 0 partly kept, 1 broken\), 0 invoices created, [1-9]\d* reminders? recorded \(\d+ visit tasks?\), 0 sent\n$`, out)
+		require.Contains(t, errOut, "reminders recorded, not sent: run-day sends only with WHATSAPP_PROVIDER=devlog")
+		require.False(t, stages(rina)[reminder.StageHPlus3], "H+2 is not yet H+3")
+		require.Empty(t, devlogLines())
+	})
+
+	t.Setenv("WHATSAPP_PROVIDER", "devlog")
+
+	t.Run("H+3 with devlog records the H+3 reminder and writes it to the devlog", func(t *testing.T) {
+		out, errOut := runDay(append([]string{"-day", "2026-11-05"}, orgOnly...)...)
+		require.Regexp(t, `^Griya Sejahtera 2026-11-05: 0 promises closed .*, 0 invoices created, ([1-9]\d*) reminders? recorded \(\d+ visit tasks?\), [1-9]\d* sent\n$`, out)
+		require.NotContains(t, errOut, notSentNote)
+		require.True(t, stages(rina)[reminder.StageHPlus3])
+
+		var toRina []devlog.Line
+		for _, l := range devlogLines() {
+			if strings.HasSuffix(l.To, "81240405001") {
+				toRina = append(toRina, l)
+			}
+		}
+		require.Len(t, toRina, 1, "only the H+3 reminder of 5 November; the 4 November ones stay unsent")
+		require.Equal(t, messaging.TemplateInvoiceOverdue, toRina[0].Template)
+		require.Contains(t, toRina[0].Text, "http://localhost:3000/t/", "the message carries a payment link on PUBLIC_WEB_ORIGIN")
+	})
+
+	t.Run("running the same day again records and sends nothing new", func(t *testing.T) {
+		before := len(devlogLines())
+		out, _ := runDay(append([]string{"-day", "2026-11-05"}, orgOnly...)...)
+		require.Equal(t, "Griya Sejahtera 2026-11-05: 0 promises closed (0 kept, 0 partly kept, 0 broken), 0 invoices created, 0 reminders recorded (0 visit tasks), 0 sent\n", out)
+		require.Len(t, devlogLines(), before)
+	})
+
+	t.Run("the next period is billed 7 days before it is due", func(t *testing.T) {
+		out, _ := runDay(append([]string{"-day", "2026-11-24"}, orgOnly...)...)
+		require.Contains(t, out, ", 0 invoices created,", "8 days before 2 December")
+		out, _ = runDay(append([]string{"-day", "2026-11-25"}, orgOnly...)...)
+		require.Contains(t, out, ", 2 invoices created,")
+	})
+
+	t.Run("without -org every active organization runs", func(t *testing.T) {
+		out, _ := runDay("-day", "2026-11-25")
+		require.Contains(t, out, "Griya Sejahtera 2026-11-25: 0 promises closed (0 kept, 0 partly kept, 0 broken), 0 invoices created")
+		require.Contains(t, out, "Kos Lain 2026-11-25: 0 promises closed")
+		require.Equal(t, 2, strings.Count(out, "\n"))
+	})
+
+	t.Run("an organization that does not exist", func(t *testing.T) {
+		missing := uuid.New()
+		var out bytes.Buffer
+		err := run(ctx, []string{"run-day", "-day", "2026-11-05", "-org", missing.String()}, env{
+			lookup: os.LookupEnv, connect: connect, stdout: &out, stderr: &bytes.Buffer{},
+			clock: clock.NewFake(time.Date(2026, 11, 30, 12, 0, 0, 0, clock.Jakarta)),
+		})
+		require.ErrorContains(t, err, missing.String()+" is not an active organization")
+		require.Empty(t, out.String())
 	})
 }

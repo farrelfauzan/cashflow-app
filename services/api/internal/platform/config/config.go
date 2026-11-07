@@ -299,6 +299,40 @@ type Admin struct {
 	Common
 	DatabaseURL string  `env:"DATABASE_URL, required"`
 	Secrets     Secrets `env:", prefix=SECRETS_"`
+	// WhatsAppProvider, DevlogFile and PublicWebOrigin are as in Worker, and only run-day reads
+	// them (RunDaySending): it sends the reminders it records only with WHATSAPP_PROVIDER=devlog
+	// in development. Unlike the API and the worker, an unset WHATSAPP_PROVIDER is not devlog.
+	// They are not validated at load, so no other admin command depends on them.
+	WhatsAppProvider string `env:"WHATSAPP_PROVIDER"`
+	DevlogFile       string `env:"DEVLOG_FILE"`
+	PublicWebOrigin  string `env:"PUBLIC_WEB_ORIGIN"`
+}
+
+// DevlogSending is what run-day sends reminders with: the devlog provider's settings and the
+// web origin of the payment links.
+type DevlogSending struct {
+	WhatsApp  WhatsApp
+	WebOrigin string
+}
+
+// RunDaySending returns what run-day sends reminders with, and false when it only records them:
+// WHATSAPP_PROVIDER is not devlog, or this is not development. PUBLIC_WEB_ORIGIN defaults to the
+// Next.js dev server, as in the worker.
+func (c Admin) RunDaySending() (DevlogSending, bool, error) {
+	if c.WhatsAppProvider != "devlog" || c.Env != "development" {
+		return DevlogSending{}, false, nil
+	}
+	origin := c.PublicWebOrigin
+	if origin == "" {
+		origin = devWebOrigin
+	}
+	if err := validWebOrigin(origin, c.Env); err != nil {
+		return DevlogSending{}, false, err
+	}
+	return DevlogSending{
+		WhatsApp:  WhatsApp{Env: c.Env, Provider: "devlog", DevlogFile: c.DevlogFile},
+		WebOrigin: origin,
+	}, true, nil
 }
 
 func (c Admin) validate() error {

@@ -17,8 +17,22 @@
 //
 //	APP_ENV=development admin generate-invoices
 //
-// Both refuse to run unless APP_ENV is explicitly "development", and check that before they
-// connect to the database.
+// and runs the worker's daily jobs as if it were another day, for a demo:
+//
+//	APP_ENV=development admin run-day -day 2026-11-10 [-org 6f1c...]
+//
+// For each active organization (or only -org) it closes the due payment promises at 00:30,
+// generates invoices at 05:00 and decides reminders at 08:00 of that day in Asia/Jakarta, in
+// that order, through the same services as the worker, each on a clock that reads that moment.
+// It prints one line per organization with what each job did. With WHATSAPP_PROVIDER=devlog it
+// then sends the reminders it recorded itself, on the 08:00 clock, to the devlog (DEVLOG_FILE
+// too when set), with payment links on PUBLIC_WEB_ORIGIN; never through Telegram or any other
+// provider. Otherwise it records them unsent, and the worker, which sends on the real clock only
+// what was decided today, marks them skipped. A day in the future is allowed with a warning: the
+// real daily runs will then treat what it recorded as done.
+//
+// These three refuse to run unless APP_ENV is explicitly "development", and check that before
+// they connect to the database.
 //
 // It stores an organization's AutoGoPay API key, encrypted under SECRETS_KEY, and prints the
 // webhook path to register at AutoGoPay for that organization:
@@ -85,6 +99,7 @@ const usage = `usage:
   admin create-org -name NAME -display-name NAME -member "phone|name|roles" [-member ...]
   admin seed-demo   (development only: APP_ENV=development)
   admin generate-invoices   (development only: invoices and payments of the demo organizations)
+  admin run-day -day YYYY-MM-DD [-org ORGANIZATION_ID]   (development only: the daily jobs of that day)
   admin set-autogopay-key -org ORGANIZATION_ID   (reads the API key as one line from stdin)
   admin set-bank-account -org ORGANIZATION_ID -bank NAME -number NUMBER -holder NAME
   admin set-broken-promise-threshold -org ORGANIZATION_ID -n 1..10`
@@ -95,7 +110,7 @@ var errNotDevelopment = errors.New("demo commands only run with APP_ENV=developm
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := run(ctx, os.Args[1:], env{
-		lookup: os.LookupEnv, connect: connect, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		lookup: os.LookupEnv, connect: connect, clock: clock.System(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 	})
 	stop()
 	if err != nil {
@@ -110,9 +125,11 @@ type env struct {
 	lookup func(key string) (string, bool)
 	// connect loads the configuration and opens the database, logging to logTo.
 	connect func(ctx context.Context, logTo io.Writer) (conn, error)
-	stdin   io.Reader
-	stdout  io.Writer
-	stderr  io.Writer
+	// clock is the real clock run-day shifts from; nil means clock.System().
+	clock  clock.Clock
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
 }
 
 // conn is what a command gets once connected.
@@ -120,6 +137,8 @@ type conn struct {
 	store *store.Store
 	log   *slog.Logger
 	keys  *secret.Keyring // from SECRETS_KEY and SECRETS_KEY_PREVIOUS
+	// admin is the loaded configuration; run-day reads its reminder sending settings.
+	admin config.Admin
 }
 
 func run(ctx context.Context, args []string, e env) error {
@@ -133,6 +152,8 @@ func run(ctx context.Context, args []string, e env) error {
 		return seedDemo(ctx, args[1:], e)
 	case "generate-invoices":
 		return generateInvoices(ctx, args[1:], e)
+	case "run-day":
+		return runDay(ctx, args[1:], e)
 	case "set-autogopay-key":
 		return setAutoGoPayKey(ctx, args[1:], e)
 	case "set-bank-account":
@@ -161,7 +182,7 @@ func connect(ctx context.Context, logTo io.Writer) (conn, error) {
 	if err != nil {
 		return conn{}, err
 	}
-	return conn{store: st, log: log, keys: keys}, nil
+	return conn{store: st, log: log, keys: keys, admin: cfg}, nil
 }
 
 func createOrg(ctx context.Context, args []string, e env) error {

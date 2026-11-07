@@ -73,3 +73,20 @@ func (s *Service) BrokenPromiseThreshold(ctx context.Context, org uuid.UUID) (in
 	}
 	return int(n), nil
 }
+
+// Name returns the organization's name.
+func (s *Service) Name(ctx context.Context, org uuid.UUID) (string, error) {
+	var name string
+	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		o, err := dbgen.New(tx).GetOrganization(ctx, org)
+		name = o.Name
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrOrganizationNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("org: reading the name: %w", err)
+	}
+	return name, nil
+}

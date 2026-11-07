@@ -767,3 +767,63 @@ func TestLoadTelegramPoll(t *testing.T) {
 		})
 	}
 }
+
+// TestAdminRunDaySending: run-day sends only with WHATSAPP_PROVIDER=devlog in development; unset
+// does not mean devlog for it, and its settings never stop another admin command from loading.
+func TestAdminRunDaySending(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		vars    map[string]string
+		want    DevlogSending
+		sends   bool
+		wantErr string
+	}{
+		{name: "unset provider records only", vars: map[string]string{"APP_ENV": "development"}},
+		{name: "gowa records only", vars: map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "gowa"}},
+		{name: "twilio records only", vars: map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "twilio"}},
+		{name: "devlog outside development records only", vars: map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "devlog"}},
+		{
+			name:  "devlog defaults the origin to the dev server",
+			vars:  map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "devlog"},
+			want:  DevlogSending{WhatsApp: WhatsApp{Env: "development", Provider: "devlog"}, WebOrigin: "http://localhost:3000"},
+			sends: true,
+		},
+		{
+			name: "devlog with a file and an origin",
+			vars: map[string]string{
+				"APP_ENV": "development", "WHATSAPP_PROVIDER": "devlog",
+				"DEVLOG_FILE": "/tmp/devlog.jsonl", "PUBLIC_WEB_ORIGIN": "http://127.0.0.1:3001",
+			},
+			want: DevlogSending{
+				WhatsApp:  WhatsApp{Env: "development", Provider: "devlog", DevlogFile: "/tmp/devlog.jsonl"},
+				WebOrigin: "http://127.0.0.1:3001",
+			},
+			sends: true,
+		},
+		{
+			name:    "devlog with an origin that has a path",
+			vars:    map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "devlog", "PUBLIC_WEB_ORIGIN": "http://localhost:3000/app"},
+			wantErr: "PUBLIC_WEB_ORIGIN must be an origin only",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			env := map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey}
+			for k, v := range tc.vars {
+				env[k] = v
+			}
+			c, err := loadAdmin(context.Background(), envconfig.MapLookuper(env))
+			require.NoError(t, err, "run-day's settings never stop the admin config from loading")
+			got, sends, err := c.RunDaySending()
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.sends, sends)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
