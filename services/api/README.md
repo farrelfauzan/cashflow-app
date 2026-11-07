@@ -360,6 +360,16 @@ reaches the database (it links and unlinks chats as the app role).
    logged by its id, kind, command and outcome, never the chat, the code or the text. Run the
    API with the same `TELEGRAM_*` settings so the page offers the button. Ctrl-C stops it.
 
+To get a linked tenant's messages in that chat, also set `TELEGRAM_MESSAGES=linked` for the API
+and the worker. The router (`internal/messaging/router`) then sends each reminder and promise
+confirmation for a tenant with a live link to their chat, as plain text with the pay link as a
+button; other tenants, login codes and invitations still go to `WHATSAPP_PROVIDER`. Telegram
+messages are not held by the WhatsApp pacing guard (decision 41.6), because they do not use the
+shared number. When Telegram says the chat cannot be reached (the bot was blocked), the link ends
+and the tenant's next message goes to WhatsApp; nothing falls back within one send. The quickest to
+see: link a test tenant, then make a promise on their payment page; the "janji tercatat"
+confirmation arrives in the chat, and the worker logs "message sent" with `"channel":"telegram"`.
+
 If it stops with "getUpdates is blocked", the bot has a webhook set (Telegram allows either a
 webhook or polling, not both) or another poller is running with the same token. Delete the
 webhook with the Bot API's `deleteWebhook` method, or stop the other poller. A token Telegram
@@ -395,7 +405,8 @@ replay Bot API answers.
   `gowa`, `twilio` (the Twilio sandbox, development only), `devlog` (development log)
   and the test fake in `messagingtest`. `telegram` is the Telegram Bot API client (send to a
   chat, `getMe`, `getUpdates`, the development poll loop); it sends to a chat id, so it is not a
-  WhatsApp provider.
+  WhatsApp provider. `router` is the provider in front of WhatsApp when `TELEGRAM_MESSAGES=linked`:
+  it sends a linked tenant's messages to their Telegram chat.
 - `internal/secret`: AES-256-GCM encryption of per-organization secrets under `SECRETS_KEY`, with
   key rotation, and `secret.Value`, which prints as `[redacted]`.
 - `internal/autogopay`: each organization's AutoGoPay account (encrypted API key, webhook

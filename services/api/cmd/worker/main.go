@@ -28,6 +28,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 )
 
 func main() {
@@ -114,8 +115,13 @@ func run() error {
 		return err
 	}
 	// Reminders and promise confirmations go out through the configured WhatsApp provider; until
-	// slice 5's pacing only devlog and twilio actually send them (decision 41.6).
+	// slice 5's pacing only devlog and twilio actually send them (decision 41.6). With
+	// TELEGRAM_MESSAGES=linked a tenant with a linked chat gets them on Telegram (decision 42).
 	msg, err := provider.New(cfg.WhatsApp(), log)
+	if err != nil {
+		return err
+	}
+	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), log)
 	if err != nil {
 		return err
 	}
@@ -136,7 +142,7 @@ func run() error {
 	sending := remindertask.SendWorker{
 		Sender: reminder.NewSender(reminder.SenderDeps{
 			Store: st, Links: paylink.NewService(st, az, clk, cfg.PublicWebOrigin), Provider: msg,
-			ProviderName: cfg.WhatsAppProvider, Clock: clk, Log: log,
+			ProviderName: cfg.WhatsAppProvider, TelegramLinked: cfg.Telegram.SendsToLinked(), Clock: clk, Log: log,
 		}),
 		Orgs:  st,
 		Queue: sendQueue,

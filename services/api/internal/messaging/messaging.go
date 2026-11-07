@@ -8,7 +8,8 @@
 //   - messagingtest: an in-memory fake for tests.
 //
 // Package telegram is the Telegram Bot API client (decision 42). It renders the same templates
-// but sends to a chat id, not a phone, so it is not a Provider.
+// but sends to a chat id, not a phone, so it is not a Provider by itself; package router is the
+// Provider that sends a tenant's message to their linked chat (demo environments only).
 //
 // A WhatsApp Cloud API adapter can be added later behind the same interface, once there is a
 // registered business to own the account. Callers never change: they send a template name and
@@ -46,8 +47,14 @@ type Button struct {
 // Message is one template message. OrganizationID is recorded on the message log row; it is
 // uuid.Nil for platform messages such as login codes. Template bodies name the organization or
 // property, because every organization shares one sender number.
+//
+// TenantID names the tenant of OrganizationID the message is for, when it is for one (reminders,
+// promise confirmations); uuid.Nil otherwise (login codes, invitations). The router sends a
+// tenant's message to their linked Telegram chat when that channel is on (decision 42); To is
+// used otherwise.
 type Message struct {
 	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
 	To             string // E.164 phone number, for example +628123456789
 	Template       string
 	Params         map[string]string

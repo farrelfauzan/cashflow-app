@@ -10,7 +10,9 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/messagingtest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/provider"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/router"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 )
@@ -45,4 +47,25 @@ func TestNewBuildsTheConfiguredProvider(t *testing.T) {
 			tc.check(t, got)
 		})
 	}
+}
+
+func TestWithTelegramWrapsOnlyWhenSendingToLinkedChats(t *testing.T) {
+	t.Parallel()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	token := "7000000001:" + strings.Repeat("AbCdEfGhIj", 4)
+	whatsapp := &messagingtest.Fake{}
+
+	for _, messages := range []string{"", "off"} {
+		got, err := provider.WithTelegram(whatsapp, config.Telegram{BotToken: token, BotUsername: "CashflowDevBot", Messages: messages}, nil, log)
+		require.NoError(t, err)
+		require.Same(t, whatsapp, got, "TELEGRAM_MESSAGES=%q leaves WhatsApp as it is", messages)
+	}
+
+	got, err := provider.WithTelegram(whatsapp, config.Telegram{BotToken: token, BotUsername: "CashflowDevBot", Messages: "linked"}, nil, log)
+	require.NoError(t, err)
+	require.IsType(t, &router.Router{}, got)
+
+	_, err = provider.WithTelegram(whatsapp, config.Telegram{BotToken: "not-a-token", Messages: "linked"}, nil, log)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "not-a-token")
 }

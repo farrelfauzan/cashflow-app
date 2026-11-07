@@ -99,6 +99,11 @@ func run() error {
 	}()
 
 	clk := clock.System()
+	// Login codes and invitations name no tenant, so the router sends them on WhatsApp.
+	msg, err = provider.WithTelegram(msg, cfg.Telegram, telegramlink.NewChats(st, clk), log)
+	if err != nil {
+		return err
+	}
 	limiter := ratelimit.NewRedis(rdb)
 	authSvc, err := auth.NewService(st, msg, limiter, clk, log, []byte(cfg.AuthSecret))
 	if err != nil {

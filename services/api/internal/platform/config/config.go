@@ -421,7 +421,13 @@ type Telegram struct {
 	// APIBaseURL is TELEGRAM_API_BASE_URL; empty uses https://api.telegram.org. It must be https
 	// outside development, since the token is in every request path.
 	APIBaseURL string `env:"API_BASE_URL"`
+	// Messages is TELEGRAM_MESSAGES: "off" or empty (the default) sends every message on WhatsApp;
+	// "linked" sends a tenant's messages to their linked chat (the router, TG-3). Needs the bot.
+	Messages string `env:"MESSAGES"`
 }
+
+// SendsToLinked reports whether tenants' messages go to their linked Telegram chats.
+func (t Telegram) SendsToLinked() bool { return t.Messages == "linked" }
 
 var (
 	// telegramToken is the Bot API token shape; telegram.ValidToken applies the same rule.
@@ -440,6 +446,7 @@ func (t Telegram) LogValue() slog.Value {
 		slog.String("bot_username", t.BotUsername),
 		slog.Bool("webhook_secret_set", t.WebhookSecret != ""),
 		slog.String("api_base_url", t.APIBaseURL),
+		slog.String("messages", t.Messages),
 	)
 }
 
@@ -447,7 +454,7 @@ func (t Telegram) LogValue() slog.Value {
 func (t Telegram) validate(env string) error {
 	// Telegram is a demo channel (decision 42), like the Twilio sandbox: development and staging
 	// with test accounts only. Production stays WhatsApp.
-	if env == "production" && (t.BotToken != "" || t.BotUsername != "" || t.WebhookSecret != "" || t.APIBaseURL != "") {
+	if env == "production" && (t.BotToken != "" || t.BotUsername != "" || t.WebhookSecret != "" || t.APIBaseURL != "" || t.SendsToLinked()) {
 		return errors.New("Telegram is a demo channel for development and staging (decision 42); unset the TELEGRAM_* settings in production")
 	}
 	if t.BotToken != "" && !telegramToken.MatchString(t.BotToken) {
@@ -466,6 +473,15 @@ func (t Telegram) validate(env string) error {
 	}
 	if err := validBaseURL("TELEGRAM_API_BASE_URL", t.APIBaseURL, env, false); err != nil {
 		return err
+	}
+	switch t.Messages {
+	case "", "off":
+	case "linked":
+		if t.BotToken == "" {
+			return errors.New("TELEGRAM_MESSAGES=linked needs TELEGRAM_BOT_TOKEN")
+		}
+	default:
+		return errors.New("TELEGRAM_MESSAGES must be off or linked")
 	}
 	// Staging receives the bot's updates only on the webhook, which needs its secret; without it
 	// the bot could send but never link anyone.

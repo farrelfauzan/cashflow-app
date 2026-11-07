@@ -36,6 +36,25 @@ func (q *Queries) GetTelegramLinkByCode(ctx context.Context, arg GetTelegramLink
 	return i, err
 }
 
+const getTenantTelegramChat = `-- name: GetTenantTelegramChat :one
+SELECT chat_id
+FROM telegram_link
+WHERE organization_id = $1 AND tenant_id = $2 AND unlinked_at IS NULL
+`
+
+type GetTenantTelegramChatParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+// The chat of the tenant's live link, for the router (TG-3).
+func (q *Queries) GetTenantTelegramChat(ctx context.Context, arg GetTenantTelegramChatParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getTenantTelegramChat, arg.OrganizationID, arg.TenantID)
+	var chat_id int64
+	err := row.Scan(&chat_id)
+	return chat_id, err
+}
+
 const insertTelegramLink = `-- name: InsertTelegramLink :exec
 INSERT INTO telegram_link (id, organization_id, tenant_id, link_code_id, chat_id, telegram_user_id, linked_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -253,6 +272,34 @@ func (q *Queries) UnlinkTenantTelegram(ctx context.Context, arg UnlinkTenantTele
 		return nil, err
 	}
 	return items, nil
+}
+
+const unlinkUndeliverableTelegramChat = `-- name: UnlinkUndeliverableTelegramChat :execrows
+UPDATE telegram_link SET unlinked_at = $1
+WHERE organization_id = $2 AND tenant_id = $3 AND chat_id = $4
+    AND unlinked_at IS NULL
+`
+
+type UnlinkUndeliverableTelegramChatParams struct {
+	UnlinkedAt     *time.Time
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	ChatID         int64
+}
+
+// Ends the tenant's live link in that one chat after Telegram refused a send to it (the bot was
+// blocked, the chat is gone). A link made in another chat since is left alone.
+func (q *Queries) UnlinkUndeliverableTelegramChat(ctx context.Context, arg UnlinkUndeliverableTelegramChatParams) (int64, error) {
+	result, err := q.db.Exec(ctx, unlinkUndeliverableTelegramChat,
+		arg.UnlinkedAt,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.ChatID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const useTelegramLinkCode = `-- name: UseTelegramLinkCode :execrows

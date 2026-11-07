@@ -1,6 +1,6 @@
 // Package provider builds the messaging.Provider chosen in config (WHATSAPP_PROVIDER), so the API
 // (login codes, invitations) and the worker (reminders, promise confirmations) send through the
-// same adapter.
+// same adapter, with the Telegram router in front of it when TELEGRAM_MESSAGES=linked.
 package provider
 
 import (
@@ -10,6 +10,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/router"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 )
@@ -43,4 +45,20 @@ func New(w config.WhatsApp, log *slog.Logger) (messaging.Provider, error) {
 		// config.LoadAPI and config.LoadWorker have already rejected anything else.
 		return nil, errors.New("no WhatsApp provider configured")
 	}
+}
+
+// WithTelegram returns whatsapp unchanged when t does not send to linked chats
+// (TELEGRAM_MESSAGES=off, the default), and otherwise the router in front of it: a tenant's
+// message goes to their linked Telegram chat, everything else to whatsapp (decision 42). config
+// has already checked t, and refused it in production.
+func WithTelegram(whatsapp messaging.Provider, t config.Telegram, links router.Links, log *slog.Logger) (messaging.Provider, error) {
+	if !t.SendsToLinked() {
+		return whatsapp, nil
+	}
+	bot, err := telegram.New(telegram.Config{Token: t.BotToken, BaseURL: t.APIBaseURL})
+	if err != nil {
+		return nil, err
+	}
+	log.Info("tenants' messages go to their linked Telegram chats (demo channel, decision 42)")
+	return router.New(whatsapp, bot, links, log), nil
 }

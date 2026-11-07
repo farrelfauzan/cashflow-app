@@ -64,7 +64,9 @@ const (
 // SendsThrough reports whether reminders and promise confirmations actually go out through the
 // configured WhatsApp provider. Until slice 5 paces sends on the shared number, only devlog (the
 // log) and twilio (the Twilio sandbox, development only) send them; with gowa they are recorded
-// and marked skipped (decision 41.6). Login codes and member invitations are not affected.
+// and marked skipped (decision 41.6). Login codes and member invitations are not affected. The
+// guard is about the shared WhatsApp number: a message for a tenant with a linked Telegram chat,
+// with TELEGRAM_MESSAGES=linked, goes to that chat and is not held (decision 42).
 func SendsThrough(provider string) bool {
 	return provider == "devlog" || provider == "twilio"
 }
@@ -82,6 +84,9 @@ type SenderDeps struct {
 	Provider messaging.Provider
 	// ProviderName is WHATSAPP_PROVIDER, for the pacing guard (SendsThrough).
 	ProviderName string
+	// TelegramLinked is TELEGRAM_MESSAGES=linked: Provider is the router, and a tenant with a
+	// linked chat is sent to on Telegram, past the WhatsApp pacing guard.
+	TelegramLinked bool
 	// Clock decides today in Asia/Jakarta and sent_at.
 	Clock clock.Clock
 	Log   *slog.Logger
@@ -105,6 +110,7 @@ type Sender struct {
 	links    LinkMinter
 	provider messaging.Provider
 	sends    bool
+	telegram bool
 	clock    clock.Clock
 	log      *slog.Logger
 }
@@ -112,7 +118,7 @@ type Sender struct {
 // NewSender returns a Sender.
 func NewSender(d SenderDeps) *Sender {
 	return &Sender{
-		store: d.Store, links: d.Links, provider: d.Provider, sends: SendsThrough(d.ProviderName),
+		store: d.Store, links: d.Links, provider: d.Provider, sends: SendsThrough(d.ProviderName), telegram: d.TelegramLinked,
 		clock: d.Clock, log: d.Log,
 	}
 }
@@ -122,6 +128,9 @@ type prepared struct {
 	outcome Outcome // OutcomeSent when msg is to be sent; otherwise why not
 	reason  string  // why it was skipped, for the log
 	msg     messaging.Message
+	// telegram: the tenant had a linked Telegram chat when the row was marked, so the router
+	// sends it there and the WhatsApp pacing guard does not hold it.
+	telegram bool
 }
 
 // Send sends one reminder of org. A reminder that is not pending does nothing (OutcomeSettled), so
@@ -203,7 +212,7 @@ func (s *Sender) Confirm(ctx context.Context, org, versionID uuid.UUID) (Outcome
 // settle marks the row: skipped when p is not to be sent, held back (skipped) by the guard, or
 // sent with the clock's now. The row is locked and pending, so exactly one row changes.
 func (s *Sender) settle(ctx context.Context, tx pgx.Tx, p *prepared, mark func(status string, at *time.Time) (int64, error)) error {
-	if p.outcome == OutcomeSent && !s.sends {
+	if p.outcome == OutcomeSent && !s.sends && !p.telegram {
 		*p = prepared{outcome: OutcomeHeld, reason: "held back by the pacing guard until slice 5 (decision 41.6)"}
 	}
 	status, at := StatusSkipped, (*time.Time)(nil)
@@ -241,7 +250,7 @@ func (s *Sender) deliver(ctx context.Context, org uuid.UUID, p prepared, kind st
 	attrs := []any{"id", id, "organization", org, "template", p.msg.Template, "error", err}
 	switch {
 	case errors.Is(err, messaging.ErrUndeliverable):
-		s.log.WarnContext(ctx, kind+" undeliverable: the tenant's number cannot receive WhatsApp", attrs...)
+		s.log.WarnContext(ctx, kind+" undeliverable: the tenant's WhatsApp number or Telegram chat cannot receive it", attrs...)
 	case errors.Is(err, messaging.ErrRateLimited):
 		s.log.WarnContext(ctx, kind+" not sent: WhatsApp asked us to slow down", attrs...)
 	case errors.Is(err, messaging.ErrNotConnected):
@@ -418,10 +427,18 @@ func (s *Sender) prepareConfirmation(ctx context.Context, tx pgx.Tx, org uuid.UU
 // build mints one fresh link to the tenant's oldest owing invoice (the page shows everything they
 // owe) and makes the message, checked with messaging.Render so a mistake fails here, before the
 // row is marked, rather than in the tenant's chat. With the guard holding sends back, no link is
-// minted.
+// minted, unless the message goes to the tenant's linked Telegram chat.
 func (s *Sender) build(ctx context.Context, tx pgx.Tx, org uuid.UUID, rcpt Recipient, owing []OwingInvoice, template string, params map[string]string, button string) (prepared, error) {
-	msg := messaging.Message{OrganizationID: org, To: rcpt.Phone, Template: template, Params: params}
-	if !s.sends {
+	msg := messaging.Message{OrganizationID: org, TenantID: rcpt.TenantID, To: rcpt.Phone, Template: template, Params: params}
+	telegram := false
+	if !s.sends && s.telegram {
+		linked, err := dbgen.New(tx).TenantHasTelegramLink(ctx, dbgen.TenantHasTelegramLinkParams{OrganizationID: org, TenantID: rcpt.TenantID})
+		if err != nil {
+			return prepared{}, fmt.Errorf("reminder: reading the tenant's Telegram link: %w", err)
+		}
+		telegram = linked
+	}
+	if !s.sends && !telegram {
 		return prepared{outcome: OutcomeSent, msg: msg}, nil // settle turns it into OutcomeHeld
 	}
 	link, err := s.links.MintForPlatformTx(ctx, tx, org, owing[0].ID)
@@ -432,7 +449,7 @@ func (s *Sender) build(ctx context.Context, tx pgx.Tx, org uuid.UUID, rcpt Recip
 	if _, err := messaging.Render(msg); err != nil {
 		return prepared{}, fmt.Errorf("reminder: building the %s message: %w", template, err)
 	}
-	return prepared{outcome: OutcomeSent, msg: msg}, nil
+	return prepared{outcome: OutcomeSent, msg: msg, telegram: telegram}, nil
 }
 
 // loadOwing reads the tenant's invoices that still owe something, oldest period first.
@@ -453,7 +470,7 @@ func loadRecipient(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUI
 	if err != nil {
 		return Recipient{}, fmt.Errorf("reminder: loading the recipient: %w", err)
 	}
-	return Recipient{Name: r.Name, Phone: r.Phone, Organization: r.DisplayName}, nil
+	return Recipient{TenantID: tenantID, Name: r.Name, Phone: r.Phone, Organization: r.DisplayName}, nil
 }
 
 func total(owing []OwingInvoice) int64 {

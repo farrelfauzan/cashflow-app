@@ -36,19 +36,54 @@ const (
 //
 // Text is a Go text/template used by providers that send plain text (GOWA, devlog). Params lists
 // the parameters in order: a provider with registered templates (WhatsApp Cloud API) would send
-// them in that order under the same name. WhatsApp formatting applies: *bold*, _italic_.
+// them in that order under the same name. WhatsApp formatting applies, but only *bold*: a
+// provider that cannot show it (Telegram) sends RenderPlain, which drops the markers, so Text
+// may use no other marker (_italic_, ~strike~, `code`). register refuses a Text that does.
 type Template struct {
 	Name   string
 	Params []string
 	Text   string
 	parsed *template.Template
+	// plain is Text with the *bold* markers removed, parsed for RenderPlain.
+	plain *template.Template
 }
 
 var templates = map[string]*Template{}
 
 func register(t Template) {
 	t.parsed = template.Must(template.New(t.Name).Option("missingkey=error").Parse(t.Text))
+	t.plain = template.Must(template.New(t.Name).Option("missingkey=error").Parse(stripBold(t.Name, t.Text)))
 	templates[t.Name] = &t
+}
+
+// stripBold returns text without WhatsApp's * bold markers. Only the literal text between
+// {{ }} actions is touched, so an action is never altered. It panics, as template.Must does at
+// register time, when the literal text uses another WhatsApp marker (_, ~ or a backtick), which
+// RenderPlain would leave in the message.
+func stripBold(name, text string) string {
+	var b strings.Builder
+	for rest := text; rest != ""; {
+		literal, action, found := strings.Cut(rest, "{{")
+		if i := strings.IndexAny(literal, "_~`"); i >= 0 {
+			panic(fmt.Sprintf("messaging: template %s uses the WhatsApp marker %q, which RenderPlain does not strip", name, literal[i]))
+		}
+		b.WriteString(strings.ReplaceAll(literal, "*", ""))
+		if !found {
+			break
+		}
+		inside, after, closed := strings.Cut(action, "}}")
+		if !closed {
+			panic(fmt.Sprintf("messaging: template %s has an unclosed action", name))
+		}
+		b.WriteString("{{" + inside + "}}")
+		rest = after
+	}
+	return b.String()
+}
+
+// TemplateNames returns the name of every registered template, sorted.
+func TemplateNames() []string {
+	return slices.Sorted(maps.Keys(templates))
 }
 
 func init() {
@@ -158,6 +193,17 @@ func Lookup(name string) (Template, bool) {
 // template, a missing or unexpected parameter, or a button without a link, so a mistake shows
 // up as an error instead of a broken message in a tenant's chat.
 func Render(m Message) (string, error) {
+	return render(m, false)
+}
+
+// RenderPlain is Render for a provider that cannot show WhatsApp's *bold*, such as Telegram: the
+// same checks and the same output, except the markers in the template's own text are gone. A
+// parameter value is inserted unchanged, so a * inside one survives.
+func RenderPlain(m Message) (string, error) {
+	return render(m, true)
+}
+
+func render(m Message, plain bool) (string, error) {
 	t, ok := templates[m.Template]
 	if !ok {
 		return "", fmt.Errorf("messaging: unknown template %q", m.Template)
@@ -173,8 +219,12 @@ func Render(m Message) (string, error) {
 		}
 	}
 
+	tpl := t.parsed
+	if plain {
+		tpl = t.plain
+	}
 	var b strings.Builder
-	if err := t.parsed.Execute(&b, m.Params); err != nil {
+	if err := tpl.Execute(&b, m.Params); err != nil {
 		return "", fmt.Errorf("messaging: rendering template %s: %w", t.Name, err)
 	}
 	for _, btn := range m.Buttons {
