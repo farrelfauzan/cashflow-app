@@ -185,9 +185,11 @@ func run() error {
 }
 
 // newTelegram builds the Telegram demo channel (decision 42) when the environment has a bot: the
-// payment page's deep-link codes and the webhook's update handler, which links tenants and staff.
+// webhook's update handler, which links tenants and staff, and, only with TELEGRAM_MESSAGES=linked,
+// the payment page's deep-link codes, so the page never offers a link its messages would not use.
 // Without a bot both are nil, so the page offers no Telegram and /webhooks/telegram does not
-// exist. config.LoadAPI has already refused a bot in production.
+// exist. With a bot but messages off, the handler still answers /stop for links made earlier.
+// config.LoadAPI has already refused a bot in production.
 func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, staff *auth.TelegramStaff, clk clock.Clock, log *slog.Logger) (*telegramlink.Codes, *telegramlink.Handler, error) {
 	if !cfg.Telegram.Enabled() {
 		return nil, nil, nil
@@ -197,8 +199,11 @@ func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, staff 
 		return nil, nil, err
 	}
 	log.Info("telegram demo channel on", "telegram", cfg.Telegram)
-	return telegramlink.NewCodes(st, links, clk, cfg.Telegram.BotUsername),
-		telegramlink.NewHandler(st, bot, staff, clk, log), nil
+	var codes *telegramlink.Codes
+	if cfg.Telegram.SendsToLinked() {
+		codes = telegramlink.NewCodes(st, links, clk, cfg.Telegram.BotUsername)
+	}
+	return codes, telegramlink.NewHandler(st, bot, staff, clk, log), nil
 }
 
 // telegramBotUsername is the bot's username when the environment has a bot, and empty otherwise,

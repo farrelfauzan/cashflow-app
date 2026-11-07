@@ -358,10 +358,11 @@ reaches the database (it links and unlinks chats as the app role).
    tenant's payment page, "Hubungkan Telegram" opens the bot with a one-time code (valid 10
    minutes), and pressing Start links that chat to the tenant; `/stop` unlinks it. Each update is
    logged by its id, kind, command and outcome, never the chat, the code or the text. Run the
-   API with the same `TELEGRAM_*` settings so the page offers the button. Ctrl-C stops it.
+   API with the same `TELEGRAM_*` settings plus `TELEGRAM_MESSAGES=linked` so the page offers the
+   button. Ctrl-C stops it.
 
-To get a linked tenant's messages in that chat, also set `TELEGRAM_MESSAGES=linked` for the API
-and the worker. The router (`internal/messaging/router`) then sends each reminder and promise
+Set `TELEGRAM_MESSAGES=linked` for the worker too, so a linked tenant's messages reach that chat.
+The router (`internal/messaging/router`) then sends each reminder and promise
 confirmation for a tenant with a live link to their chat, as plain text with the pay link as a
 button; other tenants and invitations still go to `WHATSAPP_PROVIDER`. Telegram
 messages are not held by the WhatsApp pacing guard (decision 41.6), because they do not use the
@@ -375,7 +376,8 @@ Test staff link the same way, for their login codes (TG-4). Signed in, `POST /ap
 minutes, used once, at most 5 per staff member per 15 minutes); pressing Start links that chat to
 the staff user (`internal/auth`'s `TelegramStaff`, in the auth scope), and the bot answers
 "Terhubung. Kode masuk untuk <nama> akan dikirim ke sini." `GET /api/me/telegram` says whether it
-is linked (`available` is false without a bot), `DELETE` unlinks, and `/stop` in the chat unlinks
+is linked (`available` is false without a bot or with `TELEGRAM_MESSAGES` off, like the
+payment page's button), `DELETE` unlinks, and `/stop` in the chat unlinks
 its tenants and staff alike. A newer link replaces the older one and the older chat is told. With
 `TELEGRAM_MESSAGES=linked` the API sends a linked staff member's login code to their chat;
 `whatsappOnly: true` on `POST /api/auth/otp/request` ("Kirim lewat WhatsApp") sends it on

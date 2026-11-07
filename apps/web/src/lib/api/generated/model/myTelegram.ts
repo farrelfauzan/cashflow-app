@@ -9,7 +9,7 @@
  * The Telegram demo channel (decision 42) on the staff member's account: "Hubungkan Telegram", or "Terhubung" once linked.
  */
 export interface MyTelegram {
-  /** True when this environment has a Telegram bot, so the account offers linkMyTelegram. */
+  /** True when this environment has a Telegram bot and sends login codes to linked chats (the same as requestLoginCode's telegramAvailable), so the account offers linkMyTelegram. */
   available: boolean;
   /** True when the staff member has a live Telegram link. Always false when available is false. */
   linked: boolean;

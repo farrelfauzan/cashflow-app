@@ -12,14 +12,15 @@ import (
 // organization, so no RBAC action guards them: the session is the access, as for getMe. The POST
 // and DELETE pass the origin check like every state-changing route.
 
-// telegramForStaff reports whether this environment can link a staff member's Telegram: it has a
-// bot, and the staff links are wired.
+// telegramForStaff reports whether this environment offers a staff member a Telegram link: it has
+// a bot, the staff links are wired, and login codes go to linked chats (TELEGRAM_MESSAGES=linked).
+// A link made where codes still go to WhatsApp would promise something that does not happen.
 func (s *Server) telegramForStaff() bool {
-	return s.TelegramStaff != nil && s.TelegramBotUsername != ""
+	return s.LoginCodesViaTelegram && s.TelegramStaff != nil && s.TelegramBotUsername != ""
 }
 
-// getMyTelegram is the "Hubungkan Telegram" card's state. Without a bot it answers
-// {available: false, linked: false}, never 404, and reads nothing.
+// getMyTelegram is the "Hubungkan Telegram" card's state. Without a bot, or with
+// TELEGRAM_MESSAGES off, it answers {available: false, linked: false}, never 404, and reads nothing.
 func (s *Server) getMyTelegram(w http.ResponseWriter, r *http.Request) {
 	id, ok := identityFrom(r.Context())
 	if !ok {

@@ -41,6 +41,14 @@ const replyStaffInvalid = "Link ini sudah tidak berlaku. Buka lagi aplikasi, lal
 // and /api/me/telegram says Telegram is unavailable.
 func newStaffTelegramServer(t *testing.T, env *testenv.Env, logs io.Writer, bot *fakeBotAPI) *httptest.Server {
 	t.Helper()
+	return newStaffTelegramServerWith(t, env, logs, bot, true)
+}
+
+// newStaffTelegramServerWith is newStaffTelegramServer with TELEGRAM_MESSAGES chosen: with a bot
+// and messagesLinked false, the bot answers but login codes and tenant messages go to WhatsApp, so
+// neither the account nor the payment page offers a link.
+func newStaffTelegramServerWith(t *testing.T, env *testenv.Env, logs io.Writer, bot *fakeBotAPI, messagesLinked bool) *httptest.Server {
+	t.Helper()
 	log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	links := paylink.NewService(env.Store, env.Authz, env.Clock, linkOrigin)
 	staff := auth.NewTelegramStaff(env.Store, env.Limiter, env.Clock, log)
@@ -56,11 +64,13 @@ func newStaffTelegramServer(t *testing.T, env *testenv.Env, logs io.Writer, bot 
 		rtr := router.New(env.Messenger, client, telegramlink.NewChats(env.Store, env.Clock), staff, log)
 		deps.Auth, err = auth.NewService(env.Store, rtr, env.Limiter, env.Clock, log, testenv.Secret)
 		require.NoError(t, err)
-		deps.TelegramCodes = telegramlink.NewCodes(env.Store, links, env.Clock, tgBotUsername)
+		if messagesLinked {
+			deps.TelegramCodes = telegramlink.NewCodes(env.Store, links, env.Clock, tgBotUsername)
+		}
 		deps.TelegramUpdates = telegramlink.NewHandler(env.Store, client, staff, env.Clock, log)
 		deps.TelegramWebhookSecret = tgWebhookSecret
 		deps.TelegramBotUsername = tgBotUsername
-		deps.LoginCodesViaTelegram = true
+		deps.LoginCodesViaTelegram = messagesLinked
 	}
 	srv := httptest.NewServer(httpapi.New(deps).Handler())
 	t.Cleanup(srv.Close)
@@ -319,4 +329,26 @@ func TestStaffTelegramUnavailable(t *testing.T) {
 			require.Equal(t, `{"status":"sent","telegramAvailable":false}`+"\n", string(body))
 		}
 	}
+}
+
+// With a bot but TELEGRAM_MESSAGES off, login codes go to WhatsApp, so the account offers no link:
+// GET says unavailable, POST answers telegram_unavailable, and the login screen is told the same.
+func TestStaffTelegramNeedsMessagesLinked(t *testing.T) {
+	env := testenv.New(t)
+	o := env.CreateOrg(t, "Griya Sejahtera", "0812664")
+	srv := newStaffTelegramServerWith(t, env, io.Discard, newFakeBotAPI(t), false)
+	admin := newClient(t, srv.URL)
+	admin.signIn(env, o.Admin.Phone)
+
+	resp, body := admin.do(http.MethodGet, "/api/me/telegram", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, apigen.MyTelegram{Available: false, Linked: false}, decode[apigen.MyTelegram](t, body))
+
+	resp, body = admin.do(http.MethodPost, "/api/me/telegram", nil)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Equal(t, "telegram_unavailable", errorCode(t, body))
+
+	status, body := requestCode(t, srv.URL, o.Supervisor.Phone, false)
+	require.Equal(t, http.StatusAccepted, status)
+	require.Equal(t, `{"status":"sent","telegramAvailable":false}`+"\n", string(body))
 }

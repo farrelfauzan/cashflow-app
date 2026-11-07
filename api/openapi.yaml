@@ -97,8 +97,8 @@ paths:
       description: >
         Telegram is a demo channel (decision 42): development and staging, with test accounts. The
         "Hubungkan Telegram" card on the staff member's account. Always 200: when the environment
-        has no Telegram bot (production) it answers {available: false, linked: false}, never 404,
-        so the card hides itself. linked turns false after unlinkMyTelegram, after /stop in the
+        has no Telegram bot (production), or does not send to linked chats (TELEGRAM_MESSAGES off),
+        it answers {available: false, linked: false}, never 404, so the card hides itself. linked turns false after unlinkMyTelegram, after /stop in the
         linked chat, and after Telegram reports the chat unreachable. No RBAC action: this is the
         user's own account, not organization data; the session is the access.
       responses:
@@ -119,7 +119,8 @@ paths:
         staff member (getMyTelegram then shows linked); a new link replaces the older one and the
         older chat is told, and /stop in the chat unlinks it. Login codes then go to that chat when
         requestLoginCode's telegramAvailable is true. 404 telegram_unavailable when the
-        environment has no bot. Limited to 5 per staff member per 15 minutes (429 rate_limited).
+        environment has no bot or does not send to linked chats (getMyTelegram's available is false
+        then). Limited to 5 per staff member per 15 minutes (429 rate_limited).
         The response carries Cache-Control: no-store. The deep link holds the code: open it, never
         log it or send it anywhere else. No RBAC action: the user's own account.
       responses:
@@ -131,7 +132,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404":
-          description: "No bot in this environment (code telegram_unavailable)"
+          description: "No bot in this environment, or it does not send to linked chats (code telegram_unavailable)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1980,7 +1981,8 @@ paths:
         again makes another without cancelling the first. Opening the link and pressing Start in
         Telegram links that chat to the tenant (getPaymentPage then shows telegram.linked); a new
         link replaces the tenant's older one, and /stop in the chat unlinks it. 404
-        telegram_unavailable when the environment has no bot, so the page hides the button
+        telegram_unavailable when the environment has no bot or does not send to linked chats
+        (TELEGRAM_MESSAGES off), so the page hides the button
         (getPaymentPage's telegram.available is false then). Limited per token and per client
         address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control:
         no-store and Referrer-Policy: no-referrer. The deep link holds the code: open it, never
@@ -1993,7 +1995,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TelegramDeepLink" }
         "404":
-          description: "No working link with this token (code payment_link_not_found), or no bot in this environment (code telegram_unavailable)"
+          description: "No working link with this token (code payment_link_not_found), or no bot in this environment or it does not send to linked chats (code telegram_unavailable)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3530,7 +3532,7 @@ components:
       properties:
         available:
           type: boolean
-          description: True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram.
+          description: True when this environment has a Telegram bot and sends tenants' messages to linked chats, so the page offers linkPaymentPageTelegram.
         linked:
           type: boolean
           description: True when the tenant has a live Telegram link in this organization. Always false when available is false.
@@ -3544,7 +3546,7 @@ components:
       properties:
         available:
           type: boolean
-          description: True when this environment has a Telegram bot, so the account offers linkMyTelegram.
+          description: True when this environment has a Telegram bot and sends login codes to linked chats (the same as requestLoginCode's telegramAvailable), so the account offers linkMyTelegram.
         linked:
           type: boolean
           description: True when the staff member has a live Telegram link. Always false when available is false.

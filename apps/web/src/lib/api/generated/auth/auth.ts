@@ -349,7 +349,7 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
 
 
 /**
- * Telegram is a demo channel (decision 42): development and staging, with test accounts. The "Hubungkan Telegram" card on the staff member's account. Always 200: when the environment has no Telegram bot (production) it answers {available: false, linked: false}, never 404, so the card hides itself. linked turns false after unlinkMyTelegram, after /stop in the linked chat, and after Telegram reports the chat unreachable. No RBAC action: this is the user's own account, not organization data; the session is the access.
+ * Telegram is a demo channel (decision 42): development and staging, with test accounts. The "Hubungkan Telegram" card on the staff member's account. Always 200: when the environment has no Telegram bot (production), or does not send to linked chats (TELEGRAM_MESSAGES off), it answers {available: false, linked: false}, never 404, so the card hides itself. linked turns false after unlinkMyTelegram, after /stop in the linked chat, and after Telegram reports the chat unreachable. No RBAC action: this is the user's own account, not organization data; the session is the access.
  * @summary Whether the signed-in staff member's Telegram is linked (demo environments only)
  */
 export const getMyTelegram = (
@@ -439,7 +439,7 @@ export function useGetMyTelegram<TData = Awaited<ReturnType<typeof getMyTelegram
 
 
 /**
- * Answers the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness; it works once and for 10 minutes, and asking again makes another without cancelling the first. Opening the link and pressing Start in Telegram links that chat to the signed-in staff member (getMyTelegram then shows linked); a new link replaces the older one and the older chat is told, and /stop in the chat unlinks it. Login codes then go to that chat when requestLoginCode's telegramAvailable is true. 404 telegram_unavailable when the environment has no bot. Limited to 5 per staff member per 15 minutes (429 rate_limited). The response carries Cache-Control: no-store. The deep link holds the code: open it, never log it or send it anywhere else. No RBAC action: the user's own account.
+ * Answers the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness; it works once and for 10 minutes, and asking again makes another without cancelling the first. Opening the link and pressing Start in Telegram links that chat to the signed-in staff member (getMyTelegram then shows linked); a new link replaces the older one and the older chat is told, and /stop in the chat unlinks it. Login codes then go to that chat when requestLoginCode's telegramAvailable is true. 404 telegram_unavailable when the environment has no bot or does not send to linked chats (getMyTelegram's available is false then). Limited to 5 per staff member per 15 minutes (429 rate_limited). The response carries Cache-Control: no-store. The deep link holds the code: open it, never log it or send it anywhere else. No RBAC action: the user's own account.
  * @summary A one-time deep link to the Telegram bot, to get login codes there ("Hubungkan Telegram")
  */
 export const linkMyTelegram = (

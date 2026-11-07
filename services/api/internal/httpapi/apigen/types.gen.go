@@ -1465,7 +1465,7 @@ type MoveOut struct {
 
 // MyTelegram The Telegram demo channel (decision 42) on the staff member's account: "Hubungkan Telegram", or "Terhubung" once linked.
 type MyTelegram struct {
-	// Available True when this environment has a Telegram bot, so the account offers linkMyTelegram.
+	// Available True when this environment has a Telegram bot and sends login codes to linked chats (the same as requestLoginCode's telegramAvailable), so the account offers linkMyTelegram.
 	Available bool `json:"available"`
 
 	// Linked True when the staff member has a live Telegram link. Always false when available is false.
@@ -1647,7 +1647,7 @@ type PaymentPageLine struct {
 
 // PaymentPageTelegram The Telegram demo channel (decision 42) on the payment page: "Hubungkan Telegram", or "Terhubung" once linked.
 type PaymentPageTelegram struct {
-	// Available True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram.
+	// Available True when this environment has a Telegram bot and sends tenants' messages to linked chats, so the page offers linkPaymentPageTelegram.
 	Available bool `json:"available"`
 
 	// Linked True when the tenant has a live Telegram link in this organization. Always false when available is false.

@@ -9,7 +9,7 @@
  * The Telegram demo channel (decision 42) on the payment page: "Hubungkan Telegram", or "Terhubung" once linked.
  */
 export interface PaymentPageTelegram {
-  /** True when this environment has a Telegram bot, so the page offers linkPaymentPageTelegram. */
+  /** True when this environment has a Telegram bot and sends tenants' messages to linked chats, so the page offers linkPaymentPageTelegram. */
   available: boolean;
   /** True when the tenant has a live Telegram link in this organization. Always false when available is false. */
   linked: boolean;
