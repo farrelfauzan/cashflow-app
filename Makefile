@@ -34,20 +34,12 @@ dev-up: ## Start PostgreSQL and Redis for local development
 	$(COMPOSE) up -d --wait
 
 .PHONY: dev-down
-dev-down: ## Stop PostgreSQL, Redis and GOWA (data and the WhatsApp link are kept)
-	$(COMPOSE) --profile whatsapp down
+dev-down: ## Stop PostgreSQL and Redis (data is kept)
+	$(COMPOSE) down
 
 .PHONY: dev-reset
-dev-reset: ## Stop everything and delete all data, including the GOWA WhatsApp link
-	$(COMPOSE) --profile whatsapp down -v
-
-.PHONY: wa-up
-wa-up: ## Start the GOWA WhatsApp gateway; link a phone at http://localhost:3001
-	$(COMPOSE) --profile whatsapp up -d gowa
-
-.PHONY: wa-down
-wa-down: ## Stop and remove GOWA (the linked session stays in its volume)
-	$(COMPOSE) --profile whatsapp rm -sf gowa
+dev-reset: ## Stop PostgreSQL and Redis and delete all their data
+	$(COMPOSE) down -v
 
 # ---- run -------------------------------------------------------------------------------
 

@@ -17,6 +17,18 @@ var testSecret = strings.Repeat("s", 32)
 // testKey is a valid SECRETS_KEY: the id "test" and 32 bytes of 'k', base64-encoded.
 var testKey = "test:" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 
+// noWhatsApp is the error of every WhatsApp provider outside development: none runs there until
+// the Cloud API adapter (slice 5).
+const noWhatsApp = "no WhatsApp provider runs in"
+
+// requireOnlyNoWhatsApp checks that err is the missing WhatsApp provider. The API and the worker
+// check the provider last, so a staging or production configuration that passes every other
+// check fails only on it.
+func requireOnlyNoWhatsApp(t *testing.T, err error) {
+	t.Helper()
+	require.ErrorContains(t, err, noWhatsApp)
+}
+
 func TestLoadAPI(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -44,7 +56,7 @@ func TestLoadAPI(t *testing.T) {
 		{
 			name: "explicit values override defaults",
 			env: map[string]string{
-				"APP_ENV":      "production",
+				"APP_ENV":      "development",
 				"LOG_LEVEL":    "warn",
 				"HTTP_ADDR":    ":9000",
 				"DATABASE_URL": "postgres://app@db/cashflow",
@@ -52,14 +64,11 @@ func TestLoadAPI(t *testing.T) {
 				"AUTH_SECRET":  testSecret, "SECRETS_KEY": testKey,
 				"ALLOWED_ORIGINS":   "https://app.example.id",
 				"PUBLIC_WEB_ORIGIN": "https://app.example.id",
-				"WHATSAPP_PROVIDER": "gowa",
-				"GOWA_URL":          "http://gowa:3000",
-				"GOWA_USERNAME":     "cashflow",
-				"GOWA_PASSWORD":     "gowa-secret",
-				"GOWA_DEVICE_ID":    "platform",
+				"WHATSAPP_PROVIDER": "devlog",
+				"DEVLOG_FILE":       "/tmp/devlog.jsonl",
 			},
 			want: API{
-				Common:           Common{Env: "production", LogLevel: "warn"},
+				Common:           Common{Env: "development", LogLevel: "warn"},
 				HTTPAddr:         ":9000",
 				DatabaseURL:      "postgres://app@db/cashflow",
 				RedisAddr:        "redis:6379",
@@ -68,10 +77,18 @@ func TestLoadAPI(t *testing.T) {
 				DatabaseMaxConns: 20, QRISMaxConcurrent: 10,
 				AllowedOrigins:   "https://app.example.id",
 				PublicWebOrigin:  "https://app.example.id",
-				WhatsAppProvider: "gowa",
-				GOWA:             GOWA{URL: "http://gowa:3000", Username: "cashflow", Password: "gowa-secret", DeviceID: "platform"},
+				WhatsAppProvider: "devlog",
+				DevlogFile:       "/tmp/devlog.jsonl",
 				OpenAPISpec:      "../../api/openapi.yaml",
 			},
+		},
+		{
+			name: "production has no WhatsApp provider until the Cloud API adapter",
+			env: map[string]string{
+				"APP_ENV": "production", "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+				"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+			},
+			wantErr: "no WhatsApp provider runs in production",
 		},
 		{
 			name:    "missing database url is rejected",
@@ -132,19 +149,12 @@ func TestWhatsAppProviderChoice(t *testing.T) {
 		wantErr string
 	}{
 		{"devlog in development", with(nil), ""},
-		{"devlog refused in staging", with(map[string]string{"APP_ENV": "staging"}), "only runs in development"},
-		{"gowa needs its settings", with(map[string]string{"WHATSAPP_PROVIDER": "gowa"}), "GOWA_URL"},
-		{"gowa with settings", with(map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "gowa",
-			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p"}), ""},
-		{"cloud api not built", with(map[string]string{"WHATSAPP_PROVIDER": "cloudapi"}), "not built yet"},
-		{"unknown provider", with(map[string]string{"WHATSAPP_PROVIDER": "messagebird"}), "gowa, twilio or devlog"},
+		{"devlog refused in staging", with(map[string]string{"APP_ENV": "staging"}), "WHATSAPP_PROVIDER=devlog only runs in development; " + noWhatsApp + " staging"},
+		{"devlog refused in production", with(map[string]string{"APP_ENV": "production"}), "WHATSAPP_PROVIDER=devlog only runs in development; " + noWhatsApp + " production"},
+		{"cloud api not built", with(map[string]string{"WHATSAPP_PROVIDER": "cloudapi"}), "WHATSAPP_PROVIDER=cloudapi is not built yet"},
+		{"cloud api not built in production", with(map[string]string{"APP_ENV": "production", "WHATSAPP_PROVIDER": "cloudapi"}), "WHATSAPP_PROVIDER=cloudapi is not built yet"},
+		{"unknown provider", with(map[string]string{"WHATSAPP_PROVIDER": "messagebird"}), "devlog, twilio or cloudapi"},
 		{"devlog file in development", with(map[string]string{"DEVLOG_FILE": "/tmp/devlog.jsonl"}), ""},
-		{"devlog file refused in staging", with(map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "gowa",
-			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
-		{"devlog file refused in production", with(map[string]string{"APP_ENV": "production", "WHATSAPP_PROVIDER": "gowa",
-			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
-		{"devlog file refused with gowa in development", with(map[string]string{"WHATSAPP_PROVIDER": "gowa",
-			"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p", "DEVLOG_FILE": "/tmp/devlog.jsonl"}), "DEVLOG_FILE only works"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -273,13 +283,12 @@ func TestTwilioContentSIDMap(t *testing.T) {
 }
 
 func TestPublicWebOrigin(t *testing.T) {
-	gowa := map[string]string{
+	base := map[string]string{
 		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
-		"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
 	}
 	env := func(appEnv, origin string) map[string]string {
 		m := map[string]string{"APP_ENV": appEnv}
-		for k, v := range gowa {
+		for k, v := range base {
 			m[k] = v
 		}
 		if origin != "" {
@@ -312,6 +321,12 @@ func TestPublicWebOrigin(t *testing.T) {
 				require.ErrorContains(t, err, tc.wantErr)
 				return
 			}
+			if tc.env["APP_ENV"] != "development" {
+				// The origin passed; outside development the load then stops at WhatsApp.
+				requireOnlyNoWhatsApp(t, err)
+				require.Equal(t, tc.wantLogin, API{PublicWebOrigin: tc.env["PUBLIC_WEB_ORIGIN"]}.LoginURL())
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, tc.wantLogin, got.LoginURL())
 		})
@@ -335,6 +350,9 @@ func TestDocsOnlyInDevelopment(t *testing.T) {
 }
 
 func TestLoadWorker(t *testing.T) {
+	// Built at run time so no source line looks like a real Twilio identifier to secret scanning.
+	sid := "AC" + strings.Repeat("0123456789abcdef", 2)
+	const token = "test-auth-token" //nolint:gosec // G101: a test placeholder, not a credential
 	tests := []struct {
 		name    string
 		env     map[string]string
@@ -357,19 +375,19 @@ func TestLoadWorker(t *testing.T) {
 		{
 			name: "the worker sends through the configured provider",
 			env: map[string]string{
-				"APP_ENV": "production", "DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey,
-				"PUBLIC_WEB_ORIGIN": "https://app.example.id", "WHATSAPP_PROVIDER": "gowa",
-				"GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "cashflow", "GOWA_PASSWORD": "gowa-secret",
+				"APP_ENV": "development", "DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey,
+				"PUBLIC_WEB_ORIGIN": "https://app.example.id", "WHATSAPP_PROVIDER": "twilio",
+				"TWILIO_ACCOUNT_SID": sid, "TWILIO_AUTH_TOKEN": token, "TWILIO_WHATSAPP_FROM": "+14155238886",
 			},
 			want: Worker{
-				Common:           Common{Env: "production", LogLevel: "info"},
+				Common:           Common{Env: "development", LogLevel: "info"},
 				DatabaseURL:      "postgres://app@db/cashflow",
 				RedisAddr:        "localhost:6379",
 				Secrets:          Secrets{Key: testKey},
 				DatabaseMaxConns: 20,
 				PublicWebOrigin:  "https://app.example.id",
-				WhatsAppProvider: "gowa",
-				GOWA:             GOWA{URL: "http://gowa:3000", Username: "cashflow", Password: "gowa-secret"},
+				WhatsAppProvider: "twilio",
+				Twilio:           Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886"},
 			},
 		},
 		{
@@ -386,11 +404,19 @@ func TestLoadWorker(t *testing.T) {
 			wantErr: "WHATSAPP_PROVIDER=devlog only runs in development",
 		},
 		{
-			name: "gowa needs its settings",
+			name: "twilio needs its settings",
 			env: map[string]string{
-				"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey, "WHATSAPP_PROVIDER": "gowa",
+				"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey, "WHATSAPP_PROVIDER": "twilio",
 			},
-			wantErr: "GOWA_URL",
+			wantErr: "TWILIO_ACCOUNT_SID",
+		},
+		{
+			name: "production has no WhatsApp provider until the Cloud API adapter",
+			env: map[string]string{
+				"APP_ENV": "production", "DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey,
+				"PUBLIC_WEB_ORIGIN": "https://app.example.id",
+			},
+			wantErr: "no WhatsApp provider runs in production",
 		},
 		{
 			name:    "missing database url is rejected",
@@ -512,7 +538,6 @@ func TestEnvExampleSecretsKey(t *testing.T) {
 func TestAutoGoPayBaseURL(t *testing.T) {
 	base := map[string]string{
 		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
-		"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
 		"PUBLIC_WEB_ORIGIN": "https://app.example.id",
 	}
 	env := func(appEnv, url string) map[string]string {
@@ -545,6 +570,12 @@ func TestAutoGoPayBaseURL(t *testing.T) {
 			if tc.wantErr != "" {
 				require.ErrorContains(t, apiErr, tc.wantErr)
 				require.ErrorContains(t, workerErr, tc.wantErr)
+				return
+			}
+			if tc.env["APP_ENV"] != "development" {
+				// The URL passed; outside development the load then stops at WhatsApp.
+				requireOnlyNoWhatsApp(t, apiErr)
+				requireOnlyNoWhatsApp(t, workerErr)
 				return
 			}
 			require.NoError(t, apiErr)
@@ -634,7 +665,6 @@ func TestTelegramSettings(t *testing.T) {
 		m := map[string]string{
 			"APP_ENV": appEnv, "DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
 			"PUBLIC_WEB_ORIGIN": "https://app.example.id",
-			"WHATSAPP_PROVIDER": "gowa", "GOWA_URL": "http://gowa:3000", "GOWA_USERNAME": "u", "GOWA_PASSWORD": "p",
 		}
 		for i := 0; i+1 < len(kv); i += 2 {
 			m[kv[i]] = kv[i+1]
@@ -712,6 +742,12 @@ func TestTelegramSettings(t *testing.T) {
 				}
 				return
 			}
+			if tc.env["APP_ENV"] != "development" {
+				// Telegram passed; outside development the load then stops at WhatsApp.
+				requireOnlyNoWhatsApp(t, apiErr)
+				requireOnlyNoWhatsApp(t, workerErr)
+				return
+			}
 			require.NoError(t, apiErr)
 			require.NoError(t, workerErr)
 			require.Equal(t, tc.want, got.Telegram)
@@ -780,7 +816,7 @@ func TestAdminRunDaySending(t *testing.T) {
 		wantErr string
 	}{
 		{name: "unset provider records only", vars: map[string]string{"APP_ENV": "development"}},
-		{name: "gowa records only", vars: map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "gowa"}},
+		{name: "cloudapi records only", vars: map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "cloudapi"}},
 		{name: "twilio records only", vars: map[string]string{"APP_ENV": "development", "WHATSAPP_PROVIDER": "twilio"}},
 		{name: "devlog outside development records only", vars: map[string]string{"APP_ENV": "staging", "WHATSAPP_PROVIDER": "devlog"}},
 		{

@@ -145,7 +145,7 @@ func TestInviteWhenWhatsAppFails(t *testing.T) {
 		{name: "the WhatsApp session is logged out", err: messaging.ErrNotConnected},
 		{name: "the number cannot receive WhatsApp", err: messaging.ErrUndeliverable},
 		{name: "WhatsApp is throttling the number", err: messaging.ErrRateLimited},
-		{name: "the provider fails unexpectedly", err: fmt.Errorf("gowa: calling server: %w", context.DeadlineExceeded)},
+		{name: "the provider fails unexpectedly", err: fmt.Errorf("provider: calling server: %w", context.DeadlineExceeded)},
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

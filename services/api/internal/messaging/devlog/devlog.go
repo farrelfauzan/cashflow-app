@@ -40,7 +40,7 @@ type Line struct {
 	Text     string    `json:"text"`
 }
 
-// SendTemplate renders the message exactly as GOWA would send it, logs it with its parameters,
+// SendTemplate renders the message as plain-text providers send it, logs it with its parameters,
 // and pretends it was accepted. A rendering mistake fails here just as it would in production.
 func (p *Provider) SendTemplate(ctx context.Context, m messaging.Message) (messaging.Receipt, error) {
 	text, err := messaging.Render(m)

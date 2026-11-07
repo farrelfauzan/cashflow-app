@@ -42,7 +42,7 @@ func TestNeedsOperator(t *testing.T) {
 		{name: "no provider in an offline tool", err: sendErr(errNoMessenger), want: false},
 		{name: "the session is logged out", err: sendErr(messaging.ErrNotConnected), want: true},
 		{name: "WhatsApp throttles the number", err: sendErr(messaging.ErrRateLimited), want: true},
-		{name: "an unexpected provider error", err: sendErr(errors.New("gowa: calling server")), want: true},
+		{name: "an unexpected provider error", err: sendErr(errors.New("provider: calling server")), want: true},
 		{name: "the limiter fails", err: errors.New("checking invitation limit: redis down"), want: true},
 	}
 	for _, tc := range tests {

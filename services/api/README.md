@@ -65,8 +65,7 @@ organization, roles, property limit and status of every demo member. Sign in wit
 one's phone as above. One member, Mas Agus Setiawan in Griya Sejahtera, is disabled on purpose
 and cannot sign in: he stays the collector on Eko Prasetyo's lease, so the members screen and
 the tenant list show "1 penyewa belum punya penagih". That needs a database seeded from empty
-(`make dev-reset`, `make dev-up`, `make migrate`, then `seed-demo`; the reset also removes the
-GOWA WhatsApp link): a rerun leaves an existing lease as it is, so on a database seeded before
+(`make dev-reset`, `make dev-up`, `make migrate`, then `seed-demo`): a rerun leaves an existing lease as it is, so on a database seeded before
 Agus was added, Eko's lease keeps no collector and the flag does not show.
 
 Seeded leases are entered 40 days before today and bill from the period that ran 70 days ago,
@@ -99,7 +98,7 @@ With `WHATSAPP_PROVIDER=devlog` it then sends the reminders it decided itself, t
 worker's reminder sender on the 08:00 clock, so they appear in the devlog (and in `DEVLOG_FILE`
 when set), with payment links on `PUBLIC_WEB_ORIGIN` (default `http://localhost:3000`). It sends
 only through the devlog: never through Telegram, even with `TELEGRAM_MESSAGES=linked`, and never
-through GOWA or Twilio. With any other provider, or `WHATSAPP_PROVIDER` unset (for run-day unset
+through Twilio. With any other provider, or `WHATSAPP_PROVIDER` unset (for run-day unset
 does not mean devlog), it records the reminders and prints `reminders recorded, not sent: run-day
 sends only with WHATSAPP_PROVIDER=devlog`; the worker, which sends on the real clock only what was
 decided today, then marks them skipped. The worker itself is unchanged. Any day is allowed; a day
@@ -247,58 +246,14 @@ visit.
 4. Call `GET /orgs/{orgId}/me` and `GET /orgs/{orgId}/members` with that id.
 5. `POST /auth/logout` when done.
 
-### Send real WhatsApp messages with GOWA
+### Which WhatsApp provider runs where
 
-GOWA is a self-hosted WhatsApp gateway that runs as its own container. Which provider the pilot
-and launch use is open (decision 35); WhatsApp restricted the number we linked to GOWA.
-Use a spare number for development, never the production one.
-
-1. `make wa-up` starts GOWA on http://localhost:3001 (login `cashflow` / `gowa-dev-password`).
-2. Open it and link the phone: in WhatsApp, Settings › Linked devices › Link a device, then scan
-   the QR code.
-3. In `services/api/.env` set `WHATSAPP_PROVIDER=gowa` and restart `make api-run`.
-
-Login codes now arrive on WhatsApp. If the phone is not linked, a code request answers 503
-`whatsapp_unavailable` and the API log says why. `make wa-down` and `make dev-down` keep the
-linked session in the `gowadata` volume; `make dev-reset` deletes it, which means scanning again.
-
-### Prove a real login code through GOWA (runbook)
-
-Do this by hand with your own phone; no test does it. Use a spare number, never the production
-one (staging has its own number too).
-
-1. Run GOWA with a pinned image tag, never `latest`. `infra/compose.dev.yaml` already does:
-   `aldinokemal2104/go-whatsapp-web-multidevice:v9.6.0`, `APP_BASIC_AUTH` set, `MCP_ENABLED=false`,
-   `gowadata:/app/storages` mounted, port bound as `127.0.0.1:3001:3000`. `make wa-up` starts it.
-   On a server copy that service, change the password and tag deliberately, keep the loopback bind.
-2. Link the number. Open http://localhost:3001 (basic auth from `APP_BASIC_AUTH`), then in
-   WhatsApp on the phone: Settings, Linked devices, Link a device, scan the QR code. On a server
-   reach the dashboard only through a tunnel, never a public port:
-   `ssh -L 3001:127.0.0.1:3001 user@server`, then open http://localhost:3001.
-   Back up the `gowadata` volume: losing it means scanning again.
-3. In `services/api/.env` set `WHATSAPP_PROVIDER=gowa`, `GOWA_URL` (`http://localhost:3001`),
-   `GOWA_USERNAME` and `GOWA_PASSWORD` (the `APP_BASIC_AUTH` pair); `GOWA_DEVICE_ID` stays
-   empty with one linked device. Config refuses to start with gowa and any of the first three
-   missing. Restart `make api-run`.
-4. Register your phone as a staff member (it must be a number WhatsApp can reach):
-   `make admin ARGS='create-org -name "Uji GOWA" -display-name "Uji GOWA" -member "<your phone>|<your name>|admin"'`
-   (a supervisor-only org is rejected: at least one member must be an admin).
-5. Request a code from the web login page (`make web-dev`, http://localhost:3000/login), or:
-   `curl -i -H 'Content-Type: application/json' -d '{"phone":"<your phone>"}' localhost:8080/api/auth/otp/request`
-6. Check:
-   - The message arrives within seconds: "Kode masuk Anda: *123456*", valid 5 minutes.
-   - Enter the code on the login page (or `otp/verify` as above); you are signed in.
-   - The API log has `login code sent` with a `staff_user_id` and never the code itself.
-   - Not linked (or session lost): the request answers 503 `whatsapp_unavailable` and the log
-     has `whatsapp unavailable` naming `the WhatsApp session is not connected`. Re-link in step 2.
-   - Wrong `GOWA_USERNAME` or `GOWA_PASSWORD`: the request answers 500 `internal`, and the log has
-     `request failed` with "the server rejected our credentials; check GOWA_USERNAME and GOWA_PASSWORD".
-   - Limits, not failures: 3 code requests per phone per 15 minutes, 5 tries per code.
-     An unregistered phone gets the same answer as a registered one, but no message.
-7. Stop: end `make api-run` (and the web), then `make wa-down`. This keeps the link. To unlink,
-   remove the device in WhatsApp (Linked devices), or call GOWA's `GET /app/logout` with basic
-   auth. Keep the `gowadata` volume to stay linked, or delete it with `make dev-reset`
-   (which also wipes the database).
+`WHATSAPP_PROVIDER` picks how the API (login codes, invitations) and the worker (reminders,
+promise confirmations) send WhatsApp messages. Today both providers are development only:
+`devlog` (the default) writes each message to the log, and `twilio` sends through a Twilio
+sandbox (below). `cloudapi` is reserved for the WhatsApp Cloud API adapter, which is not built
+yet (slice 5), so config refuses every provider in staging and production until it is: neither
+starts there for now. What staging uses is decided before phase F (decision 43).
 
 ### Send WhatsApp through Twilio (Twilio sandbox, development only)
 
@@ -325,8 +280,13 @@ page and can differ per account, so copy it from there.
    template name it does not know or a Content SID that is not HX and 32 hex characters.
 5. Restart `make api-run`.
 6. From your phone, send any message to the sandbox number (this opens the 24-hour window, see
-   below), then request a login code for a member whose phone joined (steps 4 and 5 of the GOWA
-   runbook above). The code arrives as a WhatsApp message from the sandbox number.
+   below). Register that phone as a staff member:
+   `make admin ARGS='create-org -name "Uji Twilio" -display-name "Uji Twilio" -member "<your phone>|<your name>|admin"'`
+   (a supervisor-only org is rejected: at least one member must be an admin). Then request a
+   login code from the web login page (`make web-dev`, http://localhost:3000/login), or with
+   `curl -i -H 'Content-Type: application/json' -d '{"phone":"<your phone>"}' localhost:8080/api/auth/otp/request`.
+   The code arrives as a WhatsApp message from the sandbox number, valid 5 minutes; the API log
+   has `login code sent` with a `staff_user_id` and never the code itself.
 
 Content templates: `TWILIO_CONTENT_SIDS` maps our template names to Twilio Content templates,
 as `name=HX...` pairs separated by commas. A template listed there is sent as its Content SID,
@@ -356,8 +316,7 @@ that the code was sent, and nothing arrives. Either way, check `TWILIO_CONTENT_S
 it from the phone: send any message to the sandbox number (or `join <keyword>` again if the
 phone left the sandbox), then request a new code within 24 hours.
 
-Wrong credentials or a sender Twilio does not accept fail at once, like an unlinked GOWA phone:
-a code request answers 503 `whatsapp_unavailable` and the log has `whatsapp unavailable` naming
+Wrong credentials or a sender Twilio does not accept fail at once: a code request answers 503 `whatsapp_unavailable` and the log has `whatsapp unavailable` naming
 `the WhatsApp session is not connected`; a member invitation answers 503 "WhatsApp gagal
 mengirim". Any other refusal from Twilio, and Twilio failing on its side, answer the same 503
 instead of a 500. The log carries only Twilio's HTTP status and error code (for example
@@ -390,9 +349,7 @@ reaches the database (it links and unlinks chats as the app role).
 Set `TELEGRAM_MESSAGES=linked` for the worker too, so a linked tenant's messages reach that chat.
 The router (`internal/messaging/router`) then sends each reminder and promise
 confirmation for a tenant with a live link to their chat, as plain text with the pay link as a
-button; other tenants and invitations still go to `WHATSAPP_PROVIDER`. Telegram
-messages are not held by the WhatsApp pacing guard (decision 41.6), because they do not use the
-shared number. When Telegram says the chat cannot be reached (the bot was blocked), the link ends
+button; other tenants and invitations still go to `WHATSAPP_PROVIDER`. When Telegram says the chat cannot be reached (the bot was blocked), the link ends
 and the tenant's next message goes to WhatsApp; nothing falls back within one send. The quickest to
 see: link a test tenant, then make a promise on their payment page; the "janji tercatat"
 confirmation arrives in the chat, and the worker logs "message sent" with `"channel":"telegram"`.
@@ -441,7 +398,6 @@ replay Bot API answers.
 | `make sqlc` | regenerate `internal/platform/store/dbgen` after editing `db/queries` or `db/migrations` |
 | `make api-gen` | regenerate `internal/httpapi/apigen` after editing `api/openapi.yaml` |
 | `make admin ARGS='...'` | run the operator tool |
-| `make wa-up` / `make wa-down` | start or stop the GOWA WhatsApp gateway |
 | `make telegram-poll` | long-poll the development Telegram bot (development only) |
 | `make api-check` | everything CI runs |
 
@@ -457,8 +413,8 @@ replay Bot API answers.
 - `internal/member` and `internal/org`: members and their roles; creating organizations.
 - `internal/httpapi`: routing, middleware, handlers. `apigen` is generated from the OpenAPI file.
 - `internal/messaging`: the WhatsApp provider interface and the message templates. Adapters:
-  `gowa`, `twilio` (the Twilio sandbox, development only), `devlog` (development log)
-  and the test fake in `messagingtest`. `telegram` is the Telegram Bot API client (send to a
+  `twilio` (the Twilio sandbox, development only), `devlog` (development log), a Cloud API
+  adapter later (slice 5), and the test fake in `messagingtest`. `telegram` is the Telegram Bot API client (send to a
   chat, `getMe`, `getUpdates`, the development poll loop); it sends to a chat id, so it is not a
   WhatsApp provider. `router` is the provider in front of WhatsApp when `TELEGRAM_MESSAGES=linked`:
   it sends a linked tenant's messages, and a linked staff member's login codes, to their Telegram

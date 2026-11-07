@@ -584,7 +584,7 @@ func TestRunDaySender(t *testing.T) {
 		sends      bool
 	}{
 		{name: "unset provider", cfg: config.Admin{Common: dev}},
-		{name: "gowa", cfg: config.Admin{Common: dev, WhatsAppProvider: "gowa"}},
+		{name: "cloudapi", cfg: config.Admin{Common: dev, WhatsAppProvider: "cloudapi"}},
 		{name: "twilio", cfg: config.Admin{Common: dev, WhatsAppProvider: "twilio"}},
 		{name: "devlog", cfg: config.Admin{Common: dev, WhatsAppProvider: "devlog"}, wantOrigin: "http://localhost:3000", sends: true},
 	}

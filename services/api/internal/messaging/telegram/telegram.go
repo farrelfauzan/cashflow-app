@@ -12,7 +12,7 @@
 // template text is never read as markup. WhatsApp's *bold* markers are stripped from the
 // template text (messaging.RenderPlain), so no literal asterisks show in the chat. Buttons
 // become inline keyboard URL buttons; a button's Payload is not sent as callback data yet
-// (nothing handles callbacks), so every button needs its URL, as on GOWA.
+// (nothing handles callbacks), so every button needs its URL.
 //
 // The bot token is part of every request URL (/bot<token>/<method>), and Go's *url.Error
 // prints the URL. Every error this package returns names the method, the HTTP status and the

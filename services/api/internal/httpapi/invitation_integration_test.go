@@ -161,7 +161,7 @@ func TestMemberInvitationOverHTTP(t *testing.T) {
 
 		resp, data = resend(admin, joko.Id)
 		requireError(t, resp, data, http.StatusServiceUnavailable, "whatsapp_unavailable")
-		require.NotContains(t, string(data), "gowa")
+		require.NotContains(t, string(data), messaging.ErrNotConnected.Error(), "no internal error text")
 		require.NotContains(t, strings.ToLower(string(data)), "connected")
 
 		resp, data = admin.do(http.MethodGet, orgPath+"/members", nil)

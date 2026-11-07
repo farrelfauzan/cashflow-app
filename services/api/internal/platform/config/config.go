@@ -83,15 +83,14 @@ type API struct {
 	// example https://app.example.id. Required outside development, where it must be https;
 	// development defaults to the Next.js dev server.
 	PublicWebOrigin string `env:"PUBLIC_WEB_ORIGIN"`
-	// WhatsAppProvider picks the messaging adapter: "gowa", "twilio" (development only: only
-	// a Twilio sandbox is supported until a verified sender with approved templates exists) or
-	// "devlog" (development only). "cloudapi" is reserved for the WhatsApp
-	// Cloud API adapter, not built yet.
+	// WhatsAppProvider picks the messaging adapter: "devlog" (development only) or "twilio"
+	// (development only: only a Twilio sandbox is supported until a verified sender with approved
+	// templates exists). "cloudapi" is reserved for the WhatsApp Cloud API adapter, not built yet
+	// (slice 5), so staging and production have no WhatsApp provider until it is.
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
 	// DevlogFile, when set, makes the devlog provider also append each message to this file as
 	// one JSON line, so end-to-end tests can read login codes. Development with devlog only.
 	DevlogFile string `env:"DEVLOG_FILE"`
-	GOWA       GOWA   `env:", prefix=GOWA_"`
 	Twilio     Twilio `env:", prefix=TWILIO_"`
 	// Telegram is the platform bot (decision 42). Optional; validated when set.
 	Telegram Telegram `env:", prefix=TELEGRAM_"`
@@ -106,14 +105,6 @@ func (c API) DocsSpecPath() string {
 		return ""
 	}
 	return c.OpenAPISpec
-}
-
-// GOWA points the API at the self-hosted GOWA server.
-type GOWA struct {
-	URL      string `env:"URL"`       // GOWA_URL, for example http://gowa:3000
-	Username string `env:"USERNAME"`  // GOWA_USERNAME, one of the server's APP_BASIC_AUTH users
-	Password string `env:"PASSWORD"`  // GOWA_PASSWORD
-	DeviceID string `env:"DEVICE_ID"` // GOWA_DEVICE_ID, empty uses the server's only device
 }
 
 // Twilio holds the Twilio account and WhatsApp sender. AuthToken is a secret: never log it or
@@ -254,38 +245,33 @@ type WhatsApp struct {
 	Env        string
 	Provider   string
 	DevlogFile string
-	GOWA       GOWA
 	Twilio     Twilio
 }
 
 // WhatsApp returns the API's WhatsApp settings.
 func (c API) WhatsApp() WhatsApp {
-	return WhatsApp{Env: c.Env, Provider: c.WhatsAppProvider, DevlogFile: c.DevlogFile, GOWA: c.GOWA, Twilio: c.Twilio}
+	return WhatsApp{Env: c.Env, Provider: c.WhatsAppProvider, DevlogFile: c.DevlogFile, Twilio: c.Twilio}
 }
 
 func (w WhatsApp) validate() error {
 	switch w.Provider {
 	case "devlog":
 		if w.Env != "development" {
-			return fmt.Errorf("WHATSAPP_PROVIDER=devlog only runs in development; use gowa or twilio in %s", w.Env)
-		}
-	case "gowa":
-		if w.GOWA.URL == "" || w.GOWA.Username == "" || w.GOWA.Password == "" {
-			return errors.New("WHATSAPP_PROVIDER=gowa needs GOWA_URL, GOWA_USERNAME and GOWA_PASSWORD")
+			return fmt.Errorf("WHATSAPP_PROVIDER=devlog only runs in development; no WhatsApp provider runs in %s until the Cloud API adapter (slice 5)", w.Env)
 		}
 	case "twilio":
 		// Only a Twilio sandbox is supported, and sandbox numbers differ per account, so the
 		// provider itself stays in development until a verified sender exists.
 		if w.Env != "development" {
-			return fmt.Errorf("WHATSAPP_PROVIDER=twilio only runs in development (a Twilio sandbox); use gowa in %s", w.Env)
+			return fmt.Errorf("WHATSAPP_PROVIDER=twilio only runs in development (a Twilio sandbox); no WhatsApp provider runs in %s until the Cloud API adapter (slice 5)", w.Env)
 		}
 		if err := w.Twilio.validate(); err != nil {
 			return err
 		}
 	case "cloudapi":
-		return errors.New("WHATSAPP_PROVIDER=cloudapi is not built yet; use gowa")
+		return errors.New("WHATSAPP_PROVIDER=cloudapi is not built yet (slice 5)")
 	default:
-		return fmt.Errorf("WHATSAPP_PROVIDER must be gowa, twilio or devlog, got %q", w.Provider)
+		return fmt.Errorf("WHATSAPP_PROVIDER must be devlog, twilio or cloudapi, got %q", w.Provider)
 	}
 	// Login codes in a file are only acceptable on a developer's machine.
 	if w.DevlogFile != "" && (w.Env != "development" || w.Provider != "devlog") {
@@ -371,12 +357,10 @@ type Worker struct {
 	DatabaseMaxConns int32 `env:"DATABASE_MAX_CONNS, default=20"`
 	// PublicWebOrigin is as in API: the base of the payment links in reminders.
 	PublicWebOrigin string `env:"PUBLIC_WEB_ORIGIN"`
-	// WhatsAppProvider, DevlogFile, GOWA and Twilio are as in API: the worker sends reminders and
-	// promise confirmations through the same provider as the API's login codes (though only
-	// devlog and twilio send them until slice 5's pacing, decision 41.6).
+	// WhatsAppProvider, DevlogFile and Twilio are as in API: the worker sends reminders and
+	// promise confirmations through the same provider as the API's login codes.
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER, default=devlog"`
 	DevlogFile       string `env:"DEVLOG_FILE"`
-	GOWA             GOWA   `env:", prefix=GOWA_"`
 	Twilio           Twilio `env:", prefix=TWILIO_"`
 	// Telegram is as in API.
 	Telegram Telegram `env:", prefix=TELEGRAM_"`
@@ -384,7 +368,7 @@ type Worker struct {
 
 // WhatsApp returns the worker's WhatsApp settings.
 func (c Worker) WhatsApp() WhatsApp {
-	return WhatsApp{Env: c.Env, Provider: c.WhatsAppProvider, DevlogFile: c.DevlogFile, GOWA: c.GOWA, Twilio: c.Twilio}
+	return WhatsApp{Env: c.Env, Provider: c.WhatsAppProvider, DevlogFile: c.DevlogFile, Twilio: c.Twilio}
 }
 
 func (c Worker) validate() error {

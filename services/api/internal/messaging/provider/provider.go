@@ -9,25 +9,17 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/router"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/twilio"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/config"
 )
 
-// New builds the provider w names: GOWA, Twilio, or in development the log provider, which writes
-// messages (login codes included) to the log instead of sending them. config has already checked
-// w.
+// New builds the provider w names, both development only for now: Twilio (its sandbox), or the
+// log provider, which writes messages (login codes included) to the log instead of sending them.
+// config has already checked w.
 func New(w config.WhatsApp, log *slog.Logger) (messaging.Provider, error) {
 	switch w.Provider {
-	case "gowa":
-		return gowa.New(gowa.Config{
-			BaseURL:  w.GOWA.URL,
-			Username: w.GOWA.Username,
-			Password: w.GOWA.Password,
-			DeviceID: w.GOWA.DeviceID,
-		})
 	case "twilio":
 		contentSIDs, err := w.Twilio.ContentSIDMap()
 		if err != nil {
