@@ -46,7 +46,7 @@ const (
 
 // Template is a message the app can send.
 //
-// Text is a Go text/template used by providers that send plain text (GOWA, devlog). Params lists
+// Text is a Go text/template used by providers that send plain text (devlog, Twilio text). Params lists
 // the parameters in order: a provider with registered templates (WhatsApp Cloud API) would send
 // them in that order under the same name. WhatsApp formatting applies, but only *bold*: a
 // provider that cannot show it (Telegram) sends RenderPlain, which drops the markers, so Text

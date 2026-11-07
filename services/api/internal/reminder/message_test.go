@@ -110,10 +110,3 @@ func TestPromisedAmount(t *testing.T) {
 	require.Equal(t, "Rp500.000", promisedAmount(&amount))
 	require.Equal(t, "seluruh sisa tagihan", promisedAmount(nil))
 }
-
-func TestSendsThroughOnlyDevlogAndTwilio(t *testing.T) {
-	t.Parallel()
-	for provider, want := range map[string]bool{"devlog": true, "twilio": true, "gowa": false, "cloudapi": false, "": false} {
-		require.Equal(t, want, SendsThrough(provider), provider)
-	}
-}

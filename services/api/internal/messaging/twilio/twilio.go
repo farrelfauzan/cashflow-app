@@ -11,8 +11,7 @@
 // Twilio may also insist on a Content template (error 21654, "ContentSid Required"). So a
 // message template can be mapped to a Twilio Content template (Config.ContentSIDs): it is then
 // sent as ContentSid with ContentVariables numbered in the template's parameter order, then its
-// button links. Any other template is sent as text rendered by messaging.Render, links included,
-// exactly as GOWA sends it.
+// button links. Any other template is sent as text rendered by messaging.Render, links included.
 //
 // Twilio refuses some sends at once (21654 maps to ErrNotConnected) and fails others later
 // (63016 outside the window, 63015 for a phone that has not joined the sandbox), reported only
@@ -247,8 +246,7 @@ func sendError(status, code int) error {
 	}
 }
 
-// isE164 reports whether s is a + followed by 8 to 15 digits, the same rule GOWA applies to
-// recipients plus E.164's length limit.
+// isE164 reports whether s is a + followed by 8 to 15 digits: E.164 with its length limit.
 func isE164(s string) bool {
 	digits, ok := strings.CutPrefix(s, "+")
 	return ok && len(digits) >= 8 && len(digits) <= 15 &&

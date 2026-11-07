@@ -2,7 +2,6 @@
 // interface from CLAUDE.md, the message templates, and the errors every adapter maps to.
 //
 // Adapters live in subpackages:
-//   - gowa: a self-hosted GOWA server linked to the platform number.
 //   - twilio: Twilio's Messages API; today the Twilio sandbox, in development only.
 //   - devlog: local development, writes messages to the log.
 //   - messagingtest: an in-memory fake for tests.
@@ -39,8 +38,8 @@ var (
 
 // Button is an action attached to a message. Payload is an opaque reference that maps back to
 // an organization and an invoice, lease or payroll run, for providers with native reply buttons.
-// URL is a link to our page that does the same thing. Providers without native buttons, such as
-// GOWA, send the link instead, so every button needs one. Neither field holds personal data.
+// URL is a link to our page that does the same thing. Providers without native buttons (Twilio
+// text, devlog, Telegram) send the link instead, so every button needs one. Neither field holds personal data.
 type Button struct {
 	Title   string
 	Payload string

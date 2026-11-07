@@ -243,7 +243,7 @@ func (d dayRunner) run(ctx context.Context, id uuid.UUID) (daySummary, error) {
 func (d dayRunner) send(ctx context.Context, c clock.Clock, org uuid.UUID, ids []uuid.UUID) (int, error) {
 	sender := reminder.NewSender(reminder.SenderDeps{
 		Store: d.store, Links: paylink.NewService(d.store, authz.NewService(d.store, c, d.log), c, d.webOrigin),
-		Provider: d.provider, ProviderName: "devlog", Clock: c, Log: d.log,
+		Provider: d.provider, Clock: c, Log: d.log,
 	})
 	sent := 0
 	var errs []error

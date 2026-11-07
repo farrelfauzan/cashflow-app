@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/devlog"
-	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/gowa"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/messagingtest"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/provider"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/router"
@@ -29,8 +28,6 @@ func TestNewBuildsTheConfiguredProvider(t *testing.T) {
 	}{
 		{name: "devlog", in: config.WhatsApp{Env: "development", Provider: "devlog"},
 			check: func(t *testing.T, got any) { require.IsType(t, &devlog.Provider{}, got) }},
-		{name: "gowa", in: config.WhatsApp{Provider: "gowa", GOWA: config.GOWA{URL: "http://gowa:3000", Username: "u", Password: "p"}},
-			check: func(t *testing.T, got any) { require.IsType(t, &gowa.Client{}, got) }},
 		{name: "twilio", in: config.WhatsApp{Provider: "twilio", Twilio: config.Twilio{AccountSID: sid, AuthToken: "t", WhatsAppFrom: "+14155238886"}},
 			check: func(t *testing.T, got any) { require.IsType(t, &twilio.Client{}, got) }},
 		{name: "none", in: config.WhatsApp{Provider: "cloudapi"}, wantErr: true},

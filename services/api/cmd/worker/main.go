@@ -127,8 +127,7 @@ func run() error {
 	if err := promises.Register(mux, sched); err != nil {
 		return err
 	}
-	// Reminders and promise confirmations go out through the configured WhatsApp provider; until
-	// slice 5's pacing only devlog and twilio actually send them (decision 41.6). With
+	// Reminders and promise confirmations go out through the configured WhatsApp provider. With
 	// TELEGRAM_MESSAGES=linked a tenant with a linked chat gets them on Telegram (decision 42).
 	msg, err := provider.New(cfg.WhatsApp(), log)
 	if err != nil {
@@ -152,13 +151,9 @@ func run() error {
 	if err := reminders.Register(mux, sched); err != nil {
 		return err
 	}
-	if !reminder.SendsThrough(cfg.WhatsAppProvider) {
-		log.Warn("reminders are recorded but not sent until slice 5's pacing (decision 41.6)", "provider", cfg.WhatsAppProvider)
-	}
 	sending := remindertask.SendWorker{
 		Sender: reminder.NewSender(reminder.SenderDeps{
-			Store: st, Links: paylink.NewService(st, az, clk, cfg.PublicWebOrigin), Provider: msg,
-			ProviderName: cfg.WhatsAppProvider, TelegramLinked: cfg.Telegram.SendsToLinked(), Clock: clk, Log: log,
+			Store: st, Links: paylink.NewService(st, az, clk, cfg.PublicWebOrigin), Provider: msg, Clock: clk, Log: log,
 		}),
 		Orgs:  st,
 		Queue: sendQueue,
