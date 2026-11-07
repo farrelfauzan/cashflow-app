@@ -82,6 +82,9 @@ jobs:
       TELEGRAM_BOT_USERNAME: CashflowE2eBot
       TELEGRAM_WEBHOOK_SECRET: e2e-only-telegram-webhook-secret
       TELEGRAM_API_BASE_URL: http://127.0.0.1:9
+      # The payment page offers "Hubungkan Telegram" only where messages go to linked chats. A
+      # linked tenant's message then fails at the closed port and is logged; no spec waits for one.
+      TELEGRAM_MESSAGES: linked
       # Both projects' QRIS tests run in parallel in one API, so more requests wait on the
       # stand-in at once than the default of 3 allows (a request past it answers
       # qris_unavailable). The pool grows with it, so the slots stay below the pool.
