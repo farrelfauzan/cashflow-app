@@ -3,7 +3,13 @@ import { z } from "zod";
 
 import {
   CODE_FORMAT_MESSAGE,
+  CODE_RESENT_MESSAGE,
+  CODE_RESENT_WHATSAPP_MESSAGE,
   EMPTY_PHONE_MESSAGE,
+  codeFieldLabel,
+  codeResentMessage,
+  codeSentEnding,
+  loginCodeChannel,
   loginCodeSchema,
   loginPhoneSchema,
 } from "./utils";
@@ -60,5 +66,54 @@ describe("loginCodeSchema", () => {
         errors: { code: CODE_FORMAT_MESSAGE },
       });
     }
+  });
+});
+
+describe("loginCodeChannel", () => {
+  it("says Telegram or WhatsApp only when Telegram is available and the code was not WhatsApp-only", () => {
+    expect(loginCodeChannel(true, false)).toBe("telegram-or-whatsapp");
+    expect(loginCodeChannel(true, true)).toBe("whatsapp");
+  });
+
+  it("says WhatsApp wherever Telegram is not available", () => {
+    expect(loginCodeChannel(false, false)).toBe("whatsapp");
+    expect(loginCodeChannel(false, true)).toBe("whatsapp");
+  });
+});
+
+describe("codeSentEnding", () => {
+  it("keeps the original WhatsApp wording", () => {
+    const { lead, tail } = codeSentEnding("whatsapp");
+    expect(`${lead} ${tail}`).toBe(
+      "terdaftar, kode 6 angka sudah dikirim ke WhatsApp-nya.",
+    );
+  });
+
+  it("names both channels without saying which one carried the code", () => {
+    const { lead, tail } = codeSentEnding("telegram-or-whatsapp");
+    expect(`${lead} ${tail}`).toBe(
+      "terdaftar, kode 6 angka sudah dikirim lewat Telegram atau WhatsApp.",
+    );
+  });
+});
+
+describe("codeFieldLabel", () => {
+  it("names WhatsApp only when the code went over WhatsApp", () => {
+    expect(codeFieldLabel("whatsapp")).toBe("Kode dari WhatsApp");
+    expect(codeFieldLabel("telegram-or-whatsapp")).toBe("Kode masuk");
+  });
+});
+
+describe("codeResentMessage", () => {
+  it("says the code went over WhatsApp after Kirim lewat WhatsApp", () => {
+    expect(codeResentMessage(true)).toBe(CODE_RESENT_WHATSAPP_MESSAGE);
+    expect(CODE_RESENT_WHATSAPP_MESSAGE).toBe(
+      "Kode baru dikirim lewat WhatsApp.",
+    );
+  });
+
+  it("keeps the plain message for Kirim ulang kode", () => {
+    expect(codeResentMessage(false)).toBe(CODE_RESENT_MESSAGE);
+    expect(CODE_RESENT_MESSAGE).toBe("Kode baru sudah dikirim.");
   });
 });
