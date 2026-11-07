@@ -27,6 +27,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
@@ -82,6 +83,17 @@ type ConfirmQueue interface {
 	EnqueueConfirm(ctx context.Context, org, versionID uuid.UUID) error
 }
 
+// StaffNotices records a staff notice in the transaction that makes its event and enqueues it once
+// that commits (TG-5). *staffnotice.Notices implements it; nil records nothing, which is how the
+// notices are off without TELEGRAM_MESSAGES=linked.
+type StaffNotices interface {
+	// RecordTx records a notice of e inside tx and returns its id, uuid.Nil when e's source
+	// already has one.
+	RecordTx(ctx context.Context, tx pgx.Tx, e staffnotice.Event) (uuid.UUID, error)
+	// Enqueue enqueues a committed notice's task; a failure is logged, and the sweep retries.
+	Enqueue(ctx context.Context, org, noticeID uuid.UUID)
+}
+
 // Deps are what the service needs.
 type Deps struct {
 	Store   *store.Store
@@ -92,6 +104,9 @@ type Deps struct {
 	// Confirms gets each saved version's confirmation task once the version commits; nil
 	// enqueues nothing (the sweep still finds the pending confirmation).
 	Confirms ConfirmQueue
+	// StaffNotices records a notice for staff of each version saved from the payment page (not
+	// of those members save); nil records none.
+	StaffNotices StaffNotices
 	// Log records a failed enqueue; nil discards it.
 	Log *slog.Logger
 }
@@ -103,6 +118,7 @@ type Service struct {
 	tenants  TenantAuthorizer
 	clock    clock.Clock
 	confirms ConfirmQueue
+	notices  StaffNotices
 	log      *slog.Logger
 }
 
@@ -112,7 +128,9 @@ func NewService(d Deps) *Service {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Service{store: d.Store, links: d.Links, tenants: d.Tenants, clock: d.Clock, confirms: d.Confirms, log: log}
+	return &Service{
+		store: d.Store, links: d.Links, tenants: d.Tenants, clock: d.Clock, confirms: d.Confirms, notices: d.StaffNotices, log: log,
+	}
 }
 
 // confirm enqueues the confirmation of a version that has committed. A failure is logged, not
@@ -140,6 +158,9 @@ type author struct {
 // The token grants it; there is no principal to authorize (CLAUDE.md "Not RBAC principals"). The
 // tenant page has no note. A malformed, unknown or revoked token is paylink.ErrLinkNotFound and an
 // expired one paylink.ErrLinkExpired, as for the page itself. See make for the rules.
+//
+// With staff notices on, the version also records a notice for the staff who look after the
+// tenant (TG-5), in the same transaction.
 func (s *Service) MakeFromLink(ctx context.Context, token string, in Input) (Promise, error) {
 	in.Note = ""
 	in, err := in.checked()
@@ -151,18 +172,26 @@ func (s *Service) MakeFromLink(ctx context.Context, token string, in Input) (Pro
 		return Promise{}, err
 	}
 	var out Promise
+	var noticeID uuid.UUID
 	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		tenantID, _, err := s.links.OpenLink(ctx, tx, org, linkID)
 		if err != nil {
 			return err
 		}
 		out, err = s.make(ctx, tx, org, tenantID, in, author{source: SourceTenantPage, linkID: linkID})
+		if err != nil || s.notices == nil {
+			return err
+		}
+		noticeID, err = s.notices.RecordTx(ctx, tx, staffnotice.PromiseMade(org, tenantID, out.Latest().ID))
 		return err
 	})
 	if err != nil {
 		return Promise{}, err
 	}
 	s.confirm(ctx, org, out)
+	if noticeID != uuid.Nil {
+		s.notices.Enqueue(ctx, org, noticeID)
+	}
 	return out, nil
 }
 

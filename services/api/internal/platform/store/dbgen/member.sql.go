@@ -281,6 +281,59 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 	return i, err
 }
 
+const listActiveMemberRoleAssignments = `-- name: ListActiveMemberRoleAssignments :many
+SELECT m.id AS membership_id, m.staff_user_id, ra.id AS assignment_id, ra.builtin_role, ra.role_id,
+       ra.property_id, r.name AS role_name, r.policy AS role_policy
+FROM membership m
+LEFT JOIN role_assignment ra ON ra.organization_id = m.organization_id AND ra.membership_id = m.id
+LEFT JOIN role r ON r.organization_id = ra.organization_id AND r.id = ra.role_id
+WHERE m.organization_id = $1 AND m.status = 'active'
+ORDER BY m.staff_user_id, ra.created_at, ra.id
+`
+
+type ListActiveMemberRoleAssignmentsRow struct {
+	MembershipID uuid.UUID
+	StaffUserID  uuid.UUID
+	AssignmentID uuid.NullUUID
+	BuiltinRole  *string
+	RoleID       uuid.NullUUID
+	PropertyID   uuid.NullUUID
+	RoleName     *string
+	RolePolicy   []byte
+}
+
+// Every active member of the organization with each of their role assignments (a member with
+// none comes once, with NULL assignment columns), for the platform's own decisions about who may
+// act on a record (authz.Service.ActivePrincipalsTx).
+func (q *Queries) ListActiveMemberRoleAssignments(ctx context.Context, organizationID uuid.UUID) ([]ListActiveMemberRoleAssignmentsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveMemberRoleAssignments, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveMemberRoleAssignmentsRow
+	for rows.Next() {
+		var i ListActiveMemberRoleAssignmentsRow
+		if err := rows.Scan(
+			&i.MembershipID,
+			&i.StaffUserID,
+			&i.AssignmentID,
+			&i.BuiltinRole,
+			&i.RoleID,
+			&i.PropertyID,
+			&i.RoleName,
+			&i.RolePolicy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCollectorCandidates = `-- name: ListCollectorCandidates :many
 SELECT m.id, u.name,
        EXISTS (SELECT 1 FROM role_assignment ra

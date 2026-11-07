@@ -14,6 +14,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
@@ -29,10 +30,31 @@ var ErrNothingToRecord = errors.New("reminder: nothing to record")
 // Deciding is the platform's own work, like closing promises: it checks no member's permission
 // and writes no audit row; the reminder rows are the record.
 type Decider struct {
-	store *store.Store
-	clock clock.Clock
-	log   *slog.Logger
-	sends SendQueue
+	store   *store.Store
+	clock   clock.Clock
+	log     *slog.Logger
+	sends   SendQueue
+	notices StaffNotices
+}
+
+// StaffNotices records a staff notice in the transaction that makes its event and enqueues it once
+// that commits (TG-5). *staffnotice.Notices implements it; nil records nothing, which is how the
+// notices are off without TELEGRAM_MESSAGES=linked.
+type StaffNotices interface {
+	// RecordTx records a notice of e inside tx and returns its id, uuid.Nil when e's source
+	// already has one.
+	RecordTx(ctx context.Context, tx pgx.Tx, e staffnotice.Event) (uuid.UUID, error)
+	// Enqueue enqueues a committed notice's task; a failure is logged, and the sweep retries.
+	Enqueue(ctx context.Context, org, noticeID uuid.UUID)
+}
+
+// DeciderOption adjusts a Decider.
+type DeciderOption func(*Decider)
+
+// NotifyStaff makes DecideOrg record a staff notice (TG-5) of each h7 visit task it opens, in the
+// transaction that opens it; n nil records none.
+func NotifyStaff(n StaffNotices) DeciderOption {
+	return func(d *Decider) { d.notices = n }
 }
 
 // SendQueue enqueues the reminder:send task of a recorded reminder. A task already queued counts
@@ -43,8 +65,12 @@ type SendQueue interface {
 
 // NewDecider returns a Decider. c decides today in Asia/Jakarta and the time rows are made; sends
 // gets each reminder's send task once its row commits (nil enqueues nothing, for tests).
-func NewDecider(st *store.Store, c clock.Clock, log *slog.Logger, sends SendQueue) *Decider {
-	return &Decider{store: st, clock: c, log: log, sends: sends}
+func NewDecider(st *store.Store, c clock.Clock, log *slog.Logger, sends SendQueue, opts ...DeciderOption) *Decider {
+	d := &Decider{store: st, clock: c, log: log, sends: sends}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 // Result counts what one DecideOrg run did.
@@ -82,7 +108,7 @@ func (d *Decider) DecideOrg(ctx context.Context, org uuid.UUID) (Result, error) 
 	res := Result{Tenants: len(tenants)}
 	var errs []error
 	for _, tenantID := range tenants {
-		dec, reminderID, opened, err := d.decideTenant(ctx, org, tenantID, today)
+		dec, reminderID, opened, noticeID, err := d.decideTenant(ctx, org, tenantID, today)
 		if err != nil {
 			res.Failed++
 			d.log.ErrorContext(ctx, "deciding reminders", "organization", org, "tenant", tenantID, "error", err)
@@ -96,6 +122,9 @@ func (d *Decider) DecideOrg(ctx context.Context, org uuid.UUID) (Result, error) 
 				d.log.WarnContext(ctx, "enqueueing a reminder's send; the sweep retries it",
 					"organization", org, "reminder", reminderID, "error", err)
 			}
+		}
+		if noticeID != uuid.Nil {
+			d.notices.Enqueue(ctx, org, noticeID)
 		}
 		if dec.HasMessage() {
 			res.Reminders++
@@ -128,12 +157,14 @@ func brokenSince(today time.Time) time.Time {
 // meanwhile, and two runs for the same tenant (a retry and the next day's, say) take turns: the
 // second reads what the first recorded. The unique keys back that up: a stage, H-1 or notice
 // recorded twice fails the transaction instead of half-recording a message. It also returns the
-// reminder row's id, uuid.Nil when none was recorded.
-func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, today time.Time) (Decision, uuid.UUID, bool, error) {
+// reminder row's id, uuid.Nil when none was recorded, and the staff notice of an opened visit task
+// (uuid.Nil when none was recorded), to enqueue once this commits.
+func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, today time.Time) (Decision, uuid.UUID, bool, uuid.UUID, error) {
 	var dec Decision
-	var reminderID uuid.UUID
+	var reminderID, noticeID uuid.UUID
 	var opened bool
 	err := d.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		noticeID = uuid.Nil // a retried transaction starts again
 		q := dbgen.New(tx)
 		if err := billing.LockTenant(ctx, q, org, tenantID); err != nil {
 			return err
@@ -151,20 +182,27 @@ func (d *Decider) decideTenant(ctx context.Context, org, tenantID uuid.UUID, tod
 			}
 		}
 		if dec.OpenH7Visit {
+			visitID := uuid.New()
 			n, err := q.OpenVisitTask(ctx, dbgen.OpenVisitTaskParams{
-				ID: uuid.New(), OrganizationID: org, TenantID: tenantID, Reason: VisitReasonH7, CreatedAt: now,
+				ID: visitID, OrganizationID: org, TenantID: tenantID, Reason: VisitReasonH7, CreatedAt: now,
 			})
 			if err != nil {
 				return fmt.Errorf("reminder: opening the h7 visit task: %w", err)
 			}
 			opened = n == 1
+			if opened && d.notices != nil {
+				noticeID, err = d.notices.RecordTx(ctx, tx, staffnotice.VisitTaskOpened(org, tenantID, visitID))
+				if err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
 	if err != nil {
-		return Decision{}, uuid.Nil, false, err
+		return Decision{}, uuid.Nil, false, uuid.Nil, err
 	}
-	return dec, reminderID, opened, nil
+	return dec, reminderID, opened, noticeID, nil
 }
 
 // loadInput reads what the rules need about the tenant.

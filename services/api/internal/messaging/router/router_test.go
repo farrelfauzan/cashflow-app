@@ -402,3 +402,111 @@ func TestRouterLogsNeitherTheStaffChatNorTheCode(t *testing.T) {
 	require.NotContains(t, logs, m.Params["code"])
 	require.NotContains(t, logs, m.To)
 }
+
+// staffNoticeFor is a staff notice as the staff notice sender sends it (TG-5): TelegramOnly, for
+// one staff user, with no phone.
+func staffNoticeFor(org, user uuid.UUID) messaging.Message {
+	m := messagingtest.Samples()[messaging.TemplateStaffVisitTask]
+	m.OrganizationID, m.StaffUserID, m.TelegramOnly = org, user, true
+	return m
+}
+
+func TestRouterTelegramOnlyNeverReachesWhatsApp(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		setup    func(s *setup) *router.Router
+		msg      func(s setup) messaging.Message
+		wantChat int64 // 0: nothing is sent
+		wantErr  error
+	}{
+		{
+			name:     "a linked staff user gets it on Telegram",
+			msg:      func(s setup) messaging.Message { return staffNoticeFor(s.org, s.linkedStaff) },
+			wantChat: staffChatID,
+		},
+		{
+			name:    "a staff user with no link gets nothing",
+			msg:     func(s setup) messaging.Message { return staffNoticeFor(s.org, s.unlinkedStaff) },
+			wantErr: messaging.ErrNoTelegramChat,
+		},
+		{
+			name: "a router without staff links sends nothing",
+			setup: func(s *setup) *router.Router {
+				return router.New(s.whatsapp, s.telegram, s.links, nil, slog.New(slog.NewJSONHandler(s.logs, nil)))
+			},
+			msg:     func(s setup) messaging.Message { return staffNoticeFor(s.org, s.linkedStaff) },
+			wantErr: messaging.ErrNoTelegramChat,
+		},
+		{
+			name: "a message naming no recipient sends nothing",
+			msg: func(s setup) messaging.Message {
+				m := staffNoticeFor(s.org, uuid.Nil)
+				m.To = "+6281200010009"
+				return m
+			},
+			wantErr: messaging.ErrNoTelegramChat,
+		},
+		{
+			name: "a tenant with no link gets nothing",
+			msg: func(s setup) messaging.Message {
+				m := reminderFor(s.org, s.unlinked)
+				m.TelegramOnly = true
+				return m
+			},
+			wantErr: messaging.ErrNoTelegramChat,
+		},
+		{
+			name: "a linked tenant gets it on Telegram",
+			msg: func(s setup) messaging.Message {
+				m := reminderFor(s.org, s.linked)
+				m.TelegramOnly = true
+				return m
+			},
+			wantChat: chatID,
+		},
+		{
+			name: "a failed staff lookup sends nothing and is not a missing link",
+			setup: func(s *setup) *router.Router {
+				s.staff.lookupErr = errors.New("database down")
+				return s.router
+			},
+			msg:     func(s setup) messaging.Message { return staffNoticeFor(s.org, s.linkedStaff) },
+			wantErr: errors.New("database down"),
+		},
+		{
+			name: "an unreachable chat ends the link and does not fall back",
+			setup: func(s *setup) *router.Router {
+				s.telegram.err = fmt.Errorf("%w (status 403)", messaging.ErrUndeliverable)
+				return s.router
+			},
+			msg:     func(s setup) messaging.Message { return staffNoticeFor(s.org, s.linkedStaff) },
+			wantErr: messaging.ErrUndeliverable,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := newSetup(t)
+			r := s.router
+			if tc.setup != nil {
+				r = tc.setup(&s)
+			}
+			m := tc.msg(s)
+			_, err := r.SendTemplate(context.Background(), m)
+			require.Empty(t, s.whatsapp.Sent(), "a TelegramOnly message never reaches WhatsApp")
+			switch {
+			case tc.wantErr == nil:
+				require.NoError(t, err)
+				require.Equal(t, []telegramCall{{chat: tc.wantChat, msg: m}}, s.telegram.sent)
+			case errors.Is(tc.wantErr, messaging.ErrNoTelegramChat) || errors.Is(tc.wantErr, messaging.ErrUndeliverable):
+				require.ErrorIs(t, err, tc.wantErr)
+				require.Empty(t, s.telegram.sent)
+			default:
+				require.ErrorContains(t, err, tc.wantErr.Error())
+				require.NotErrorIs(t, err, messaging.ErrNoTelegramChat)
+				require.Empty(t, s.telegram.sent)
+			}
+		})
+	}
+}

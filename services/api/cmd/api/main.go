@@ -36,6 +36,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice/noticetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
@@ -141,10 +143,16 @@ func run() error {
 	}
 	webhooks := qris.NewWebhook(accounts, qristask.NewPaidClient(queueClient), log)
 	// Each saved promise version enqueues its "janji tercatat" message; the worker sends it.
-	promises := promise.NewService(promise.Deps{
+	promiseDeps := promise.Deps{
 		Store: st, Links: payLinks, Tenants: billingSvc, Clock: clk,
 		Confirms: remindertask.NewSendClient(queueClient), Log: log,
-	})
+	}
+	// With TELEGRAM_MESSAGES=linked a promise made on the payment page also notifies the staff
+	// who look after the tenant, on Telegram only (TG-5); otherwise nothing is recorded.
+	if cfg.Telegram.SendsToLinked() {
+		promiseDeps.StaffNotices = staffnotice.NewNotices(clk, noticetask.NewClient(queueClient), log)
+	}
+	promises := promise.NewService(promiseDeps)
 	tgCodes, tgUpdates, err := newTelegram(cfg, st, payLinks, tgStaff, clk, log)
 	if err != nil {
 		return err

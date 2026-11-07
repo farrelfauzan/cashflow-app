@@ -158,3 +158,15 @@ FROM membership m
 JOIN staff_user u ON u.id = m.staff_user_id
 WHERE m.organization_id = $1 AND m.status = 'active'
 ORDER BY karyawan DESC, u.name, m.id;
+
+-- name: ListActiveMemberRoleAssignments :many
+-- Every active member of the organization with each of their role assignments (a member with
+-- none comes once, with NULL assignment columns), for the platform's own decisions about who may
+-- act on a record (authz.Service.ActivePrincipalsTx).
+SELECT m.id AS membership_id, m.staff_user_id, ra.id AS assignment_id, ra.builtin_role, ra.role_id,
+       ra.property_id, r.name AS role_name, r.policy AS role_policy
+FROM membership m
+LEFT JOIN role_assignment ra ON ra.organization_id = m.organization_id AND ra.membership_id = m.id
+LEFT JOIN role r ON r.organization_id = ra.organization_id AND r.id = ra.role_id
+WHERE m.organization_id = @organization_id AND m.status = 'active'
+ORDER BY m.staff_user_id, ra.created_at, ra.id;

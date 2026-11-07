@@ -337,6 +337,19 @@ type RoleAssignment struct {
 	PropertyID     uuid.NullUUID
 }
 
+type StaffNotice struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	Kind             string
+	PromiseVersionID uuid.NullUUID
+	PromiseID        uuid.NullUUID
+	VisitTaskID      uuid.NullUUID
+	Status           string
+	SentAt           *time.Time
+	CreatedAt        time.Time
+}
+
 type StaffSession struct {
 	ID          uuid.UUID
 	TokenHash   []byte

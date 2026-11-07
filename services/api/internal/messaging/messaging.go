@@ -32,6 +32,9 @@ var (
 	// ErrNotConnected means the WhatsApp session behind the provider is not usable, for example
 	// the linked device was logged out. An operator has to re-link it.
 	ErrNotConnected = errors.New("messaging: the WhatsApp session is not connected")
+	// ErrNoTelegramChat means a TelegramOnly message was not sent because its recipient has no
+	// live Telegram link. It is expected (most staff are not linked), not a failure.
+	ErrNoTelegramChat = errors.New("messaging: the recipient has no linked Telegram chat")
 )
 
 // Button is an action attached to a message. Payload is an opaque reference that maps back to
@@ -58,10 +61,17 @@ type Button struct {
 // is platform-level, so it needs no OrganizationID. The router sends to the staff user's linked
 // chat when that channel is on (decision 42); To is used otherwise. TenantID wins when both are
 // set.
+//
+// TelegramOnly marks a message that may go only to its recipient's linked Telegram chat, never to
+// WhatsApp: staff notices (TG-5), which decision 41(5) keeps off WhatsApp until slice 5. The
+// router sends it to the chat or, with no live link, sends nothing and answers ErrNoTelegramChat.
+// Only the router may be given one: a WhatsApp adapter does not read the flag, so callers send
+// TelegramOnly messages only when TELEGRAM_MESSAGES=linked puts the router in front.
 type Message struct {
 	OrganizationID uuid.UUID
 	TenantID       uuid.UUID
 	StaffUserID    uuid.UUID
+	TelegramOnly   bool
 	To             string // E.164 phone number, for example +628123456789
 	Template       string
 	Params         map[string]string
