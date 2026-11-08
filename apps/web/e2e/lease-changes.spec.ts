@@ -249,6 +249,10 @@ test.describe("Admin of the whole organization", () => {
       card.getByRole("button", { name: "Catat pindah keluar" }),
       "destructive-outline",
     );
+    await card
+      .getByRole("button", { name: "Catat pindah keluar" })
+      .scrollIntoViewIfNeeded();
+    await attachViewportScreenshot(page, testInfo, "lease-card-actions");
     await edit.click();
 
     const form = page.getByRole("dialog", { name: "Ubah sewa" });
