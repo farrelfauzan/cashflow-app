@@ -30,6 +30,10 @@
   --palette-cream: #f5f3ee;
   --palette-accent: #1d6b63;
   --palette-warning: #b4530f;
+  /* The logo's coin and its ring (option 3, "Koin berputar"). Only inside the logo, never as a
+     UI color. */
+  --palette-coin: #f5b82e;
+  --palette-coin-ring: #c7870b;
 
   --palette-paper: #fbfaf7; /* cream, lighter: cards and popovers */
   --palette-sand: #eae6dd; /* cream, darker: muted and secondary surfaces */
@@ -89,6 +93,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-coin: var(--palette-coin);
+  --color-coin-ring: var(--palette-coin-ring);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
