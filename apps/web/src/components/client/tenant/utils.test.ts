@@ -15,6 +15,7 @@ import {
   bookingCancelledNotice,
   leaseActions,
   leaseChargesNotice,
+  LEASE_ACTION_VARIANTS,
   leaseFooterKinds,
   LEASE_PANEL_TITLES,
   leasePanelSubtitle,
@@ -1052,6 +1053,27 @@ describe("leaseFooterKinds", () => {
       "Rencana keluar",
       "Batalkan sewa",
     ]);
+  });
+});
+
+describe("LEASE_ACTION_VARIANTS", () => {
+  it("gives the three footer meanings three looks: neutral, caution, destructive", () => {
+    const looks = (end: "moveOut" | "cancelBooking") =>
+      leaseFooterKinds({ end }).map((kind) => LEASE_ACTION_VARIANTS[kind]);
+    expect(looks("moveOut")).toEqual([
+      "outline",
+      "caution-outline",
+      "destructive-outline",
+    ]);
+    expect(looks("cancelBooking")).toEqual([
+      "outline",
+      "caution-outline",
+      "destructive-outline",
+    ]);
+  });
+
+  it("keeps Ubah sewa neutral", () => {
+    expect(LEASE_ACTION_VARIANTS.editLease).toBe("outline");
   });
 });
 

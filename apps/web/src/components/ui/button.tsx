@@ -8,9 +8,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // Variants by meaning (T-093): default creates, saves or confirms; caution changes an
+        // amount or a date already billed or agreed; destructive is hard to undo. The outline
+        // ones are the buttons that open such an action, the solid ones confirm it. Every pair's
+        // contrast is noted in globals.css.
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/50 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+        "destructive-outline":
+          "border border-destructive bg-background text-destructive shadow-xs hover:bg-destructive hover:text-destructive-foreground focus-visible:border-destructive focus-visible:ring-destructive/50",
+        caution:
+          "bg-warning text-warning-foreground hover:bg-warning-strong focus-visible:ring-warning/50",
+        "caution-outline":
+          "border border-warning bg-background text-warning shadow-xs hover:bg-warning hover:text-warning-foreground focus-visible:border-warning focus-visible:ring-warning/50",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

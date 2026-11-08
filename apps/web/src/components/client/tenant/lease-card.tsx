@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { LeaseActions, LeasePanelKind, LeaseView } from "./type";
 import {
   LEASE_ACTION_CLASS,
+  LEASE_ACTION_VARIANTS,
   LEASE_PANEL_TITLES,
   leaseFooterKinds,
 } from "./utils";
@@ -141,7 +142,7 @@ export function LeaseCard({
               <Button
                 key={kind}
                 type="button"
-                variant="outline"
+                variant={LEASE_ACTION_VARIANTS[kind]}
                 onClick={() => onAction(kind)}
                 className={LEASE_ACTION_CLASS}
               >

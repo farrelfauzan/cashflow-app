@@ -106,7 +106,7 @@ export function PlannedEndForm({
             </p>
             <Button
               type="button"
-              variant="outline"
+              variant="destructive-outline"
               disabled={saving}
               onClick={() => {
                 if (saving) return;
@@ -114,7 +114,7 @@ export function PlannedEndForm({
                 form.clearErrors("root.server");
                 send(null);
               }}
-              className="h-11 self-start rounded-xl border-[1.5px] border-destructive bg-card px-[18px] text-[15px] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive md:text-base"
+              className="h-11 self-start rounded-xl border-[1.5px] bg-card px-[18px] text-[15px] font-semibold md:text-base"
             >
               Hapus rencana keluar
             </Button>
@@ -127,6 +127,8 @@ export function PlannedEndForm({
         submitLabel="Simpan rencana keluar"
         saving={saving}
         wide={false}
+        // Changes the date billing stops (T-093).
+        submitVariant="caution"
       />
     </>
   );

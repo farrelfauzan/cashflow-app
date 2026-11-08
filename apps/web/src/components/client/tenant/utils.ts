@@ -26,6 +26,7 @@ import { everywhere, type AppAbility } from "@/lib/capabilities";
 import type {
   ChipTone,
   FilterOption,
+  LeaseActionVariant,
   LeaseActions,
   LeasePanelKind,
   LeaseView,
@@ -436,6 +437,18 @@ export const LEASE_PANEL_TITLES: Record<LeasePanelKind, string> = {
   moveOut: "Catat pindah keluar",
   cancelBooking: "Batalkan sewa",
 };
+
+// The card's buttons say what their panel does (T-093): "Ubah sewa" and "Biaya tambahan" are
+// neutral; "Rencana keluar" changes the date billing stops (caution); moving out and cancelling a
+// booking end the lease and cancel invoices, hard to undo (destructive).
+export const LEASE_ACTION_VARIANTS: Record<LeasePanelKind, LeaseActionVariant> =
+  {
+    editLease: "outline",
+    charges: "outline",
+    plannedEnd: "caution-outline",
+    moveOut: "destructive-outline",
+    cancelBooking: "destructive-outline",
+  };
 
 // A lease panel's subtitle: "Bu Rina Wulandari · Kamar 07 · Kos Melati".
 export function leasePanelSubtitle(

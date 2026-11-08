@@ -14,7 +14,8 @@ export function CorrectButton({ label, onClick }: CorrectButtonProps) {
   return (
     <Button
       type="button"
-      variant="outline"
+      // Changes an amount already billed or paid (T-093).
+      variant="caution-outline"
       size="sm"
       aria-label={label}
       onClick={onClick}
