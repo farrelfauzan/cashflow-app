@@ -1,6 +1,10 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
+  animationsSettled,
+  attachViewportScreenshot,
+} from "./support/page-checks";
+import {
   clearRecordedAnimations,
   openPropertiesPage,
   recordAnimations,
@@ -67,6 +71,12 @@ test.describe("Side drawer motion", () => {
             { slot: "sheet-overlay", name: "enter" },
           ]),
         );
+      await animationsSettled(page);
+      await attachViewportScreenshot(
+        page,
+        testInfo,
+        `drawer-${opener.label}-open`,
+      );
       // Focus is inside the drawer, and Tab never leaves it.
       await expect(dialog.getByLabel("Nama properti")).toBeFocused();
       for (let i = 0; i < 12; i += 1) {
@@ -113,7 +123,8 @@ test.describe("Side drawer motion", () => {
     page,
   }) => {
     await openPropertiesPage(page, HENDRA.organizations, GRIYA);
-    const heading = page.getByRole("heading", { level: 1, name: "Properti" });
+    // By tag: while the drawer is open the page behind is hidden from the accessibility tree.
+    const heading = page.locator("main h1", { hasText: "Properti" });
     const before = await heading.boundingBox();
     await page.getByRole("button", { name: "Tambah properti" }).click();
     const dialog = page.getByRole("dialog", { name: "Tambah properti" });
@@ -166,7 +177,7 @@ test.describe("Header back link", () => {
 
   test("has no underline on hover, and keeps a visible focus ring", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openPropertiesPage(page, HENDRA.organizations, GRIYA);
     await page
       .getByRole("link", { name: "Buka unit Kos Melati" })
@@ -185,9 +196,13 @@ test.describe("Header back link", () => {
       await back.evaluate((el) => getComputedStyle(el).textDecorationLine),
     ).toBe("none");
     // A hover cue that is not an underline: a tinted background.
-    await expect
-      .poll(() => back.evaluate((el) => getComputedStyle(el).backgroundColor))
-      .not.toBe("rgba(0, 0, 0, 0)");
+    // Hover styles apply only where the device can hover (a mouse or trackpad); the touch
+    // projects never show the tint.
+    if (await page.evaluate(() => matchMedia("(hover: hover)").matches)) {
+      await expect
+        .poll(() => back.evaluate((el) => getComputedStyle(el).backgroundColor))
+        .not.toBe("rgba(0, 0, 0, 0)");
+    }
 
     // Keyboard focus shows a ring.
     await page.mouse.move(0, 0);
@@ -195,6 +210,7 @@ test.describe("Header back link", () => {
     await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Tab");
     await expect(back).toBeFocused();
+    await attachViewportScreenshot(page, testInfo, "back-link-focus");
     expect(
       await back.evaluate((el) => getComputedStyle(el).boxShadow),
     ).not.toBe("none");

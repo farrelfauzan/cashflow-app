@@ -48,16 +48,44 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
 }) {
+  // Radix gives focus back only to a SheetTrigger, and the app's panels open from their own
+  // buttons. So the element focused when the sheet opened gets it back when it closes, unless
+  // the caller moves focus itself (T-095).
+  const openerRef = React.useRef<HTMLElement | null>(null);
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        onOpenAutoFocus={(event) => {
+          const active = document.activeElement;
+          openerRef.current =
+            active instanceof HTMLElement && active !== document.body
+              ? active
+              : null;
+          onOpenAutoFocus?.(event);
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          const opener = openerRef.current;
+          openerRef.current = null;
+          if (
+            event.defaultPrevented ||
+            opener === null ||
+            !opener.isConnected
+          ) {
+            return;
+          }
+          event.preventDefault();
+          opener.focus();
+        }}
         className={cn(
           "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out motion-reduce:data-[state=closed]:duration-150 motion-reduce:data-[state=closed]:fade-out-0 motion-reduce:data-[state=closed]:[--tw-exit-translate-x:0]! motion-reduce:data-[state=closed]:[--tw-exit-translate-y:0]! motion-reduce:data-[state=open]:duration-150 motion-reduce:data-[state=open]:fade-in-0 motion-reduce:data-[state=open]:[--tw-enter-translate-x:0]! motion-reduce:data-[state=open]:[--tw-enter-translate-y:0]!",
           side === "right" &&

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  animationsSettled,
   attachFullPageScreenshot,
   attachViewportScreenshot,
   trackOutsideRequests,
@@ -81,6 +82,7 @@ test.describe("member of two organizations", () => {
     await orgSwitch.click();
     const options = page.getByRole("option");
     await expect(options).toHaveText(HENDRA.organizations);
+    await animationsSettled(page);
     for (const option of await options.all()) {
       const box = await option.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
