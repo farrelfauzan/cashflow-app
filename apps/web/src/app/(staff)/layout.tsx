@@ -3,8 +3,9 @@ import type { Metadata, Viewport } from "next";
 import { APP_NAME } from "@/lib/app-name";
 
 // Staff pages only (login, the organization picker and everything under /o/): the PWA manifest,
-// the browser tab's icon (the ReCash mark) and the home-screen icon. Tenant pages (/t/...) sit outside this group, so they never link the
-// manifest. There is no service worker: nothing is cached for offline use.
+// the browser tab's icon (the ReCash mark) and the home-screen icon. Tenant pages (/t/...) sit
+// outside this group, so they never link the manifest or the icons. There is no service worker:
+// nothing is cached for offline use.
 export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: APP_NAME, statusBarStyle: "default" },
