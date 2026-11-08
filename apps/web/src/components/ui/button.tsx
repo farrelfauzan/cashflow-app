@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { Slot } from "radix-ui";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-base font-medium whitespace-nowrap transition-all duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 motion-reduce:active:scale-100 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-base font-medium whitespace-nowrap transition-all duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 motion-reduce:active:scale-100 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -16,13 +16,13 @@ const buttonVariants = cva(
         default:
           "bg-primary text-primary-foreground hover:bg-primary-strong active:bg-primary-strong",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive-strong focus-visible:ring-destructive/50 active:bg-destructive-strong dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-destructive-foreground hover:bg-destructive-strong focus-visible:ring-destructive active:bg-destructive-strong dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         "destructive-outline":
-          "border border-destructive bg-background text-destructive shadow-xs hover:bg-destructive hover:text-destructive-foreground focus-visible:border-destructive focus-visible:ring-destructive/50 active:border-destructive-strong active:bg-destructive-strong active:text-destructive-foreground",
+          "border border-destructive bg-background text-destructive shadow-xs hover:bg-destructive hover:text-destructive-foreground focus-visible:border-destructive focus-visible:ring-destructive active:border-destructive-strong active:bg-destructive-strong active:text-destructive-foreground",
         caution:
-          "bg-warning text-warning-foreground hover:bg-warning-strong focus-visible:ring-warning/50 active:bg-warning-strong",
+          "bg-warning text-warning-foreground hover:bg-warning-strong focus-visible:ring-warning active:bg-warning-strong",
         "caution-outline":
-          "border border-warning bg-background text-warning shadow-xs hover:bg-warning hover:text-warning-foreground focus-visible:border-warning focus-visible:ring-warning/50 active:border-warning-strong active:bg-warning-strong active:text-warning-foreground",
+          "border border-warning bg-background text-warning shadow-xs hover:bg-warning hover:text-warning-foreground focus-visible:border-warning focus-visible:ring-warning active:border-warning-strong active:bg-warning-strong active:text-warning-foreground",
         outline:
           "border bg-background shadow-xs hover:bg-secondary hover:text-secondary-foreground active:bg-secondary dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
