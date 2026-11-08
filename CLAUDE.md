@@ -208,8 +208,8 @@ at launch. `pprof` in development only.
 - Many users are 40+: body text ≥16px on iPad and ≥14px on phone, high contrast, touch
   targets ≥44px, **one primary action per screen**.
 - Targets: iPad 1180×820 (Supervisor and admin), phone 390×844 (penyewa and karyawan).
-- Palette: ink `#1E2A2B`, cream `#F5F3EE`, accent `#1D6B63`, warning `#B4530F`.
-  Font: Plus Jakarta Sans.
+- Palette: ink `#1E2A2B`, cream `#F5F3EE`, accent `#1D6B63`, warning `#B4530F`; inside the logo
+  only, coin `#F5B82E` and coin ring `#C7870B` (logo option 3, decision 44). Font: Plus Jakarta Sans.
 - Rupiah format: `Rp1.250.000` (dot thousands separator, no decimals).
 
 ## Roles

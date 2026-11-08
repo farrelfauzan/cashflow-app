@@ -418,6 +418,7 @@ test("the page is kept out of search engines and sends no referrer", async ({
   const robots = page.locator('head meta[name="robots"]');
   await expect(robots).toHaveAttribute("content", /noindex/);
   await expect(robots).toHaveAttribute("content", /nofollow/);
-  // Tenant pages are not part of the staff PWA.
+  // Tenant pages are not part of the staff PWA, and link none of its icons.
   await expect(page.locator('link[rel="manifest"]')).toHaveCount(0);
+  await expect(page.locator('link[rel="icon"]')).toHaveCount(0);
 });

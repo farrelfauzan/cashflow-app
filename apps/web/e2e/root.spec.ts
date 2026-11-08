@@ -43,6 +43,26 @@ test.describe("signed out", () => {
     expect(font.family).toMatch(/^["']?Plus Jakarta Sans["']?,/);
     expect(font.loaded).toBe(true);
 
+    // The ReCash logo (board Logo-Opsi-3): the inline mark with its coin, the wordmark, and the
+    // same mark as the tab's icon; the manifest's icons are all served.
+    await expect(page.getByText(APP_NAME, { exact: true })).toBeVisible();
+    const coin = page.locator("svg circle.fill-coin");
+    await expect(coin).toHaveCount(1);
+    await expect(coin).toHaveCSS("fill", "rgb(245, 184, 46)");
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
+      "href",
+      /^\/icon\.svg/,
+    );
+    for (const icon of [
+      "/icon.svg",
+      "/icon-192.png",
+      "/icon-512.png",
+      "/icon-maskable-512.png",
+      "/apple-touch-icon.png",
+    ]) {
+      expect((await page.request.get(icon)).status()).toBe(200);
+    }
+
     await attachFullPageScreenshot(page, testInfo, "root-signed-out");
     expect(outsideRequests).toEqual([]);
   });
