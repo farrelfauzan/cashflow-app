@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { Capability } from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
-import { ORG_MENU, roleSummary, visibleOrgMenu } from "./utils";
+import {
+  moreMenuRoleLine,
+  moreMenuSections,
+  ORG_MENU,
+  phoneTabs,
+  roleSummary,
+  visibleOrgMenu,
+} from "./utils";
 
 function capabilities(
   entries: Record<string, Capability["access"]>,
@@ -75,5 +82,42 @@ describe("roleSummary", () => {
 
   it("is empty without roles", () => {
     expect(roleSummary([])).toBe("");
+  });
+});
+
+describe("phoneTabs and moreMenuSections", () => {
+  it("puts the whole menu in the tab bar's order, and Anggota tim in Lainnya", () => {
+    expect(phoneTabs(ORG_MENU).map((item) => item.label)).toEqual([
+      "Beranda",
+      "Penyewa",
+      "Penagihan",
+      "Properti",
+    ]);
+    expect(moreMenuSections(ORG_MENU).map((item) => item.label)).toEqual([
+      "Anggota tim",
+    ]);
+  });
+
+  it("shows only the sections the member may open", () => {
+    const visible = ORG_MENU.filter((item) =>
+      ["home", "tenants", "members"].includes(item.key),
+    );
+    expect(phoneTabs(visible).map((item) => item.key)).toEqual([
+      "home",
+      "tenants",
+    ]);
+    expect(moreMenuSections(visible).map((item) => item.key)).toEqual([
+      "members",
+    ]);
+  });
+});
+
+describe("moreMenuRoleLine", () => {
+  it.each([
+    { roles: "Admin", want: "Admin di Griya Sejahtera" },
+    { roles: "Karyawan, Admin", want: "Karyawan, Admin di Griya Sejahtera" },
+    { roles: "", want: "Griya Sejahtera" },
+  ])("says $want", ({ roles, want }) => {
+    expect(moreMenuRoleLine(roles, "Griya Sejahtera")).toBe(want);
   });
 });

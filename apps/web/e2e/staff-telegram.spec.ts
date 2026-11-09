@@ -22,7 +22,7 @@ import {
   projectName,
   type ProjectName,
 } from "./support/projects";
-import { openMenu } from "./support/shell";
+import { openAccountMenu } from "./support/shell";
 import { LESTARI, SARI, type SeededStaff } from "./support/staff";
 
 // A staff member's "Telegram" in the side menu (decision 42: a demo channel, development and
@@ -127,7 +127,7 @@ test("a member links Telegram from the menu, sees it linked, and unlinks it", as
   const outside = trackOutsideRequests(page);
   await page.goto(`/o/${orgId}`);
 
-  const menu = await openMenu(page, testInfo);
+  const menu = await openAccountMenu(page, testInfo);
   const item = menu.getByRole("button", { name: "Telegram", exact: true });
   await expectTouchTarget(item);
   await item.click();
@@ -209,7 +209,7 @@ test("closing the dialog while it unlinks still shows the member unlinked", asyn
   });
 
   await page.goto(`/o/${orgId}`);
-  const menu = await openMenu(page, testInfo);
+  const menu = await openAccountMenu(page, testInfo);
   const item = menu.getByRole("button", { name: "Telegram", exact: true });
   await item.click();
   const dialog = page.getByRole("dialog", { name: "Telegram" });

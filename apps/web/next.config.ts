@@ -28,6 +28,10 @@ export default function config(phase: string): NextConfig {
     // major and these options will then be removed.
     cacheComponents: true,
     partialPrefetching: true,
+    // The `next dev` badge, top left: its default bottom-left spot covers the phone's Beranda
+    // tab, bottom right covers Lainnya and top right a page's main button on iPad. Top left sits
+    // over the organization tile, which is not a control. Production has no badge.
+    devIndicators: { position: "top-left" },
     // Tailwind 4 through its Turbopack loader (create-next-app's default; no PostCSS config).
     turbopack: {
       rules: {

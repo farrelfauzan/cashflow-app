@@ -1,7 +1,14 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 
 import { trackOutsideRequests } from "./support/page-checks";
-import { menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import {
+  isPhone,
+  menuSections,
+  ORG_HOME_URL,
+  openAccountMenu,
+  openMenu,
+  openSection,
+} from "./support/shell";
 import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 
 // The controls each role sees come from one CASL ability per organization, built from getOrgMe's
@@ -28,8 +35,7 @@ async function openOrganization(page: Page, staff: SeededStaff, name: string) {
 
 // Follows a menu section, as a person would, and waits for its heading.
 async function goTo(page: Page, testInfo: TestInfo, section: string) {
-  const menu = await openMenu(page, testInfo);
-  await menuSections(menu).filter({ hasText: section }).click();
+  await openSection(page, testInfo, section);
   await expect(
     page.getByRole("heading", { level: 1, name: section }),
   ).toBeVisible();
@@ -46,9 +52,20 @@ async function switchOrganization(
   name: string,
 ) {
   const before = page.url();
-  const menu = await openMenu(page, testInfo);
-  await menu.getByRole("combobox", { name: "Ganti usaha" }).click();
-  await page.getByRole("option").filter({ hasText: name }).click();
+  if (isPhone(testInfo)) {
+    // The phone has no select: "Ganti usaha" in "Lainnya" leads to the picker.
+    const sheet = await openAccountMenu(page, testInfo);
+    await sheet.getByRole("link", { name: "Ganti usaha" }).click();
+    await expect(page).toHaveURL("/organizations");
+    await page
+      .getByRole("list", { name: "Daftar usaha" })
+      .getByRole("link", { name })
+      .click();
+  } else {
+    const menu = await openMenu(page, testInfo);
+    await menu.getByRole("combobox", { name: "Ganti usaha" }).click();
+    await page.getByRole("option").filter({ hasText: name }).click();
+  }
   await expect(page).not.toHaveURL(before);
   await expect(page).toHaveURL(ORG_HOME_URL);
 }
@@ -115,6 +132,15 @@ test.describe("Admin limited to one property", () => {
     await openOrganization(page, SARI, "Griya Sejahtera");
     const sections = menuSections(await openMenu(page, testInfo));
     await expect(sections.filter({ hasText: "Anggota tim" })).toHaveCount(0);
+    if (isPhone(testInfo)) {
+      // Nor in "Lainnya", where Anggota tim lives on the phone.
+      const sheet = await openAccountMenu(page, testInfo);
+      await expect(
+        sheet.getByRole("link", { name: "Anggota tim" }),
+      ).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+    }
     await sections.filter({ hasText: "Properti" }).click();
     await expect(
       page.getByRole("heading", { level: 1, name: "Properti" }),

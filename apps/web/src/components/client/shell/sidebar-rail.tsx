@@ -37,8 +37,10 @@ export function SidebarRail({ defaultCollapsed, children }: SidebarRailProps) {
         id="org-sidebar"
         data-sidebar={collapsed ? SIDEBAR_COLLAPSED : undefined}
         className={cn(
-          "sticky top-0 hidden h-dvh shrink-0 flex-col border-r bg-secondary/60 transition-[width] duration-200 motion-reduce:transition-none md:flex",
-          collapsed ? "w-[76px]" : "w-[228px]",
+          "sticky top-0 hidden h-dvh shrink-0 flex-col border-r bg-secondary/60 pl-[env(safe-area-inset-left)] transition-[width] duration-200 motion-reduce:transition-none md:flex",
+          collapsed
+            ? "w-[calc(76px+env(safe-area-inset-left))]"
+            : "w-[calc(228px+env(safe-area-inset-left))]",
         )}
       >
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>

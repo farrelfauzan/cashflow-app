@@ -14,7 +14,14 @@ import { orgPath } from "@/lib/org-path";
 
 import { MobileHeader } from "./mobile-header";
 import { OrgNav } from "./org-nav";
-import { loadOrgMe, PICKER_PATH, roleSummary, visibleOrgMenu } from "./utils";
+import { PhoneTabBar } from "./phone-tab-bar";
+import {
+  loadOrgMe,
+  moreMenuRoleLine,
+  PICKER_PATH,
+  roleSummary,
+  visibleOrgMenu,
+} from "./utils";
 
 type OrgShellFrameProps = {
   params: Promise<{ orgId: string }>;
@@ -31,41 +38,37 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
   const organization = me.organizations.find((o) => o.id === orgId);
   if (orgMe === null || organization === undefined) redirect(PICKER_PATH);
 
-  const nav = (
-    <OrgNav
-      organizationName={organization.name}
-      roles={roleSummary(orgMe.roles)}
-      userName={me.user.name}
-      currentOrgId={orgId}
-      organizations={me.organizations.map(({ id, name }) => ({ id, name }))}
-      items={visibleOrgMenu(createAppAbility(orgMe.capabilities)).map(
-        (item) => ({
-          key: item.key,
-          label: item.label,
-          href: orgPath(orgId, item.segment),
-        }),
-      )}
-    />
+  const roles = roleSummary(orgMe.roles);
+  const items = visibleOrgMenu(createAppAbility(orgMe.capabilities)).map(
+    (item) => ({
+      key: item.key,
+      label: item.label,
+      href: orgPath(orgId, item.segment),
+    }),
   );
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background md:flex-row">
+    <div className="flex min-h-dvh flex-col bg-background pr-[env(safe-area-inset-right)] md:flex-row">
       <SidebarRail
         defaultCollapsed={isSidebarCollapsed(
           cookieStore.get(SIDEBAR_COOKIE)?.value,
         )}
       >
-        {nav}
+        <OrgNav
+          organizationName={organization.name}
+          roles={roles}
+          userName={me.user.name}
+          currentOrgId={orgId}
+          organizations={me.organizations.map(({ id, name }) => ({ id, name }))}
+          items={items}
+        />
       </SidebarRail>
       <MobileHeader
         organizationName={organization.name}
-        detail={[me.user.name, roleSummary(orgMe.roles)]
-          .filter((part) => part !== "")
-          .join(" · ")}
-      >
-        {nav}
-      </MobileHeader>
-      <main className="flex min-w-0 flex-1 flex-col px-4 pt-5 pb-6 md:px-8 md:py-[30px]">
+        detail={[me.user.name, roles].filter((part) => part !== "").join(" · ")}
+      />
+      {/* On the phone the page ends above the fixed tab bar (64px plus the home indicator). */}
+      <main className="flex min-w-0 flex-1 flex-col px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+88px)] md:px-8 md:py-[30px]">
         <OrgAbilityProvider
           key={orgId}
           orgId={orgId}
@@ -74,6 +77,12 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
           {children}
         </OrgAbilityProvider>
       </main>
+      <PhoneTabBar
+        items={items}
+        userName={me.user.name}
+        roleLine={moreMenuRoleLine(roles, organization.name)}
+        canSwitch={me.organizations.length > 1}
+      />
     </div>
   );
 }

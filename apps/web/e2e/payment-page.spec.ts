@@ -30,6 +30,7 @@ import {
   type RentOptions,
 } from "./support/payment-page";
 import { minBodyFontPx } from "./support/projects";
+import { expectNoMenu } from "./support/shell";
 import { DIMAS, HENDRA } from "./support/staff";
 import { toastRegion } from "./support/toast";
 
@@ -106,6 +107,8 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
     }),
   ).toBeVisible();
   await expect(page.getByText(GRIYA, { exact: true })).toBeVisible();
+  // The tenant's page is not the staff app: no menu and no tab bar.
+  await expectNoMenu(page);
   await expect(
     page.getByText(
       `${rented.tenant.name} · ${thisMonth.unitLabel} ${thisMonth.propertyName}`,

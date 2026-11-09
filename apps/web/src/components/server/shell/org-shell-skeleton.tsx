@@ -5,7 +5,7 @@
 export function OrgShellSkeleton() {
   return (
     <div className="flex min-h-dvh bg-background">
-      <div className="hidden w-[228px] shrink-0 border-r bg-secondary/60 md:block rail-choice:w-[76px]" />
+      <div className="hidden w-[calc(228px+env(safe-area-inset-left))] shrink-0 border-r bg-secondary/60 md:block rail-choice:w-[calc(76px+env(safe-area-inset-left))]" />
       <p className="px-4 py-5 text-base text-muted-foreground md:px-8 md:py-8">
         Memuat…
       </p>

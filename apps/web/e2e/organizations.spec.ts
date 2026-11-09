@@ -7,11 +7,28 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { minBodyFontPx } from "./support/projects";
-import { menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import { expectTouchTarget } from "./support/payment-page";
+import {
+  expectedSections,
+  isPhone,
+  menuSections,
+  ORG_HOME_URL,
+  openAccountMenu,
+  openMenu,
+} from "./support/shell";
 import { HENDRA, SARI } from "./support/staff";
 
 // The organization picker against the real Go API: the session gate in src/proxy.ts, the
 // server-side API call that forwards cf_session, and the API's 401 sent back to login.
+
+// The side menu of a Supervisor (Kost Putri Anggrek): every section.
+const SIDE_MENU_SUPERVISOR = [
+  "Beranda",
+  "Properti",
+  "Penyewa",
+  "Penagihan",
+  "Anggota tim",
+];
 
 const LOGIN_WITH_NEXT = "/login?next=%2Forganizations";
 
@@ -35,7 +52,7 @@ test.describe("member of two organizations", () => {
   // Saved by e2e/auth.setup.ts through the real login code flow.
   test.use({ storageState: HENDRA.storageState });
 
-  test("picks an organization, then switches to the other from the menu", async ({
+  test("picks an organization, then switches to the other (the menu on iPad, Lainnya on the phone)", async ({
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
@@ -66,6 +83,45 @@ test.describe("member of two organizations", () => {
     await choices.getByText("Griya Sejahtera").click();
     await expect(page).toHaveURL(ORG_HOME_URL);
     const griya = page.url();
+    if (isPhone(testInfo)) {
+      // The phone has no select: "Lainnya" shows who is signed in and where, and "Ganti usaha"
+      // there leads back to the picker.
+      // Inside an organization the page runs under the notch and the home indicator, which the
+      // header and the tab bar pad; the picker, with no such padding, keeps the default.
+      const viewportMeta = page.locator('meta[name="viewport"]');
+      await expect(viewportMeta).toHaveAttribute(
+        "content",
+        /viewport-fit=cover/,
+      );
+      let sheet = await openAccountMenu(page, testInfo);
+      await expect(sheet.getByText(HENDRA.name)).toBeVisible();
+      await expect(
+        sheet.getByText("Admin di Griya Sejahtera", { exact: true }),
+      ).toBeVisible();
+      const switchLink = sheet.getByRole("link", { name: "Ganti usaha" });
+      await expectTouchTarget(switchLink);
+      await switchLink.click();
+      await expect(page).toHaveURL("/organizations");
+      await expect(viewportMeta).not.toHaveAttribute(
+        "content",
+        /viewport-fit=cover/,
+      );
+      await choices.getByText("Kost Putri Anggrek").click();
+      await expect(page).toHaveURL(ORG_HOME_URL);
+      await expect(page).not.toHaveURL(griya);
+      sheet = await openAccountMenu(page, testInfo);
+      await expect(
+        sheet.getByText("Supervisor di Kost Putri Anggrek", { exact: true }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+      await expect(menuSections(await openMenu(page, testInfo))).toHaveText(
+        expectedSections(testInfo, SIDE_MENU_SUPERVISOR),
+      );
+      expect(outsideRequests).toEqual([]);
+      return;
+    }
+
     let menu = await openMenu(page, testInfo);
     // The menu header; the "Ganti usaha" select shows the name too.
     await expect(menu.getByText("Griya Sejahtera").first()).toBeVisible();
@@ -100,13 +156,7 @@ test.describe("member of two organizations", () => {
     await expect(
       menu.getByRole("combobox", { name: "Ganti usaha" }),
     ).toHaveText("Kost Putri Anggrek");
-    await expect(menuSections(menu)).toHaveText([
-      "Beranda",
-      "Properti",
-      "Penyewa",
-      "Penagihan",
-      "Anggota tim",
-    ]);
+    await expect(menuSections(menu)).toHaveText(SIDE_MENU_SUPERVISOR);
     expect(outsideRequests).toEqual([]);
   });
 
@@ -142,11 +192,15 @@ test.describe("member of one organization", () => {
     await page.goto("/organizations");
 
     await expect(page).toHaveURL(ORG_HOME_URL);
-    const menu = await openMenu(page, testInfo);
+    const menu = await openAccountMenu(page, testInfo);
     await expect(menu.getByText("Griya Sejahtera")).toBeVisible();
     await expect(
       menu.getByRole("combobox", { name: "Ganti usaha" }),
     ).toHaveCount(0);
+    // Nor the phone's "Ganti usaha" link.
+    await expect(menu.getByRole("link", { name: "Ganti usaha" })).toHaveCount(
+      0,
+    );
   });
 });
 

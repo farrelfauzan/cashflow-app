@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import { signOut } from "@/lib/auth/sign-out";
 
+import type { LogoutButtonVariant } from "./type";
+import { LOGOUT_BUTTON_CLASS } from "./utils";
+
 type LogoutButtonProps = {
-  // "outline" on the organization picker, "menu" at the foot of the side menu.
-  variant?: "outline" | "menu";
+  variant?: LogoutButtonVariant;
 };
 
 // "Keluar": ends the session and goes to /login. A secondary action, never the screen's
@@ -27,12 +29,8 @@ export function LogoutButton({ variant = "outline" }: LogoutButtonProps) {
       )}
       <Button
         type="button"
-        variant={variant === "menu" ? "ghost" : "outline"}
-        className={
-          variant === "menu"
-            ? "justify-start px-2 font-semibold text-muted-foreground rail:justify-center rail:px-0"
-            : "font-semibold"
-        }
+        variant={variant === "outline" ? "outline" : "ghost"}
+        className={LOGOUT_BUTTON_CLASS[variant]}
         disabled={busy}
         onClick={() => logout.mutate()}
       >

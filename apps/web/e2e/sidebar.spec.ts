@@ -4,7 +4,14 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { isPhone, menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import {
+  expectedSections,
+  isPhone,
+  menuSections,
+  ORG_HOME_URL,
+  openAccountMenu,
+  openMenu,
+} from "./support/shell";
 import { HENDRA } from "./support/staff";
 
 // The side menu is found by its id (#org-sidebar, the toggle's aria-controls), since a page may
@@ -12,7 +19,7 @@ import { HENDRA } from "./support/staff";
 //
 // The iPad side menu collapses to a rail of icons and expands again; the choice is a plain
 // cookie (cf_sidebar), so it survives navigation and reloads and the server draws the right
-// width on the first paint. The phone keeps its menu sheet, whatever the cookie says. Each test
+// width on the first paint. The phone keeps its tab bar, whatever the cookie says. Each test
 // starts from Pak Hendra's saved session, so its choice never reaches another test.
 
 const WIDE_PX = 228;
@@ -147,10 +154,10 @@ test.describe("Admin of the whole organization", () => {
     expect(outsideRequests).toEqual([]);
   });
 
-  test("keeps the phone's menu sheet as it was, even with the rail chosen on iPad", async ({
+  test("keeps the phone's tab bar as it was, even with the rail chosen on iPad", async ({
     page,
   }, testInfo) => {
-    test.skip(!isPhone(testInfo), "the phone's menu sheet");
+    test.skip(!isPhone(testInfo), "the phone's tab bar");
     await page.context().addCookies([
       {
         name: "cf_sidebar",
@@ -168,16 +175,24 @@ test.describe("Admin of the whole organization", () => {
     ).toHaveCount(0);
 
     const menu = await openMenu(page, testInfo);
-    await expect(menuSections(menu)).toHaveText([
-      "Beranda",
-      "Properti",
-      "Penyewa",
-      "Penagihan",
-      "Anggota tim",
-    ]);
+    await expect(menuSections(menu)).toHaveText(
+      expectedSections(testInfo, [
+        "Beranda",
+        "Properti",
+        "Penyewa",
+        "Penagihan",
+        "Anggota tim",
+      ]),
+    );
     await expect(menu.getByText("Penyewa", { exact: true })).toBeVisible();
-    await expect(menu.getByText("Ganti usaha", { exact: true })).toBeVisible();
-    await expect(menu.getByRole("button", { name: "Keluar" })).toBeVisible();
+    const sheet = await openAccountMenu(page, testInfo);
+    await expect(
+      sheet.getByRole("link", { name: "Anggota tim" }),
+    ).toBeVisible();
+    await expect(
+      sheet.getByRole("link", { name: "Ganti usaha" }),
+    ).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Keluar" })).toBeVisible();
     await attachViewportScreenshot(page, testInfo, "sidebar-phone-menu");
   });
 });

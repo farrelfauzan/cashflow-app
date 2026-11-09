@@ -7,7 +7,7 @@ import {
 } from "@playwright/test";
 
 import type { InvoiceList, PaymentLink } from "../src/lib/api/generated/model";
-import { HOME_HEADING, ORG_HOME_URL, openMenu } from "./support/shell";
+import { HOME_HEADING, ORG_HOME_URL, openSection } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
 // Runs only against `next dev` (E2E_SERVER=dev, see playwright.config.ts). Next.js checks in
@@ -104,8 +104,7 @@ async function expectHeading(page: Page, name: string | RegExp) {
 }
 
 async function clickMenu(page: Page, testInfo: TestInfo, label: string) {
-  const menu = await openMenu(page, testInfo);
-  await menu.getByRole("link", { name: label, exact: true }).click();
+  await openSection(page, testInfo, label);
 }
 
 // Opens a tenant from the list on screen (the table on iPad, the cards on the phone).

@@ -55,7 +55,7 @@ export function PropertyPanel({
     >
       <SheetContent
         side="right"
-        className="w-full gap-0 bg-card p-0 sm:max-w-none md:w-[470px]"
+        className="w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none md:w-[470px]"
       >
         <SheetHeader className="gap-1 border-b px-6 pt-6 pr-16 pb-4">
           <SheetTitle className="text-2xl font-bold">
