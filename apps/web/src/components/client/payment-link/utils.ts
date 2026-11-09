@@ -13,6 +13,7 @@ export const PAY_LINK_COPIED_TOAST: ToastMessage = {
   tone: "neutral",
   title: "Link bayar disalin",
   description: "Tempel di WhatsApp penyewa.",
+  icon: "copy",
 };
 
 // The fallback when the browser cannot copy.

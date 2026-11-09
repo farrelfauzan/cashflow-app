@@ -2,10 +2,12 @@ import {
   AlertTriangleIcon,
   CheckCircle2Icon,
   CopyIcon,
+  InfoIcon,
+  SendIcon,
   XCircleIcon,
   type LucideIcon,
 } from "lucide-react";
-import type { ToastTone } from "./type";
+import type { ToastIcon, ToastTone } from "./type";
 
 export const TOAST_CLOSE_LABEL = "Tutup notifikasi";
 export const TOASTER_LABEL = "Notifikasi";
@@ -33,7 +35,7 @@ export const TOAST_TONES: Record<
     className: "bg-warning text-warning-foreground",
     icon: AlertTriangleIcon,
   },
-  neutral: { className: "bg-foreground text-background", icon: CopyIcon },
+  neutral: { className: "bg-foreground text-background", icon: InfoIcon },
 };
 
 export function toastDuration(tone: ToastTone): number {
@@ -41,3 +43,9 @@ export function toastDuration(tone: ToastTone): number {
     ? DESTRUCTIVE_TOAST_DURATION_MS
     : TOAST_DURATION_MS;
 }
+
+// Icons a message can ask for instead of its tone's (ToastMessage.icon).
+export const TOAST_ICONS: Record<ToastIcon, LucideIcon> = {
+  copy: CopyIcon,
+  send: SendIcon,
+};

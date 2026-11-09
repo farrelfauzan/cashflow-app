@@ -905,6 +905,7 @@ describe("member toasts", () => {
       tone: "neutral",
       title: "Undangan dikirim ulang",
       description: "Rizal Fauzi",
+      icon: "send",
     });
   });
 });

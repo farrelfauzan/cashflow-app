@@ -362,5 +362,6 @@ export function invitationResentToast(name: string): ToastMessage {
     tone: "neutral",
     title: "Undangan dikirim ulang",
     description: name,
+    icon: "send",
   };
 }

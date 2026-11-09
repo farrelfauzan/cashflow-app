@@ -238,11 +238,12 @@ describe("copyPendingText", () => {
 });
 
 describe("PAY_LINK_COPIED_TOAST", () => {
-  it("is an ink toast that never carries the link", () => {
+  it("is an ink toast with the copy icon that never carries the link", () => {
     expect(PAY_LINK_COPIED_TOAST).toEqual({
       tone: "neutral",
       title: "Link bayar disalin",
       description: "Tempel di WhatsApp penyewa.",
+      icon: "copy",
     });
   });
 });
