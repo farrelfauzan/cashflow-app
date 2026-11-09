@@ -42,8 +42,8 @@ export function DisableMemberDialog({
       <AlertDialogTrigger asChild>
         <Button
           type="button"
-          variant="outline"
-          className="rounded-[10px] border-[1.5px] border-destructive bg-card px-4 text-[15px] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive"
+          variant="destructive-outline"
+          className="rounded-[10px] border-[1.5px] bg-card px-4 text-[15px] font-semibold"
         >
           Nonaktifkan anggota
         </Button>

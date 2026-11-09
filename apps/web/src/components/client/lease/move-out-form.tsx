@@ -94,6 +94,8 @@ export function MoveOutForm({
         submitLabel="Catat pindah keluar"
         saving={saving}
         wide={false}
+        // Ends the lease and cancels the invoices after it: hard to undo (T-093).
+        submitVariant="destructive"
       />
     </>
   );

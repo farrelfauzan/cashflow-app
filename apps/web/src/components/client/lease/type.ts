@@ -175,3 +175,7 @@ export type ChargeTypeFormValues = { name: string; metered: boolean };
 // "Nama biaya" in "Jenis biaya baru": the trimmed name to send, or the message under the field.
 export type ChargeTypeNameCheck =
   { ok: true; name: string } | { ok: false; error: string };
+
+// A lease panel's main button by what it does (T-093): save (default), change a date or an amount
+// already agreed (caution), or something hard to undo (destructive).
+export type LeasePanelSubmitVariant = "default" | "caution" | "destructive";

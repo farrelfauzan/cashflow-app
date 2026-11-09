@@ -23,6 +23,7 @@ import {
   jakartaToday,
 } from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
+import { expectButtonTone } from "./support/button-tone";
 import {
   attachFullPageScreenshot,
   attachViewportScreenshot,
@@ -250,10 +251,14 @@ test.describe("Admin of the whole organization", () => {
     const correct = row.getByRole("button", { name: title });
     await expect(correct).toHaveText("Koreksi");
     expect(await height(correct)).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
+    // A correction changes an amount already billed (T-093): caution, opening and saving.
+    await expectButtonTone(correct, "caution-outline");
     await correct.click();
 
     const dialog = page.getByRole("dialog", { name: title });
     await expect(dialog).toBeVisible();
+    await expectButtonTone(dialogParts(dialog).save, "caution");
+    await expectButtonTone(dialogParts(dialog).cancel, "neutral");
     await expect(dialog).toContainText(
       `${tenant.name} · ${invoice.unitLabel} · ${invoice.propertyName}`,
     );

@@ -100,7 +100,7 @@ export function CancelBookingForm({
         saving={saving}
         wide={false}
         // The user's choice (2026-10-29): cancelling a booking looks destructive.
-        destructive
+        submitVariant="destructive"
       />
     </>
   );
