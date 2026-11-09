@@ -11,6 +11,7 @@ import {
 import { z } from "zod";
 import { id } from "zod/locales";
 
+import { useFormSheetDirty } from "@/components/client/form-sheet/use-form-sheet-dirty";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 
 // A check without its own message (none should be) still speaks Bahasa Indonesia.
@@ -50,6 +51,8 @@ export function useApiForm<Input extends FieldValues, Output>({
     reValidateMode: "onSubmit",
   });
   const { clearErrors, setError, setFocus } = form;
+  // Inside a FormSheet, unsaved changes make a close on the phone ask first.
+  useFormSheetDirty(form.formState.isDirty);
 
   // Registers a text field so that editing it clears its error.
   function field(name: Path<Input>) {
