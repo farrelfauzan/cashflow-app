@@ -22,6 +22,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { setDate } from "./support/date-field";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { chooseProperty } from "./support/property-picker";
@@ -289,7 +290,7 @@ test.describe("Admin of the whole organization", () => {
     // Started two months ago: "Mulai tagih dari" offers to skip the first period.
     const start = tenthOfMonth(-2);
     const billedFrom = tenthOfMonth(-1);
-    await lease.getByLabel("Mulai sewa").fill(start);
+    await setDate(lease, "Mulai sewa", start);
     await expect(lease).toContainText(
       "Mulai tanggal 10, jatuh tempo tiap tanggal 10.",
     );
@@ -391,14 +392,14 @@ test.describe("Admin of the whole organization", () => {
     await choose(page, lease, "Unit", unit.label);
 
     // A booking: the board's note, no "Mulai tagih dari".
-    await lease.getByLabel("Mulai sewa").fill(tenthOfMonth(2));
+    await setDate(lease, "Mulai sewa", tenthOfMonth(2));
     await expect(lease).toContainText("dihitung sebagai pesanan");
     await expect(
       lease.getByRole("group", { name: "Mulai tagih dari" }),
     ).toHaveCount(0);
     // Today: neither.
     const today = jakartaToday(new Date());
-    await lease.getByLabel("Mulai sewa").fill(today);
+    await setDate(lease, "Mulai sewa", today);
     await expect(lease).not.toContainText("dihitung sebagai pesanan");
     await expect(
       lease.getByRole("group", { name: "Mulai tagih dari" }),

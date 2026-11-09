@@ -18,6 +18,14 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { expectButtonTone } from "./support/button-tone";
+import {
+  clearDate,
+  dateControl,
+  expectDate,
+  expectDayRefused,
+  isCalendarField,
+  setDate,
+} from "./support/date-field";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
@@ -272,14 +280,17 @@ test.describe("Admin of the whole organization", () => {
 
     // An empty start date is refused before anything is sent, under its own field, which takes
     // the focus; editing another field leaves the message, editing the date clears it.
-    const startDate = form.getByLabel("Mulai sewa");
-    await startDate.fill("");
-    await form.getByRole("button", { name: "Simpan sewa" }).click();
-    await expect(form.getByText("Isi tanggal mulai sewa.")).toBeVisible();
-    await expect(startDate).toBeFocused();
-    await form.getByLabel("Uang jaminan").fill("3000000");
-    await expect(form.getByText("Isi tanggal mulai sewa.")).toBeVisible();
-    await startDate.fill(jakartaToday(new Date()));
+    // The calendar (iPad) cannot be emptied, so only the phone's own input can try this.
+    const startDate = dateControl(form, "Mulai sewa");
+    if (!(await isCalendarField(startDate))) {
+      await clearDate(form, "Mulai sewa");
+      await form.getByRole("button", { name: "Simpan sewa" }).click();
+      await expect(form.getByText("Isi tanggal mulai sewa.")).toBeVisible();
+      await expect(startDate).toBeFocused();
+      await form.getByLabel("Uang jaminan").fill("3000000");
+      await expect(form.getByText("Isi tanggal mulai sewa.")).toBeVisible();
+    }
+    await setDate(form, "Mulai sewa", jakartaToday(new Date()));
     await expect(form.getByText("Isi tanggal mulai sewa.")).toHaveCount(0);
 
     await form.getByLabel("Uang jaminan").fill("3000000");
@@ -318,9 +329,12 @@ test.describe("Admin of the whole organization", () => {
     await expect(form).toContainText(
       `${tenant.name} · ${unit.label} · ${property.name}`,
     );
-    const date = form.getByLabel("Hari terakhir penyewa tinggal");
+    const label = "Hari terakhir penyewa tinggal";
+    const date = dateControl(form, label);
+    const calendar = await isCalendarField(date);
     // The suggestion: the day before the next period starts (the 9th, the lease starts on a 10th).
-    await expect(date).toHaveValue(/^\d{4}-\d{2}-09$/);
+    if (calendar) await expect(date).toHaveText(/^9 \S+ \d{4}$/);
+    else await expect(date).toHaveValue(/^\d{4}-\d{2}-09$/);
     await expect(form).toContainText("Usulan: ");
     await expect(form).toContainText("Yang terjadi setelah ini");
     await expect(
@@ -335,23 +349,28 @@ test.describe("Admin of the whole organization", () => {
       "neutral",
     );
 
-    // A day before today: the form says so before anything is sent.
-    await date.fill(tenthOfMonth(-1));
-    await form.getByRole("button", { name: "Simpan rencana keluar" }).click();
-    await expect(date).toHaveAccessibleDescription(
-      /^Rencana keluar tidak boleh sebelum hari ini\./,
-    );
-    await expect(date).toHaveAttribute("aria-invalid", "true");
-    await expect(date).toBeFocused();
-    // Editing the date clears its message.
-    await date.fill(tenthOfMonth(0));
-    await expect(
-      form.getByText("Rencana keluar tidak boleh sebelum hari ini."),
-    ).toHaveCount(0);
-    await expect(date).toHaveAttribute("aria-invalid", "false");
+    if (calendar) {
+      // The calendar offers no day before today.
+      await expectDayRefused(form, label, tenthOfMonth(-1));
+    } else {
+      // A day before today: the form says so before anything is sent.
+      await setDate(form, label, tenthOfMonth(-1));
+      await form.getByRole("button", { name: "Simpan rencana keluar" }).click();
+      await expect(date).toHaveAccessibleDescription(
+        /^Rencana keluar tidak boleh sebelum hari ini\./,
+      );
+      await expect(date).toHaveAttribute("aria-invalid", "true");
+      await expect(date).toBeFocused();
+      // Editing the date clears its message.
+      await setDate(form, label, tenthOfMonth(0));
+      await expect(
+        form.getByText("Rencana keluar tidak boleh sebelum hari ini."),
+      ).toHaveCount(0);
+      await expect(date).toHaveAttribute("aria-invalid", "false");
+    }
 
     const planned = tenthOfMonth(1);
-    await date.fill(planned);
+    await setDate(form, label, planned);
     await form.getByRole("button", { name: "Simpan rencana keluar" }).click();
     await expect(form).toHaveCount(0);
     await expect(
@@ -365,7 +384,7 @@ test.describe("Admin of the whole organization", () => {
     // Opened again: the current date, and the way to clear it.
     await card.getByRole("button", { name: "Rencana keluar" }).click();
     await expect(form).toBeVisible();
-    await expect(date).toHaveValue(planned);
+    await expectDate(form, label, planned);
     await expect(form).toContainText(
       `Rencana keluar saat ini: ${formatDate(planned)}. Menghapusnya mengembalikan tagihan yang tadi dibatalkan.`,
     );
@@ -399,9 +418,7 @@ test.describe("Admin of the whole organization", () => {
 
     await card.getByRole("button", { name: "Catat pindah keluar" }).click();
     const form = page.getByRole("dialog", { name: "Catat pindah keluar" });
-    await expect(form.getByLabel("Hari terakhir menyewa")).toHaveValue(
-      jakartaToday(new Date()),
-    );
+    await expectDate(form, "Hari terakhir menyewa", jakartaToday(new Date()));
     await expect(form).toContainText(
       `Diisi hari ini. Tidak boleh sebelum tanggal mulai sewa (${formatDate(lease.startDate)}) dan tidak boleh setelah hari ini.`,
     );
@@ -415,17 +432,22 @@ test.describe("Admin of the whole organization", () => {
 
     // A day after today: the form says so under the date, before anything is sent, and editing
     // the date clears it.
-    const date = form.getByLabel("Hari terakhir menyewa");
-    await date.fill(tenthOfMonth(1));
-    await save.click();
-    await expect(date).toHaveAccessibleDescription(
-      /^Tanggal keluar tidak boleh setelah hari ini\./,
-    );
-    await expect(date).toBeFocused();
-    await date.fill(jakartaToday(new Date()));
-    await expect(
-      form.getByText("Tanggal keluar tidak boleh setelah hari ini."),
-    ).toHaveCount(0);
+    const date = dateControl(form, "Hari terakhir menyewa");
+    if (await isCalendarField(date)) {
+      // The calendar offers no day after today.
+      await expectDayRefused(form, "Hari terakhir menyewa", tenthOfMonth(1));
+    } else {
+      await setDate(form, "Hari terakhir menyewa", tenthOfMonth(1));
+      await save.click();
+      await expect(date).toHaveAccessibleDescription(
+        /^Tanggal keluar tidak boleh setelah hari ini\./,
+      );
+      await expect(date).toBeFocused();
+      await setDate(form, "Hari terakhir menyewa", jakartaToday(new Date()));
+      await expect(
+        form.getByText("Tanggal keluar tidak boleh setelah hari ini."),
+      ).toHaveCount(0);
+    }
     await expect(date).toHaveAttribute("aria-invalid", "false");
 
     await save.click();

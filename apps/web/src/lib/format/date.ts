@@ -45,6 +45,13 @@ const calendarLongDateParts = new Intl.DateTimeFormat("id-ID", {
   year: "numeric",
 });
 
+const calendarFullDateParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: "UTC",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
 const jakartaHourParts = new Intl.DateTimeFormat("en-GB", {
   timeZone: JAKARTA,
   hour: "2-digit",
@@ -197,6 +204,19 @@ export function formatLongDate(date: string): string {
     calendarDateToUtc(date, "formatLongDate"),
   );
   return `${part(parts, "weekday")}, ${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
+}
+
+/**
+ * Formats an API calendar date with its month in full, for a chosen date in a form:
+ * `"2026-11-15"` gives `"15 November 2026"`.
+ *
+ * @throws RangeError when the value is not a real `YYYY-MM-DD` date.
+ */
+export function formatFullDate(date: string): string {
+  const parts = calendarFullDateParts.formatToParts(
+    calendarDateToUtc(date, "formatFullDate"),
+  );
+  return `${part(parts, "day")} ${part(parts, "month")} ${part(parts, "year")}`;
 }
 
 /**

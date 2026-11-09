@@ -23,6 +23,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { setDate } from "./support/date-field";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { chooseProperty } from "./support/property-picker";
@@ -234,7 +235,7 @@ test.describe("Admin of the whole organization", () => {
     const start = tenthOfMonth(-13);
     const secondYear = tenthOfMonth(-1);
     const thirdYear = tenthOfMonth(11);
-    await lease.getByLabel("Mulai sewa").fill(start);
+    await setDate(lease, "Mulai sewa", start);
     await expect(lease).toContainText(
       `Juga jadi tanggal tagihan tiap tahun. Mulai ${formatDayMonth(start)}, jatuh tempo tiap ${formatDayMonth(start)}.`,
     );
@@ -347,7 +348,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(lease.getByText(NO_PRICE_MESSAGE)).toBeVisible();
     await attachFullPageScreenshot(page, testInfo, "lease-form-no-price-hint");
 
-    await lease.getByLabel("Mulai sewa").fill(jakartaToday(new Date()));
+    await setDate(lease, "Mulai sewa", jakartaToday(new Date()));
     await lease.getByRole("button", { name: "Simpan sewa" }).click();
     // Once more after "Simpan sewa", now as the field's error, and only once.
     await expect(lease.getByText(NO_PRICE_MESSAGE)).toBeVisible();

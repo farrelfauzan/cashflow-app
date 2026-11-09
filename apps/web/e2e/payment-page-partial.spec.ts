@@ -14,6 +14,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { expectDate, expectDateLimits, setDate } from "./support/date-field";
 import {
   expectTouchTarget,
   makeLink,
@@ -323,8 +324,13 @@ test("Belum bisa bayar sekarang records a promise by a chosen date, and Ubah jan
   // Checked before sending: a date is needed, and the amount is at most the rest.
   await save.click();
   await expect(page.getByText("Pilih tanggal pelunasan.")).toBeVisible();
-  const date = page.getByLabel("Tanggal pelunasan");
-  await date.fill(dates.earliest);
+  await expectDateLimits(
+    page,
+    "Tanggal pelunasan",
+    dates.earliest,
+    dates.latest,
+  );
+  await setDate(page, "Tanggal pelunasan", dates.earliest);
   const amount = page.getByLabel("Nominal janji (boleh dikosongkan)");
   await amount.fill(String(fixture.page.outstanding + 1));
   await save.click();
@@ -370,9 +376,7 @@ test("Belum bisa bayar sekarang records a promise by a chosen date, and Ubah jan
 
   // Ubah janji starts from the promise itself, so it needs no such line.
   await page.getByRole("button", { name: "Ubah janji" }).click();
-  await expect(page.getByLabel("Tanggal pelunasan")).toHaveValue(
-    dates.earliest,
-  );
+  await expectDate(page, "Tanggal pelunasan", dates.earliest);
   await expect(replaces).toHaveCount(0);
   await page.getByRole("radio", { name: /^Bareng tagihan/ }).check();
   await page.getByLabel("Nominal janji (boleh dikosongkan)").fill("");

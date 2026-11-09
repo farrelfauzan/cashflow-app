@@ -25,6 +25,14 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import {
+  clearDate,
+  dateControl,
+  expectDate,
+  expectDayRefused,
+  isCalendarField,
+  setDate,
+} from "./support/date-field";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
@@ -253,9 +261,7 @@ test.describe("Admin of the whole organization", () => {
     );
     // The defaults: cash, today.
     await expect(panel.getByRole("radio", { name: "Tunai" })).toBeChecked();
-    await expect(panel.getByLabel("Tanggal diterima")).toHaveValue(
-      jakartaToday(new Date()),
-    );
+    await expectDate(panel, "Tanggal diterima", jakartaToday(new Date()));
 
     await panel.getByLabel("Jumlah diterima").fill("400000");
     await expect(panel.getByLabel("Jumlah diterima")).toHaveValue("400.000");
@@ -376,7 +382,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       panel.getByRole("radio", { name: "Transfer bank" }),
     ).toBeChecked();
-    await panel.getByLabel("Tanggal diterima").fill(yesterday);
+    await setDate(panel, "Tanggal diterima", yesterday);
     await panel
       .getByLabel("Catatan (opsional)")
       .fill("  Transfer dari rekening BCA suami  ");
@@ -468,19 +474,24 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByText("Jumlah harus lebih dari Rp0.")).toBeVisible();
 
     await amount.fill("100000");
-    await panel.getByLabel("Tanggal diterima").fill(jakartaDay(1));
-    await save.click();
-    await expect(
-      panel.getByText("Tanggal tidak boleh setelah hari ini."),
-    ).toBeVisible();
-    await expect(panel.getByLabel("Tanggal diterima")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
+    const date = dateControl(panel, "Tanggal diterima");
+    if (await isCalendarField(date)) {
+      // The calendar offers no day after today and cannot be emptied, so neither error can
+      // happen there; the phone's own input checks both below.
+      await expectDayRefused(panel, "Tanggal diterima", jakartaDay(1));
+      await expectDate(panel, "Tanggal diterima", jakartaToday(new Date()));
+    } else {
+      await setDate(panel, "Tanggal diterima", jakartaDay(1));
+      await save.click();
+      await expect(
+        panel.getByText("Tanggal tidak boleh setelah hari ini."),
+      ).toBeVisible();
+      await expect(date).toHaveAttribute("aria-invalid", "true");
 
-    await panel.getByLabel("Tanggal diterima").fill("");
-    await save.click();
-    await expect(panel.getByText("Isi tanggal diterima.")).toBeVisible();
+      await clearDate(panel, "Tanggal diterima");
+      await save.click();
+      await expect(panel.getByText("Isi tanggal diterima.")).toBeVisible();
+    }
 
     expect(posts).toEqual([]);
     await panel.getByRole("button", { name: "Batal" }).click();

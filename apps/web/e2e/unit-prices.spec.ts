@@ -18,6 +18,13 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import {
+  dateControl,
+  expectDate,
+  expectDayRefused,
+  isCalendarField,
+  setDate,
+} from "./support/date-field";
 import { minBodyFontPx, projectWord } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
@@ -319,7 +326,7 @@ test.describe("Admin of the whole organization", () => {
 
     const from = daysFromToday(60);
     await pricing.getByLabel("Harga baru").fill("16000000");
-    await pricing.getByLabel("Berlaku mulai").fill(from);
+    await setDate(pricing, "Berlaku mulai", from);
     await attachViewportScreenshot(page, testInfo, "unit-price-change");
 
     const saved = page.waitForRequest(
@@ -375,27 +382,31 @@ test.describe("Admin of the whole organization", () => {
     await panel.getByLabel("Nama unit").fill("Kamar 3B");
     await panel.getByRole("button", { name: "Ubah harga per bulan" }).click();
     const pricing = page.getByRole("dialog", { name: "Ubah harga" });
-    await expect(pricing.getByLabel("Berlaku mulai")).toHaveValue(
-      jakartaToday(new Date()),
-    );
+    const today = jakartaToday(new Date());
+    await expectDate(pricing, "Berlaku mulai", today);
     await pricing.getByLabel("Harga baru").fill("1300000");
-    await pricing.getByLabel("Berlaku mulai").fill(daysFromToday(-1));
-    await pricing.getByRole("button", { name: "Simpan harga" }).click();
-    await expect(
-      pricing.getByText("Tanggal tidak boleh sebelum hari ini."),
-    ).toBeVisible();
-    await expect(pricing.getByLabel("Berlaku mulai")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    await expect(pricing.getByLabel("Berlaku mulai")).toBeFocused();
-    expect(priceRequests).toEqual([]);
+    const date = dateControl(pricing, "Berlaku mulai");
+    if (await isCalendarField(date)) {
+      // The calendar does not offer a day before today, so the form never holds one.
+      await expectDayRefused(pricing, "Berlaku mulai", daysFromToday(-1));
+      await expectDate(pricing, "Berlaku mulai", today);
+      await expect(date).toBeFocused();
+    } else {
+      await setDate(pricing, "Berlaku mulai", daysFromToday(-1));
+      await pricing.getByRole("button", { name: "Simpan harga" }).click();
+      await expect(
+        pricing.getByText("Tanggal tidak boleh sebelum hari ini."),
+      ).toBeVisible();
+      await expect(date).toHaveAttribute("aria-invalid", "true");
+      await expect(date).toBeFocused();
+      expect(priceRequests).toEqual([]);
 
-    // Editing the date clears its error; it is checked again on the next save.
-    await pricing.getByLabel("Berlaku mulai").fill(jakartaToday(new Date()));
-    await expect(
-      pricing.getByText("Tanggal tidak boleh sebelum hari ini."),
-    ).toHaveCount(0);
+      // Editing the date clears its error; it is checked again on the next save.
+      await setDate(pricing, "Berlaku mulai", today);
+      await expect(
+        pricing.getByText("Tanggal tidak boleh sebelum hari ini."),
+      ).toHaveCount(0);
+    }
 
     await pricing.getByRole("button", { name: "Kembali" }).click();
     const back = page.getByRole("dialog", { name: "Ubah unit" });

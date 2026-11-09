@@ -4,6 +4,7 @@ import {
   formatDate,
   formatDateTime,
   formatDayMonth,
+  formatFullDate,
   formatLongDate,
   formatMonth,
   formatMonthYear,
@@ -272,6 +273,24 @@ describe("formatMonth", () => {
   it("throws on a date that is not YYYY-MM-DD", () => {
     expect(() => formatMonth("10-2026")).toThrow(RangeError);
   });
+});
+
+describe("formatFullDate", () => {
+  it.each([
+    { input: "2026-11-15", want: "15 November 2026" },
+    { input: "2027-01-01", want: "1 Januari 2027" },
+    { input: "2026-12-31", want: "31 Desember 2026" },
+    { input: "2028-02-29", want: "29 Februari 2028" },
+  ])("formats $input as $want", ({ input, want }) => {
+    expect(formatFullDate(input)).toBe(want);
+  });
+
+  it.each(["2026-02-30", "15-11-2026", "2026-11-15T00:00:00Z", ""])(
+    "rejects %j",
+    (input) => {
+      expect(() => formatFullDate(input)).toThrow(RangeError);
+    },
+  );
 });
 
 describe("formatLongDate", () => {

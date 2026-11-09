@@ -19,6 +19,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { setDate } from "./support/date-field";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { chooseProperty } from "./support/property-picker";
 import { ORG_HOME_URL } from "./support/shell";
@@ -332,7 +333,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(term).toHaveText("Per 4 bulan · Rp4.800.000");
 
     const start = jakartaToday(new Date());
-    await lease.getByLabel("Mulai sewa").fill(start);
+    await setDate(lease, "Mulai sewa", start);
     const saved = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
