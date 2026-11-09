@@ -14,10 +14,14 @@ import {
 import {
   expectTouchTarget,
   orgIdByName,
-  projectDigit,
   runId,
   staffApi,
 } from "./support/payment-page";
+import {
+  projectDigit,
+  projectName,
+  type ProjectName,
+} from "./support/projects";
 import { openMenu } from "./support/shell";
 import { LESTARI, SARI, type SeededStaff } from "./support/staff";
 
@@ -46,8 +50,18 @@ test.beforeAll(() => {
   }
 });
 
+// seed-demo has no third member for desktop, so playwright.config.ts leaves this spec out there.
+const MEMBERS: Partial<Record<ProjectName, SeededStaff>> = {
+  ipad: SARI,
+  phone: LESTARI,
+};
+
 function member(testInfo: TestInfo): SeededStaff {
-  return testInfo.project.name === "phone" ? LESTARI : SARI;
+  const staff = MEMBERS[projectName(testInfo)];
+  if (staff === undefined) {
+    throw new Error(`No Telegram member for project ${testInfo.project.name}`);
+  }
+  return staff;
 }
 
 // Both tests link and unlink the same member, so they run one after the other in one worker

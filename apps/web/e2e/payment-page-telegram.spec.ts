@@ -15,7 +15,6 @@ import {
 import {
   expectTouchTarget,
   makeLink,
-  projectDigit,
   readPage,
   rentSinceLastMonth,
   runId,
@@ -24,6 +23,7 @@ import {
   thisMonthInvoiceId,
   trackTokenLeaks,
 } from "./support/payment-page";
+import { projectDigit } from "./support/projects";
 import { HENDRA } from "./support/staff";
 
 // "Hubungkan Telegram" on Bayar-Pilih (decision 42: a demo channel, development and staging).

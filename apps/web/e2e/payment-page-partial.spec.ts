@@ -17,7 +17,6 @@ import {
 import {
   expectTouchTarget,
   makeLink,
-  projectDigit,
   readPage,
   rentSinceLastMonth,
   runId,
@@ -26,6 +25,7 @@ import {
   thisMonthInvoiceId,
   trackTokenLeaks,
 } from "./support/payment-page";
+import { projectDigit } from "./support/projects";
 import { HENDRA } from "./support/staff";
 
 // "Bayar sebagian" on the tenant payment page /t/[token] (W16 part 1, before promises): the

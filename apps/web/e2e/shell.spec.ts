@@ -4,6 +4,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx } from "./support/projects";
 import {
   HOME_HEADING,
   isPhone,
@@ -16,9 +17,6 @@ import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 // The app shell inside an organization: the menu shows what the member's capabilities from the
 // API allow (never their role name), marks the current page, and is the way to switch
 // organization and sign out. On the phone it lives in a sheet behind "Buka menu".
-
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 
 // Opens the member's organization: straight in for one organization, by name for several.
 async function openOrganization(page: Page, staff: SeededStaff, name: string) {
@@ -65,9 +63,7 @@ test.describe("Admin of the whole organization", () => {
     const size = await sections
       .first()
       .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-    expect(size).toBeGreaterThanOrEqual(
-      MIN_BODY_FONT_PX[testInfo.project.name] ?? 16,
-    );
+    expect(size).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     await attachFullPageScreenshot(page, testInfo, "shell-menu");
 
     await sections.filter({ hasText: "Anggota tim" }).click();

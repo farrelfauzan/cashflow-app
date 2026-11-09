@@ -11,6 +11,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx } from "./support/projects";
 import { HOME_HEADING, ORG_HOME_URL, openMenu } from "./support/shell";
 import { LOGIN_PHONES, type LoginPhones } from "./support/staff";
 
@@ -26,8 +27,6 @@ test.use({ storageState: { cookies: [], origins: [] } });
 const LOGIN_WITH_NEXT = "/login?next=%2Forganizations";
 const REQUEST_PATH = "/api/auth/otp/request";
 const VERIFY_PATH = "/api/auth/otp/verify";
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 const MIN_TOUCH_TARGET_PX = 44;
 
 function phonesFor(testInfo: TestInfo): LoginPhones {
@@ -72,10 +71,7 @@ async function expectMinFontSize(
   text: string,
   testInfo: TestInfo,
 ): Promise<void> {
-  const min = MIN_BODY_FONT_PX[testInfo.project.name];
-  if (min === undefined) {
-    throw new Error(`No font-size rule for project ${testInfo.project.name}`);
-  }
+  const min = minBodyFontPx(testInfo);
   const size = await page
     .getByText(text)
     .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));

@@ -28,6 +28,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, type SeededStaff } from "./support/staff";
@@ -44,8 +45,6 @@ const ANGGREK = "Kost Putri Anggrek";
 const REGION = "Uang penyewa";
 const PRICE = 1_200_000;
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 const MIN_TOUCH_PX = 44;
 
 function runId(): string {
@@ -58,7 +57,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -66,7 +65,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project, test or retry uses; 0814-3 is used by no other spec.
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-3${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -271,7 +270,7 @@ test.describe("Admin of the whole organization", () => {
       expect(await height(control)).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
     }
     expect(await height(parts.amount)).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
-    const minFont = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const minFont = minBodyFontPx(testInfo);
     expect(
       await fontSize(
         dialog.getByText("Data lama tidak dihapus.", { exact: false }),

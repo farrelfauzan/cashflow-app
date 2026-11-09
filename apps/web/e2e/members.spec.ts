@@ -5,6 +5,7 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { openListPageOf } from "./support/list-pages";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
@@ -19,21 +20,18 @@ import { HENDRA } from "./support/staff";
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 // A number seed-demo never creates, different per run, project, test and retry, so parallel
 // tests, CI retries, a second local run on the same database and the API's 3 invitation sends
 // per number per day never collide: 0812-9<run>-<run><project><test><retry> with the four-digit
-// run id from playwright.config.ts, e.g. 0812-9123-4110. A run sends six invitations (two
-// invites and a resend per project), and the API allows 20 per organization per hour, so three
+// run id from playwright.config.ts, e.g. 0812-9123-4110. A run sends nine invitations (two
+// invites and a resend per project), and the API allows 20 per organization per hour, so two
 // local runs an hour fit; after that, wait or reset the database (README, "End-to-end tests").
 function inviteNumber(testInfo: TestInfo, testDigit: number): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
     throw new Error("E2E_RUN_ID is set by playwright.config.ts");
   }
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0812-9${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -44,7 +42,7 @@ function memberName(testInfo: TestInfo, base: string): string {
   if (run === undefined || !/^\d{4}$/.test(run)) {
     throw new Error("E2E_RUN_ID is set by playwright.config.ts");
   }
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${run} ${project}${retry}`;
 }
@@ -133,9 +131,7 @@ test.describe("Admin of the whole organization", () => {
     const nameSize = await sari
       .getByText("Mbak Sari Wulandari")
       .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-    expect(nameSize).toBeGreaterThanOrEqual(
-      MIN_BODY_FONT_PX[testInfo.project.name] ?? 16,
-    );
+    expect(nameSize).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     await attachFullPageScreenshot(page, testInfo, "members-list");
 
     await page.getByRole("button", { name: "Arti tiap peran" }).click();

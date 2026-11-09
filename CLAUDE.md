@@ -205,9 +205,10 @@ at launch. `pprof` in development only.
 ## UX rules
 
 - All user-facing copy is **Bahasa Indonesia**. Code, identifiers and comments are English.
-- Many users are 40+: body text ≥16px on iPad and ≥14px on phone, high contrast, touch
-  targets ≥44px, **one primary action per screen**.
-- Targets: iPad 1180×820 (Supervisor and admin), phone 390×844 (penyewa and karyawan).
+- Many users are 40+: body text ≥16px on iPad and desktop and ≥14px on phone, high contrast,
+  touch targets ≥44px, **one primary action per screen**.
+- Targets: iPad 1180×820 and desktop 1440×900 (Supervisor and admin), phone 390×844 (penyewa
+  and karyawan).
 - Palette: ink `#1E2A2B`, cream `#F5F3EE`, accent `#1D6B63`, warning `#B4530F`; inside the logo
   only, coin `#F5B82E` and coin ring `#C7870B` (logo option 3, decision 44). Font: Plus Jakarta Sans.
 - Rupiah format: `Rp1.250.000` (dot thousands separator, no decimals).
@@ -559,7 +560,7 @@ payment checker; broken-promise threshold; move-out-with-arrears rule; payment r
   fixtures in `testdata/`.
 - CI sets a minimum coverage threshold, aimed at business logic and not at generated code
   (sqlc, oapi-codegen).
-- Playwright covers the web app at 1180×820 and 390×844.
+- Playwright covers the web app at 1180×820, 1440×900 and 390×844.
 - Seed realistic Indonesian sample data (names, addresses, kos/kontrakan/ruko, rupiah amounts).
 - Must-have tests: FIFO across invoices, overpayment credit, webhook signature + idempotency,
   reconcile job, promise lifecycle + reminder suppression, tenant isolation,

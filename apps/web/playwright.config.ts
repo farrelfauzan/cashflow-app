@@ -26,7 +26,7 @@ process.env.E2E_RUN_ID ??= String(
   Math.floor(Date.now() / 60_000) % 10_000,
 ).padStart(4, "0");
 
-// Chromium only, at the two target sizes from CLAUDE.md "UX rules".
+// Chromium only, at the three target sizes from CLAUDE.md "UX rules".
 export default defineConfig({
   testDir: "./e2e",
   // The dev smoke spec runs only against `next dev`, and only it does.
@@ -43,8 +43,8 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
-    // Signs in once per run through the real login code flow and saves the session for both
-    // size projects. No retries: each attempt spends one of the phone's 3 code requests per
+    // Signs in once per run through the real login code flow and saves the session for every
+    // size project. No retries: each attempt spends one of the phone's 3 code requests per
     // 15 minutes, and a failed login is not flaky.
     {
       name: "setup",
@@ -68,6 +68,26 @@ export default defineConfig({
         viewport: { width: 390, height: 844 },
         isMobile: true,
         hasTouch: true,
+      },
+    },
+    // Supervisor and admin at a desk: the iPad's layout (sidebar, right-hand drawer, tables) at
+    // a wider window. No touch emulation, so hover styles apply as they do with a mouse.
+    // These specs sign in or link a seeded person reserved per project (e2e/support/staff.ts,
+    // e2e/support/login-telegram.ts); seed-demo has none for desktop, and desktop shares the
+    // iPad layout for these screens, so they run at the iPad and phone sizes only.
+    {
+      name: "desktop",
+      dependencies: ["setup"],
+      // A project's testIgnore replaces the top-level one, so it repeats the dev smoke rule.
+      testIgnore: [
+        ...(devServer ? [] : [/dev-smoke\.spec\.ts$/]),
+        /\/login\.spec\.ts$/,
+        /login-telegram\.spec\.ts$/,
+        /staff-telegram\.spec\.ts$/,
+      ],
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
       },
     },
   ],

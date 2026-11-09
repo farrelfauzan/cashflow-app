@@ -3,7 +3,8 @@ import { test as setup } from "@playwright/test";
 import { signIn } from "./support/login";
 import { SETUP_STAFF } from "./support/staff";
 
-// Runs once per `pnpm e2e`, before the ipad and phone projects, which share the saved states.
+// Runs once per `pnpm e2e`, before the size projects (ipad, phone, desktop), which share the
+// saved states.
 // One test per member, so each gets its own cookie jar.
 for (const staff of SETUP_STAFF) {
   setup(`sign in ${staff.name}`, async ({ request, playwright, baseURL }) => {

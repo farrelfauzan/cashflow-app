@@ -11,7 +11,7 @@ export function trackOutsideRequests(page: Page): string[] {
   return outside;
 }
 
-// A full-page screenshot attached to the report, one per project (ipad, phone).
+// A full-page screenshot attached to the report, one per project (ipad, phone, desktop).
 export async function attachFullPageScreenshot(
   page: Page,
   testInfo: TestInfo,

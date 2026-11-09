@@ -12,6 +12,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 
@@ -25,11 +26,8 @@ const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 const UNKNOWN_TENANT_ID = "00000000-0000-4000-8000-000000000000";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function minFont(testInfo: TestInfo): number {
-  return MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+  return minBodyFontPx(testInfo);
 }
 
 // Opens the organization's tenants page: straight in for one organization, by name for several.

@@ -14,7 +14,7 @@ export type SeededStaff = {
 };
 
 // Admin in Griya Sejahtera and Supervisor in Kost Putri Anggrek: one login shows both
-// organizations. Only one phone is signed in per run, shared by both projects, because the API
+// organizations. Only one phone is signed in per run, shared by every project, because the API
 // allows 3 login code requests per phone per 15 minutes.
 export const HENDRA: SeededStaff = {
   phone: "0812-0009-0001",

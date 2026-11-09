@@ -23,6 +23,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { chooseProperty } from "./support/property-picker";
 import { ORG_HOME_URL } from "./support/shell";
@@ -41,9 +42,6 @@ const GRIYA = "Griya Sejahtera";
 const NO_PRICE_MESSAGE =
   "Unit ini belum punya harga sewa. Atur harganya di halaman properti.";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -54,7 +52,7 @@ function runId(): string {
 
 // A name no other run, project, test or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -62,7 +60,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other spec, run, project, test or retry uses (0813-4...).
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0813-4${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -222,7 +220,7 @@ test.describe("Admin of the whole organization", () => {
     );
     await expect(hint).toBeVisible();
     expect(await fontSize(hint)).toBeGreaterThanOrEqual(
-      MIN_BODY_FONT_PX[testInfo.project.name] ?? 16,
+      minBodyFontPx(testInfo),
     );
     await expectTouchTarget(term);
     await term.click();

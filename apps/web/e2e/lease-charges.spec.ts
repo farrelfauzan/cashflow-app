@@ -17,6 +17,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
@@ -44,9 +45,6 @@ const METERED_NOTE =
 const BAD_AMOUNT = "Isi jumlahnya dengan angka, paling sedikit Rp1.";
 const TAKEN_NAME = "Nama biaya ini sudah dipakai.";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -57,7 +55,7 @@ function runId(): string {
 
 // A name no other run, project, test or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -66,7 +64,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // numbers of lease-changes.spec.ts (0813-7) and tenant-forms.spec.ts (0813-9).
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0813-6${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -231,7 +229,7 @@ test.describe("Admin of the whole organization", () => {
     await chargeBox(panel, sampah).click();
     await chargeAmount(panel, sampah).fill("20000");
 
-    const min = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const min = minBodyFontPx(testInfo);
     expect(await fontSize(panel.getByText(INTRO))).toBeGreaterThanOrEqual(min);
     expect(
       await fontSize(panel.getByText(parkir, { exact: true })),

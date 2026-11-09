@@ -11,6 +11,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectWord } from "./support/projects";
 import { openPropertyListPageOf } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
@@ -23,14 +24,11 @@ import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function minFont(testInfo: TestInfo): number {
-  return MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+  return minBodyFontPx(testInfo);
 }
 
-// A name no other run, project, test or retry uses: both projects run in parallel on one
+// A name no other run, project, test or retry uses: the projects run in parallel on one
 // database, property names are unique per organization (ignoring case), and nothing deletes a
 // property, so a second run on the same database needs new names.
 function uniqueName(testInfo: TestInfo, base: string): string {
@@ -38,7 +36,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
   if (run === undefined) {
     throw new Error("E2E_RUN_ID is set by playwright.config.ts");
   }
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${run} ${project}${retry}`;
 }
