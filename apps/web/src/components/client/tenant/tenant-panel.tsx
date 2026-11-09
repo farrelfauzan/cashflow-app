@@ -295,7 +295,7 @@ export function TenantPanel({
       <SheetContent
         side="right"
         className={cn(
-          "w-full gap-0 bg-card p-0 sm:max-w-none",
+          "w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none",
           shown?.kind === "lease" || shown?.kind === "editLease"
             ? "md:w-[920px] md:max-w-full"
             : "md:w-[470px]",

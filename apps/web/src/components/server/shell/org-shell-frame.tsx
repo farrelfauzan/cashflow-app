@@ -48,7 +48,7 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
   );
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background md:flex-row">
+    <div className="flex min-h-dvh flex-col bg-background pr-[env(safe-area-inset-right)] md:flex-row">
       <SidebarRail
         defaultCollapsed={isSidebarCollapsed(
           cookieStore.get(SIDEBAR_COOKIE)?.value,

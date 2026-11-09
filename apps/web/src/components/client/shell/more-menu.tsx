@@ -28,6 +28,10 @@ export function MoreMenu({ label, sectionHrefs, children }: MoreMenuProps) {
   // The path the sheet was opened on: once a link changes the path, the sheet is closed.
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === pathname;
+  // A link to the page already open does not change the path, so any link click closes it too.
+  const closeOnLink = ({ target }: { target: EventTarget }) => {
+    if (target instanceof Element && target.closest("a")) setOpenOn(null);
+  };
   const current = sectionHrefs.some(
     (href) => pathname === href || pathname.startsWith(`${href}/`),
   );
@@ -72,7 +76,12 @@ export function MoreMenu({ label, sectionHrefs, children }: MoreMenuProps) {
         <SheetDescription className="sr-only">
           Bagian lain, ganti usaha, atau keluar.
         </SheetDescription>
-        <div className="overflow-y-auto px-5 pt-4 pb-5">{children}</div>
+        <div
+          className="overflow-y-auto px-5 pt-4 pb-5"
+          onClickCapture={closeOnLink}
+        >
+          {children}
+        </div>
       </SheetContent>
     </Sheet>
   );

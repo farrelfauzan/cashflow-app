@@ -262,6 +262,12 @@ test.describe("Admin of the whole organization", () => {
       page.getByRole("heading", { level: 1, name: "Anggota tim" }),
     ).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // A link to the page already open closes it too, though the path stays the same.
+    const onMembers = await openAccountMenu(page, testInfo);
+    await onMembers.getByRole("link", { name: "Anggota tim" }).click();
+    await expect(onMembers).toBeHidden();
+    await expect(page).toHaveURL(`${home}/members`);
   });
 
   test("keeps the side menu on iPad and desktop, with no tab bar", async ({
