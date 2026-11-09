@@ -25,6 +25,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
@@ -45,9 +46,6 @@ const REGION = "Uang penyewa";
 const LATER_BUTTONS = /^(Kirim link bayar|Koreksi nominal)$/;
 const MINUS = "−";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -58,7 +56,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -66,7 +64,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project or retry uses; 0814-1 is used by no other spec.
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-1${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -365,7 +363,7 @@ test.describe("Admin of the whole organization", () => {
       page.getByRole("region", { name: `${unit.label} · ${property.name}` }),
     ).toBeVisible();
 
-    const minFont = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const minFont = minBodyFontPx(testInfo);
     expect(
       await fontSize(paymentRow.getByText("Titip ke Mas Dimas")),
     ).toBeGreaterThanOrEqual(minFont);

@@ -29,6 +29,7 @@ import {
   trackTokenLeaks,
   type RentOptions,
 } from "./support/payment-page";
+import { minBodyFontPx } from "./support/projects";
 import { DIMAS, HENDRA } from "./support/staff";
 
 // The tenant payment page /t/[token] (W15), read-only states, against the real API and its
@@ -37,9 +38,6 @@ import { DIMAS, HENDRA } from "./support/staff";
 // whole of Griya Sejahtera, which seed-demo gives a bank account and QRIS (a fake AutoGoPay
 // key); Pak Dimas is Admin of Kos Bulanan Sejahtera, which has neither. Every amount the page
 // must show is read from the API. The QRIS states are in payment-page-qris.spec.ts.
-
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 
 // This spec's tenants: tenant numbers 0814-8…, rooms "Kamar Bayar".
 function rent(digit: number): RentOptions {
@@ -138,7 +136,7 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   );
   await expect(allocationNote).toBeVisible();
   expect(await fontSize(allocationNote)).toBeGreaterThanOrEqual(
-    MIN_BODY_FONT_PX[testInfo.project.name] ?? 16,
+    minBodyFontPx(testInfo),
   );
 
   // Bayar-Pilih: pay everything, a part, or not yet, with "Bayar semua" picked and one primary.

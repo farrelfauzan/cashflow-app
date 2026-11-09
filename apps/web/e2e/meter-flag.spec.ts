@@ -30,6 +30,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { isPhone, ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
@@ -48,8 +49,6 @@ const HINT =
   "Tagihan tetap terbit tanpa listrik atau air. Yang dicatat terlambat masuk ke tagihan bulan berikutnya.";
 const LINK = "Lihat penyewa";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 const PAGE_SIZE = 20;
 
 function runId(): string {
@@ -62,7 +61,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -71,7 +70,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // (lease-metered.spec.ts takes digit 1 of it, this one digit 2).
 function tenantNumber(testInfo: TestInfo): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-6${run.slice(0, 3)}-${run.slice(3)}${project}2${testInfo.retry}`;
 }
 
@@ -249,7 +248,7 @@ test.describe("Admin of the whole organization", () => {
     const box = page.getByRole("status").filter({ hasText: title });
     await expect(box).toBeVisible();
     await expect(box).toContainText(HINT);
-    const min = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const min = minBodyFontPx(testInfo);
     expect(await fontSize(box.getByText(title))).toBeGreaterThanOrEqual(min);
     expect(await fontSize(box.getByText(HINT))).toBeGreaterThanOrEqual(min);
     const show = box.getByRole("button", { name: SHOW, exact: true });

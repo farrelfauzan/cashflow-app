@@ -20,6 +20,7 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { findOrCreateMeteredTypes } from "./support/meter-fixtures";
+import { projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
@@ -44,7 +45,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -52,7 +53,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project or retry uses; 0814-7 is used by no other spec.
 function tenantNumber(testInfo: TestInfo): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-7${run.slice(0, 3)}-${run.slice(3)}${project}1${testInfo.retry}`;
 }
 

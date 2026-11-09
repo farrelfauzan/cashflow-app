@@ -20,6 +20,7 @@ import type {
 } from "../../src/lib/api/generated/model";
 import { jakartaToday } from "../../src/lib/format/date";
 import { formatRupiah } from "../../src/lib/format/rupiah";
+import { projectDigit, projectWord } from "./projects";
 import { findOrCreateProperty } from "./property-fixtures";
 import type { SeededStaff } from "./staff";
 import { animationsSettled } from "./page-checks";
@@ -46,14 +47,9 @@ export function runId(): string {
   return run;
 }
 
-// "1" for the iPad project, "2" for the phone one.
-export function projectDigit(testInfo: TestInfo): string {
-  return testInfo.project.name === "phone" ? "2" : "1";
-}
-
 // A name no other run, project or retry uses.
 export function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }

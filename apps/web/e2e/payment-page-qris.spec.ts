@@ -23,7 +23,6 @@ import {
   expectTouchTarget,
   makeLink,
   payAll,
-  projectDigit,
   readPage,
   rentSinceLastMonth,
   runId,
@@ -33,6 +32,7 @@ import {
   trackTokenLeaks,
   type RentedTenant,
 } from "./support/payment-page";
+import { projectDigit } from "./support/projects";
 import { HENDRA } from "./support/staff";
 
 // The QRIS states of the tenant payment page /t/[token] (W15 part 2), against the real API, its
@@ -40,7 +40,7 @@ import { HENDRA } from "./support/staff";
 // which the API and the worker reach through AUTOGOPAY_BASE_URL. seed-demo gives Griya
 // Sejahtera a fake AutoGoPay key, so its pages offer QRIS.
 //
-// The stand-in is shared by both projects, which run at the same time, and by every earlier run
+// The stand-in is shared by every project, which run at the same time, and by every earlier run
 // while it stays up, so it is never reset: each test finds its own QRs by an amount no other
 // test, project or recent run uses, made after the test started.
 //
@@ -499,7 +499,7 @@ test("above Rp10.000.000 one QR asks for Rp10.000.000 and says the rest comes la
   await expectTouchTarget(start);
   await start.click();
 
-  // The stand-in tells QRs apart only by amount, and both projects make a Rp10.000.000 QR here,
+  // The stand-in tells QRs apart only by amount, and every project makes a Rp10.000.000 QR here,
   // so this test reads the page, not the stand-in, and leaves the QR unpaid.
   await expectImageLoaded(
     page.getByRole("img", { name: "Kode QRIS Rp10.000.000" }),

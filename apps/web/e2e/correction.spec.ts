@@ -30,6 +30,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, type SeededStaff } from "./support/staff";
@@ -46,8 +47,6 @@ const ANGGREK = "Kost Putri Anggrek";
 const REGION = "Uang penyewa";
 const PRICE = 1_200_000;
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
 const MIN_TOUCH_PX = 44;
 
 function runId(): string {
@@ -60,7 +59,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -68,7 +67,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project, test or retry uses; 0814-3 is used by no other spec.
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-3${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -278,7 +277,7 @@ test.describe("Admin of the whole organization", () => {
       expect(await height(control)).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
     }
     expect(await height(parts.amount)).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
-    const minFont = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const minFont = minBodyFontPx(testInfo);
     expect(
       await fontSize(
         dialog.getByText("Data lama tidak dihapus.", { exact: false }),
@@ -329,7 +328,7 @@ test.describe("Admin of the whole organization", () => {
   }, testInfo) => {
     test.setTimeout(90_000);
     const outsideRequests = trackOutsideRequests(page);
-    const { orgId, tenant, invoice } = await tenantWithInvoice(
+    const { orgId, tenant, accountPath, invoice } = await tenantWithInvoice(
       page,
       testInfo,
       2,
@@ -360,15 +359,26 @@ test.describe("Admin of the whole organization", () => {
     await expect(dialog.getByText("Alasan wajib diisi.")).toBeVisible();
     expect(posts).toEqual([]);
 
-    // The amount it bills now: the API refuses (correction_no_change) under "Nominal baru".
-    await parts.amount.fill(String(invoice.billed));
+    // The amount it bills now: the API refuses (correction_no_change) under "Nominal baru". Read
+    // from the account again rather than the fixture, so it is what the API compares against.
+    const now = await call<TenantAccount>(page, "GET", accountPath, 200);
+    const billedNow = now.invoices.find((row) => row.id === invoice.id)?.billed;
+    if (billedNow === undefined)
+      throw new Error("invoice gone from the account");
+    await parts.amount.fill(String(billedNow));
+    await expect(parts.amount).toHaveValue(
+      formatRupiah(billedNow).replace("Rp", ""),
+    );
     await parts.reason.fill(uniqueName(testInfo, "Cek ulang"));
     const answer = page.waitForResponse((response) =>
       isCorrectionPost(response.request()),
     );
     await parts.save.click();
     const response = await answer;
-    expect(response.status()).toBe(409);
+    expect(
+      response.status(),
+      `sent ${response.request().postData() ?? ""} for an invoice billing ${billedNow}`,
+    ).toBe(409);
     const { error } = (await response.json()) as {
       error: { code: string; message: string; field?: string };
     };

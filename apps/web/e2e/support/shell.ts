@@ -4,6 +4,7 @@ import {
   type Page,
   type TestInfo,
 } from "@playwright/test";
+import { projectName } from "./projects";
 
 // The app shell from a test's point of view: on iPad the side menu is always open; on the
 // phone it opens from "Buka menu" in a sheet.
@@ -14,7 +15,7 @@ export const ORG_HOME_URL = /\/o\/[0-9a-f-]{36}$/;
 export const HOME_HEADING = /^Selamat (pagi|siang|sore|malam)$/;
 
 export function isPhone(testInfo: TestInfo): boolean {
-  return testInfo.project.name === "phone";
+  return projectName(testInfo) === "phone";
 }
 
 // Opens the phone's menu sheet (a no-op on iPad) and returns the menu.

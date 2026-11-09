@@ -18,6 +18,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectWord } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
 
@@ -31,9 +32,6 @@ import { HENDRA } from "./support/staff";
 const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -44,7 +42,7 @@ function runId(): string {
 
 // A name no other run, project, test or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -195,7 +193,7 @@ test.describe("Admin of the whole organization", () => {
     );
     expect(
       await fontSize(panel.locator("label").filter({ hasText: /^Per tahun$/ })),
-    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+    ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
 
     await panel.getByLabel("Nama unit").fill("Ruko A1");
     await price.fill("50000000");
@@ -283,7 +281,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(priceHistory(panel).getByRole("listitem")).toHaveCount(2);
     expect(
       await fontSize(yearly.getByText("Per tahun · Rp15.000.000")),
-    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+    ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     // The history sits under the terms; bring it into the capture.
     await priceHistory(panel).scrollIntoViewIfNeeded();
     await attachViewportScreenshot(page, testInfo, "unit-form-terms");
@@ -509,7 +507,7 @@ test.describe("Supervisor", () => {
       await fontSize(
         historyRow(panel, "Per bulan · Rp800.000").locator("span").last(),
       ),
-    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+    ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     // Nothing in it changes anything.
     await expect(panel.getByRole("textbox")).toHaveCount(0);
     await expect(panel.getByRole("checkbox")).toHaveCount(0);

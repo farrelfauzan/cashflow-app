@@ -14,6 +14,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
@@ -33,9 +34,6 @@ const NOTE =
   "Nyalakan yang ditagih dari meteran. Jumlahnya dicatat tiap bulan lewat Catat meteran.";
 const HINT = "Dicatat dari meteran tiap bulan";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -46,7 +44,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -54,7 +52,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project or retry uses; 0814-6 is used by no other spec.
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-6${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
@@ -187,7 +185,7 @@ test.describe("Admin of the whole organization", () => {
       panel.getByRole("textbox", { name: `Jumlah ${listrik.name}` }),
     ).toHaveCount(0);
 
-    const min = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const min = minBodyFontPx(testInfo);
     const row = panel
       .locator("label")
       .filter({ has: page.getByText(listrik.name, { exact: true }) });

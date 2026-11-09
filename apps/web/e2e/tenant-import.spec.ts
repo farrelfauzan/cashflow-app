@@ -15,6 +15,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
@@ -46,9 +47,6 @@ const HEADER = [
   "mulai_tagih",
 ];
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -58,7 +56,7 @@ function runId(): string {
 }
 
 function suffix(testInfo: TestInfo): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${runId()} ${project}${retry}`;
 }
@@ -71,7 +69,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other spec, run, project, row or retry uses (0813-5...).
 function tenantNumber(testInfo: TestInfo, rowDigit: number): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0813-5${run.slice(0, 3)}-${run.slice(3)}${project}${rowDigit}${testInfo.retry}`;
 }
 
@@ -285,7 +283,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(importRow(page, 2)).toHaveCount(0);
     expect(
       await fontSize(badPhone.getByText("Kamar 2")),
-    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+    ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     await attachViewportScreenshot(page, testInfo, "import-check-errors");
 
     const fixed = page.getByRole("button", {
@@ -525,7 +523,7 @@ test.describe("Admin of the whole organization", () => {
     );
     expect(
       await fontSize(overview.getByText("Tagihan yang langsung dibuat")),
-    ).toBeGreaterThanOrEqual(MIN_BODY_FONT_PX[testInfo.project.name] ?? 16);
+    ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
 
     // The save names what it bills.
     const save = page.getByRole("button", {

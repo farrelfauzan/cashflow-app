@@ -10,6 +10,7 @@ import {
   recordAnimations,
   recordedAnimations,
 } from "./support/drawer-motion";
+import { projectName } from "./support/projects";
 import { HENDRA } from "./support/staff";
 
 // The side drawer of the create and edit forms slides in from the right and out again, its
@@ -105,9 +106,9 @@ test.describe("Side drawer motion", () => {
       await expectClosed(dialog);
       await expect(button).toBeFocused();
 
-      // The backdrop closes it on iPad. On the phone the drawer covers the whole screen, so
-      // there is no backdrop to tap.
-      if (testInfo.project.name === "ipad") {
+      // The backdrop closes it on iPad and desktop. On the phone the drawer covers the whole
+      // screen, so there is no backdrop to tap.
+      if (projectName(testInfo) !== "phone") {
         await button.click();
         await expect(dialog).toBeVisible();
         await page.locator("[data-slot=sheet-overlay]").click({

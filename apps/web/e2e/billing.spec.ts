@@ -34,6 +34,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { rangeText } from "../src/components/client/list/utils";
 import { menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
@@ -51,9 +52,6 @@ const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 const SEARCH = "Cari penyewa atau unit…";
 
-// Minimum body text per project, CLAUDE.md "UX rules".
-const MIN_BODY_FONT_PX: Record<string, number> = { ipad: 16, phone: 14 };
-
 function runId(): string {
   const run = process.env.E2E_RUN_ID;
   if (run === undefined || !/^\d{4}$/.test(run)) {
@@ -64,7 +62,7 @@ function runId(): string {
 
 // A name no other run, project or retry uses.
 function uniqueName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${runId()} ${project}${retry}`;
 }
@@ -72,7 +70,7 @@ function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project or retry uses; 0814-2 is used by no other spec.
 function tenantNumber(testInfo: TestInfo): string {
   const run = runId();
-  const project = testInfo.project.name === "phone" ? "2" : "1";
+  const project = projectDigit(testInfo);
   return `0814-2${run.slice(0, 3)}-${run.slice(3)}${project}1${testInfo.retry}`;
 }
 
@@ -204,7 +202,7 @@ test.describe("Admin of the whole organization", () => {
     const orgId = orgIdOf(page);
     const today = jakartaToday(new Date());
     const thisMonth = currentPeriod(today);
-    const minFont = MIN_BODY_FONT_PX[testInfo.project.name] ?? 16;
+    const minFont = minBodyFontPx(testInfo);
 
     // A kos unit of the test's own, and a lease starting on the 1st of this month: its first
     // period is this month, and the worker invoices it within seconds.

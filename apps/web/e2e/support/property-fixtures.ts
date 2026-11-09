@@ -6,23 +6,24 @@ import type {
   PropertyList,
 } from "../../src/lib/api/generated/model";
 import { openListPageOf } from "./list-pages";
+import { projectWord } from "./projects";
 
 // Properties the specs need only to exist (a place for their own unit, tenant and lease) are
 // found by a stable name and created once, so a database reused across many runs does not grow
 // by a property per test per run. Names start with "Wisma", after every property seed-demo
 // makes in Griya Sejahtera, so the seeded properties keep the first page of the property list:
 //
-//   "Wisma Tetap <base> Satu|Dua"           reused by every run (this module)
-//   "Wisma Uji <base> <run id> Satu|Dua"    made by a test that needs a fresh property of its
-//                                           own (the spec builds the name)
+//   "Wisma Tetap <base> Satu|Dua|Tiga"         reused by every run (this module)
+//   "Wisma Uji <base> <run id> Satu|Dua|Tiga"  made by a test that needs a fresh property of
+//                                              its own (the spec builds the name)
 //
 // "Wisma Tetap" sorts before "Wisma Uji", so the reused set stays ahead of the per-run ones.
 // A reused property collects one unit per run, so units made in it need a name no
 // other run uses.
 
-// One reused property per project, so the two sizes, which run in parallel, never share one.
+// One reused property per project, so the sizes, which run in parallel, never share one.
 export function stablePropertyName(testInfo: TestInfo, base: string): string {
-  const project = testInfo.project.name === "phone" ? "Dua" : "Satu";
+  const project = projectWord(testInfo);
   return `Wisma Tetap ${base} ${project}`;
 }
 
