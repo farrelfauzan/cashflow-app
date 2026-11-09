@@ -12,6 +12,7 @@ import {
   INPUT_CLASS,
   TEXTAREA_CLASS,
 } from "@/components/client/form/utils";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,8 +29,10 @@ import {
   TENANT_FORM_API_FIELDS,
   TENANT_NAME_MAX_LENGTH,
   TENANT_NOTE_MAX_LENGTH,
+  tenantAddedToast,
   tenantFormSchema,
   tenantFormValues,
+  tenantSavedToast,
 } from "./utils";
 
 type TenantFormProps = {
@@ -58,16 +61,27 @@ export function TenantForm({ orgId, tenant, onSaved }: TenantFormProps) {
 
   const invalidateList = () =>
     queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey(orgId) });
-  const create = useCreateTenant({ mutation: { onSuccess: invalidateList } });
+  // The toasts are raised here, not in mutate()'s callbacks, so they show even when the panel
+  // closed while the request ran.
+  const create = useCreateTenant({
+    mutation: {
+      onSuccess: (saved) => {
+        notify(tenantAddedToast(saved.name));
+        return invalidateList();
+      },
+    },
+  });
   const update = useUpdateTenant({
     mutation: {
-      onSuccess: (saved) =>
-        Promise.all([
+      onSuccess: (saved) => {
+        notify(tenantSavedToast(saved.name));
+        return Promise.all([
           invalidateList(),
           queryClient.invalidateQueries({
             queryKey: getGetTenantQueryKey(orgId, saved.id),
           }),
-        ]),
+        ]);
+      },
     },
   });
   // After adding, the panel moves on to the next step; the form stays locked until then.

@@ -7,6 +7,7 @@ import { Controller } from "react-hook-form";
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ import {
   inviteFormSchema,
   inviteRoleForm,
   roleFieldErrors,
+  memberInvitedToast,
 } from "./utils";
 
 import { RoleFields } from "./role-fields";
@@ -54,12 +56,16 @@ export function InviteMemberForm({
   const { errors } = form.formState;
   const nameError = errors.name?.message;
   const phoneError = errors.phone?.message;
+  // The toast is raised here, not in mutate()'s callback, so it shows even when the panel
+  // closed while the request ran.
   const invite = useInviteMember({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({
+      onSuccess: (member) => {
+        notify(memberInvitedToast(member));
+        return queryClient.invalidateQueries({
           queryKey: getListMembersQueryKey(orgId),
-        }),
+        });
+      },
     },
   });
   const sending = invite.isPending || invite.isSuccess;

@@ -9,6 +9,7 @@ import {
   FIELD_LABEL_CLASS,
   INPUT_CLASS,
 } from "@/components/client/form/utils";
+import { notify } from "@/components/client/toast/notify";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Lease } from "@/lib/api/generated/model";
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 import {
   CANCEL_BOOKING_API_FIELDS,
   CANCEL_BOOKING_HINT,
+  bookingCancelledToast,
   cancelBookingFormSchema,
   cancelBookingText,
 } from "./utils";
@@ -51,7 +53,12 @@ export function CancelBookingForm({
   });
 
   const moveOut = useMoveOut({
-    mutation: { onSuccess: (ended) => refresh(ended, true) },
+    mutation: {
+      onSuccess: (ended) => {
+        notify(bookingCancelledToast(ended));
+        return refresh(ended, true);
+      },
+    },
   });
   const saving = moveOut.isPending;
 

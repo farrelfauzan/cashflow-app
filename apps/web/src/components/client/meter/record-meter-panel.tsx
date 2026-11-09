@@ -21,6 +21,7 @@ import {
 } from "@/components/client/form/utils";
 import { LeaseInfoNote } from "@/components/client/lease/lease-info-note";
 import { LeasePanelFooter } from "@/components/client/lease/lease-panel-footer";
+import { notify } from "@/components/client/toast/notify";
 import { toFormError } from "@/lib/api/form-error";
 import type { Lease, MeteredCharge } from "@/lib/api/generated/model";
 import {
@@ -59,6 +60,7 @@ import {
   savedText,
   selectionKey,
   usageMonthOptions,
+  meterRecordedToast,
 } from "./utils";
 
 import { MeterLockedView } from "./meter-locked-view";
@@ -168,7 +170,12 @@ export function RecordMeterPanel({
   }
 
   const save = useRecordMeteredCharge({
-    mutation: { onSuccess: () => refresh() },
+    mutation: {
+      onSuccess: (charge) => {
+        notify(meterRecordedToast(charge));
+        return refresh();
+      },
+    },
   });
   const saving = save.isPending;
 

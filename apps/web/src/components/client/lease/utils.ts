@@ -1,6 +1,7 @@
 import type { FieldValues, Path, UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import type {
   ChargeType,
@@ -1296,3 +1297,84 @@ export const chargeTypeFormSchema: z.ZodType<
   }),
   metered: z.boolean(),
 });
+
+// The toasts after a lease changes (board "Notifikasi singkat"), shown once the API answered:
+// green for a save, orange for a changed last day, red for a lease ended.
+function leaseUnitLine(
+  lease: Pick<Lease, "unitLabel" | "propertyName">,
+): string {
+  return `${lease.unitLabel} · ${lease.propertyName}`;
+}
+
+export function leaseCreatedToast(
+  lease: Pick<Lease, "unitLabel" | "propertyName">,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Sewa dibuat",
+    description: leaseUnitLine(lease),
+  };
+}
+
+export function leaseUpdatedToast(
+  lease: Pick<Lease, "unitLabel" | "propertyName">,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Sewa diubah",
+    description: leaseUnitLine(lease),
+  };
+}
+
+export function leaseChargesToast(
+  lease: Pick<Lease, "unitLabel" | "propertyName">,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Biaya tambahan disimpan",
+    description: leaseUnitLine(lease),
+  };
+}
+
+// From the saved lease: plannedEndDate is missing after "Hapus rencana keluar".
+export function plannedEndToast(
+  lease: Pick<Lease, "unitLabel" | "propertyName" | "plannedEndDate">,
+): ToastMessage {
+  return lease.plannedEndDate === undefined
+    ? {
+        tone: "caution",
+        title: "Rencana keluar dihapus",
+        description: leaseUnitLine(lease),
+      }
+    : {
+        tone: "caution",
+        title: "Rencana keluar disimpan",
+        description: `Hari terakhir ${formatDate(lease.plannedEndDate)}`,
+      };
+}
+
+export function movedOutToast(lease: Pick<Lease, "unitLabel">): ToastMessage {
+  return {
+    tone: "destructive",
+    title: "Pindah keluar dicatat",
+    description: `${lease.unitLabel} kosong lagi.`,
+  };
+}
+
+export function bookingCancelledToast(
+  lease: Pick<Lease, "unitLabel">,
+): ToastMessage {
+  return {
+    tone: "destructive",
+    title: "Sewa dibatalkan",
+    description: `${lease.unitLabel} kosong lagi.`,
+  };
+}
+
+export function chargeTypeAddedToast(name: string): ToastMessage {
+  return {
+    tone: "create",
+    title: "Jenis biaya ditambahkan",
+    description: name,
+  };
+}

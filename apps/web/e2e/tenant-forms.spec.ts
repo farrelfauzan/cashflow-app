@@ -27,6 +27,7 @@ import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { chooseProperty } from "./support/property-picker";
 import { ORG_HOME_URL } from "./support/shell";
+import { expectToast, toast } from "./support/toast";
 import { DIMAS, HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Tambah penyewa", "Ubah penyewa" and "Sewakan unit", against the real API (seed-demo data). Pak
@@ -225,6 +226,8 @@ test.describe("Admin of the whole organization", () => {
       .fill("Kerja di toko, bayar lewat anaknya");
     await form.getByRole("button", { name: "Simpan penyewa" }).click();
     await expect(form.getByText(TAKEN_MESSAGE)).toBeVisible();
+    // Refused: no toast, the message stays in the form.
+    await expect(toast(page, "Penyewa ditambahkan")).toHaveCount(0);
     await expect(form.getByLabel("Nomor WhatsApp")).toHaveAttribute(
       "aria-invalid",
       "true",
@@ -242,6 +245,14 @@ test.describe("Admin of the whole organization", () => {
     await expect(form.getByText(TAKEN_MESSAGE)).toHaveCount(0);
     await form.getByRole("button", { name: "Simpan penyewa" }).click();
     const added = page.getByRole("dialog", { name: "Penyewa ditambahkan" });
+    // A green toast once the API answered, next to the panel's own "Penyewa ditambahkan".
+    await expectToast(page, "Penyewa ditambahkan", "create", name);
+    // The toast's close button works over the open panel and leaves the panel open.
+    await toast(page, "Penyewa ditambahkan")
+      .getByRole("button", { name: "Tutup notifikasi" })
+      .click();
+    await expect(toast(page, "Penyewa ditambahkan")).toHaveCount(0);
+    await expect(added).toBeVisible();
     await expect(added).toContainText(
       `${name} belum punya sewa. Sewakan unit sekarang supaya tagihannya bisa dibuat.`,
     );
@@ -312,6 +323,12 @@ test.describe("Admin of the whole organization", () => {
     await attachFullPageScreenshot(page, testInfo, "lease-form-billing");
 
     await lease.getByRole("button", { name: "Simpan sewa" }).click();
+    await expectToast(
+      page,
+      "Sewa dibuat",
+      "create",
+      `${unit.label} · ${property.name}`,
+    );
     await expect(lease).toHaveCount(0);
     await expect(
       visibleText(
@@ -457,6 +474,7 @@ test.describe("Admin of the whole organization", () => {
       .getByLabel("Catatan (boleh dikosongkan)")
       .fill("Pindahan dari Kontrakan Mawar");
     await form.getByRole("button", { name: "Simpan penyewa" }).click();
+    await expectToast(page, "Data penyewa disimpan", "create", renamed);
     await expect(form).toHaveCount(0);
     await expect(
       page.getByRole("heading", { level: 1, name: renamed }),

@@ -96,7 +96,7 @@ export function TenantDetailView({ orgId, tenantId }: TenantDetailViewProps) {
     query: { enabled: canShare },
   });
   const shareInvoice = payLinkInvoice(canShare, openInvoices.data);
-  const payLink = useCopyPayLink(orgId, setNotice);
+  const payLink = useCopyPayLink(orgId);
   // "Catat janji" needs what a promise may name now, from the account the money section reads
   // (one query, shared); it shows only where that section does.
   const canPromise = showAccount && canCreatePromise(ability);

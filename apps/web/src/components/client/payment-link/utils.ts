@@ -1,3 +1,4 @@
+import type { ToastMessage } from "@/components/client/toast/type";
 import type { TenantOpenInvoice } from "@/lib/api/generated/model";
 import type { AppAbility } from "@/lib/capabilities";
 
@@ -7,8 +8,13 @@ import type { ClipboardItemFactory, ClipboardWriter } from "./type";
 // invoice and copies it. The link is never kept: only its hash is stored by the API.
 
 export const COPY_PAY_LINK_TEXT = "Salin link bayar";
-export const PAY_LINK_COPIED_NOTICE =
-  "Link bayar disalin. Tempel di WhatsApp penyewa.";
+// The toast once the link is on the clipboard; it never shows the link.
+export const PAY_LINK_COPIED_TOAST: ToastMessage = {
+  tone: "neutral",
+  title: "Link bayar disalin",
+  description: "Tempel di WhatsApp penyewa.",
+  icon: "copy",
+};
 
 // The fallback when the browser cannot copy.
 export const PAY_LINK_FALLBACK_LABEL = "Link bayar";

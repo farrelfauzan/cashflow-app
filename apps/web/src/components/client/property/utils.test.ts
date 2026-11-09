@@ -71,6 +71,11 @@ import {
   NO_PRICE_TEXT,
   unitPriceTermViews,
   unitRowAction,
+  priceSavedToast,
+  propertyAddedToast,
+  propertySavedToast,
+  unitAddedToast,
+  unitSavedToast,
 } from "./utils";
 
 const NO_PROPERTY_PERMISSIONS: PropertyPermissions = {
@@ -1379,5 +1384,41 @@ describe("sort options", () => {
       readSort(new URLSearchParams("sort=-label"), UNIT_SORT_OPTIONS),
     ).toBe("-label");
     expect(readSort(new URLSearchParams(""), UNIT_SORT_OPTIONS)).toBe("label");
+  });
+});
+
+describe("property toasts", () => {
+  it("names the property added or saved", () => {
+    expect(propertyAddedToast("Kos Melati")).toEqual({
+      tone: "create",
+      title: "Properti ditambahkan",
+      description: "Kos Melati",
+    });
+    expect(propertySavedToast("Kos Melati")).toEqual({
+      tone: "create",
+      title: "Properti disimpan",
+      description: "Kos Melati",
+    });
+  });
+
+  it("names the unit and its property", () => {
+    expect(unitAddedToast("Kamar 3", "Kos Melati")).toEqual({
+      tone: "create",
+      title: "Unit ditambahkan",
+      description: "Kamar 3 · Kos Melati",
+    });
+    expect(unitSavedToast("Kamar 3", "Kos Melati")).toEqual({
+      tone: "create",
+      title: "Unit disimpan",
+      description: "Kamar 3 · Kos Melati",
+    });
+  });
+
+  it("shows a new price in orange, with the day it takes effect", () => {
+    expect(priceSavedToast({ effectiveFrom: "2026-12-01" })).toEqual({
+      tone: "caution",
+      title: "Harga baru disimpan",
+      description: "Berlaku mulai 1 Des 2026",
+    });
   });
 });

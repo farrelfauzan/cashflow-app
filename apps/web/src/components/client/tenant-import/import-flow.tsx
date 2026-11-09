@@ -3,11 +3,17 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
+import { notify } from "@/components/client/toast/notify";
 import { toFormError } from "@/lib/api/form-error";
 import { useImportTenants } from "@/lib/api/generated/tenants/tenants";
 import { orgQueryKeyPrefix } from "@/lib/api/query-key";
 import type { ChooseProblem, ImportStep } from "./type";
-import { checkProblem, isTooLarge, stepHeading } from "./utils";
+import {
+  checkProblem,
+  importDoneToast,
+  isTooLarge,
+  stepHeading,
+} from "./utils";
 
 import { ImportCheckActions } from "./import-check-actions";
 import { ImportCheckStep } from "./import-check-step";
@@ -99,6 +105,9 @@ export function ImportFlow({ orgId, organizationName }: ImportFlowProps) {
           queryKey: orgQueryKeyPrefix(orgId),
         });
         showStep({ kind: "done", fileName: step.fileName, result });
+        notify(
+          importDoneToast(result.summary, step.fileName, organizationName),
+        );
       } else {
         // Nothing was saved: the rows changed since the check. The new result is the check now.
         showStep({ ...step, result, changed: true });

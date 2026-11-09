@@ -28,6 +28,7 @@ import {
   stepProgressText,
   summaryTiles,
   templateDownloadHref,
+  importDoneToast,
 } from "./utils";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
@@ -630,5 +631,25 @@ describe("commitButton", () => {
     expect(commitButton(summary({ rows: 0, rowsWithErrors: 0 })).enabled).toBe(
       false,
     );
+  });
+});
+
+describe("importDoneToast", () => {
+  it("counts the tenants created", () => {
+    expect(
+      importDoneToast({ tenantsCreated: 12 }, "penyewa.csv", "Suhwendi Corp"),
+    ).toEqual({
+      tone: "create",
+      title: "12 penyewa diimpor",
+      description: "penyewa.csv sudah masuk ke Suhwendi Corp.",
+    });
+  });
+
+  it("says the import is done when it created no tenant", () => {
+    expect(importDoneToast({ tenantsCreated: 0 }, "penyewa.csv", "")).toEqual({
+      tone: "create",
+      title: "Impor selesai",
+      description: "penyewa.csv sudah tersimpan.",
+    });
   });
 });

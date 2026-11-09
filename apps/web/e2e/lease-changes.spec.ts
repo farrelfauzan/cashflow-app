@@ -29,6 +29,7 @@ import {
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
+import { expectToast } from "./support/toast";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Ubah sewa", "Rencana keluar", "Catat pindah keluar" and "Batalkan sewa" on a lease's card,
@@ -304,6 +305,7 @@ test.describe("Admin of the whole organization", () => {
     await attachViewportScreenshot(page, testInfo, "lease-edit");
 
     await form.getByRole("button", { name: "Simpan sewa" }).click();
+    await expectToast(page, "Sewa diubah", "create", unit.label);
     await expect(form).toHaveCount(0);
     await expect(
       visibleText(page, `Sewa ${unit.label} diperbarui.`),
@@ -372,6 +374,13 @@ test.describe("Admin of the whole organization", () => {
     const planned = tenthOfMonth(1);
     await setDate(form, label, planned);
     await form.getByRole("button", { name: "Simpan rencana keluar" }).click();
+    // Orange: the tenant's last day changes what is billed.
+    await expectToast(
+      page,
+      "Rencana keluar disimpan",
+      "caution",
+      `Hari terakhir ${formatDate(planned)}`,
+    );
     await expect(form).toHaveCount(0);
     await expect(
       visibleText(
@@ -393,6 +402,7 @@ test.describe("Admin of the whole organization", () => {
     await expectButtonTone(clear, "destructive-outline");
     await attachViewportScreenshot(page, testInfo, "lease-planned-end");
     await clear.click();
+    await expectToast(page, "Rencana keluar dihapus", "caution", unit.label);
     await expect(form).toHaveCount(0);
     await expect(
       visibleText(page, `Rencana keluar ${unit.label} dihapus.`),
@@ -451,6 +461,12 @@ test.describe("Admin of the whole organization", () => {
     await expect(date).toHaveAttribute("aria-invalid", "false");
 
     await save.click();
+    await expectToast(
+      page,
+      "Pindah keluar dicatat",
+      "destructive",
+      `${unit.label} kosong lagi.`,
+    );
     await expect(form).toHaveCount(0);
     await expect(
       visibleText(
@@ -514,6 +530,12 @@ test.describe("Admin of the whole organization", () => {
     await attachViewportScreenshot(page, testInfo, "lease-cancel-booking");
 
     await confirm.click();
+    await expectToast(
+      page,
+      "Sewa dibatalkan",
+      "destructive",
+      `${unit.label} kosong lagi.`,
+    );
     await expect(form).toHaveCount(0);
     await expect(
       visibleText(page, `Sewa ${unit.label} dibatalkan. Unitnya kosong lagi.`),

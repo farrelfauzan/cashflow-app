@@ -12,6 +12,7 @@ import {
   FIELD_LABEL_CLASS,
   INPUT_CLASS,
 } from "@/components/client/form/utils";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ import {
   chargeTypeFormSchema,
   NEW_CHARGE_TYPE_HINT,
   NEW_CHARGE_TYPE_TITLE,
+  chargeTypeAddedToast,
 } from "./utils";
 
 type NewChargeTypeBoxProps = {
@@ -61,7 +63,9 @@ export function NewChargeTypeBox({
   });
   const error = form.formState.errors.name?.message;
 
-  const create = useCreateChargeType();
+  const create = useCreateChargeType({
+    mutation: { onSuccess: (type) => notify(chargeTypeAddedToast(type.name)) },
+  });
   const adding = create.isPending;
   const busy = disabled || adding;
 

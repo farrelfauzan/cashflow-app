@@ -3,13 +3,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import type { Member } from "@/lib/api/generated/model";
 import {
   getListMembersQueryKey,
   useResendMemberInvitation,
 } from "@/lib/api/generated/members/members";
-import { resendError, RESENT_MESSAGE } from "./utils";
+import { invitationResentToast, resendError, RESENT_MESSAGE } from "./utils";
 import type { Outcome } from "./type";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ export function ResendInvitationButton({
   const [blocked, setBlocked] = useState(false);
   const resend = useResendMemberInvitation({
     mutation: {
+      onSuccess: () => notify(invitationResentToast(member.name)),
       onSettled: () =>
         queryClient.invalidateQueries({
           queryKey: getListMembersQueryKey(orgId),

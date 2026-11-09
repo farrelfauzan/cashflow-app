@@ -2,6 +2,7 @@ import type { QueryKey } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { invoiceCorrectionTitle } from "@/components/client/billing/utils";
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import type {
   Lease,
@@ -355,4 +356,15 @@ export function isMissingMetersQueryKey(
   return (
     url === base || url.startsWith(`${base}/`) || url.startsWith(`${base}?`)
   );
+}
+
+// The toast once the API saved a meter amount (board "Notifikasi singkat").
+export function meterRecordedToast(
+  charge: Pick<MeteredCharge, "chargeTypeName" | "usageMonth" | "amount">,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Meteran dicatat",
+    description: `${chargeName(charge)} ${formatRupiah(charge.amount)}`,
+  };
 }

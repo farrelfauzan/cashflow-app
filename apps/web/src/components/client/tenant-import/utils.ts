@@ -1,4 +1,5 @@
 import { termPeriodWords } from "@/components/client/lease/utils";
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError, GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
 import { API_BASE_PATH } from "@/lib/api/client";
 import type { ImportRow, ImportSummary } from "@/lib/api/generated/model";
@@ -410,4 +411,21 @@ export function createdCounts(summary: ImportSummary): CountRowView[] {
     { label: "Sudah ada, tidak diubah", value: summary.leasesMatched },
     { label: "Tagihan baru", value: summary.invoiceCount },
   ];
+}
+
+// The toast once the rows are saved (board "Notifikasi singkat"), with the counts the done step
+// shows. An import that only matched existing tenants creates none.
+export function importDoneToast(
+  summary: Pick<ImportSummary, "tenantsCreated">,
+  fileName: string,
+  organizationName: string,
+): ToastMessage {
+  return {
+    tone: "create",
+    title:
+      summary.tenantsCreated > 0
+        ? `${summary.tenantsCreated} penyewa diimpor`
+        : "Impor selesai",
+    description: doneText(fileName, organizationName),
+  };
 }

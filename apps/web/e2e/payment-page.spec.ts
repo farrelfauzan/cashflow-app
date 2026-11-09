@@ -31,6 +31,7 @@ import {
 } from "./support/payment-page";
 import { minBodyFontPx } from "./support/projects";
 import { DIMAS, HENDRA } from "./support/staff";
+import { toastRegion } from "./support/toast";
 
 // The tenant payment page /t/[token] (W15), read-only states, against the real API and its
 // worker. The tenant has no account: the page opens in a browser with no session at all, and
@@ -213,6 +214,10 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     GRIYA_BANK.accountNumber,
   );
+  // Toasts are for staff pages only: the tenant page mounts no toaster, so the copy is confirmed
+  // in place and nothing of Sonner loads here.
+  await expect(toastRegion(page)).toHaveCount(0);
+  await expect(page.locator("[data-sonner-toaster]")).toHaveCount(0);
 
   await expect(
     page.getByText("Pembayaran QRIS segera tersedia.", { exact: true }),

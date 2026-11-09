@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 
+import { notify } from "@/components/client/toast/notify";
 import { toFormError } from "@/lib/api/form-error";
 import { useCreatePaymentLink } from "@/lib/api/generated/payment-page/payment-page";
 
@@ -11,18 +12,15 @@ import {
   browserClipboardItem,
   copyPendingText,
   copyToClipboard,
-  PAY_LINK_COPIED_NOTICE,
+  PAY_LINK_COPIED_TOAST,
 } from "./utils";
 
 // "Salin link bayar": makes a new link (createPaymentLink, one per press, decision 39) and
 // copies it. The link lives only in this hook's state, and only while the fallback shows it:
 // the mutation is reset as soon as it answers and kept out of the cache (gcTime 0), and the link
-// is never logged, put in a URL, a query key or storage. `onNotice` is the page's short
-// confirmation; "" clears it.
-export function useCopyPayLink(
-  orgId: string,
-  onNotice: (notice: string) => void,
-): CopyPayLinkState {
+// is never logged, put in a URL, a query key or storage, and the toast that confirms the copy
+// never shows it.
+export function useCopyPayLink(orgId: string): CopyPayLinkState {
   const mutation = useCreatePaymentLink({ mutation: { gcTime: 0 } });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +34,6 @@ export function useCopyPayLink(
     setBusy(true);
     setError(null);
     setFallbackUrl(null);
-    onNotice("");
     // The copy starts now, inside the press (Safari needs that), with the link still on its way.
     const link = mutation
       .mutateAsync({ orgId, invoiceId })
@@ -50,7 +47,7 @@ export function useCopyPayLink(
       const url = await link;
       mutation.reset();
       if (await copied) {
-        onNotice(PAY_LINK_COPIED_NOTICE);
+        notify(PAY_LINK_COPIED_TOAST);
       } else {
         setFallbackUrl(url);
       }
@@ -67,7 +64,7 @@ export function useCopyPayLink(
     if (fallbackUrl === null) return;
     if (await copyToClipboard(browserClipboard(), fallbackUrl)) {
       setFallbackUrl(null);
-      onNotice(PAY_LINK_COPIED_NOTICE);
+      notify(PAY_LINK_COPIED_TOAST);
     }
   }
 

@@ -7,6 +7,7 @@ import { flushSync } from "react-dom";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
 import { FIELD_HINT_CLASS } from "@/components/client/form/utils";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import type { ChargeType, Lease } from "@/lib/api/generated/model";
@@ -33,6 +34,7 @@ import {
   NO_FIXED_CHARGE_TYPES_TEXT,
   registerInOrder,
   withChargeChecked,
+  leaseChargesToast,
 } from "./utils";
 
 import { LeaseChargeRow } from "./lease-charge-row";
@@ -83,7 +85,12 @@ export function LeaseChargesForm({
   const termHint = chargesTermHint(lease.termMonths);
 
   const save = useSetLeaseCharges({
-    mutation: { onSuccess: (saved) => refresh(saved, false) },
+    mutation: {
+      onSuccess: (saved) => {
+        notify(leaseChargesToast(saved));
+        return refresh(saved, false);
+      },
+    },
   });
   const saving = save.isPending;
 

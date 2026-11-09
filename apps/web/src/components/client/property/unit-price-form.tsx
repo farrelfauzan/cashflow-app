@@ -9,6 +9,7 @@ import { FormAlert } from "@/components/client/form/form-alert";
 import { RupiahField } from "@/components/client/form/rupiah-field";
 import { SelectField } from "@/components/client/form/select-field";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import type { TermMonths, Unit, UnitPrice } from "@/lib/api/generated/model";
 import {
@@ -23,6 +24,7 @@ import {
   priceTermOptions,
   UNIT_PRICE_FORM_API_FIELDS,
   unitPriceFormSchema,
+  priceSavedToast,
 } from "./utils";
 
 type UnitPriceFormProps = {
@@ -62,15 +64,17 @@ export function UnitPriceForm({
   // The unit's terms (price in force, next price) and its history both change.
   const create = useCreateUnitPrice({
     mutation: {
-      onSuccess: () =>
-        Promise.all([
+      onSuccess: (price) => {
+        notify(priceSavedToast(price));
+        return Promise.all([
           queryClient.invalidateQueries({
             queryKey: getListUnitsQueryKey(orgId, propertyId),
           }),
           queryClient.invalidateQueries({
             queryKey: getListUnitPricesQueryKey(orgId, unit.id),
           }),
-        ]),
+        ]);
+      },
     },
   });
   const saving = create.isPending;

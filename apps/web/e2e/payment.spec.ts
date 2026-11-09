@@ -36,6 +36,7 @@ import {
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
+import { expectToast } from "./support/toast";
 import { HENDRA } from "./support/staff";
 
 // "Catat pembayaran" (W12) on Detail penyewa, against the real API and its worker. Each test
@@ -302,10 +303,17 @@ test.describe("Admin of the whole organization", () => {
     expect(sent.method).toBe("cash");
     expect(sent.note).toBe("Dititip ke penjaga kos");
 
-    // "Pembayaran tercatat", in the same panel.
+    // "Pembayaran tercatat", in the same panel, and a green toast once the API answered.
     await expect(
       panel.getByRole("heading", { name: "Pembayaran tercatat" }),
     ).toBeVisible();
+    await expectToast(
+      page,
+      "Pembayaran dicatat",
+      "create",
+      `${formatRupiah(result.payment.amount)} dari ${tenant.name}`,
+    );
+    await attachViewportScreenshot(page, testInfo, "payment-recorded-toast");
     await expect(panel).toContainText(
       `${formatRupiah(result.payment.amount)} · Tunai · diterima ${formatDate(result.payment.receivedOn)} · dicatat ${HENDRA.name}`,
     );

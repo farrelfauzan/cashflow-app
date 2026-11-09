@@ -1,9 +1,15 @@
 import { z } from "zod";
 
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 import { formatTimestampDate } from "@/lib/format/date";
-import type { Member, RoleGrant, RoleRef } from "@/lib/api/generated/model";
+import type {
+  Member,
+  MemberStatus,
+  RoleGrant,
+  RoleRef,
+} from "@/lib/api/generated/model";
 import type { AppAbility } from "@/lib/capabilities";
 
 import type {
@@ -323,3 +329,39 @@ export const STATUS_TONE_CLASS: Record<MemberStatusTone, string> = {
   pending: "text-foreground/85",
   disabled: "text-muted-foreground",
 };
+
+// The toasts once the API answered (board "Notifikasi singkat"). An invited member is added
+// even when the WhatsApp invitation did not go out; the toast then says so, as the panel does.
+export function memberInvitedToast(
+  member: Pick<Member, "name" | "invitation">,
+): ToastMessage {
+  return member.invitation?.state === "sent"
+    ? { tone: "create", title: "Undangan dikirim", description: member.name }
+    : {
+        tone: "create",
+        title: "Anggota ditambahkan",
+        description: `${member.name}. Undangan belum terkirim.`,
+      };
+}
+
+export function memberAccessSavedToast(name: string): ToastMessage {
+  return { tone: "create", title: "Akses anggota disimpan", description: name };
+}
+
+export function memberStatusToast(
+  status: MemberStatus,
+  name: string,
+): ToastMessage {
+  return status === "disabled"
+    ? { tone: "destructive", title: "Anggota dinonaktifkan", description: name }
+    : { tone: "create", title: "Anggota diaktifkan lagi", description: name };
+}
+
+export function invitationResentToast(name: string): ToastMessage {
+  return {
+    tone: "neutral",
+    title: "Undangan dikirim ulang",
+    description: name,
+    icon: "send",
+  };
+}

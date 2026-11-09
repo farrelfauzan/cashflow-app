@@ -5,6 +5,7 @@ import {
   shortestTerm,
   termPeriodWords,
 } from "@/components/client/lease/utils";
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import type { SortOptions } from "@/components/client/list/type";
 import type {
@@ -687,4 +688,46 @@ export function priceSavedNotice(
   price: Pick<UnitPrice, "months" | "effectiveFrom">,
 ): string {
   return `Harga per ${termPeriodWords(price.months)} dicatat, berlaku mulai ${formatDate(price.effectiveFrom)}.`;
+}
+
+// The toasts after a save (board "Notifikasi singkat"), shown once the API answered. A new
+// price changes what tenants are billed, so it is orange.
+export function propertyAddedToast(name: string): ToastMessage {
+  return { tone: "create", title: "Properti ditambahkan", description: name };
+}
+
+export function propertySavedToast(name: string): ToastMessage {
+  return { tone: "create", title: "Properti disimpan", description: name };
+}
+
+export function unitAddedToast(
+  label: string,
+  propertyName: string,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Unit ditambahkan",
+    description: `${label} · ${propertyName}`,
+  };
+}
+
+export function unitSavedToast(
+  label: string,
+  propertyName: string,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Unit disimpan",
+    description: `${label} · ${propertyName}`,
+  };
+}
+
+export function priceSavedToast(
+  price: Pick<UnitPrice, "effectiveFrom">,
+): ToastMessage {
+  return {
+    tone: "caution",
+    title: "Harga baru disimpan",
+    description: `Berlaku mulai ${formatDate(price.effectiveFrom)}`,
+  };
 }

@@ -14,6 +14,7 @@ import {
   TEXTAREA_CLASS,
 } from "@/components/client/form/utils";
 import { LeaseInfoNote } from "@/components/client/lease/lease-info-note";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,6 +40,7 @@ import {
   correctionInput,
   isInvoicesQuery,
   REASON_MAX_LENGTH,
+  correctionSavedToast,
 } from "./utils";
 
 type CorrectionDialogProps = {
@@ -77,8 +79,11 @@ export function CorrectionDialog({
   // what a correction changes. Cached money is never patched; the API's answer is the one shown.
   const create = useCreateCorrection({
     mutation: {
-      onSuccess: () =>
-        Promise.all([
+      // The toast is raised here, not in mutate()'s callback, so it shows even if the dialog is
+      // gone by the time the API answers.
+      onSuccess: () => {
+        notify(correctionSavedToast(view.title));
+        return Promise.all([
           queryClient.invalidateQueries({
             queryKey: getGetTenantAccountQueryKey(orgId, tenantId),
           }),
@@ -91,7 +96,8 @@ export function CorrectionDialog({
           queryClient.invalidateQueries({
             predicate: (query) => isInvoicesQuery(query.queryKey, orgId),
           }),
-        ]),
+        ]);
+      },
     },
   });
   const saving = create.isPending;

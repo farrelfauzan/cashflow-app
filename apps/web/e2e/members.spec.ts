@@ -8,6 +8,7 @@ import { openListPageOf } from "./support/list-pages";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { HENDRA } from "./support/staff";
+import { expectToast } from "./support/toast";
 
 // "Anggota tim": the list, and inviting, changing, disabling and enabling a member, against the
 // real API with the devlog WhatsApp fake. Pak Hendra is Admin of the whole of Griya Sejahtera
@@ -161,6 +162,7 @@ test.describe("Admin of the whole organization", () => {
     const panel = await inviteMember(page, name, phone, "Kontrakan Mawar");
     const done = page.getByRole("dialog", { name: "Anggota ditambahkan" });
     await expect(done).toContainText("Undangan terkirim lewat WhatsApp");
+    await expectToast(page, "Undangan dikirim", "create", name);
     await expect(done).toContainText(
       `${name} sudah ditambahkan sebagai Karyawan di Kontrakan Mawar. Pesan undangan dikirim ke ${phone}.`,
     );
@@ -180,6 +182,7 @@ test.describe("Admin of the whole organization", () => {
       .getByRole("button", { name: `Kirim ulang undangan ke ${name}` })
       .click();
     await expect(row).toContainText("Undangan sudah dikirim ulang.");
+    await expectToast(page, "Undangan dikirim ulang", "neutral", name);
 
     // Change the roles: Admin for the whole organization instead of Karyawan.
     await row.getByRole("button", { name: `Atur akses ${name}` }).click();
@@ -205,6 +208,7 @@ test.describe("Admin of the whole organization", () => {
     ).toBeChecked();
     await access.getByRole("checkbox", { name: "Karyawan" }).uncheck();
     await access.getByRole("button", { name: "Simpan peran" }).click();
+    await expectToast(page, "Akses anggota disimpan", "create", name);
     await expect(access).toHaveCount(0);
     await expect(page.getByText(`Peran ${name} sudah disimpan.`)).toBeVisible();
     await expect(row).toContainText("Admin");
@@ -223,6 +227,8 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       access.getByRole("heading", { name: "Akses dihentikan" }),
     ).toBeVisible();
+    // Red, and it stays 6 seconds.
+    await expectToast(page, "Anggota dinonaktifkan", "destructive", name);
     await access.getByRole("button", { name: "Tutup" }).click();
     await expect(access).toHaveCount(0);
     await expect(row).toContainText("Nonaktif");
@@ -236,6 +242,7 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       access.getByRole("heading", { name: "Hentikan akses" }),
     ).toBeVisible();
+    await expectToast(page, "Anggota diaktifkan lagi", "create", name);
     await access.getByRole("button", { name: "Batal" }).click();
     await expect(access).toHaveCount(0);
     await expect(row).toContainText("Belum pernah masuk");

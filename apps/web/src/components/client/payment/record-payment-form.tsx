@@ -14,6 +14,7 @@ import {
 } from "@/components/client/form/utils";
 import { LeaseInfoNote } from "@/components/client/lease/lease-info-note";
 import { LeasePanelFooter } from "@/components/client/lease/lease-panel-footer";
+import { notify } from "@/components/client/toast/notify";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { PaymentResult } from "@/lib/api/generated/model";
@@ -28,6 +29,7 @@ import {
   paymentFormSchema,
   paymentRequestBody,
   RECEIVED_ON_HINT,
+  paymentRecordedToast,
 } from "./utils";
 import type { PaymentFormOutput } from "./type";
 
@@ -38,6 +40,8 @@ import { useRefreshPayment } from "./use-refresh-payment";
 type RecordPaymentFormProps = {
   orgId: string;
   tenantId: string;
+  // The panel's subtitle names the tenant; the toast repeats it.
+  tenantName: string;
   // "Today" in Jakarta: the default and the latest "Tanggal diterima".
   today: string;
   // Made once when the panel opened, sent unchanged on every retry, so a double submit or a
@@ -52,6 +56,7 @@ type RecordPaymentFormProps = {
 export function RecordPaymentForm({
   orgId,
   tenantId,
+  tenantName,
   today,
   requestId,
   onSaved,
@@ -67,7 +72,15 @@ export function RecordPaymentForm({
   const noteError = form.formState.errors.note?.message;
 
   // The page behind is reloaded before the result shows, so it is current once the panel closes.
-  const save = useRecordPayment({ mutation: { onSuccess: () => refresh() } });
+  // The toast is raised here, not in mutate()'s callback, so it shows whatever happens to the panel.
+  const save = useRecordPayment({
+    mutation: {
+      onSuccess: (result) => {
+        notify(paymentRecordedToast(result.payment.amount, tenantName));
+        return refresh();
+      },
+    },
+  });
   const saving = save.isPending || save.isSuccess;
 
   // Set the moment a request goes out, before React renders `saving`: two quick presses both

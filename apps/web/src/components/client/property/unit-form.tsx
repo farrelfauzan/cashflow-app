@@ -6,6 +6,7 @@ import { useId } from "react";
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +30,8 @@ import {
   initialUnitFormValues,
   lastTermPrices,
   unitFormSchema,
+  unitAddedToast,
+  unitSavedToast,
 } from "./utils";
 
 import { UnitPriceHistory } from "./unit-price-history";
@@ -99,14 +102,23 @@ export function UnitForm({
         queryKey: getGetPropertyQueryKey(orgId, propertyId),
       }),
     ]);
+  // The toasts are raised here, not in mutate()'s callbacks, so they show even when the panel
+  // closed while the request ran.
   const create = useCreateUnit({
     mutation: {
-      onSuccess: (saved) =>
-        Promise.all([invalidateUnits(saved), invalidateProperties()]),
+      onSuccess: (saved) => {
+        notify(unitAddedToast(saved.label, propertyName));
+        return Promise.all([invalidateUnits(saved), invalidateProperties()]);
+      },
     },
   });
   const update = useUpdateUnit({
-    mutation: { onSuccess: (saved) => invalidateUnits(saved) },
+    mutation: {
+      onSuccess: (saved) => {
+        notify(unitSavedToast(saved.label, propertyName));
+        return invalidateUnits(saved);
+      },
+    },
   });
   const saving = create.isPending || update.isPending;
 

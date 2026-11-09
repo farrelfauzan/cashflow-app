@@ -21,6 +21,7 @@ import {
   PROMISE_SAVING_TEXT,
   toPromiseKind,
 } from "@/components/client/payment-page/utils";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -47,6 +48,7 @@ import {
   STAFF_PROMISE_FORM_FIELDS,
   staffPromiseFormError,
   staffPromiseSchema,
+  promiseSavedToast,
 } from "./utils";
 
 type PromiseDialogProps = {
@@ -94,8 +96,11 @@ export function PromiseDialog({
   // patched; the API's answer is the one shown.
   const make = useMakeTenantPromise({
     mutation: {
-      onSuccess: () =>
-        Promise.all([
+      // The toast is raised here, not in mutate()'s callback, so it shows even if the dialog is
+      // gone by the time the API answers. Over an active promise, saving replaced it.
+      onSuccess: () => {
+        notify(promiseSavedToast(view.replacesLine !== null, view.subtitle));
+        return Promise.all([
           reloadAccount(),
           queryClient.invalidateQueries({
             queryKey: getListTenantPromisesQueryKey(orgId, tenantId),
@@ -103,7 +108,8 @@ export function PromiseDialog({
           queryClient.invalidateQueries({
             predicate: (query) => isInvoicesQuery(query.queryKey, orgId),
           }),
-        ]),
+        ]);
+      },
     },
   });
   const saving = make.isPending;

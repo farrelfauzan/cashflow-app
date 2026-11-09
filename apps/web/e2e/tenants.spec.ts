@@ -525,7 +525,8 @@ test.describe("Admin limited to one property", () => {
     await attachFullPageScreenshot(page, testInfo, "tenants-list-limited");
 
     await openTenant(page, list, "Rina Wulandari");
-    await expect(page.getByRole("region")).toHaveCount(1);
+    // One lease card in the page (the toaster is a region of its own, outside main).
+    await expect(page.getByRole("main").getByRole("region")).toHaveCount(1);
     await expect(
       page.getByRole("region", { name: /Kamar 1 · Kos Melati/ }),
     ).toBeVisible();
@@ -565,7 +566,8 @@ test.describe("Karyawan", () => {
     );
 
     await openTenant(page, list, "Ayu Lestari");
-    await expect(page.getByRole("region")).toHaveCount(1);
+    // One lease card in the page (the toaster is a region of its own, outside main).
+    await expect(page.getByRole("main").getByRole("region")).toHaveCount(1);
     expect(outsideRequests).toEqual([]);
   });
 });

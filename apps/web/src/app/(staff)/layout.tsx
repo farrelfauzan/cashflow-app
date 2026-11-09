@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 
+import { AppToaster } from "@/components/client/toast/app-toaster";
 import { APP_NAME } from "@/lib/app-name";
 
 // Staff pages only (login, the organization picker and everything under /o/): the PWA manifest,
@@ -17,6 +18,12 @@ export const viewport: Viewport = {
   themeColor: "#f5f3ee",
 };
 
+// Toasts (components/client/toast/) show on staff pages only, so a tenant page loads none of it.
 export default function StaffLayout({ children }: LayoutProps<"/">) {
-  return children;
+  return (
+    <>
+      {children}
+      <AppToaster />
+    </>
+  );
 }

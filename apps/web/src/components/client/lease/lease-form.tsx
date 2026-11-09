@@ -13,6 +13,7 @@ import { SearchSelectField } from "@/components/client/form/search-select-field"
 import { SelectField } from "@/components/client/form/select-field";
 import { useApiForm } from "@/components/client/form/use-api-form";
 import { useDebouncedValue } from "@/components/client/form/use-debounced-value";
+import { notify } from "@/components/client/toast/notify";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError } from "@/lib/api/form-error";
 import {
@@ -62,6 +63,7 @@ import {
   termFromValue,
   termHint,
   termOptions,
+  leaseCreatedToast,
 } from "./utils";
 
 import { LeaseBillingField } from "./lease-billing-field";
@@ -196,8 +198,9 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
       // A new lease changes the tenant, its open invoices (a lease starting soon is invoiced when
       // saved), the tenant list, the unit's and property's occupancy, and
       // its collector's lease count in the member list.
-      onSuccess: () =>
-        Promise.all(
+      onSuccess: (saved) => {
+        notify(leaseCreatedToast(saved));
+        return Promise.all(
           [
             getGetTenantQueryKey(orgId, tenant.id),
             getListTenantOpenInvoicesQueryKey(orgId, tenant.id),
@@ -207,7 +210,8 @@ export function LeaseForm({ orgId, tenant, today, onSaved }: LeaseFormProps) {
             getGetPropertyQueryKey(orgId, propertyId),
             getListMembersQueryKey(orgId),
           ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
-        ),
+        );
+      },
     },
   });
   const saving = create.isPending;
