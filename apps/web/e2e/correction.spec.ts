@@ -32,7 +32,7 @@ import {
 } from "./support/page-checks";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
-import { ORG_HOME_URL } from "./support/shell";
+import { isPhone, ORG_HOME_URL } from "./support/shell";
 import { expectToast } from "./support/toast";
 import { HENDRA, type SeededStaff } from "./support/staff";
 
@@ -391,8 +391,15 @@ test.describe("Admin of the whole organization", () => {
     await expect(dialog).toBeVisible();
     expect(posts).toHaveLength(1);
 
-    // "Batal" closes it with nothing changed.
+    // "Batal" closes it with nothing changed; on the phone, after asking about what was typed
+    // (the form sheet, board HP-Lembar).
     await parts.cancel.click();
+    if (isPhone(testInfo)) {
+      await page
+        .getByRole("alertdialog", { name: "Tutup tanpa menyimpan?" })
+        .getByRole("button", { name: "Ya, tutup" })
+        .click();
+    }
     await expect(dialog).toHaveCount(0);
     expect(outsideRequests).toEqual([]);
   });

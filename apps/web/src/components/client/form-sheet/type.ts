@@ -34,3 +34,7 @@ export type SwipeRelease = {
 };
 
 export type SwipeReleaseAction = "close" | "snap";
+
+// What a FormSheetContent is from md up: the right-hand drawer (the panels) or a centred dialog
+// (the short billing forms, Koreksi and Catat janji). Below md both are the same bottom sheet.
+export type FormSheetWideLayout = "drawer" | "dialog";

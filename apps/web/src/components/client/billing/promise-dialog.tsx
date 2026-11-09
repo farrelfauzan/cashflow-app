@@ -5,6 +5,8 @@ import { XIcon } from "lucide-react";
 import { useId } from "react";
 import { Controller, useWatch } from "react-hook-form";
 
+import { FormSheet } from "@/components/client/form-sheet/form-sheet";
+import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
@@ -23,14 +25,13 @@ import {
 } from "@/components/client/payment-page/utils";
 import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  SheetClose,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import {
   getGetTenantAccountQueryKey,
@@ -40,6 +41,9 @@ import {
 import { PromiseKind } from "@/lib/api/generated/model";
 import type { PromiseDialogView } from "./type";
 import {
+  BILLING_DIALOG_BODY_CLASS,
+  BILLING_DIALOG_FOOTER_CLASS,
+  BILLING_DIALOG_HEADER_CLASS,
   isInvoicesQuery,
   isPromiseStaleError,
   PROMISE_NOTE_LABEL,
@@ -65,7 +69,9 @@ type PromiseDialogProps = {
 // "Catat janji" (no board: a design gap, built like "Koreksi nominal" with the fields of the
 // tenant's Janji screen): when the tenant pays what is left and, optionally, how much, with the
 // member's note. Over an active promise it opens filled from it and saving adds a version. It
-// never sends payingNow. It stays open while the request runs.
+// never sends payingNow. It stays open while the request runs. A centred dialog from md up; on
+// the phone a form sheet (board HP-Lembar) with Batal and the save button pinned at the bottom,
+// which asks before a changed promise is closed unsaved.
 export function PromiseDialog({
   orgId,
   tenantId,
@@ -75,6 +81,7 @@ export function PromiseDialog({
   onSaved,
 }: PromiseDialogProps) {
   const id = useId();
+  const formId = `${id}-form`;
   const queryClient = useQueryClient();
   const { form, field, showApiError, alert } = useApiForm({
     schema: staffPromiseSchema(view.offer),
@@ -132,31 +139,28 @@ export function PromiseDialog({
   const noteError = form.formState.errors.note?.message;
 
   return (
-    <Dialog
+    <FormSheet
       open={open}
-      onOpenChange={(next) => {
-        if (!saving) onOpenChange(next);
-      }}
+      onOpenChange={onOpenChange}
+      dirty={form.formState.isDirty}
+      busy={saving}
     >
-      <DialogContent
-        showCloseButton={false}
-        className="flex max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-y-auto rounded-2xl bg-card p-0 sm:max-w-[560px]"
-      >
-        <div className="flex items-start gap-3 px-5 pt-5 md:px-6 md:pt-6">
+      <FormSheetContent wide="dialog" showCloseButton={false}>
+        <SheetHeader className={BILLING_DIALOG_HEADER_CLASS}>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <DialogTitle className="text-xl leading-tight font-bold md:text-[22px]">
+            <SheetTitle className="text-xl leading-tight font-bold md:text-[22px]">
               {RECORD_PROMISE_TEXT}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground md:text-base">
+            </SheetTitle>
+            <SheetDescription className="text-sm text-muted-foreground md:text-base">
               {view.subtitle}
-            </DialogDescription>
+            </SheetDescription>
             {view.replacesLine !== null && (
               <p className="text-sm font-semibold text-warning md:text-base">
                 {view.replacesLine}
               </p>
             )}
           </div>
-          <DialogClose asChild>
+          <SheetClose asChild>
             <Button
               type="button"
               variant="ghost"
@@ -167,13 +171,14 @@ export function PromiseDialog({
             >
               <XIcon aria-hidden="true" className="size-5" />
             </Button>
-          </DialogClose>
-        </div>
+          </SheetClose>
+        </SheetHeader>
 
         <form
+          id={formId}
           noValidate
           onSubmit={submit}
-          className="flex flex-col gap-[18px] px-5 pt-5 pb-5 md:px-6 md:pb-6"
+          className={BILLING_DIALOG_BODY_CLASS}
         >
           {alert !== undefined && <FormAlert message={alert} />}
 
@@ -254,28 +259,28 @@ export function PromiseDialog({
               <FieldError id={`${id}-note-error`} message={noteError} />
             )}
           </div>
-
-          <div className="flex gap-2.5 pt-1">
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                className="h-13 flex-1 rounded-xl border-[1.5px] bg-card text-base font-semibold md:text-[17px]"
-              >
-                Batal
-              </Button>
-            </DialogClose>
-            <Button
-              type="submit"
-              disabled={saving}
-              className="h-13 flex-2 rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]"
-            >
-              {saving ? PROMISE_SAVING_TEXT : view.primaryLabel}
-            </Button>
-          </div>
         </form>
-      </DialogContent>
-    </Dialog>
+        <div className={BILLING_DIALOG_FOOTER_CLASS}>
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              className="h-13 flex-1 rounded-xl border-[1.5px] bg-card text-base font-semibold md:text-[17px]"
+            >
+              Batal
+            </Button>
+          </SheetClose>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={saving}
+            className="h-13 flex-2 rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]"
+          >
+            {saving ? PROMISE_SAVING_TEXT : view.primaryLabel}
+          </Button>
+        </div>
+      </FormSheetContent>
+    </FormSheet>
   );
 }

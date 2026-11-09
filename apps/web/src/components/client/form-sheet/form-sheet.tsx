@@ -13,6 +13,11 @@ import { UnsavedChangesDialog } from "./unsaved-changes-dialog";
 type FormSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Unsaved changes of a form whose useApiForm runs above the FormSheet (a dialog that owns its
+  // form), which cannot report through the context. Forms inside report on their own.
+  dirty?: boolean;
+  // A save is running: every close is ignored, so the question never shows mid-save.
+  busy?: boolean;
   children: ReactNode;
 };
 
@@ -22,7 +27,13 @@ type FormSheetProps = {
 // reports unsaved changes (useApiForm does), it asks "Tutup tanpa menyimpan?" first. iPad and
 // desktop close at once, as before. A panel that closes itself after a save sets `open` to false
 // and is never asked.
-export function FormSheet({ open, onOpenChange, children }: FormSheetProps) {
+export function FormSheet({
+  open,
+  onOpenChange,
+  dirty = false,
+  busy = false,
+  children,
+}: FormSheetProps) {
   const [dirtyForms] = useState(createDirtyRegistry);
   const contentRef = useRef<HTMLDivElement | null>(null);
   // Where focus was when the question opened, for "Lanjut mengisi".
@@ -31,9 +42,11 @@ export function FormSheet({ open, onOpenChange, children }: FormSheetProps) {
   if (!open && question === "asking") setQuestion("closed");
 
   const requestClose = useCallback((): boolean => {
+    if (busy) return false;
     // Phone or not is decided now, not while rendering, so the server and the first client
     // render agree.
-    if (!dirtyForms.isDirty() || window.matchMedia(WIDE_LAYOUT_QUERY).matches) {
+    const unsaved = dirty || dirtyForms.isDirty();
+    if (!unsaved || window.matchMedia(WIDE_LAYOUT_QUERY).matches) {
       onOpenChange(false);
       return true;
     }
@@ -44,7 +57,7 @@ export function FormSheet({ open, onOpenChange, children }: FormSheetProps) {
         : null;
     setQuestion("asking");
     return false;
-  }, [dirtyForms, onOpenChange]);
+  }, [busy, dirty, dirtyForms, onOpenChange]);
 
   const context = useMemo<FormSheetContextValue>(
     () => ({ dirtyForms, requestClose, contentRef }),

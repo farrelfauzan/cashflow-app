@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createDirtyRegistry,
+  formSheetContentClass,
   swipeOffset,
   swipeReleaseAction,
   swipeVelocity,
@@ -123,5 +124,39 @@ describe("createDirtyRegistry", () => {
     registry.report("a", false);
     registry.report("a", false);
     expect(registry.isDirty()).toBe(false);
+  });
+});
+
+describe("formSheetContentClass", () => {
+  it("is the same bottom sheet below md as a drawer and as a dialog", () => {
+    const drawer = formSheetContentClass("drawer").split(" ");
+    const dialog = formSheetContentClass("dialog").split(" ");
+    for (const classes of [drawer, dialog]) {
+      expect(classes).toContain("h-[92dvh]");
+      expect(classes).toContain("rounded-t-[20px]");
+    }
+    // They differ only in classes that apply from md up.
+    const differing = [
+      ...drawer.filter((each) => !dialog.includes(each)),
+      ...dialog.filter((each) => !drawer.includes(each)),
+    ];
+    expect(differing.length).toBeGreaterThan(0);
+    expect(differing.filter((each) => !each.startsWith("md:"))).toEqual([]);
+  });
+
+  it("is the 470px right-hand drawer from md up by default", () => {
+    const classes = formSheetContentClass("drawer").split(" ");
+    expect(classes).toContain("md:w-[470px]");
+    expect(classes).toContain("md:data-[state=open]:slide-in-from-right");
+    expect(classes).not.toContain("md:max-w-[560px]");
+  });
+
+  it("is the centred dialog of at most 560px from md up as a dialog", () => {
+    const classes = formSheetContentClass("dialog").split(" ");
+    expect(classes).toContain("md:max-w-[560px]");
+    expect(classes).toContain("md:max-h-[calc(100dvh-2rem)]");
+    expect(classes).toContain("md:data-[state=open]:zoom-in-95");
+    expect(classes).not.toContain("md:w-[470px]");
+    expect(classes).not.toContain("md:data-[state=open]:slide-in-from-right");
   });
 });
