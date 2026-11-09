@@ -25,6 +25,7 @@ import {
 import { formatRupiah } from "../src/lib/format/rupiah";
 import { expectButtonTone } from "./support/button-tone";
 import {
+  animationsSettled,
   attachFullPageScreenshot,
   attachViewportScreenshot,
   trackOutsideRequests,
@@ -210,6 +211,7 @@ async function fontSize(locator: Locator): Promise<number> {
 }
 
 async function height(locator: Locator): Promise<number> {
+  await animationsSettled(locator);
   const box = await locator.boundingBox();
   if (box === null) throw new Error("not visible");
   return box.height;

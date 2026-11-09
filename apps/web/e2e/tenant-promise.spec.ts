@@ -24,6 +24,7 @@ import {
 } from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
 import {
+  animationsSettled,
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
@@ -197,6 +198,7 @@ async function fontSize(locator: Locator): Promise<number> {
 }
 
 async function height(locator: Locator): Promise<number> {
+  await animationsSettled(locator);
   const box = await locator.boundingBox();
   if (box === null) throw new Error("not visible");
   return box.height;

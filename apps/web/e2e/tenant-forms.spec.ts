@@ -17,6 +17,7 @@ import type {
 } from "../src/lib/api/generated/model";
 import { formatDate, jakartaToday } from "../src/lib/format/date";
 import {
+  animationsSettled,
   attachFullPageScreenshot,
   attachViewportScreenshot,
   trackOutsideRequests,
@@ -113,8 +114,10 @@ function visibleText(page: Page, text: string | RegExp): Locator {
 }
 
 async function expectTouchTarget(locator: Locator) {
+  await animationsSettled(locator);
   const box = await locator.boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // Rounded to a hundredth of a pixel: an animated popover can leave a 43.99998px box.
+  expect(Math.round((box?.height ?? 0) * 100) / 100).toBeGreaterThanOrEqual(44);
 }
 
 async function fontSize(locator: Locator): Promise<number> {

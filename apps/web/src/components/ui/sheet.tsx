@@ -35,7 +35,7 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out data-[state=open]:fade-in-0",
         className,
       )}
       {...props}
@@ -48,26 +48,54 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
 }) {
+  // Radix gives focus back only to a SheetTrigger, and the app's panels open from their own
+  // buttons. So the element focused when the sheet opened gets it back when it closes, unless
+  // the caller moves focus itself (T-095).
+  const openerRef = React.useRef<HTMLElement | null>(null);
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        onOpenAutoFocus={(event) => {
+          const active = document.activeElement;
+          openerRef.current =
+            active instanceof HTMLElement && active !== document.body
+              ? active
+              : null;
+          onOpenAutoFocus?.(event);
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          const opener = openerRef.current;
+          openerRef.current = null;
+          if (
+            event.defaultPrevented ||
+            opener === null ||
+            !opener.isConnected
+          ) {
+            return;
+          }
+          event.preventDefault();
+          opener.focus();
+        }}
         className={cn(
-          "data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+          "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out motion-reduce:data-[state=closed]:duration-150 motion-reduce:data-[state=closed]:fade-out-0 motion-reduce:data-[state=closed]:[--tw-exit-translate-x:0]! motion-reduce:data-[state=closed]:[--tw-exit-translate-y:0]! motion-reduce:data-[state=open]:duration-150 motion-reduce:data-[state=open]:fade-in-0 motion-reduce:data-[state=open]:[--tw-enter-translate-x:0]! motion-reduce:data-[state=open]:[--tw-enter-translate-y:0]!",
           side === "right" &&
-            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm",
+            "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
           side === "left" &&
-            "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm",
+            "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
           side === "top" &&
-            "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b",
+            "inset-x-0 top-0 h-auto border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
           side === "bottom" &&
-            "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
+            "inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           className,
         )}
         {...props}

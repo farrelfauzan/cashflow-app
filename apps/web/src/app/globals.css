@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enter and exit animations of the shadcn primitives (animate-in, slide-in-from-right, ...). */
+@import "tw-animate-css";
+
 /* Light theme only. `dark:` utilities (shipped inside shadcn primitives) apply only under a
    `.dark` class, which the app never sets, so a device in dark mode still gets this theme. */
 @custom-variant dark (&:is(.dark *));

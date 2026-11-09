@@ -22,6 +22,7 @@ import { jakartaToday } from "../../src/lib/format/date";
 import { formatRupiah } from "../../src/lib/format/rupiah";
 import { findOrCreateProperty } from "./property-fixtures";
 import type { SeededStaff } from "./staff";
+import { animationsSettled } from "./page-checks";
 
 // Helpers of the tenant payment page specs (payment-page.spec.ts, payment-page-qris.spec.ts).
 // The tenant has no account: the page opens in a browser with no session at all, and staff set
@@ -296,8 +297,12 @@ export function trackTokenLeaks(
 }
 
 export async function expectTouchTarget(locator: Locator, min = 44) {
+  await animationsSettled(locator);
   const box = await locator.boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(min);
+  // Rounded to a hundredth of a pixel: an animated popover can leave a 43.99998px box.
+  expect(Math.round((box?.height ?? 0) * 100) / 100).toBeGreaterThanOrEqual(
+    min,
+  );
 }
 
 // A client address of the test's own, sent as X-Forwarded-For by the test's browser. The API
