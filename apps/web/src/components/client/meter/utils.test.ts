@@ -35,6 +35,7 @@ import {
   recordedRows,
   savedText,
   usageMonthOptions,
+  meterRecordedToast,
 } from "./utils";
 
 const ORG = "0b9f7c1e-2a34-4c56-8d78-9e0f1a2b3c4d";
@@ -464,5 +465,21 @@ describe("isMissingMetersQueryKey", () => {
         ORG,
       ),
     ).toBe(false);
+  });
+});
+
+describe("meterRecordedToast", () => {
+  it("names the charge, its month and the amount", () => {
+    expect(
+      meterRecordedToast({
+        chargeTypeName: "Listrik",
+        usageMonth: "2026-10",
+        amount: 123000,
+      }),
+    ).toEqual({
+      tone: "create",
+      title: "Meteran dicatat",
+      description: "Listrik Oktober 2026 Rp123.000",
+    });
   });
 });

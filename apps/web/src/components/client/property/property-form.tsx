@@ -7,6 +7,7 @@ import { Controller } from "react-hook-form";
 import { FieldError } from "@/components/client/form/field-error";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,8 @@ import {
   PROPERTY_NAME_MAX_LENGTH,
   TEXTAREA_CLASS,
   propertyFormSchema,
+  propertyAddedToast,
+  propertySavedToast,
 } from "./utils";
 
 import { PropertyKindField } from "./property-kind-field";
@@ -67,10 +70,22 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
     queryClient.invalidateQueries({
       queryKey: getGetPropertyQueryKey(orgId, saved.id),
     });
-  const create = useCreateProperty({ mutation: { onSuccess: invalidate } });
+  // The toasts are raised here, not in mutate()'s callbacks, so they show even when the panel
+  // closed while the request ran.
+  const create = useCreateProperty({
+    mutation: {
+      onSuccess: (saved) => {
+        notify(propertyAddedToast(saved.name));
+        return invalidate();
+      },
+    },
+  });
   const update = useUpdateProperty({
     mutation: {
-      onSuccess: (saved) => Promise.all([invalidate(), invalidateOne(saved)]),
+      onSuccess: (saved) => {
+        notify(propertySavedToast(saved.name));
+        return Promise.all([invalidate(), invalidateOne(saved)]);
+      },
     },
   });
   const saving = create.isPending || update.isPending;

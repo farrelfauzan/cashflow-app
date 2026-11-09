@@ -24,6 +24,7 @@ import {
 import { projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
+import { expectToast, toast } from "./support/toast";
 import { HENDRA, RUDI } from "./support/staff";
 
 // "Salin link bayar" on Detail penyewa, against the real API and its worker. Each press makes a
@@ -38,7 +39,10 @@ const GRIYA = "Griya Sejahtera";
 const ANGGREK = "Kost Putri Anggrek";
 const BUTTON = "Salin link bayar";
 const REGION = "Uang penyewa";
-const COPIED = "Link bayar disalin. Tempel di WhatsApp penyewa.";
+// The toast after a copy (board "Notifikasi singkat").
+const COPIED = "Link bayar disalin";
+const COPIED_LINE = "Tempel di WhatsApp penyewa.";
+const CLOSE_TOAST = "Tutup notifikasi";
 const FALLBACK = "Link bayar";
 const LINK = /\/t\/([A-Za-z0-9_-]{43})$/;
 
@@ -285,12 +289,19 @@ test.describe("Admin of the whole organization", () => {
     const firstResponse = await first;
     expect(firstResponse.status()).toBe(201);
     expect(firstResponse.url()).toContain(`/invoices/${thisMonth.id}/`);
-    await expect(
-      page.getByRole("status").filter({ hasText: COPIED }),
-    ).toBeVisible();
+    // An ink toast at the top, only after the API answered; it never shows the link.
+    const copied = await expectToast(page, COPIED, "neutral", COPIED_LINE);
     const firstUrl = await readClipboard(page);
     expect(firstUrl).toMatch(LINK);
     await attachViewportScreenshot(page, testInfo, "copy-pay-link-copied");
+
+    // Its close button is a 44px target and dismisses it.
+    const closeToast = copied.getByRole("button", { name: CLOSE_TOAST });
+    await expectTouchTarget(closeToast);
+    const closeBox = await closeToast.boundingBox();
+    expect(closeBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    await closeToast.click();
+    await expect(toast(page, COPIED)).toHaveCount(0);
 
     // The link opens this month's invoice for someone without a session.
     const firstToken = LINK.exec(firstUrl)?.[1] ?? "";
@@ -313,9 +324,7 @@ test.describe("Admin of the whole organization", () => {
     });
     expect((await second).status()).toBe(201);
     await expect(button).toBeEnabled();
-    await expect(
-      page.getByRole("status").filter({ hasText: COPIED }),
-    ).toBeVisible();
+    await expect(toast(page, COPIED)).toBeVisible();
     await expect.poll(() => readClipboard(page)).not.toBe(firstUrl);
     const secondUrl = await readClipboard(page);
     expect(secondUrl).toMatch(LINK);
@@ -366,7 +375,8 @@ test.describe("Admin of the whole organization", () => {
     await expect(field).toHaveValue(LINK);
     await expect(field).toBeFocused();
     const token = LINK.exec(await field.inputValue())?.[1] ?? "";
-    await expect(page.getByText(COPIED)).toHaveCount(0);
+    // No toast: nothing was copied.
+    await expect(toast(page, COPIED)).toHaveCount(0);
     const copyAgain = fallback.getByRole("button", {
       name: "Salin",
       exact: true,
@@ -560,9 +570,7 @@ test.describe("Karyawan", () => {
     const created = await answer;
     expect(created.status()).toBe(201);
     expect(created.url()).toContain(`/invoices/${newest.id}/`);
-    await expect(
-      page.getByRole("status").filter({ hasText: COPIED }),
-    ).toBeVisible();
+    await expect(toast(page, COPIED)).toBeVisible();
     const url = await readClipboard(page);
     expect(url).toMatch(LINK);
     const token = LINK.exec(url)?.[1] ?? "";

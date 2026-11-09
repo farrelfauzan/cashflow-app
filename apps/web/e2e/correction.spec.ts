@@ -33,6 +33,7 @@ import {
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
+import { expectToast } from "./support/toast";
 import { HENDRA, type SeededStaff } from "./support/staff";
 
 // "Koreksi nominal" on Detail penyewa, against the real API and its worker. Each admin test makes
@@ -303,6 +304,8 @@ test.describe("Admin of the whole organization", () => {
     expect(body).not.toHaveProperty("paymentId");
     expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
 
+    // Orange: an amount already billed changed.
+    await expectToast(page, "Koreksi disimpan", "caution", title);
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText(`${title} disimpan.`)).toBeVisible();
 

@@ -6,6 +6,7 @@ import { Controller } from "react-hook-form";
 import { DateField } from "@/components/client/form/date-field";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import type { Lease } from "@/lib/api/generated/model";
 import { useSetLeasePlannedEnd } from "@/lib/api/generated/tenants/tenants";
@@ -16,6 +17,7 @@ import {
   plannedEndFormSchema,
   plannedEndHint,
   plannedEndSuggestion,
+  plannedEndToast,
 } from "./utils";
 
 import { LeaseEffectsBox } from "./lease-effects-box";
@@ -54,7 +56,12 @@ export function PlannedEndForm({
   });
 
   const save = useSetLeasePlannedEnd({
-    mutation: { onSuccess: (saved) => refresh(saved, false) },
+    mutation: {
+      onSuccess: (saved) => {
+        notify(plannedEndToast(saved));
+        return refresh(saved, false);
+      },
+    },
   });
   const saving = save.isPending;
 

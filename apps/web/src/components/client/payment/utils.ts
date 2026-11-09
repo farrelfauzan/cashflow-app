@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { invoiceName, invoiceTitle } from "@/components/client/billing/utils";
 import { isCalendarDate } from "@/components/client/lease/utils";
+import type { ToastMessage } from "@/components/client/toast/type";
 import type {
   AccountPayment,
   PaymentInput,
@@ -256,4 +257,17 @@ export function isInvoicesQueryKey(queryKey: QueryKey, orgId: string): boolean {
 // ("conditional" shows it and the API decides per tenant). Never by role name.
 export function canRecordPayment(ability: AppAbility): boolean {
   return ability.can("record", "payment");
+}
+
+// The toast once the API recorded the payment (board "Notifikasi singkat"): the amount the API
+// answered and the tenant's name, both already on the panel.
+export function paymentRecordedToast(
+  amount: number,
+  tenantName: string,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Pembayaran dicatat",
+    description: `${formatRupiah(amount)} dari ${tenantName}`,
+  };
 }

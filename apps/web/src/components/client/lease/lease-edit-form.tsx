@@ -9,6 +9,7 @@ import { FormAlert } from "@/components/client/form/form-alert";
 import { RupiahField } from "@/components/client/form/rupiah-field";
 import { SelectField } from "@/components/client/form/select-field";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { useListCollectorCandidates } from "@/lib/api/generated/members/members";
 import type { Lease } from "@/lib/api/generated/model";
 import { useUpdateLease } from "@/lib/api/generated/tenants/tenants";
@@ -29,6 +30,7 @@ import {
   leaseTermsSchema,
   leaseUnitText,
   startDateHint,
+  leaseUpdatedToast,
 } from "./utils";
 
 import { LeaseBillingField } from "./lease-billing-field";
@@ -106,7 +108,12 @@ export function LeaseEditForm({
   );
 
   const update = useUpdateLease({
-    mutation: { onSuccess: (saved) => refresh(saved, false) },
+    mutation: {
+      onSuccess: (saved) => {
+        notify(leaseUpdatedToast(saved));
+        return refresh(saved, false);
+      },
+    },
   });
   const saving = update.isPending;
 

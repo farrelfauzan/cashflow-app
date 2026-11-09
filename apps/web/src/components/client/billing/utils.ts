@@ -12,6 +12,7 @@ import {
   promiseFormView,
 } from "@/components/client/payment-page/utils";
 import type { PromiseOfferView } from "@/components/client/payment-page/type";
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import { toFormError, type FormError } from "@/lib/api/form-error";
 import type {
@@ -837,4 +838,20 @@ export function staffPromiseFormError(
 // invoice or the dates moved): the page reads it again, the dialog keeps its message.
 export function isPromiseStaleError(error: unknown): boolean {
   return error instanceof ApiError && PROMISE_REFETCH_CODES.has(error.code);
+}
+
+// The toasts once the API saved (board "Notifikasi singkat"). A correction changes an amount
+// already billed or received, and a changed promise a date or amount already agreed: orange.
+export function correctionSavedToast(title: string): ToastMessage {
+  return { tone: "caution", title: "Koreksi disimpan", description: title };
+}
+
+// `replaces`: the tenant had an active promise, which the saved one replaces.
+export function promiseSavedToast(
+  replaces: boolean,
+  tenantName: string,
+): ToastMessage {
+  return replaces
+    ? { tone: "caution", title: "Janji bayar diubah", description: tenantName }
+    : { tone: "create", title: "Janji bayar dicatat", description: tenantName };
 }

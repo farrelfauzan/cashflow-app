@@ -33,6 +33,10 @@ import {
   toggleProperty,
   UNDELIVERABLE_HINT,
   UNKNOWN_PROPERTY,
+  invitationResentToast,
+  memberAccessSavedToast,
+  memberInvitedToast,
+  memberStatusToast,
 } from "./utils";
 
 describe("member controls", () => {
@@ -844,6 +848,63 @@ describe("role labels", () => {
       },
     ])("describes $name", ({ roles, want }) => {
       expect(describeRoles(roles)).toBe(want);
+    });
+  });
+});
+
+describe("member toasts", () => {
+  it("says the invitation went out", () => {
+    expect(
+      memberInvitedToast({
+        name: "Rizal Fauzi",
+        invitation: { state: "sent", lastSentAt: "2026-11-09T03:00:00Z" },
+      }),
+    ).toEqual({
+      tone: "create",
+      title: "Undangan dikirim",
+      description: "Rizal Fauzi",
+    });
+  });
+
+  it("says the member was added when the invitation did not go out", () => {
+    expect(
+      memberInvitedToast({
+        name: "Rizal Fauzi",
+        invitation: { state: "not_sent" },
+      }),
+    ).toEqual({
+      tone: "create",
+      title: "Anggota ditambahkan",
+      description: "Rizal Fauzi. Undangan belum terkirim.",
+    });
+  });
+
+  it("names the member whose access was saved", () => {
+    expect(memberAccessSavedToast("Rizal Fauzi")).toEqual({
+      tone: "create",
+      title: "Akses anggota disimpan",
+      description: "Rizal Fauzi",
+    });
+  });
+
+  it("shows a disabled member in red and an enabled one in green", () => {
+    expect(memberStatusToast("disabled", "Rizal Fauzi")).toEqual({
+      tone: "destructive",
+      title: "Anggota dinonaktifkan",
+      description: "Rizal Fauzi",
+    });
+    expect(memberStatusToast("active", "Rizal Fauzi")).toEqual({
+      tone: "create",
+      title: "Anggota diaktifkan lagi",
+      description: "Rizal Fauzi",
+    });
+  });
+
+  it("shows a resent invitation in ink", () => {
+    expect(invitationResentToast("Rizal Fauzi")).toEqual({
+      tone: "neutral",
+      title: "Undangan dikirim ulang",
+      description: "Rizal Fauzi",
     });
   });
 });

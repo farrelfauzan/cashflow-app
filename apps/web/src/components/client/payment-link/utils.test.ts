@@ -9,6 +9,7 @@ import {
   copyToClipboard,
   newestOpenInvoice,
   payLinkInvoice,
+  PAY_LINK_COPIED_TOAST,
 } from "./utils";
 
 function invoice(overrides: Partial<TenantOpenInvoice>): TenantOpenInvoice {
@@ -233,5 +234,15 @@ describe("copyPendingText", () => {
       copyPendingText({ write, writeText }, item, failed),
     ).resolves.toBe(false);
     expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
+describe("PAY_LINK_COPIED_TOAST", () => {
+  it("is an ink toast that never carries the link", () => {
+    expect(PAY_LINK_COPIED_TOAST).toEqual({
+      tone: "neutral",
+      title: "Link bayar disalin",
+      description: "Tempel di WhatsApp penyewa.",
+    });
   });
 });

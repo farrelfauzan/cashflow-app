@@ -245,6 +245,7 @@ export function TenantPanel({
           key={shown.requestId}
           orgId={orgId}
           tenantId={shown.tenant.id}
+          tenantName={shown.tenant.name}
           today={today}
           requestId={shown.requestId}
           onSaved={(result) =>

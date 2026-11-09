@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 
 import { FormAlert } from "@/components/client/form/form-alert";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { toFormError } from "@/lib/api/form-error";
 import type { Member, MemberStatus } from "@/lib/api/generated/model";
@@ -11,6 +12,8 @@ import {
   getListMembersQueryKey,
   useSetMemberStatus,
 } from "@/lib/api/generated/members/members";
+
+import { memberStatusToast } from "./utils";
 
 import { DisableMemberDialog } from "./disable-member-dialog";
 
@@ -32,12 +35,16 @@ export function MemberStatusSection({
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [alert, setAlert] = useState<string | null>(null);
+  // The toast is raised here, not in mutate()'s callback, so it shows even when the panel
+  // closed while the request ran.
   const setStatus = useSetMemberStatus({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({
+      onSuccess: (_saved, { data }) => {
+        notify(memberStatusToast(data.status, member.name));
+        return queryClient.invalidateQueries({
           queryKey: getListMembersQueryKey(orgId),
-        }),
+        });
+      },
     },
   });
   const place = organizationName === "" ? "usaha ini" : organizationName;

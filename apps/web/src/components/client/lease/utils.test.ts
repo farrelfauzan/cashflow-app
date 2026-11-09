@@ -99,6 +99,13 @@ import {
   termHint,
   termOptionLabel,
   termOptions,
+  bookingCancelledToast,
+  chargeTypeAddedToast,
+  leaseChargesToast,
+  leaseCreatedToast,
+  leaseUpdatedToast,
+  movedOutToast,
+  plannedEndToast,
 } from "./utils";
 
 const TODAY = "2026-10-28";
@@ -2696,5 +2703,64 @@ describe("propertyListNote", () => {
     { shown: 0, total: 0, want: null },
   ])("words $shown of $total", ({ shown, total, want }) => {
     expect(propertyListNote(shown, total)).toBe(want);
+  });
+});
+
+describe("lease toasts", () => {
+  const unit = { unitLabel: "Kamar 3", propertyName: "Kos Melati" };
+
+  it("names the unit and property of a lease made, changed or given extras", () => {
+    expect(leaseCreatedToast(unit)).toEqual({
+      tone: "create",
+      title: "Sewa dibuat",
+      description: "Kamar 3 · Kos Melati",
+    });
+    expect(leaseUpdatedToast(unit)).toEqual({
+      tone: "create",
+      title: "Sewa diubah",
+      description: "Kamar 3 · Kos Melati",
+    });
+    expect(leaseChargesToast(unit)).toEqual({
+      tone: "create",
+      title: "Biaya tambahan disimpan",
+      description: "Kamar 3 · Kos Melati",
+    });
+  });
+
+  it("shows a planned last day in orange, with the date", () => {
+    expect(plannedEndToast({ ...unit, plannedEndDate: "2026-12-14" })).toEqual({
+      tone: "caution",
+      title: "Rencana keluar disimpan",
+      description: "Hari terakhir 14 Des 2026",
+    });
+  });
+
+  it("says a planned last day was removed, in orange", () => {
+    expect(plannedEndToast({ ...unit, plannedEndDate: undefined })).toEqual({
+      tone: "caution",
+      title: "Rencana keluar dihapus",
+      description: "Kamar 3 · Kos Melati",
+    });
+  });
+
+  it("shows a move-out and a cancelled booking in red, with the unit free again", () => {
+    expect(movedOutToast(unit)).toEqual({
+      tone: "destructive",
+      title: "Pindah keluar dicatat",
+      description: "Kamar 3 kosong lagi.",
+    });
+    expect(bookingCancelledToast(unit)).toEqual({
+      tone: "destructive",
+      title: "Sewa dibatalkan",
+      description: "Kamar 3 kosong lagi.",
+    });
+  });
+
+  it("names a new charge type", () => {
+    expect(chargeTypeAddedToast("Wi-Fi")).toEqual({
+      tone: "create",
+      title: "Jenis biaya ditambahkan",
+      description: "Wi-Fi",
+    });
   });
 });

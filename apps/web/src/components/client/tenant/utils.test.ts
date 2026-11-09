@@ -57,6 +57,8 @@ import {
   tenantStatusView,
   unitText,
   leaseMeteredText,
+  tenantAddedToast,
+  tenantSavedToast,
 } from "./utils";
 
 const TODAY = "2026-10-28";
@@ -1149,5 +1151,23 @@ describe("the payment panel", () => {
     expect(paymentPanelSubtitle(tenant({ leases: [] }), TODAY)).toBe(
       "Rina Wulandari",
     );
+  });
+});
+
+describe("tenant toasts", () => {
+  it("names the tenant added, in green", () => {
+    expect(tenantAddedToast("Yulia Kartika")).toEqual({
+      tone: "create",
+      title: "Penyewa ditambahkan",
+      description: "Yulia Kartika",
+    });
+  });
+
+  it("names the tenant saved, in green", () => {
+    expect(tenantSavedToast("Yulia Kartika")).toEqual({
+      tone: "create",
+      title: "Data penyewa disimpan",
+      description: "Yulia Kartika",
+    });
   });
 });

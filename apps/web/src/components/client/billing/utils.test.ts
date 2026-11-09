@@ -59,6 +59,8 @@ import {
   paymentCount,
   paymentRows,
   settlingPaymentId,
+  correctionSavedToast,
+  promiseSavedToast,
 } from "./utils";
 
 const TODAY = "2026-11-02";
@@ -1601,5 +1603,31 @@ describe("staffPromiseFormError", () => {
     ).toBe(true);
     expect(isPromiseStaleError(apiError("forbidden", 403))).toBe(false);
     expect(isPromiseStaleError(new Error("network"))).toBe(false);
+  });
+});
+
+describe("billing toasts", () => {
+  it("shows a correction in orange, naming what it corrected", () => {
+    expect(correctionSavedToast("Koreksi tagihan November 2026")).toEqual({
+      tone: "caution",
+      title: "Koreksi disimpan",
+      description: "Koreksi tagihan November 2026",
+    });
+  });
+
+  it("shows a first promise in green", () => {
+    expect(promiseSavedToast(false, "Yulia Kartika")).toEqual({
+      tone: "create",
+      title: "Janji bayar dicatat",
+      description: "Yulia Kartika",
+    });
+  });
+
+  it("shows a promise that replaced an active one in orange", () => {
+    expect(promiseSavedToast(true, "Yulia Kartika")).toEqual({
+      tone: "caution",
+      title: "Janji bayar diubah",
+      description: "Yulia Kartika",
+    });
   });
 });

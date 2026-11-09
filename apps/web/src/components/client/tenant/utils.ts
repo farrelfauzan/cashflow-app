@@ -10,6 +10,7 @@ import {
   SEARCH_PARAM,
   searchQuery,
 } from "@/components/client/list/utils";
+import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import {
   ListTenantsStatus,
@@ -500,4 +501,13 @@ export function bookingCancelledNotice(
   lease: Pick<Lease, "unitLabel">,
 ): string {
   return `Sewa ${lease.unitLabel} dibatalkan. Unitnya kosong lagi.`;
+}
+
+// The toasts after a save (board "Notifikasi singkat"), shown once the API answered.
+export function tenantAddedToast(name: string): ToastMessage {
+  return { tone: "create", title: "Penyewa ditambahkan", description: name };
+}
+
+export function tenantSavedToast(name: string): ToastMessage {
+  return { tone: "create", title: "Data penyewa disimpan", description: name };
 }

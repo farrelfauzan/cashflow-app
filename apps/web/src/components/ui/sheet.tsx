@@ -50,6 +50,7 @@ function SheetContent({
   showCloseButton = true,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  onPointerDownOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
@@ -71,6 +72,17 @@ function SheetContent({
               ? active
               : null;
           onOpenAutoFocus?.(event);
+        }}
+        // A press on a toast (its close button, a swipe) is not a press outside the sheet, so
+        // it never closes the sheet (T-094).
+        onPointerDownOutside={(event) => {
+          onPointerDownOutside?.(event);
+          if (
+            event.target instanceof Element &&
+            event.target.closest("[data-sonner-toaster]") !== null
+          ) {
+            event.preventDefault();
+          }
         }}
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event);

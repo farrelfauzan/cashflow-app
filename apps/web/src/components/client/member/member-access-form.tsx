@@ -6,6 +6,7 @@ import { Controller } from "react-hook-form";
 
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import { Button } from "@/components/ui/button";
 import { SheetClose } from "@/components/ui/sheet";
 import type { Member, Property } from "@/lib/api/generated/model";
@@ -19,6 +20,7 @@ import {
   accessFormSchema,
   roleFieldErrors,
   roleFormFromRoles,
+  memberAccessSavedToast,
 } from "./utils";
 
 import { MemberStatusSection } from "./member-status-section";
@@ -49,12 +51,16 @@ export function MemberAccessForm({
     apiFields: ACCESS_FORM_API_FIELDS,
     apiError: accessFormError,
   });
+  // The toast is raised here, not in mutate()'s callback, so it shows even when the panel
+  // closed while the request ran.
   const save = useSetMemberRoles({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({
+      onSuccess: (saved) => {
+        notify(memberAccessSavedToast(saved.name));
+        return queryClient.invalidateQueries({
           queryKey: getListMembersQueryKey(orgId),
-        }),
+        });
+      },
     },
   });
   const saving = save.isPending || save.isSuccess;

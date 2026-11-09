@@ -6,6 +6,7 @@ import { Controller } from "react-hook-form";
 import { DateField } from "@/components/client/form/date-field";
 import { FormAlert } from "@/components/client/form/form-alert";
 import { useApiForm } from "@/components/client/form/use-api-form";
+import { notify } from "@/components/client/toast/notify";
 import type { Lease } from "@/lib/api/generated/model";
 import { useMoveOut } from "@/lib/api/generated/tenants/tenants";
 import {
@@ -13,6 +14,7 @@ import {
   moveOutEffects,
   moveOutFormSchema,
   moveOutHint,
+  movedOutToast,
 } from "./utils";
 
 import { LeaseEffectsBox } from "./lease-effects-box";
@@ -46,7 +48,12 @@ export function MoveOutForm({
   });
 
   const moveOut = useMoveOut({
-    mutation: { onSuccess: (ended) => refresh(ended, true) },
+    mutation: {
+      onSuccess: (ended) => {
+        notify(movedOutToast(ended));
+        return refresh(ended, true);
+      },
+    },
   });
   const saving = moveOut.isPending;
 

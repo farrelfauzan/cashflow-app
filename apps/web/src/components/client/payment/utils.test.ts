@@ -32,6 +32,7 @@ import {
   RECEIVED_ON_FUTURE_MESSAGE,
   resultBoxRows,
   unpaidSummary,
+  paymentRecordedToast,
 } from "./utils";
 
 const TODAY = "2026-11-03";
@@ -393,5 +394,15 @@ describe("canRecordPayment", () => {
     const capabilities: Capability[] =
       access === null ? [] : [{ action: "payment:record", access }];
     expect(canRecordPayment(createAppAbility(capabilities))).toBe(want);
+  });
+});
+
+describe("paymentRecordedToast", () => {
+  it("names the amount recorded and the tenant", () => {
+    expect(paymentRecordedToast(1250000, "Yulia Kartika")).toEqual({
+      tone: "create",
+      title: "Pembayaran dicatat",
+      description: "Rp1.250.000 dari Yulia Kartika",
+    });
   });
 });
