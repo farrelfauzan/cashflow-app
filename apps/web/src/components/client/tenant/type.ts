@@ -44,6 +44,11 @@ export type TenantPermissions = {
 export type LeasePanelKind =
   "editLease" | "charges" | "plannedEnd" | "moveOut" | "cancelBooking";
 
+// A lease card button's look by what its panel does (T-093): neutral, caution (changes a date
+// already agreed) or destructive (hard to undo).
+export type LeaseActionVariant =
+  "outline" | "caution-outline" | "destructive-outline";
+
 // The side panel of the tenant screens; one at a time. The tenant is the one the API returned
 // (after adding) or the one on the page (editing, renting a unit). A lease panel carries the
 // lease from the page and its tenant's name. "Catat pembayaran" carries the tenant from the page

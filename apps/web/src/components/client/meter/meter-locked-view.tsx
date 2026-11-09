@@ -52,7 +52,7 @@ export function MeterLockedView({
         {onCorrect !== null && (
           <Button
             type="button"
-            variant="outline"
+            variant="caution-outline"
             onClick={onCorrect}
             className="h-13 flex-1 rounded-xl border-[1.5px] bg-card px-3 text-base font-semibold whitespace-normal md:text-[17px]"
           >

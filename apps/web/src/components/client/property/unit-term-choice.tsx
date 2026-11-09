@@ -78,7 +78,8 @@ export function UnitTermChoice({
           </div>
           <Button
             type="button"
-            variant="outline"
+            // A new price reaches every lease on the unit (T-093).
+            variant="caution-outline"
             aria-label={changePriceLabel(row.months)}
             onClick={onChangePrice}
             disabled={disabled}

@@ -17,6 +17,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { expectButtonTone } from "./support/button-tone";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
@@ -232,6 +233,24 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       card.getByRole("button", { name: "Batalkan sewa" }),
     ).toHaveCount(0);
+    // The card's buttons say what they do (T-093): neutral, caution, destructive.
+    await expectButtonTone(edit, "neutral");
+    await expectButtonTone(
+      card.getByRole("button", { name: "Biaya tambahan" }),
+      "neutral",
+    );
+    await expectButtonTone(
+      card.getByRole("button", { name: "Rencana keluar" }),
+      "caution-outline",
+    );
+    await expectButtonTone(
+      card.getByRole("button", { name: "Catat pindah keluar" }),
+      "destructive-outline",
+    );
+    await card
+      .getByRole("button", { name: "Catat pindah keluar" })
+      .scrollIntoViewIfNeeded();
+    await attachViewportScreenshot(page, testInfo, "lease-card-actions");
     await edit.click();
 
     const form = page.getByRole("dialog", { name: "Ubah sewa" });
@@ -307,6 +326,14 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       form.getByRole("button", { name: "Hapus rencana keluar" }),
     ).toHaveCount(0);
+    await expectButtonTone(
+      form.getByRole("button", { name: "Simpan rencana keluar" }),
+      "caution",
+    );
+    await expectButtonTone(
+      form.getByRole("button", { name: "Batal" }),
+      "neutral",
+    );
 
     // A day before today: the form says so before anything is sent.
     await date.fill(tenthOfMonth(-1));
@@ -344,6 +371,7 @@ test.describe("Admin of the whole organization", () => {
     );
     const clear = form.getByRole("button", { name: "Hapus rencana keluar" });
     await expectTouchTarget(clear);
+    await expectButtonTone(clear, "destructive-outline");
     await attachViewportScreenshot(page, testInfo, "lease-planned-end");
     await clear.click();
     await expect(form).toHaveCount(0);
@@ -382,6 +410,7 @@ test.describe("Admin of the whole organization", () => {
     );
     const save = form.getByRole("button", { name: "Catat pindah keluar" });
     await expectTouchTarget(save);
+    await expectButtonTone(save, "destructive");
     await attachViewportScreenshot(page, testInfo, "lease-move-out");
 
     // A day after today: the form says so under the date, before anything is sent, and editing

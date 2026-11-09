@@ -233,6 +233,7 @@ export function CorrectionDialog({
             </DialogClose>
             <Button
               type="submit"
+              variant="caution"
               disabled={saving}
               className="h-13 flex-2 rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]"
             >

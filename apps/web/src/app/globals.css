@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enter and exit animations of the shadcn primitives (animate-in, slide-in-from-right, ...). */
+@import "tw-animate-css";
+
 /* Light theme only. `dark:` utilities (shipped inside shadcn primitives) apply only under a
    `.dark` class, which the app never sets, so a device in dark mode still gets this theme. */
 @custom-variant dark (&:is(.dark *));
@@ -21,10 +24,17 @@
    text pair, checked:
      ink on cream 13.3:1, on paper 14.2:1, on sand 11.9:1, on mint 11.9:1
      slate on cream 7.0:1, on paper 7.5:1, on sand 6.3:1
-     cream on accent 5.7:1 (4.6:1 on the 90% hover); accent on cream 5.7:1, on mint 5.1:1
+     cream on accent 5.7:1; accent on cream 5.7:1, on mint 5.1:1
      cream on warning 4.5:1; warning on cream 4.5:1, on paper 4.8:1 (not on sand)
      cream on error 6.6:1; error on cream 6.6:1, on paper 7.0:1
-     stone (input borders) on cream 3.5:1, the 3:1 needed for control outlines */
+     stone (input borders) on cream 3.5:1, the 3:1 needed for control outlines
+   Buttons by meaning (components/ui/button.tsx, T-093): hover and pressed turn to the -strong
+   shade, never a lighter tint: cream on accent-strong 9.1:1, on warning-strong 5.7:1, on
+   error-strong 8.5:1 (warning at 90% would be 3.9:1). The caution and destructive outlines show
+   warning or error text and border on cream or paper (4.5:1 and up, past the 3:1 an outline
+   needs) and fill solid on hover. The neutral outline turns sand on hover (ink on sand 11.9:1).
+   Their focus ring, 2px off the button, is the full color: accent, warning or error on cream
+   5.7:1, 4.5:1, 6.6:1, past the 3:1 a focus indicator needs. */
 :root {
   --palette-ink: #1e2a2b;
   --palette-cream: #f5f3ee;
@@ -34,6 +44,10 @@
      UI color. */
   --palette-coin: #f5b82e;
   --palette-coin-ring: #c7870b;
+  /* The darker shades a button turns when hovered or pressed (T-093, the T-096 boards). */
+  --palette-accent-strong: #134a44;
+  --palette-warning-strong: #9c470c;
+  --palette-error-strong: #86200f;
 
   --palette-paper: #fbfaf7; /* cream, lighter: cards and popovers */
   --palette-sand: #eae6dd; /* cream, darker: muted and secondary surfaces */
@@ -63,6 +77,9 @@
   --destructive-foreground: var(--palette-cream);
   --warning: var(--palette-warning);
   --warning-foreground: var(--palette-cream);
+  --warning-strong: var(--palette-warning-strong);
+  --primary-strong: var(--palette-accent-strong);
+  --destructive-strong: var(--palette-error-strong);
   --border: var(--palette-line);
   --input: var(--palette-stone);
   --ring: var(--palette-accent);
@@ -90,6 +107,9 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-strong: var(--warning-strong);
+  --color-primary-strong: var(--primary-strong);
+  --color-destructive-strong: var(--destructive-strong);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

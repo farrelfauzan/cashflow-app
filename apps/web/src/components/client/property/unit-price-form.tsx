@@ -172,6 +172,7 @@ export function UnitPriceForm({
         <Button
           type="submit"
           form={formId}
+          variant="caution"
           disabled={saving}
           className="h-13 flex-2 rounded-xl px-3 text-[17px] font-semibold whitespace-normal"
         >
