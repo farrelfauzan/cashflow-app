@@ -88,3 +88,36 @@ export function roleSummary(roles: readonly RoleRef[]): string {
 
 // What a screen's placeholder says to screen readers while its data streams in.
 export const SCREEN_LOADING_LABEL = "Memuat…";
+
+// The phone's tab bar (board HP-Tab, approved 2026-11-08): these sections in this order, each
+// only when the member may open it (the same visibleOrgMenu), then "Lainnya". The rest of the
+// side menu (Anggota tim) moves into "Lainnya". iPad and desktop keep the side menu.
+export const PHONE_TAB_KEYS: readonly OrgMenuItem["key"][] = [
+  "home",
+  "tenants",
+  "billing",
+  "properties",
+];
+export const MORE_MENU_LABEL = "Lainnya";
+export const SWITCH_ORG_LABEL = "Ganti usaha";
+
+// The sections the tab bar shows, in its order.
+export function phoneTabs<T extends { key: OrgMenuItem["key"] }>(
+  items: readonly T[],
+): T[] {
+  return PHONE_TAB_KEYS.flatMap((key) =>
+    items.filter((item) => item.key === key),
+  );
+}
+
+// The sections that live in "Lainnya" on the phone, in the side menu's order.
+export function moreMenuSections<T extends { key: OrgMenuItem["key"] }>(
+  items: readonly T[],
+): T[] {
+  return items.filter((item) => !PHONE_TAB_KEYS.includes(item.key));
+}
+
+// Under the member's name in "Lainnya": "Admin di Griya Sejahtera".
+export function moreMenuRoleLine(roles: string, organizationName: string) {
+  return roles === "" ? organizationName : `${roles} di ${organizationName}`;
+}

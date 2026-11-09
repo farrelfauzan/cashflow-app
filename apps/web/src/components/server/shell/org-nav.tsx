@@ -21,10 +21,9 @@ type OrgNavProps = {
 // The side menu (board Members.dc.html): the organization and the member's roles, the sections
 // they may open, then "Ganti usaha" for a member of several organizations (a select above the
 // footer, moved there on the user's request) and who is signed in with "Keluar", plus "Telegram"
-// where the environment has a bot (decision 42, demo only). The same
-// content fills the phone's menu sheet, where the header leaves room for the sheet's close
-// button. On iPad, collapsed to its rail (SidebarRail), the `rail:` classes keep only the icons;
-// the texts stay for screen readers.
+// where the environment has a bot (decision 42, demo only). iPad and desktop only: the phone has
+// the tab bar (PhoneTabBar). Collapsed to its rail (SidebarRail), the `rail:` classes keep only
+// the icons; the texts stay for screen readers.
 export function OrgNav({
   organizationName,
   roles,
@@ -38,7 +37,7 @@ export function OrgNav({
       aria-label="Menu utama"
       className="flex h-full flex-col gap-0.5 px-3 py-[18px]"
     >
-      <div className="flex items-center gap-2.5 pr-12 pb-1.5 pl-1 md:pr-1 rail:justify-center rail:px-0">
+      <div className="flex items-center gap-2.5 pr-1 pb-1.5 pl-1 rail:justify-center rail:px-0">
         <OrgTile
           name={organizationName}
           tone="solid"

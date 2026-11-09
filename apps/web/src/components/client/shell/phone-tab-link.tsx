@@ -1,0 +1,44 @@
+"use client";
+
+import { cn } from "cn";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+
+type PhoneTabLinkProps = {
+  href: string;
+  // The home matches only itself; a section also matches the pages below it.
+  exact: boolean;
+  label: string;
+  // The section's icon, rendered on the server.
+  icon: ReactNode;
+};
+
+// One tab of the phone's tab bar (board HP-Tab): the icon on a mint pill and a bold label when it
+// is the current section, which is also marked for screen readers. 58px tall.
+export function PhoneTabLink({ href, exact, label, icon }: PhoneTabLinkProps) {
+  const pathname = usePathname();
+  const current =
+    pathname === href || (!exact && pathname.startsWith(`${href}/`));
+
+  return (
+    <Link
+      href={href}
+      aria-current={current ? "page" : undefined}
+      className={cn(
+        "group flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] font-semibold text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring",
+        current && "font-bold text-primary-strong",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-[30px] w-[52px] items-center justify-center rounded-full [&_svg]:size-[22px]",
+          current && "bg-accent text-primary",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}

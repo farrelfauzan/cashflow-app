@@ -37,7 +37,7 @@ import {
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { rangeText } from "../src/components/client/list/utils";
-import { menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import { ORG_HOME_URL, openSection } from "./support/shell";
 import { HENDRA, RUDI, type SeededStaff } from "./support/staff";
 
 // Penagihan, the month's invoices, against the real API and its worker. The admin test makes its
@@ -130,13 +130,12 @@ async function openBilling(
   page: Page,
   testInfo: TestInfo,
 ): Promise<InvoiceList> {
-  const menu = await openMenu(page, testInfo);
   const first = nextList(
     page,
     (params) =>
       !params.has("q") && !params.has("status") && !params.has("period"),
   );
-  await menuSections(menu).filter({ hasText: "Penagihan" }).click();
+  await openSection(page, testInfo, "Penagihan");
   await expect(
     page.getByRole("heading", { level: 1, name: "Penagihan" }),
   ).toBeVisible();
@@ -503,9 +502,8 @@ test.describe("Karyawan", () => {
         ?.access,
     ).toBe("conditional");
 
-    const menu = await openMenu(page, testInfo);
     const answer = nextList(page, () => true);
-    await menuSections(menu).filter({ hasText: "Penagihan" }).click();
+    await openSection(page, testInfo, "Penagihan");
     await expect(
       page.getByRole("heading", { level: 1, name: "Penagihan" }),
     ).toBeVisible();

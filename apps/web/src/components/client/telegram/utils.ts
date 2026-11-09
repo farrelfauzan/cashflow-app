@@ -2,7 +2,7 @@ import { ApiError } from "@/lib/api/errors";
 import { toFormError } from "@/lib/api/form-error";
 import { TELEGRAM_UNAVAILABLE_CODE } from "@/components/client/payment-page/utils";
 
-import type { StaffTelegramErrorView } from "./type";
+import type { StaffTelegramErrorView, TelegramMenuItemVariant } from "./type";
 
 // A staff member's Telegram (decision 42, demo only): offered in the side menu only where the
 // environment has a bot (getMyTelegram's available), which production never has. A linked member
@@ -27,3 +27,11 @@ export function staffTelegramErrorView(error: unknown): StaffTelegramErrorView {
   }
   return { kind: "alert", message: toFormError(error, []).message };
 }
+
+// "Telegram" per place it sits in.
+export const TELEGRAM_MENU_ITEM_CLASS: Record<TelegramMenuItemVariant, string> =
+  {
+    menu: "justify-start px-2 font-semibold text-muted-foreground rail:justify-center rail:px-0",
+    sheet:
+      "min-h-14 w-full justify-start gap-3.5 rounded-none border-b px-1 text-[17px] font-semibold text-foreground has-[>svg]:px-1 [&>svg:first-child]:size-[22px]! [&_svg]:text-muted-foreground",
+  };

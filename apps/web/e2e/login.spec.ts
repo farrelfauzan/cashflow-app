@@ -12,7 +12,12 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { minBodyFontPx } from "./support/projects";
-import { HOME_HEADING, ORG_HOME_URL, openMenu } from "./support/shell";
+import {
+  expectNoMenu,
+  HOME_HEADING,
+  ORG_HOME_URL,
+  openAccountMenu,
+} from "./support/shell";
 import { LOGIN_PHONES, type LoginPhones } from "./support/staff";
 
 // The staff login screen against the real Go API: codes are read from the API's DEVLOG_FILE,
@@ -107,6 +112,8 @@ test("signs in with the WhatsApp code, then signs out", async ({
     testInfo,
   );
   await expectTouchTargets(page);
+  // Signed out: no menu, no phone tab bar.
+  await expectNoMenu(page);
   await attachFullPageScreenshot(page, testInfo, "login-phone-step");
 
   const offset = await requestCode(page, staff.phone);
@@ -126,7 +133,7 @@ test("signs in with the WhatsApp code, then signs out", async ({
     page.getByRole("heading", { level: 1, name: HOME_HEADING }),
   ).toBeVisible();
 
-  const menu = await openMenu(page, testInfo);
+  const menu = await openAccountMenu(page, testInfo);
   await expect(menu.getByText(staff.name)).toBeVisible();
   await menu.getByRole("button", { name: "Keluar" }).click();
   await expect(page).toHaveURL("/login");
