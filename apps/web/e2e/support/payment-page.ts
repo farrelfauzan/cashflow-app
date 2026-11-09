@@ -56,8 +56,8 @@ export function uniqueName(testInfo: TestInfo, base: string): string {
 
 // A tenant number no other run, project, test or retry uses. Each spec has its own prefix
 // ("0814-8": payment-page.spec.ts, "0815-1": payment-page-qris.spec.ts,
-// "0815-2": payment-page-partial.spec.ts, "0815-5": payment-page-telegram.spec.ts), used by no
-// other spec.
+// "0815-2": payment-page-partial.spec.ts, "0815-5": payment-page-telegram.spec.ts,
+// "0815-4": date-picker.spec.ts), used by no other spec.
 export function tenantNumber(
   testInfo: TestInfo,
   prefix: string,
@@ -309,7 +309,7 @@ export async function expectTouchTarget(locator: Locator, min = 44) {
 // /api rewrite passes the header on; behind Caddy in production the API reads Caddy's.
 export function tenantClientAddress(
   testInfo: TestInfo,
-  spec: 18 | 19 | 20 | 21,
+  spec: 18 | 19 | 20 | 21 | 22,
 ): string {
   const key = `${runId()}|${testInfo.project.name}|${testInfo.titlePath.join("|")}|${testInfo.retry}`;
   let hash = 0;

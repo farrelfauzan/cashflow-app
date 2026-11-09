@@ -148,6 +148,7 @@ export function UnitPriceForm({
               label="Berlaku mulai"
               name="effectiveFrom"
               value={field.value}
+              min={today}
               onChange={(date) => {
                 field.onChange(date);
                 form.clearErrors("effectiveFrom");

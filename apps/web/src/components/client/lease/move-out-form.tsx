@@ -76,6 +76,8 @@ export function MoveOutForm({
               label="Hari terakhir menyewa"
               name="endDate"
               value={field.value}
+              min={lease.startDate <= today ? lease.startDate : undefined}
+              max={today}
               onChange={(date) => {
                 field.onChange(date);
                 form.clearErrors("endDate");

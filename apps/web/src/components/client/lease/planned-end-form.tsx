@@ -88,6 +88,7 @@ export function PlannedEndForm({
               label="Hari terakhir penyewa tinggal"
               name="plannedEndDate"
               value={field.value}
+              min={lease.startDate > today ? lease.startDate : today}
               onChange={(date) => {
                 field.onChange(date);
                 form.clearErrors("plannedEndDate");

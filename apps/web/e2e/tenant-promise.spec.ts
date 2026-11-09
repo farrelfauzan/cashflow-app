@@ -28,6 +28,12 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import {
+  dateControl,
+  expectDate,
+  expectDateLimits,
+  setDate,
+} from "./support/date-field";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { ORG_HOME_URL } from "./support/shell";
@@ -219,7 +225,7 @@ function dialogParts(dialog: Locator) {
       name: /Bareng tagihan berikutnya/,
     }),
     ownDate: dialog.getByRole("radio", { name: /Pilih tanggal sendiri/ }),
-    date: dialog.getByLabel("Tanggal pelunasan"),
+    date: dateControl(dialog, "Tanggal pelunasan"),
     amount: dialog.getByRole("textbox", {
       name: "Nominal janji (boleh dikosongkan)",
     }),
@@ -291,13 +297,17 @@ test.describe("Admin of the whole organization", () => {
     // "Pilih tanggal sendiri" without a date: refused before anything is sent.
     await parts.ownDate.click();
     await expect(parts.date).toBeVisible();
-    await expect(parts.date).toHaveAttribute("min", dates.earliest);
-    await expect(parts.date).toHaveAttribute("max", dates.latest);
+    await expectDateLimits(
+      dialog,
+      "Tanggal pelunasan",
+      dates.earliest,
+      dates.latest,
+    );
     await parts.save.click();
     await expect(dialog.getByText("Pilih tanggal pelunasan.")).toBeVisible();
     expect(posts).toEqual([]);
 
-    await parts.date.fill(promisedDate);
+    await setDate(dialog, "Tanggal pelunasan", promisedDate);
     await parts.note.fill(note);
     await attachViewportScreenshot(page, testInfo, "tenant-promise-form");
     const sent = page.waitForRequest(isPromisePost);
@@ -330,7 +340,7 @@ test.describe("Admin of the whole organization", () => {
     );
     await expect(parts.save).toHaveText("Simpan perubahan");
     await expect(parts.ownDate).toBeChecked();
-    await expect(parts.date).toHaveValue(promisedDate);
+    await expectDate(dialog, "Tanggal pelunasan", promisedDate);
     await expect(parts.amount).toHaveValue("");
     await attachViewportScreenshot(page, testInfo, "tenant-promise-replace");
 
