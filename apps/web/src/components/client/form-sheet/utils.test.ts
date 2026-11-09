@@ -149,6 +149,11 @@ describe("formSheetContentClass", () => {
     expect(classes).toContain("md:w-[470px]");
     expect(classes).toContain("md:data-[state=open]:slide-in-from-right");
     expect(classes).not.toContain("md:max-w-[560px]");
+    // Clear of the home indicator and a notch on the right, as the drawers were.
+    expect(classes).toContain("pb-[env(safe-area-inset-bottom)]");
+    expect(classes).toContain("pr-[env(safe-area-inset-right)]");
+    expect(classes).not.toContain("md:pb-0");
+    expect(classes).not.toContain("md:pr-0");
   });
 
   it("is the centred dialog of at most 560px from md up as a dialog", () => {
@@ -158,5 +163,7 @@ describe("formSheetContentClass", () => {
     expect(classes).toContain("md:data-[state=open]:zoom-in-95");
     expect(classes).not.toContain("md:w-[470px]");
     expect(classes).not.toContain("md:data-[state=open]:slide-in-from-right");
+    expect(classes).toContain("md:pb-0");
+    expect(classes).toContain("md:pr-0");
   });
 });

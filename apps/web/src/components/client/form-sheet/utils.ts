@@ -35,19 +35,21 @@ const INTERACTIVE_SELECTOR =
   'a, button, input, select, textarea, label, [role="button"], [contenteditable="true"]';
 
 // The phone's sheet (board HP-Lembar): from the bottom, 92% of the screen tall, rounded on top,
-// above the home indicator; a finger on the header drags it instead of panning the page.
+// above the home indicator and clear of a notch on the right; a finger on the header drags it
+// instead of panning the page.
 const BOTTOM_SHEET_CLASS =
-  "h-[92dvh] w-full gap-0 rounded-t-[20px] bg-card p-0 pb-[env(safe-area-inset-bottom)] max-md:[&_[data-slot=sheet-header]]:touch-none max-md:[&_[data-slot=sheet-header]]:select-none";
+  "h-[92dvh] w-full gap-0 rounded-t-[20px] bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] max-md:[&_[data-slot=sheet-header]]:touch-none max-md:[&_[data-slot=sheet-header]]:select-none";
 
 // From md up, over the bottom sheet's classes. "drawer": the right-hand drawer, 470px wide and
-// full height, sliding from the right. "dialog": the centred dialog of components/ui/dialog.tsx
+// full height, sliding from the right, keeping the bottom and right safe-area padding as the
+// drawers had it. "dialog": the centred dialog of components/ui/dialog.tsx
 // as the billing dialogs set it (at most 560px wide and the screen less 2rem tall, rounded, its
-// whole content scrolling), zooming and fading in and out over 200ms instead of sliding.
+// whole content scrolling, no safe-area padding since it sits in the middle), zooming and fading in and out over 200ms instead of sliding.
 const WIDE_LAYOUT_CLASS: Record<FormSheetWideLayout, string> = {
   drawer:
-    "md:inset-y-0 md:left-auto md:h-full md:w-[470px] md:rounded-none md:border-t-0 md:border-l md:pb-0 md:data-[state=closed]:[--tw-exit-translate-y:0] md:data-[state=closed]:slide-out-to-right md:data-[state=open]:[--tw-enter-translate-y:0] md:data-[state=open]:slide-in-from-right",
+    "md:inset-y-0 md:left-auto md:h-full md:w-[470px] md:rounded-none md:border-t-0 md:border-l md:data-[state=closed]:[--tw-exit-translate-y:0] md:data-[state=closed]:slide-out-to-right md:data-[state=open]:[--tw-enter-translate-y:0] md:data-[state=open]:slide-in-from-right",
   dialog:
-    "md:top-1/2 md:right-auto md:bottom-auto md:left-1/2 md:h-auto md:max-h-[calc(100dvh-2rem)] md:max-w-[560px] md:-translate-x-1/2 md:-translate-y-1/2 md:overflow-y-auto md:rounded-2xl md:border md:pb-0 md:outline-none md:data-[state=closed]:duration-200 md:data-[state=closed]:ease-[ease] md:data-[state=closed]:[--tw-exit-translate-y:0] md:data-[state=closed]:fade-out-0 md:data-[state=closed]:zoom-out-95 md:data-[state=open]:duration-200 md:data-[state=open]:ease-[ease] md:data-[state=open]:[--tw-enter-translate-y:0] md:data-[state=open]:fade-in-0 md:data-[state=open]:zoom-in-95",
+    "md:top-1/2 md:right-auto md:bottom-auto md:left-1/2 md:h-auto md:max-h-[calc(100dvh-2rem)] md:max-w-[560px] md:-translate-x-1/2 md:-translate-y-1/2 md:overflow-y-auto md:rounded-2xl md:border md:pr-0 md:pb-0 md:outline-none md:data-[state=closed]:duration-200 md:data-[state=closed]:ease-[ease] md:data-[state=closed]:[--tw-exit-translate-y:0] md:data-[state=closed]:fade-out-0 md:data-[state=closed]:zoom-out-95 md:data-[state=open]:duration-200 md:data-[state=open]:ease-[ease] md:data-[state=open]:[--tw-enter-translate-y:0] md:data-[state=open]:fade-in-0 md:data-[state=open]:zoom-in-95",
 };
 
 // A FormSheetContent's classes: the bottom sheet, then its layout from md up.

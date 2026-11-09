@@ -53,11 +53,11 @@ function uniqueName(testInfo: TestInfo, base: string): string {
   return `${base} ${runId()} ${project}${retry}`;
 }
 
-// A tenant number no other run, project, test or retry uses; 0815-4 is used by no other spec.
+// A tenant number no other run, project, test or retry uses; 0815-6 is used by no other spec.
 function tenantNumber(testInfo: TestInfo, testDigit: number): string {
   const run = runId();
   const project = projectDigit(testInfo);
-  return `0815-4${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
+  return `0815-6${run.slice(0, 3)}-${run.slice(3)}${project}${testDigit}${testInfo.retry}`;
 }
 
 // Setup through the API, as the signed-in member (the page's cookies).

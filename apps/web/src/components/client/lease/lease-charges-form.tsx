@@ -98,14 +98,15 @@ export function LeaseChargesForm({
   const meteredTypeRows = meteredRows(chargeTypes, {});
 
   // A type just added is checked and its amount focused; a metered one is switched on and its
-  // switch focused. The list of types is already loaded again, so rendering now shows its row.
+  // switch focused, both as unsaved changes of the lease. The list of types is already loaded
+  // again, so rendering now shows its row.
   function handleAdded(type: ChargeType) {
     if (type.metered) {
       const switchName = meteredField(type.id);
       flushSync(() => {
         setBoxOpen(false);
         setMeteredAdded(meteredChargeTypeAddedText(type.name));
-        form.setValue(switchName, true);
+        form.setValue(switchName, true, { shouldDirty: true });
       });
       form.setFocus(switchName);
       return;
@@ -114,7 +115,9 @@ export function LeaseChargesForm({
     flushSync(() => {
       setBoxOpen(false);
       setMeteredAdded(null);
-      form.setValue(name, withChargeChecked(form.getValues(name), true));
+      form.setValue(name, withChargeChecked(form.getValues(name), true), {
+        shouldDirty: true,
+      });
     });
     form.setFocus(name);
   }

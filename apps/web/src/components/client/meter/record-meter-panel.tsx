@@ -194,6 +194,9 @@ export function RecordMeterPanel({
           setSaved(charge);
           applied.current = selectionKey(request);
           fillFields(undefined);
+          // Saved: what is left (the month and type) is the form's new starting point, so
+          // closing the sheet now does not ask about unsaved changes.
+          form.reset(form.getValues());
         },
         onError: async (error) => {
           if (isBilledError(error)) {
