@@ -239,7 +239,7 @@ test("Koreksi and Catat janji open as a bottom sheet on the phone and as the cen
     page,
     testInfo,
     1,
-    "Ratna Kusumawati",
+    "Wahyuni Kusumawati",
   );
 
   const correction = await openDialog(page, correct, correctTitle);
@@ -272,7 +272,7 @@ test("a typed correction asks before Batal closes it, on the phone only", async 
     page,
     testInfo,
     2,
-    "Bambang Sutrisno",
+    "Yosef Sutrisno",
   );
   const question = page.getByRole("alertdialog", { name: QUESTION });
   const reasonText = uniqueName(testInfo, "Potongan kran rusak");
@@ -306,4 +306,68 @@ test("a typed correction asks before Batal closes it, on the phone only", async 
   await expect(question).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   await expect(correct).toBeFocused();
+});
+
+test("while a correction saves, every close is ignored without asking, on the phone", async ({
+  page,
+}, testInfo) => {
+  test.skip(!isPhone(testInfo), "The question is asked on the phone only.");
+  test.setTimeout(90_000);
+  const { correct, correctTitle } = await openTenantWhoOwes(
+    page,
+    testInfo,
+    3,
+    "Yudhistira Wibowo",
+  );
+  const question = page.getByRole("alertdialog", { name: QUESTION });
+
+  const dialog = await openDialog(page, correct, correctTitle);
+  await dialog
+    .getByRole("textbox", { name: "Nominal baru" })
+    .fill(String(PRICE - 50_000));
+  await dialog
+    .getByRole("textbox", { name: "Alasan (wajib diisi)" })
+    .fill(uniqueName(testInfo, "Potongan lampu kamar mandi"));
+
+  // Hold the save until every way of closing has been tried.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let sent = false;
+  await page.route("**/api/orgs/*/corrections", async (route) => {
+    sent = true;
+    await held;
+    await route.continue();
+  });
+  await dialog.getByRole("button", { name: "Simpan koreksi" }).click();
+  await expect.poll(() => sent).toBe(true);
+  await expect(
+    dialog.getByRole("button", { name: "Menyimpan…" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Batal", exact: true }),
+  ).toBeDisabled();
+
+  // Escape, a tap on the page above the sheet and a swipe down by the handle: the sheet stays,
+  // and nothing asks.
+  await page.keyboard.press("Escape");
+  await page.mouse.click(195, 20);
+  const handle = await dialog
+    .locator('[data-slot="form-sheet-handle"]')
+    .boundingBox();
+  if (handle === null) throw new Error("The handle is not visible.");
+  const x = handle.x + handle.width / 2;
+  const y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 400, { steps: 8 });
+  await page.mouse.up();
+  await expect(question).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+
+  // Once saved it closes by itself, still without asking.
+  release();
+  await expect(dialog).toHaveCount(0);
+  await expect(question).toHaveCount(0);
 });
