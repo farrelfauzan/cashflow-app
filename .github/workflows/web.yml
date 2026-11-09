@@ -51,12 +51,12 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # Playwright at both sizes against the real Go API: throwaway PostgreSQL and Redis from the
+  # Playwright at all three sizes against the real Go API: throwaway PostgreSQL and Redis from the
   # dev compose file, migrated and seeded with seed-demo and generate-invoices, WhatsApp on devlog (nothing is sent).
   # The login helper reads codes from DEVLOG_FILE.
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       APP_ENV: development
       E2E_DIR: /tmp/cashflow-e2e

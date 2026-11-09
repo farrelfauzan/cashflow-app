@@ -5,7 +5,8 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
-import { isPhone, menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
+import { minBodyFontPx } from "./support/projects";
+import { menuSections, ORG_HOME_URL, openMenu } from "./support/shell";
 import { HENDRA, SARI } from "./support/staff";
 
 // The organization picker against the real Go API: the session gate in src/proxy.ts, the
@@ -77,7 +78,7 @@ test.describe("member of two organizations", () => {
     const switchFont = await orgSwitch.evaluate((el) =>
       parseFloat(getComputedStyle(el).fontSize),
     );
-    expect(switchFont).toBeGreaterThanOrEqual(isPhone(testInfo) ? 14 : 16);
+    expect(switchFont).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     await orgSwitch.click();
     const options = page.getByRole("option");
     await expect(options).toHaveText(HENDRA.organizations);

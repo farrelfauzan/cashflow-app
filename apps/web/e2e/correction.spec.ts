@@ -321,7 +321,7 @@ test.describe("Admin of the whole organization", () => {
   }, testInfo) => {
     test.setTimeout(90_000);
     const outsideRequests = trackOutsideRequests(page);
-    const { orgId, tenant, invoice } = await tenantWithInvoice(
+    const { orgId, tenant, accountPath, invoice } = await tenantWithInvoice(
       page,
       testInfo,
       2,
@@ -352,15 +352,26 @@ test.describe("Admin of the whole organization", () => {
     await expect(dialog.getByText("Alasan wajib diisi.")).toBeVisible();
     expect(posts).toEqual([]);
 
-    // The amount it bills now: the API refuses (correction_no_change) under "Nominal baru".
-    await parts.amount.fill(String(invoice.billed));
+    // The amount it bills now: the API refuses (correction_no_change) under "Nominal baru". Read
+    // from the account again rather than the fixture, so it is what the API compares against.
+    const now = await call<TenantAccount>(page, "GET", accountPath, 200);
+    const billedNow = now.invoices.find((row) => row.id === invoice.id)?.billed;
+    if (billedNow === undefined)
+      throw new Error("invoice gone from the account");
+    await parts.amount.fill(String(billedNow));
+    await expect(parts.amount).toHaveValue(
+      formatRupiah(billedNow).replace("Rp", ""),
+    );
     await parts.reason.fill(uniqueName(testInfo, "Cek ulang"));
     const answer = page.waitForResponse((response) =>
       isCorrectionPost(response.request()),
     );
     await parts.save.click();
     const response = await answer;
-    expect(response.status()).toBe(409);
+    expect(
+      response.status(),
+      `sent ${response.request().postData() ?? ""} for an invoice billing ${billedNow}`,
+    ).toBe(409);
     const { error } = (await response.json()) as {
       error: { code: string; message: string; field?: string };
     };
