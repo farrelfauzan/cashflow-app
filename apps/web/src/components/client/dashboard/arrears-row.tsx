@@ -3,6 +3,7 @@
 import { Clock } from "lucide-react";
 import Link from "next/link";
 
+import { FORWARD_TYPES } from "@/components/client/page-motion/utils";
 import { orgPath } from "@/lib/org-path";
 import type { ArrearsRowView } from "./type";
 
@@ -21,6 +22,7 @@ export function ArrearsRow({ orgId, row, canOpenTenant }: ArrearsRowProps) {
       <p className="text-[17px] font-semibold md:text-xl">
         {canOpenTenant ? (
           <Link
+            transitionTypes={FORWARD_TYPES}
             href={orgPath(orgId, `tenants/${row.tenantId}`)}
             className="-my-2.5 inline-flex min-h-11 items-center underline-offset-4 hover:underline"
           >

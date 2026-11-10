@@ -3,6 +3,7 @@
 import { FileUp, Plus } from "lucide-react";
 import Link from "next/link";
 
+import { FORWARD_TYPES } from "@/components/client/page-motion/utils";
 import { Button } from "@/components/ui/button";
 import { tenantsSubtitle } from "./utils";
 
@@ -43,7 +44,7 @@ export function TenantsHeader({
               variant="outline"
               className="h-12 w-full rounded-xl border-[1.5px] bg-card text-base font-semibold lg:w-auto lg:px-[18px] lg:text-[17px]"
             >
-              <Link href={importHref}>
+              <Link transitionTypes={FORWARD_TYPES} href={importHref}>
                 <FileUp aria-hidden="true" className="size-5" strokeWidth={2} />
                 Impor dari spreadsheet
               </Link>
