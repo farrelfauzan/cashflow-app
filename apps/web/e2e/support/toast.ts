@@ -26,6 +26,8 @@ export async function expectToast(
   const shown = toast(page, title);
   await expect(shown).toBeVisible();
   await expect(shown).toHaveAttribute("data-tone", tone);
+  // Its glass on iOS follows the same tone (T-097e).
+  await expect(shown).toHaveAttribute("data-glass", tone);
   if (description !== undefined) await expect(shown).toContainText(description);
   return shown;
 }

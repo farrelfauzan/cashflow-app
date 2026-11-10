@@ -45,13 +45,15 @@ export function MoreMenu({ label, sectionHrefs, children }: MoreMenuProps) {
         <button
           type="button"
           className={cn(
-            "flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] font-semibold text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring",
-            (open || current) && "font-bold text-primary-strong",
+            "flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] font-semibold text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring ios:min-h-14 ios:gap-0.5 ios:rounded-[26px]",
+            open || current
+              ? "font-bold text-primary-strong"
+              : "ios:text-foreground",
           )}
         >
           <span
             className={cn(
-              "flex h-[30px] w-[52px] items-center justify-center rounded-full",
+              "flex h-[30px] w-[52px] items-center justify-center rounded-full ios:h-7 ios:w-[50px]",
               (open || current) && "bg-accent text-primary",
             )}
           >

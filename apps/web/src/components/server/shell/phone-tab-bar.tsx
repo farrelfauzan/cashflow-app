@@ -21,7 +21,8 @@ type PhoneTabBarProps = {
 // The phone's navigation (board HP-Tab, approved 2026-11-08): a bar fixed to the bottom with
 // Beranda, Penyewa, Penagihan and Properti (each only for a member who may open it) and
 // "Lainnya" for the rest. Above the home indicator; hidden from the iPad width up, where the
-// side menu stays.
+// side menu stays. On iOS it floats as a rounded glass panel 12px from the sides (board
+// iOS-HP-Tab, T-097e): solid with Increase Contrast; Android keeps the bar along the edge.
 export function PhoneTabBar({
   items,
   userName,
@@ -32,7 +33,8 @@ export function PhoneTabBar({
   return (
     <nav
       aria-label="Menu utama"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-2px_8px_rgba(30,42,43,0.05)] md:hidden"
+      data-glass="chrome"
+      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-2px_8px_rgba(30,42,43,0.05)] md:hidden ios:inset-x-3 ios:bottom-[max(24px,env(safe-area-inset-bottom))] ios:rounded-[30px] ios:border ios:p-1 ios:shadow-none"
     >
       <ul className="flex">
         {phoneTabs(items).map((item) => {
