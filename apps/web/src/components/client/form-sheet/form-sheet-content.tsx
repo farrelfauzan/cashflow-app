@@ -1,0 +1,61 @@
+"use client";
+
+import { cn } from "cn";
+import type { ComponentProps } from "react";
+
+import { SheetContent } from "@/components/ui/sheet";
+import { useFormSheetContext } from "./form-sheet-context";
+import type { FormSheetWideLayout } from "./type";
+import { useSheetSwipe } from "./use-sheet-swipe";
+import { formSheetContentClass } from "./utils";
+
+type FormSheetContentProps = Omit<
+  ComponentProps<typeof SheetContent>,
+  | "side"
+  | "ref"
+  | "onPointerDown"
+  | "onPointerMove"
+  | "onPointerUp"
+  | "onPointerCancel"
+> & {
+  // From md up: the right-hand drawer (default) or a centred dialog.
+  wide?: FormSheetWideLayout;
+};
+
+// The panel of a FormSheet, laid out by CSS alone (board HP-Lembar). On the phone: a sheet from
+// the bottom, 92% of the screen tall, rounded on top, with a grab handle, above the home
+// indicator; swiping down on the handle or the header closes it. From md up: the right-hand
+// drawer, 470px wide and full height, sliding from the right, exactly as before; or, with
+// wide="dialog", the centred dialog the billing forms had.
+export function FormSheetContent({
+  wide = "drawer",
+  className,
+  children,
+  ...props
+}: FormSheetContentProps) {
+  const { contentRef, requestClose } = useFormSheetContext();
+  const swipe = useSheetSwipe(requestClose);
+
+  return (
+    <SheetContent
+      {...props}
+      side="bottom"
+      ref={contentRef}
+      onPointerDown={swipe.onPointerDown}
+      onPointerMove={swipe.onPointerMove}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+      className={cn(formSheetContentClass(wide), className)}
+    >
+      {/* -top-px: 8px from the sheet's outer edge, across its 1px top border. */}
+      <div
+        data-slot="form-sheet-handle"
+        aria-hidden="true"
+        className="absolute -top-px left-1/2 z-10 flex h-6 w-24 -translate-x-1/2 touch-none justify-center pt-2 md:hidden"
+      >
+        <span className="h-[5px] w-10 rounded-full bg-border" />
+      </div>
+      {children}
+    </SheetContent>
+  );
+}

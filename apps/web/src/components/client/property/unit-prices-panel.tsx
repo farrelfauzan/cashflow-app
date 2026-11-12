@@ -3,10 +3,10 @@
 import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { FormSheet } from "@/components/client/form-sheet/form-sheet";
+import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
 import {
-  Sheet,
   SheetClose,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -29,7 +29,8 @@ type UnitPricesPanelProps = {
 
 // "Harga unit", read-only, for a member who may read units but not change them (the Supervisor):
 // the unit's terms with their prices, then "Riwayat harga". Same side panel as the unit's form,
-// from the right on iPad and the whole screen on the phone.
+// from the right on iPad and desktop and a sheet from the bottom on the phone, like every panel
+// there. It holds no form, so it always closes at once.
 export function UnitPricesPanel({
   orgId,
   propertyName,
@@ -50,16 +51,13 @@ export function UnitPricesPanel({
   const open = panel.kind === "open" && unit !== undefined;
 
   return (
-    <Sheet
+    <FormSheet
       open={open}
       onOpenChange={(next) => {
         if (!next) onPanelChange({ kind: "closed" });
       }}
     >
-      <SheetContent
-        side="right"
-        className="w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none md:w-[470px]"
-      >
+      <FormSheetContent>
         <SheetHeader className="gap-1 border-b px-6 pt-6 pr-16 pb-4">
           <SheetTitle className="text-2xl font-bold">
             {UNIT_PRICES_TITLE}
@@ -105,7 +103,7 @@ export function UnitPricesPanel({
             </Button>
           </SheetClose>
         </div>
-      </SheetContent>
-    </Sheet>
+      </FormSheetContent>
+    </FormSheet>
   );
 }

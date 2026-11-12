@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
+import { FormSheet } from "@/components/client/form-sheet/form-sheet";
+import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
 import {
-  Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -24,7 +24,7 @@ type PropertyPanelProps = {
 };
 
 // The side panel for "Tambah properti" and "Ubah properti" (board Properti-Form.html): from the
-// right on iPad, the whole screen on the phone. Its save button is its primary action.
+// right on iPad and desktop, a sheet from the bottom on the phone (board HP-Lembar). Its save button is its primary action.
 export function PropertyPanel({
   orgId,
   organizationName,
@@ -47,16 +47,13 @@ export function PropertyPanel({
   const close = () => onPanelChange({ kind: "closed" });
 
   return (
-    <Sheet
+    <FormSheet
       open={open}
       onOpenChange={(next) => {
         if (!next) close();
       }}
     >
-      <SheetContent
-        side="right"
-        className="w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none md:w-[470px]"
-      >
+      <FormSheetContent>
         <SheetHeader className="gap-1 border-b px-6 pt-6 pr-16 pb-4">
           <SheetTitle className="text-2xl font-bold">
             {adding ? "Tambah properti" : "Ubah properti"}
@@ -80,7 +77,7 @@ export function PropertyPanel({
             }}
           />
         )}
-      </SheetContent>
-    </Sheet>
+      </FormSheetContent>
+    </FormSheet>
   );
 }

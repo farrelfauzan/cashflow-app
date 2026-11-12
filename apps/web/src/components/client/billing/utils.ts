@@ -855,3 +855,14 @@ export function promiseSavedToast(
     ? { tone: "caution", title: "Janji bayar diubah", description: tenantName }
     : { tone: "create", title: "Janji bayar dicatat", description: tenantName };
 }
+
+// The parts of "Koreksi nominal" and "Catat janji" in their FormSheetContent wide="dialog". On the
+// phone the header and the buttons stay put and the fields scroll between them, as in every form
+// sheet. From md up they lay out as the dialogs always did: the dialog itself scrolls, the fields
+// grow to their height, and the buttons sit 22px under the last field (its 18px gap and 4px).
+export const BILLING_DIALOG_HEADER_CLASS =
+  "flex-row items-start gap-3 border-b px-5 pt-5 pb-4 md:border-b-0 md:px-6 md:pt-6 md:pb-0";
+export const BILLING_DIALOG_BODY_CLASS =
+  "flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-5 py-5 md:flex-none md:overflow-visible md:px-6 md:pb-0";
+export const BILLING_DIALOG_FOOTER_CLASS =
+  "flex gap-2.5 border-t px-5 py-4 md:border-t-0 md:px-6 md:pt-[22px] md:pb-6";
