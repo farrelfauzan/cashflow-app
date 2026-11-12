@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
+import { FormSheet } from "@/components/client/form-sheet/form-sheet";
+import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
 import {
-  Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -30,7 +30,7 @@ type UnitPanelProps = {
 };
 
 // The side panel for "Tambah unit" and "Ubah unit" (board Properti-Unit-Form.html): from the right
-// on iPad, the whole screen on the phone. Its save button is its primary action. "Ubah harga"
+// on iPad and desktop, a sheet from the bottom on the phone (board HP-Lembar). Its save button is its primary action. "Ubah harga"
 // replaces the unit's form inside the same panel; the unit's form stays mounted, hidden, so
 // "Kembali" finds what was typed there.
 export function UnitPanel({
@@ -66,16 +66,13 @@ export function UnitPanel({
   const close = () => onPanelChange({ kind: "closed" });
 
   return (
-    <Sheet
+    <FormSheet
       open={open}
       onOpenChange={(next) => {
         if (!next) close();
       }}
     >
-      <SheetContent
-        side="right"
-        className="w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none md:w-[470px]"
-      >
+      <FormSheetContent>
         <SheetHeader className="gap-1 border-b px-6 pt-6 pr-16 pb-4">
           <SheetTitle className="text-2xl font-bold">
             {pricing ? "Ubah harga" : adding ? "Tambah unit" : "Ubah unit"}
@@ -129,7 +126,7 @@ export function UnitPanel({
             onBack={() => setView({ kind: "unit" })}
           />
         )}
-      </SheetContent>
-    </Sheet>
+      </FormSheetContent>
+    </FormSheet>
   );
 }

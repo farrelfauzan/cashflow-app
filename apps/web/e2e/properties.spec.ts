@@ -13,7 +13,7 @@ import {
 } from "./support/page-checks";
 import { minBodyFontPx, projectWord } from "./support/projects";
 import { openPropertyListPageOf } from "./support/property-fixtures";
-import { ORG_HOME_URL } from "./support/shell";
+import { isPhone, ORG_HOME_URL } from "./support/shell";
 import { HENDRA, SARI, type SeededStaff } from "./support/staff";
 
 // "Properti": the list with occupancy, a property's units with their tenants, and adding and
@@ -283,6 +283,13 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByRole("alert")).toBeVisible();
     await expect(panel).toBeVisible();
     await panel.getByRole("button", { name: "Batal" }).click();
+    // On the phone what was typed is unsaved, so the sheet asks first.
+    if (isPhone(testInfo)) {
+      await page
+        .getByRole("alertdialog", { name: "Tutup tanpa menyimpan?" })
+        .getByRole("button", { name: "Ya, tutup" })
+        .click();
+    }
     await expect(panel).toHaveCount(0);
 
     // Add a real one.
@@ -404,6 +411,13 @@ test.describe("Admin of the whole organization", () => {
     await expect(panel.getByLabel("Nama unit")).toBeFocused();
     await expect(panel.getByRole("alert")).toBeVisible();
     await panel.getByRole("button", { name: "Batal" }).click();
+    // On the phone what was typed is unsaved, so the sheet asks first.
+    if (isPhone(testInfo)) {
+      await page
+        .getByRole("alertdialog", { name: "Tutup tanpa menyimpan?" })
+        .getByRole("button", { name: "Ya, tutup" })
+        .click();
+    }
     await expect(panel).toHaveCount(0);
 
     // Change the first unit's label; its terms go as they were, still with no price.
@@ -424,12 +438,13 @@ test.describe("Admin of the whole organization", () => {
     await expect(visibleText(page, "Kamar 01A sudah disimpan.")).toBeVisible();
     await expect(unitRow(units, "Kamar 01A")).toContainText("Belum diisi");
 
-    // Back on the list, the property counts both units, none occupied.
+    // Back on the list (the page of it that was left, "‹" goes back in the history), the property
+    // counts both units, none occupied.
     await page
       .getByRole("main")
       .getByRole("link", { name: "Properti" })
       .click();
-    await expect(page).toHaveURL(/\/properties$/);
+    await expect(page).toHaveURL(/\/properties(\?page=\d+)?$/);
     await openPropertyListPageOf(page, name);
     const row = propertyRow(
       page.getByRole("list", { name: "Daftar properti" }),

@@ -5,8 +5,9 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { openListPageOf } from "./support/list-pages";
+import { openMembers } from "./support/members";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
-import { ORG_HOME_URL } from "./support/shell";
+import { isPhone } from "./support/shell";
 import { HENDRA } from "./support/staff";
 import { expectToast } from "./support/toast";
 
@@ -46,22 +47,6 @@ function memberName(testInfo: TestInfo, base: string): string {
   const project = projectWord(testInfo);
   const retry = testInfo.retry === 0 ? "" : ` r${testInfo.retry}`;
   return `${base} ${run} ${project}${retry}`;
-}
-
-async function openMembers(page: Page, organization: string) {
-  await page.goto("/organizations");
-  await page
-    .getByRole("list", { name: "Daftar usaha" })
-    .getByRole("link", { name: organization })
-    .click();
-  await expect(page).toHaveURL(ORG_HOME_URL);
-  await page.goto(`${page.url()}/members`);
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Anggota tim" }),
-  ).toBeVisible();
-  const list = page.getByRole("list", { name: "Daftar anggota" });
-  await expect(list.getByRole("listitem").first()).toBeVisible();
-  return list;
 }
 
 // Fills "Tambah anggota" and sends it. `property` limits the Karyawan role to that property.
@@ -304,6 +289,13 @@ test.describe("Admin of the whole organization", () => {
       0,
     );
     await panel.getByRole("button", { name: "Batal" }).click();
+    // On the phone a form with unsaved changes asks first (board HP-Lembar).
+    if (isPhone(testInfo)) {
+      await page
+        .getByRole("alertdialog", { name: "Tutup tanpa menyimpan?" })
+        .getByRole("button", { name: "Ya, tutup" })
+        .click();
+    }
     await expect(panel).toHaveCount(0);
 
     await inviteMember(page, name, phone);

@@ -34,7 +34,7 @@ export function PhoneTabBar({
     <nav
       aria-label="Menu utama"
       data-glass="chrome"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-2px_8px_rgba(30,42,43,0.05)] md:hidden ios:inset-x-3 ios:bottom-[max(24px,env(safe-area-inset-bottom))] ios:rounded-[30px] ios:border ios:p-1 ios:shadow-none"
+      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-2px_8px_rgba(30,42,43,0.05)] [view-transition-name:phone-tab-bar] md:hidden ios:inset-x-3 ios:bottom-[max(24px,env(safe-area-inset-bottom))] ios:rounded-[30px] ios:border ios:p-1 ios:shadow-none"
     >
       <ul className="flex">
         {phoneTabs(items).map((item) => {

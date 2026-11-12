@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-
+import { BackLink } from "@/components/client/page-motion/back-link";
 import { Button } from "@/components/ui/button";
 import { orgPath } from "@/lib/org-path";
 
@@ -28,7 +27,9 @@ export function TenantNotFound({ orgId }: TenantNotFoundProps) {
         variant="outline"
         className="h-12 rounded-xl border-[1.5px] bg-card px-5 text-base font-semibold"
       >
-        <Link href={orgPath(orgId, "tenants")}>Kembali ke daftar penyewa</Link>
+        <BackLink href={orgPath(orgId, "tenants")}>
+          Kembali ke daftar penyewa
+        </BackLink>
       </Button>
     </div>
   );

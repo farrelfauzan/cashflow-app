@@ -159,6 +159,163 @@
   }
 }
 
+/* Push and pop between pages on the phone (board HP-Pindah, T-097d; PageMotion and BackLink in
+   components/client/page-motion). The browser's snapshot of the whole screen (root) slides; the
+   top bar, the tab bar and the toasts have their own names and stay still on top of it.
+   - push (nav-forward), 280 ms ease-out: the new page comes in from the right with a shadow; the
+     old one moves 30% to the left and darkens a little.
+   - pop (nav-back), 240 ms ease-out: the reverse, the page on top leaves to the right.
+   - reduced motion: no slide, the new page fades in over 150 ms.
+   The direction is the navigation's type, or data-page-motion on <html> when the ‹ link goes back
+   in the history (a view transition React does not start, so it has no type). iPad and desktop,
+   and every navigation without either (the tab bar, a search, the browser's Back and Forward),
+   change the page at once. A browser
+   without view transitions or :active-view-transition-type() changes it at once too. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-group(*.page-motion),
+::view-transition-old(*.page-motion),
+::view-transition-new(*.page-motion),
+::view-transition-group(phone-top-bar),
+::view-transition-group(phone-tab-bar),
+::view-transition-group(toasts),
+::view-transition-new(phone-top-bar),
+::view-transition-new(phone-tab-bar),
+::view-transition-new(toasts) {
+  animation: none;
+}
+
+::view-transition-old(phone-top-bar),
+::view-transition-old(phone-tab-bar),
+::view-transition-old(toasts) {
+  display: none;
+}
+
+[data-sonner-toaster] {
+  view-transition-name: toasts;
+}
+
+@media (width < 48rem) {
+  :root:is(
+      :active-view-transition-type(nav-forward),
+      [data-page-motion="nav-forward"]
+    )::view-transition-old(root) {
+    animation: page-push-out 280ms ease-out both;
+  }
+  :root:is(
+      :active-view-transition-type(nav-forward),
+      [data-page-motion="nav-forward"]
+    )::view-transition-new(root) {
+    animation: page-push-in 280ms ease-out both;
+    box-shadow: var(--page-motion-shadow);
+  }
+  :root:is(
+      :active-view-transition-type(nav-back),
+      [data-page-motion="nav-back"]
+    )::view-transition-old(root) {
+    z-index: 1;
+    animation: page-pop-out 240ms ease-out both;
+    box-shadow: var(--page-motion-shadow);
+  }
+  :root:is(
+      :active-view-transition-type(nav-back),
+      [data-page-motion="nav-back"]
+    )::view-transition-new(root) {
+    animation: page-pop-in 240ms ease-out both;
+  }
+}
+
+@media (width < 48rem) and (prefers-reduced-motion: reduce) {
+  :root:is(
+      :active-view-transition-type(nav-forward),
+      [data-page-motion="nav-forward"]
+    )::view-transition-old(root),
+  :root:is(
+      :active-view-transition-type(nav-back),
+      [data-page-motion="nav-back"]
+    )::view-transition-old(root) {
+    z-index: auto;
+    animation: none;
+    box-shadow: none;
+  }
+  :root:is(
+      :active-view-transition-type(nav-forward),
+      [data-page-motion="nav-forward"]
+    )::view-transition-new(root),
+  :root:is(
+      :active-view-transition-type(nav-back),
+      [data-page-motion="nav-back"]
+    )::view-transition-new(root) {
+    animation: page-fade-in 150ms ease-out both;
+    box-shadow: none;
+  }
+}
+
+:root {
+  --page-motion-shadow: -10px 0 24px
+    color-mix(in srgb, var(--palette-ink) 18%, transparent);
+}
+
+@keyframes page-push-in {
+  from {
+    translate: 100% 0;
+  }
+}
+
+@keyframes page-push-out {
+  to {
+    translate: -30% 0;
+    filter: brightness(0.92);
+  }
+}
+
+@keyframes page-pop-in {
+  from {
+    translate: -30% 0;
+    filter: brightness(0.92);
+  }
+}
+
+@keyframes page-pop-out {
+  to {
+    translate: 100% 0;
+  }
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* A list row or menu row held down on the phone (board HP-Tekan): a darker surface and border,
+   1.5% smaller (buttons shrink 3%), over 100 ms, back when the finger lifts. iPad and desktop keep
+   their hover. With reduced motion the row does not shrink. */
+@utility press-row {
+  transition-property: background-color, border-color, scale;
+  transition-duration: 100ms;
+  @media (width < 48rem) {
+    &:active {
+      background-color: var(--secondary);
+      border-color: color-mix(
+        in srgb,
+        var(--palette-line),
+        var(--palette-ink) 10%
+      );
+      scale: 0.985;
+    }
+  }
+  @media (width < 48rem) and (prefers-reduced-motion: reduce) {
+    &:active {
+      scale: none;
+    }
+  }
+}
+
 /* The iOS glass (T-097e, board iOS-Aturan), only on chrome that floats over the page: the phone's
    tab bar and top bar, the iPad side menu and the toasts; never behind body text, a form or a
    table. An element opts in with data-glass ("chrome", or a toast's tone) and keeps its Tailwind

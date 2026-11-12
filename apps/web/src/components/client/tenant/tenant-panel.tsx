@@ -3,6 +3,8 @@
 import { useIsMutating } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
+import { FormSheet } from "@/components/client/form-sheet/form-sheet";
+import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
 import { CancelBookingForm } from "@/components/client/lease/cancel-booking-form";
 import { LeaseChargesForm } from "@/components/client/lease/lease-charges-form";
 import { LeaseEditForm } from "@/components/client/lease/lease-edit-form";
@@ -15,8 +17,6 @@ import { METER_PANEL_TITLE } from "@/components/client/meter/utils";
 import { PaymentRecorded } from "@/components/client/payment/payment-recorded";
 import { RecordPaymentForm } from "@/components/client/payment/record-payment-form";
 import {
-  Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -63,7 +63,8 @@ type TenantPanelProps = {
 };
 
 // The side panel of the tenant screens (boards Penyewa-Tambah.dc.html and Sewa-Baru.dc.html):
-// from the right on iPad, the whole screen on the phone. "Tambah penyewa" goes on to "Penyewa
+// from the right on iPad and desktop, a sheet from the bottom on the phone (board HP-Lembar),
+// which asks before a close drops unsaved changes. "Tambah penyewa" goes on to "Penyewa
 // ditambahkan" and from there to "Sewakan unit" in the same panel. The lease form gets the wide
 // panel, so "Mulai tagih dari" stays in view next to the other fields, and so does "Ubah sewa"
 // (Sewa-Ubah.dc.html). "Biaya tambahan", "Rencana keluar", "Catat pindah keluar" and "Batalkan
@@ -286,19 +287,17 @@ export function TenantPanel({
   }
 
   return (
-    <Sheet
+    <FormSheet
       open={panel.kind !== "closed"}
       onOpenChange={(next) => {
-        if (!next && !recording) close();
+        if (!next) close();
       }}
+      busy={recording}
     >
-      <SheetContent
-        side="right"
+      <FormSheetContent
         className={cn(
-          "w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none",
-          shown?.kind === "lease" || shown?.kind === "editLease"
-            ? "md:w-[920px] md:max-w-full"
-            : "md:w-[470px]",
+          (shown?.kind === "lease" || shown?.kind === "editLease") &&
+            "md:w-[920px] md:max-w-full",
         )}
       >
         <SheetHeader className="gap-1 border-b px-6 pt-6 pr-16 pb-4">
@@ -308,7 +307,7 @@ export function TenantPanel({
           </SheetDescription>
         </SheetHeader>
         {body}
-      </SheetContent>
-    </Sheet>
+      </FormSheetContent>
+    </FormSheet>
   );
 }

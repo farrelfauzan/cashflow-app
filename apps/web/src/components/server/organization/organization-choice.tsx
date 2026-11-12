@@ -14,7 +14,7 @@ export function OrganizationChoice({ organization }: OrganizationChoiceProps) {
   return (
     <Link
       href={orgPath(organization.id)}
-      className="flex min-h-[72px] items-center gap-3.5 rounded-[14px] border bg-card px-4 py-3 shadow-xs transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-[88px] md:gap-[18px] md:rounded-2xl md:px-[22px] md:py-4"
+      className="flex min-h-[72px] press-row items-center gap-3.5 rounded-[14px] border bg-card px-4 py-3 shadow-xs hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-[88px] md:gap-[18px] md:rounded-2xl md:px-[22px] md:py-4"
     >
       <OrgTile
         name={organization.name}

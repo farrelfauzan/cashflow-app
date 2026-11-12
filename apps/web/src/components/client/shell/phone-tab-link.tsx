@@ -16,7 +16,8 @@ type PhoneTabLinkProps = {
 
 // One tab of the phone's tab bar (board HP-Tab): the icon on a mint pill and a bold label when it
 // is the current section, which is also marked for screen readers. 58px tall; 56px in the
-// floating bar on iOS, where the other tabs are ink as on the board (iOS-HP-Tab).
+// floating bar on iOS, where the other tabs are ink as on the board (iOS-HP-Tab). While pressed
+// the mint pill shows behind any tab's icon (board HP-Tekan).
 export function PhoneTabLink({ href, exact, label, icon }: PhoneTabLinkProps) {
   const pathname = usePathname();
   const current =
@@ -33,7 +34,7 @@ export function PhoneTabLink({ href, exact, label, icon }: PhoneTabLinkProps) {
     >
       <span
         className={cn(
-          "flex h-[30px] w-[52px] items-center justify-center rounded-full ios:h-7 ios:w-[50px] [&_svg]:size-[22px]",
+          "flex h-[30px] w-[52px] items-center justify-center rounded-full transition-colors duration-100 group-active:bg-accent ios:h-7 ios:w-[50px] [&_svg]:size-[22px]",
           current && "bg-accent text-primary",
         )}
       >

@@ -14,7 +14,7 @@ export function MobileHeader({ organizationName, detail }: MobileHeaderProps) {
   return (
     <header
       data-glass="chrome"
-      className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-secondary px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 md:hidden ios:top-[calc(env(safe-area-inset-top)+8px)] ios:mx-2 ios:mt-[calc(env(safe-area-inset-top)+8px)] ios:rounded-[18px] ios:border ios:bg-card ios:px-3 ios:py-2"
+      className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-secondary px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 [view-transition-name:phone-top-bar] md:hidden ios:top-[calc(env(safe-area-inset-top)+8px)] ios:mx-2 ios:mt-[calc(env(safe-area-inset-top)+8px)] ios:rounded-[18px] ios:border ios:bg-card ios:px-3 ios:py-2"
     >
       <OrgTile
         name={organizationName}

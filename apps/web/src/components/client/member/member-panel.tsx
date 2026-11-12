@@ -2,9 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 
+import { FormSheet } from "@/components/client/form-sheet/form-sheet";
+import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
 import {
-  Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -28,8 +28,10 @@ type MemberPanelProps = {
   onNotice: (notice: string) => void;
 };
 
-// The side panel of the members screen (board Members.dc.html): from the right on iPad, the
-// whole screen on the phone. One panel at a time; its save button is its primary action.
+// The side panel of the members screen (board Members.dc.html): from the right on iPad and
+// desktop, a sheet from the bottom on the phone (board HP-Lembar). One panel at a time; its save
+// button is its primary action. After a save the panel changes itself (onPanelChange), which
+// never asks about unsaved changes; only a close the person asks for does, on the phone.
 export function MemberPanel({
   orgId,
   organizationName,
@@ -104,16 +106,13 @@ export function MemberPanel({
   }
 
   return (
-    <Sheet
+    <FormSheet
       open={open}
       onOpenChange={(next) => {
         if (!next) close();
       }}
     >
-      <SheetContent
-        side="right"
-        className="w-full gap-0 bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] sm:max-w-none md:w-[470px]"
-      >
+      <FormSheetContent>
         <SheetHeader className="gap-1 border-b px-6 pt-6 pr-16 pb-4">
           <SheetTitle className="text-2xl font-bold">{title}</SheetTitle>
           <SheetDescription className="text-base text-muted-foreground">
@@ -121,7 +120,7 @@ export function MemberPanel({
           </SheetDescription>
         </SheetHeader>
         {body}
-      </SheetContent>
-    </Sheet>
+      </FormSheetContent>
+    </FormSheet>
   );
 }

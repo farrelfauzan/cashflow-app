@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { PageMotion } from "@/components/client/page-motion/page-motion";
 import { OrgAbilityProvider } from "@/components/client/shell/org-ability-provider";
 import { SidebarRail } from "@/components/client/shell/sidebar-rail";
 import {
@@ -84,6 +85,7 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
         roleLine={moreMenuRoleLine(roles, organization.name)}
         canSwitch={me.organizations.length > 1}
       />
+      <PageMotion />
     </div>
   );
 }
