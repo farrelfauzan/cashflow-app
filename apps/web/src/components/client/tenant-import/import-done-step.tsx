@@ -3,6 +3,7 @@
 import { Check } from "lucide-react";
 import Link from "next/link";
 
+import { BACK_TYPES } from "@/components/client/page-motion/utils";
 import { Button } from "@/components/ui/button";
 import type { ImportSummary } from "@/lib/api/generated/model";
 import { orgPath } from "@/lib/org-path";
@@ -84,7 +85,9 @@ export function ImportDoneStep({
           asChild
           className="hidden h-12 rounded-xl px-5 text-[17px] font-semibold lg:inline-flex"
         >
-          <Link href={listHref}>Lihat daftar penyewa</Link>
+          <Link href={listHref} transitionTypes={BACK_TYPES}>
+            Lihat daftar penyewa
+          </Link>
         </Button>
       </div>
       <ImportPhoneFooter>
@@ -92,7 +95,9 @@ export function ImportDoneStep({
           asChild
           className="h-13 w-full rounded-xl px-5 text-[17px] font-semibold"
         >
-          <Link href={listHref}>Lihat daftar penyewa</Link>
+          <Link href={listHref} transitionTypes={BACK_TYPES}>
+            Lihat daftar penyewa
+          </Link>
         </Button>
       </ImportPhoneFooter>
     </div>

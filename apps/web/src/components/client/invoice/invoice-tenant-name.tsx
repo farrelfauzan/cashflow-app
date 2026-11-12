@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { FORWARD_TYPES } from "@/components/client/page-motion/utils";
 import { cn } from "@/lib/utils";
 
 type InvoiceTenantNameProps = {
@@ -23,6 +24,7 @@ export function InvoiceTenantName({
   }
   return (
     <Link
+      transitionTypes={FORWARD_TYPES}
       href={href}
       className={cn(
         "-my-2.5 inline-flex min-h-11 items-center hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",

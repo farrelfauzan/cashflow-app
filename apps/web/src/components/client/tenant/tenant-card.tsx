@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import { FORWARD_TYPES } from "@/components/client/page-motion/utils";
+
 import { unitText, FLAGGED_CHIP } from "./utils";
 import type { TenantRowView } from "./type";
 
@@ -17,8 +19,9 @@ export function TenantCard({ href, row }: TenantCardProps) {
   return (
     <li>
       <Link
+        transitionTypes={FORWARD_TYPES}
         href={href}
-        className="flex flex-col gap-1.5 rounded-[14px] border bg-card px-4 py-3.5 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex press-row flex-col gap-1.5 rounded-[14px] border bg-card px-4 py-3.5 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         <div className="flex items-start justify-between gap-2.5">
           <div className="flex min-w-0 flex-col gap-px">

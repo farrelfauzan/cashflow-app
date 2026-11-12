@@ -1,5 +1,6 @@
 "use client";
 
+import { FORWARD_TYPES } from "@/components/client/page-motion/utils";
 import { TABLE_COLUMN_GAP } from "@/components/client/list/utils";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -36,6 +37,7 @@ export function PropertyTableRow({
     >
       <div className="flex min-w-0 flex-col gap-0.5">
         <Link
+          transitionTypes={FORWARD_TYPES}
           href={href}
           className="truncate text-[17px] font-semibold hover:underline"
         >
@@ -58,7 +60,11 @@ export function PropertyTableRow({
           variant="outline"
           className="rounded-xl border-[1.5px] bg-card px-4 text-base font-semibold"
         >
-          <Link href={href} aria-label={`Buka unit ${property.name}`}>
+          <Link
+            transitionTypes={FORWARD_TYPES}
+            href={href}
+            aria-label={`Buka unit ${property.name}`}
+          >
             Buka
           </Link>
         </Button>

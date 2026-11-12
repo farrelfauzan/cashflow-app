@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronLeft, Plus } from "lucide-react";
-import Link from "next/link";
 
+import { BackLink } from "@/components/client/page-motion/back-link";
 import { RECORD_PROMISE_TEXT } from "@/components/client/billing/utils";
 import { COPY_PAY_LINK_TEXT } from "@/components/client/payment-link/utils";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ export function TenantDetailHeader({
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-5">
       <div className="flex flex-col gap-1.5">
-        <Link
+        <BackLink
           href={orgPath(orgId, "tenants")}
           className="-ml-1 inline-flex min-h-11 items-center gap-1 self-start rounded-md pr-2 pl-1 text-[15px] font-semibold text-primary transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:text-base"
         >
@@ -55,7 +55,7 @@ export function TenantDetailHeader({
             strokeWidth={2.2}
           />
           Penyewa
-        </Link>
+        </BackLink>
         <h1 className="text-[26px] font-bold tracking-[-0.01em] md:text-[34px]">
           {name}
         </h1>

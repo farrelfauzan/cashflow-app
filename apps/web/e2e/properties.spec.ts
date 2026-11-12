@@ -438,12 +438,13 @@ test.describe("Admin of the whole organization", () => {
     await expect(visibleText(page, "Kamar 01A sudah disimpan.")).toBeVisible();
     await expect(unitRow(units, "Kamar 01A")).toContainText("Belum diisi");
 
-    // Back on the list, the property counts both units, none occupied.
+    // Back on the list (the page of it that was left, "‹" goes back in the history), the property
+    // counts both units, none occupied.
     await page
       .getByRole("main")
       .getByRole("link", { name: "Properti" })
       .click();
-    await expect(page).toHaveURL(/\/properties$/);
+    await expect(page).toHaveURL(/\/properties(\?page=\d+)?$/);
     await openPropertyListPageOf(page, name);
     const row = propertyRow(
       page.getByRole("list", { name: "Daftar properti" }),

@@ -11,7 +11,7 @@ type MobileHeaderProps = {
 // menu is always open.
 export function MobileHeader({ organizationName, detail }: MobileHeaderProps) {
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-secondary px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 md:hidden">
+    <header className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-secondary px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 [view-transition-name:phone-top-bar] md:hidden">
       <OrgTile
         name={organizationName}
         tone="solid"

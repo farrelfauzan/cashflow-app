@@ -32,7 +32,7 @@ export function PhoneTabBar({
   return (
     <nav
       aria-label="Menu utama"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-2px_8px_rgba(30,42,43,0.05)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-2px_8px_rgba(30,42,43,0.05)] [view-transition-name:phone-tab-bar] md:hidden"
     >
       <ul className="flex">
         {phoneTabs(items).map((item) => {

@@ -18,7 +18,7 @@ type OrgMoreMenuProps = {
 };
 
 const ROW_CLASS =
-  "flex min-h-14 items-center gap-3.5 border-b px-1 text-[17px] font-semibold text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring [&>svg]:shrink-0";
+  "press-row flex min-h-14 items-center gap-3.5 border-b px-1 text-[17px] font-semibold text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring [&>svg]:shrink-0";
 
 // What "Lainnya" holds on the phone (board HP-Lainnya): who is signed in, the sections that are
 // not tabs, "Ganti usaha" (to the organization picker), "Telegram" where the environment has a

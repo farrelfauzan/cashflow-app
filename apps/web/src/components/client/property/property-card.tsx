@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { FORWARD_TYPES } from "@/components/client/page-motion/utils";
 import { Button } from "@/components/ui/button";
 import type { Property } from "@/lib/api/generated/model";
 import { orgPath } from "@/lib/org-path";
@@ -30,7 +31,11 @@ export function PropertyCard({
     <li className="flex flex-col gap-2.5 rounded-[14px] border bg-card px-4 py-3.5">
       <div className="flex items-start justify-between gap-2.5">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <Link href={href} className="text-[17px] font-semibold">
+          <Link
+            transitionTypes={FORWARD_TYPES}
+            href={href}
+            className="text-[17px] font-semibold"
+          >
             {property.name}
           </Link>
           <span className="text-sm text-muted-foreground">
@@ -53,7 +58,11 @@ export function PropertyCard({
           variant="outline"
           className="flex-1 rounded-xl border-[1.5px] bg-card text-[15px] font-semibold"
         >
-          <Link href={href} aria-label={`Buka unit ${property.name}`}>
+          <Link
+            transitionTypes={FORWARD_TYPES}
+            href={href}
+            aria-label={`Buka unit ${property.name}`}
+          >
             Buka unit
           </Link>
         </Button>
