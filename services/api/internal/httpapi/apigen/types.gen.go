@@ -375,6 +375,48 @@ func (e RoleGrantRole) Valid() bool {
 	}
 }
 
+// Defines values for UploadPurpose.
+const (
+	CashDeposit UploadPurpose = "cash_deposit"
+	CashReceipt UploadPurpose = "cash_receipt"
+)
+
+// Valid indicates whether the value is a known member of the UploadPurpose enum.
+func (e UploadPurpose) Valid() bool {
+	switch e {
+	case CashDeposit:
+		return true
+	case CashReceipt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UploadStatus.
+const (
+	UploadStatusClean    UploadStatus = "clean"
+	UploadStatusInfected UploadStatus = "infected"
+	UploadStatusPending  UploadStatus = "pending"
+	UploadStatusRejected UploadStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the UploadStatus enum.
+func (e UploadStatus) Valid() bool {
+	switch e {
+	case UploadStatusClean:
+		return true
+	case UploadStatusInfected:
+		return true
+	case UploadStatusPending:
+		return true
+	case UploadStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListInvoicesParamsStatus.
 const (
 	ListInvoicesParamsStatusCancelled ListInvoicesParamsStatus = "cancelled"
@@ -2177,6 +2219,77 @@ type UnitTermInput struct {
 	Price *int64 `json:"price,omitempty"`
 }
 
+// Upload defines model for Upload.
+type Upload struct {
+	// CompletedAt When completeUpload was first called.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// ContentType The type found in the file's content by the scan; absent while pending.
+	//
+	// Example: image/jpeg
+	ContentType       *string    `json:"contentType,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	DownloadExpiresAt *time.Time `json:"downloadExpiresAt,omitempty"`
+
+	// DownloadUrl Only when status is clean (getUpload only): a short-lived link that downloads the file as an attachment. Do not store it; ask getUpload again for a new one.
+	DownloadUrl *string            `json:"downloadUrl,omitempty"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+	Purpose UploadPurpose `json:"purpose"`
+
+	// ScannedAt When the scan decided the status.
+	ScannedAt *time.Time `json:"scannedAt,omitempty"`
+
+	// Size The declared size in bytes.
+	Size int64 `json:"size"`
+
+	// Status pending until the scan has run; clean (can be downloaded); rejected (not a JPEG, PNG or WebP image, not the declared size, larger than 10 MB, or the file never arrived); infected (malware found; the file is quarantined and an admin sees it). Only pending changes, once.
+	Status UploadStatus `json:"status"`
+
+	// TenantId The tenant of a cash_receipt.
+	TenantId *openapi_types.UUID `json:"tenantId,omitempty"`
+}
+
+// UploadInput defines model for UploadInput.
+type UploadInput struct {
+	// ContentType The file's type as the browser reports it; image/jpeg, image/png or image/webp.
+	//
+	// Example: image/jpeg
+	ContentType string `json:"contentType"`
+
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+	Purpose UploadPurpose `json:"purpose"`
+
+	// Size The file's exact size in bytes, at most 10 MB (10485760).
+	//
+	// Example: 2483120
+	Size int64 `json:"size"`
+
+	// TenantId Required for cash_receipt; must be left out for cash_deposit.
+	TenantId *openapi_types.UUID `json:"tenantId,omitempty"`
+}
+
+// UploadPurpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+type UploadPurpose string
+
+// UploadStatus pending until the scan has run; clean (can be downloaded); rejected (not a JPEG, PNG or WebP image, not the declared size, larger than 10 MB, or the file never arrived); infected (malware found; the file is quarantined and an admin sees it). Only pending changes, once.
+type UploadStatus string
+
+// UploadTicket defines model for UploadTicket.
+type UploadTicket struct {
+	PutExpiresAt time.Time `json:"putExpiresAt"`
+
+	// PutHeaders Headers the PUT must carry exactly, such as Content-Type.
+	//
+	// Example: {"Content-Type":"image/jpeg"}
+	PutHeaders map[string]string `json:"putHeaders"`
+
+	// PutUrl Where to PUT the file body. Valid until putExpiresAt; never log it.
+	PutUrl string `json:"putUrl"`
+	Upload Upload `json:"upload"`
+}
+
 // User defines model for User.
 type User struct {
 	Id   openapi_types.UUID `json:"id"`
@@ -2212,6 +2325,9 @@ type Search = string
 
 // TenantId defines model for TenantId.
 type TenantId = openapi_types.UUID
+
+// UploadId defines model for UploadId.
+type UploadId = openapi_types.UUID
 
 // GetDashboardParams defines parameters for GetDashboard.
 type GetDashboardParams struct {
@@ -2431,6 +2547,9 @@ type UpdateUnitJSONRequestBody = UnitInput
 
 // CreateUnitPriceJSONRequestBody defines body for CreateUnitPrice for application/json ContentType.
 type CreateUnitPriceJSONRequestBody = UnitPriceInput
+
+// CreateUploadJSONRequestBody defines body for CreateUpload for application/json ContentType.
+type CreateUploadJSONRequestBody = UploadInput
 
 // MakePaymentPromiseJSONRequestBody defines body for MakePaymentPromise for application/json ContentType.
 type MakePaymentPromiseJSONRequestBody = MakePaymentPromiseRequest

@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 
@@ -30,9 +32,13 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/scan/clamd"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice/noticetask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/storage/s3store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload/uploadtask"
 )
 
 func main() {
@@ -40,6 +46,46 @@ func main() {
 		fmt.Fprintln(os.Stderr, "worker:", err)
 		os.Exit(1)
 	}
+}
+
+// registerUploads adds the upload scan and its reconcile (S6-1) when the worker has a bucket and
+// clamd. Without STORAGE_* settings, which config.LoadWorker allows only in development, it
+// registers nothing.
+func registerUploads(ctx context.Context, cfg config.Worker, st *store.Store, az *authz.Service, client *asynq.Client,
+	clk clock.Clock, log *slog.Logger, mux *asynq.ServeMux, sched *asynq.Scheduler) error {
+	if !cfg.Storage.Enabled() {
+		log.Info("upload scans off: no STORAGE_* settings")
+		return nil
+	}
+	bucket, err := s3store.New(s3store.Config{
+		Endpoint: cfg.Storage.Endpoint, PresignEndpoint: cfg.Storage.PresignEndpoint, Bucket: cfg.Storage.Bucket,
+		Region: cfg.Storage.Region, AccessKeyID: cfg.Storage.AccessKeyID, SecretAccessKey: cfg.Storage.SecretAccessKey,
+		PathStyle: cfg.Storage.PathStyle,
+	})
+	if err != nil {
+		return err
+	}
+	scanner, err := clamd.New(cfg.ClamAVAddr)
+	if err != nil {
+		return err
+	}
+	// clamd loads its signatures for a minute or two after it starts, so a failed ping only
+	// warns: scans fail and are retried until it answers.
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := scanner.Ping(pingCtx); err != nil {
+		log.Warn("clamd does not answer yet; upload scans wait for it", "clamav", cfg.ClamAVAddr, "error", err)
+	}
+	log.Info("upload scans on", "storage", cfg.Storage, "clamav", cfg.ClamAVAddr)
+	return uploadtask.Worker{
+		Checker: upload.NewChecker(upload.CheckerDeps{
+			Store: st, Objects: bucket, Scanner: scanner, Audit: az, Clock: clk, Log: log,
+		}),
+		Orgs:     st,
+		Enqueuer: uploadtask.NewClient(client),
+		Clock:    clk,
+		Log:      log,
+	}.Register(mux, sched)
 }
 
 func run() error {
@@ -166,6 +212,9 @@ func run() error {
 		sending.Also = append(sending.Also, noticetask.Sweeper{Sender: notices, Queue: noticetask.NewClient(client)})
 	}
 	if err := sending.Register(mux, sched); err != nil {
+		return err
+	}
+	if err := registerUploads(ctx, cfg, st, az, client, clk, log, mux, sched); err != nil {
 		return err
 	}
 

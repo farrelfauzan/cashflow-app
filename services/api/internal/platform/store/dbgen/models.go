@@ -447,6 +447,21 @@ type UnitPrice struct {
 	CreatedAt            time.Time
 }
 
+type Upload struct {
+	ID                    uuid.UUID
+	OrganizationID        uuid.UUID
+	Purpose               string
+	TenantID              uuid.NullUUID
+	ObjectKey             string
+	DeclaredSize          int64
+	ContentType           *string
+	Status                string
+	UploadedByStaffUserID uuid.UUID
+	CreatedAt             time.Time
+	CompletedAt           *time.Time
+	ScannedAt             *time.Time
+}
+
 type VisitTask struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

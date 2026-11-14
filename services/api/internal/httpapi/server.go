@@ -28,6 +28,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
 )
 
 const (
@@ -59,6 +60,10 @@ type Deps struct {
 	QRIS *qris.Service
 	// Promises makes and lists tenants' payment promises, from the payment page and for members.
 	Promises *promise.Service
+	// Uploads starts, completes and reads staff photo uploads (S6-1). Nil when this server has no
+	// file storage (development without STORAGE_*): the upload routes then answer 503
+	// uploads_unavailable.
+	Uploads *upload.Service
 	// Webhooks handles AutoGoPay's callbacks.
 	Webhooks *qris.Webhook
 	// TelegramCodes makes the payment page's one-time Telegram deep links (decision 42, demo
@@ -191,6 +196,9 @@ func New(d Deps) *Server {
 				r.Get("/metered-charges/missing", s.listMissingMeterReadings)
 				r.Get("/charge-types", s.listChargeTypes)
 				r.Post("/charge-types", s.createChargeType)
+				r.Post("/uploads", s.createUpload)
+				r.Get("/uploads/{uploadID}", s.getUpload)
+				r.Post("/uploads/{uploadID}/complete", s.completeUpload)
 				r.Post("/imports/tenants", s.importTenants)
 				r.Get("/imports/tenants/template", s.tenantImportTemplate)
 			})

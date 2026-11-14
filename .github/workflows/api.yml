@@ -36,5 +36,9 @@ jobs:
         run: go test -race ./...
       - name: Integration tests
         run: go test -race -tags integration ./...
+      # The clamd adapter against a real ClamAV (slow: clamd loads its signatures first), so it has
+      # its own build tag and step.
+      - name: ClamAV test
+        run: go test -race -tags clamav -run TestAgainstClamAV ./internal/scan/clamd/
       - name: Vulnerability check
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
