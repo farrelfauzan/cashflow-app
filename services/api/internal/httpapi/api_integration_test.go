@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -35,7 +37,24 @@ func newClient(t *testing.T, base string) *client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
-	return &client{t: t, base: base, http: &http.Client{Jar: jar}}
+	return &client{t: t, base: base, http: &http.Client{Jar: clockFreeJar{jar}}}
+}
+
+// clockFreeJar keeps cookies without their Expires date. The API sets a session cookie's expiry
+// from the test's fake clock, while cookiejar compares it with the real time, so a test whose
+// clock is more than 30 days behind today would lose its session cookie and get 401s. The API
+// still checks a session's expiry itself, against the fake clock; a cookie the API clears
+// (Max-Age below zero) is still removed.
+type clockFreeJar struct{ http.CookieJar }
+
+func (j clockFreeJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	kept := make([]*http.Cookie, len(cookies))
+	for i, c := range cookies {
+		cp := *c //nolint:gosec // G124: a copy of the API's own cookie, attributes unchanged
+		cp.Expires, cp.RawExpires = time.Time{}, ""
+		kept[i] = &cp
+	}
+	j.CookieJar.SetCookies(u, kept)
 }
 
 // result is what a test needs from a response. The body is already read and closed.
