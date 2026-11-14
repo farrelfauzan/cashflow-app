@@ -73,11 +73,12 @@ type CashTotal struct {
 	Count  int
 }
 
-// FieldCashPayment is one cash payment a member recorded from a tenant today.
+// FieldCashPayment is one cash payment a member recorded from a tenant today, with its photo.
 type FieldCashPayment struct {
 	PaymentID  uuid.UUID
 	Amount     int64 // net of its corrections
 	RecordedAt time.Time
+	Photo      ReceiptPhoto
 }
 
 // FieldCash is the cash a member recorded from one tenant today: the total, how many payments,
@@ -186,9 +187,19 @@ func fieldTenants(ctx context.Context, q *dbgen.Queries, org uuid.UUID, collecto
 	if err != nil {
 		return nil, fmt.Errorf("listing today's cash of the field list: %w", err)
 	}
+	paymentIDs := make([]uuid.UUID, len(cashRows))
+	for i, c := range cashRows {
+		paymentIDs[i] = c.ID
+	}
+	photos, err := currentReceiptPhotos(ctx, q, org, paymentIDs)
+	if err != nil {
+		return nil, err
+	}
 	cash := map[uuid.UUID][]FieldCashPayment{}
 	for _, c := range cashRows {
-		cash[c.TenantID] = append(cash[c.TenantID], FieldCashPayment{PaymentID: c.ID, Amount: c.Net, RecordedAt: c.CreatedAt})
+		cash[c.TenantID] = append(cash[c.TenantID], FieldCashPayment{
+			PaymentID: c.ID, Amount: c.Net, RecordedAt: c.CreatedAt, Photo: photos[c.ID],
+		})
 	}
 	for _, r := range rows {
 		item, err := fieldTenant(r, now)

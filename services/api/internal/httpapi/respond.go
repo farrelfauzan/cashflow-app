@@ -50,6 +50,14 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, billing.ErrRequestIDReused):
 		s.writeErrorField(w, http.StatusConflict, "request_id_reused",
 			"Permintaan ini sudah dipakai untuk data lain. Muat ulang halaman lalu coba lagi.", "requestId")
+	case errors.Is(err, billing.ErrReceiptPhotoAttached):
+		s.writeError(w, http.StatusConflict, "receipt_photo_attached", "Pembayaran ini sudah punya foto.")
+	case errors.Is(err, billing.ErrReceiptPhotoInvalid):
+		s.writeErrorField(w, http.StatusBadRequest, "receipt_photo_upload_invalid",
+			"Foto ini tidak bisa dipakai untuk pembayaran ini. Ambil foto lagi.", "uploadId")
+	case errors.Is(err, billing.ErrReceiptPhotoRefused):
+		s.writeErrorField(w, http.StatusConflict, "receipt_photo_upload_refused",
+			"Foto ini ditolak saat diperiksa. Ambil foto lagi.", "uploadId")
 	case errors.Is(err, billing.ErrCorrectionNoChange):
 		s.writeErrorField(w, http.StatusConflict, "correction_no_change",
 			"Nominal baru sama dengan nominal sekarang. Tidak ada yang dikoreksi.", "newAmount")

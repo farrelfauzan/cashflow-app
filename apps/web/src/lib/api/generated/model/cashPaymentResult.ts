@@ -6,7 +6,10 @@
  */
 import type { PaymentReceipt } from './paymentReceipt';
 import type { PaymentResult } from './paymentResult';
+import type { ReceiptPhoto } from './receiptPhoto';
 
 export type CashPaymentResult = PaymentResult & {
   receipt: PaymentReceipt;
+  /** status missing right after recording ("foto belum ada"); a repeated request answers the photo now. attachCashPaymentPhoto attaches it. */
+  photo: ReceiptPhoto;
 };

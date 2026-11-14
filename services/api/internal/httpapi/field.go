@@ -42,7 +42,31 @@ func (s *Server) recordCashPayment(w http.ResponseWriter, r *http.Request) {
 		Payment: pr.Payment, Paid: pr.Paid,
 		Outstanding: pr.Outstanding, Overdue: pr.Overdue, OldestUnpaidDueDate: pr.OldestUnpaidDueDate, Credit: pr.Credit,
 		Receipt: apigen.PaymentReceipt{Status: apigen.PaymentReceiptStatus(res.ReceiptStatus)},
+		Photo:   toAPIReceiptPhoto(res.Photo),
 	})
+}
+
+func (s *Server) attachCashPaymentPhoto(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "paymentID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	var body apigen.AttachCashPaymentPhotoInput
+	if !s.decode(w, r, &body) {
+		return
+	}
+	photo, _, err := s.Billing.AttachReceiptPhoto(r.Context(), p, id, body.UploadId)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, toAPIReceiptPhoto(photo))
 }
 
 func (s *Server) listFieldToday(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +150,9 @@ func toAPIFieldTodayItem(t billing.FieldTenant) apigen.FieldTodayItem {
 		out.Units[i] = apigen.FieldUnit{UnitLabel: u.UnitLabel, PropertyName: u.PropertyName, PropertyAddress: u.PropertyAddress}
 	}
 	for i, p := range t.CashToday.Payments {
-		out.CashToday.Payments[i] = apigen.FieldCashPayment{PaymentId: p.PaymentID, Amount: p.Amount, RecordedAt: p.RecordedAt}
+		out.CashToday.Payments[i] = apigen.FieldCashPayment{
+			PaymentId: p.PaymentID, Amount: p.Amount, RecordedAt: p.RecordedAt, Photo: toAPIReceiptPhoto(p.Photo),
+		}
 	}
 	days := t.Reason.Days
 	switch t.Reason.Code {
@@ -140,4 +166,13 @@ func toAPIFieldTodayItem(t billing.FieldTenant) apigen.FieldTodayItem {
 
 func toAPICashTotal(c billing.CashTotal) apigen.CashTotal {
 	return apigen.CashTotal{Amount: c.Amount, Count: c.Count}
+}
+
+func toAPIReceiptPhoto(p billing.ReceiptPhoto) apigen.ReceiptPhoto {
+	out := apigen.ReceiptPhoto{Status: apigen.ReceiptPhotoStatus(p.Status)}
+	if p.UploadID != uuid.Nil {
+		id := p.UploadID
+		out.UploadId = &id
+	}
+	return out
 }

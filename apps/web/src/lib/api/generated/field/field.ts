@@ -24,6 +24,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AttachCashPaymentPhotoInput,
   CashPaymentInput,
   CashPaymentResult,
   CashTotal,
@@ -32,6 +33,7 @@ import type {
   FieldTodayList,
   ListFieldTodayParams,
   MakeTenantPromiseRequest,
+  ReceiptPhoto,
   TenantPromise
 } from '../model';
 
@@ -130,6 +132,77 @@ export const useRecordCashPayment = <TError = ErrorType<Error | ErrorResponse>,
         TContext
       > => {
       return useMutation(getRecordCashPaymentMutationOptions(options), queryClient);
+    }
+    /**
+ * The karyawan saves "Terima tunai" first and attaches the photo after it ("foto belum ada" until then, decision 46.10): start an upload with purpose cash_receipt for the payment's tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the member who recorded the payment may attach its photo, with cash:record on the tenant and the payment's amount through every lease the tenant has or had, as when recording it (403 otherwise, audited).
+ * The upload is accepted while its scan is still pending; the answer, getUpload and the payment's photo on listFieldToday then show the scan's verdict. Links are append-only: a payment that has a photo the scan did not refuse takes no other (409 receipt_photo_attached), and one whose photo was refused (rejected or infected) takes a new one, so a bad photo is retaken but a good one is never swapped. Sending the same uploadId again changes nothing and answers 200 with the payment's photo now.
+ * @summary Attach the photo of collected cash to its payment (needs cash:record; audited)
+ */
+export const attachCashPaymentPhoto = (
+    orgId: string,
+    paymentId: string,
+    attachCashPaymentPhotoInput: BodyType<AttachCashPaymentPhotoInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<ReceiptPhoto>(
+      {url: `/orgs/${orgId}/cash-payments/${paymentId}/photo`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: attachCashPaymentPhotoInput, signal
+    },
+      options);
+    }
+
+
+
+
+export const getAttachCashPaymentPhotoMutationKey = () => ['attachCashPaymentPhoto'] as const;
+
+export const getAttachCashPaymentPhotoMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof attachCashPaymentPhoto>>, TError,AttachCashPaymentPhotoMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof attachCashPaymentPhoto>>, TError,AttachCashPaymentPhotoMutationVariables, TContext> => {
+
+const mutationKey = getAttachCashPaymentPhotoMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof attachCashPaymentPhoto>>, AttachCashPaymentPhotoMutationVariables> = (props) => {
+          const {orgId,paymentId,data} = props ?? {};
+
+          return  attachCashPaymentPhoto(orgId,paymentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AttachCashPaymentPhotoMutationResult = NonNullable<Awaited<ReturnType<typeof attachCashPaymentPhoto>>>
+    export type AttachCashPaymentPhotoMutationBody = BodyType<AttachCashPaymentPhotoInput>
+    export type AttachCashPaymentPhotoMutationError = ErrorType<Error | ErrorResponse>
+    export type AttachCashPaymentPhotoMutationVariables = {orgId: string;paymentId: string;data: BodyType<AttachCashPaymentPhotoInput>}
+
+    /**
+ * @summary Attach the photo of collected cash to its payment (needs cash:record; audited)
+ */
+export const useAttachCashPaymentPhoto = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof attachCashPaymentPhoto>>, TError,AttachCashPaymentPhotoMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof attachCashPaymentPhoto>>,
+        TError,
+        AttachCashPaymentPhotoMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAttachCashPaymentPhotoMutationOptions(options), queryClient);
     }
     /**
  * Of the tenants the caller collects from (the collector of one of their active leases): first those who owe on an invoice that is overdue, due today, or due in 1 or 2 days (Asia/Jakarta), the oldest unpaid due date first, each with the reason of that oldest invoice (with daysOverdue or daysUntilDue) even if they also paid cash today; then those from whom the caller recorded cash today and who have nothing due in the window any more (reason paid_today), by tenant name. The tenant id breaks ties. Each row has what the tenant owes in all over every invoice, the overdue part, and the cash the caller recorded from them today with each payment. A tenant fully paid some other way, or paid in cash to another member, is not on it.

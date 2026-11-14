@@ -57,6 +57,118 @@ func (q *Queries) InsertPaymentReceipt(ctx context.Context, arg InsertPaymentRec
 	return err
 }
 
+const insertPaymentReceiptPhoto = `-- name: InsertPaymentReceiptPhoto :execrows
+INSERT INTO payment_receipt_photo (upload_id, organization_id, payment_id, tenant_id, attached_by_staff_user_id, attached_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (upload_id) DO NOTHING
+`
+
+type InsertPaymentReceiptPhotoParams struct {
+	UploadID              uuid.UUID
+	OrganizationID        uuid.UUID
+	PaymentID             uuid.UUID
+	TenantID              uuid.UUID
+	AttachedByStaffUserID uuid.UUID
+	AttachedAt            time.Time
+}
+
+// Links a receipt photo to a payment. An upload already linked (to any payment) is left as it is
+// (0 rows).
+func (q *Queries) InsertPaymentReceiptPhoto(ctx context.Context, arg InsertPaymentReceiptPhotoParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertPaymentReceiptPhoto,
+		arg.UploadID,
+		arg.OrganizationID,
+		arg.PaymentID,
+		arg.TenantID,
+		arg.AttachedByStaffUserID,
+		arg.AttachedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const listCurrentReceiptPhotos = `-- name: ListCurrentReceiptPhotos :many
+SELECT DISTINCT ON (l.payment_id) l.payment_id, l.upload_id, u.status
+FROM payment_receipt_photo l
+JOIN upload u ON u.organization_id = l.organization_id AND u.id = l.upload_id
+WHERE l.organization_id = $1 AND l.payment_id = ANY($2::uuid[])
+ORDER BY l.payment_id, l.seq DESC
+`
+
+type ListCurrentReceiptPhotosParams struct {
+	OrganizationID uuid.UUID
+	PaymentIds     []uuid.UUID
+}
+
+type ListCurrentReceiptPhotosRow struct {
+	PaymentID uuid.UUID
+	UploadID  uuid.UUID
+	Status    string
+}
+
+// The photo of each of the given payments (its latest link) with its upload's status now. A
+// payment with no photo has no row.
+func (q *Queries) ListCurrentReceiptPhotos(ctx context.Context, arg ListCurrentReceiptPhotosParams) ([]ListCurrentReceiptPhotosRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentReceiptPhotos, arg.OrganizationID, arg.PaymentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCurrentReceiptPhotosRow
+	for rows.Next() {
+		var i ListCurrentReceiptPhotosRow
+		if err := rows.Scan(&i.PaymentID, &i.UploadID, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPaymentReceiptPhotoLinks = `-- name: ListPaymentReceiptPhotoLinks :many
+SELECT l.upload_id, u.status
+FROM payment_receipt_photo l
+JOIN upload u ON u.organization_id = l.organization_id AND u.id = l.upload_id
+WHERE l.organization_id = $1 AND l.payment_id = $2
+ORDER BY l.seq DESC
+`
+
+type ListPaymentReceiptPhotoLinksParams struct {
+	OrganizationID uuid.UUID
+	PaymentID      uuid.UUID
+}
+
+type ListPaymentReceiptPhotoLinksRow struct {
+	UploadID uuid.UUID
+	Status   string
+}
+
+// Every photo linked to a payment, latest first, with its upload's status now.
+func (q *Queries) ListPaymentReceiptPhotoLinks(ctx context.Context, arg ListPaymentReceiptPhotoLinksParams) ([]ListPaymentReceiptPhotoLinksRow, error) {
+	rows, err := q.db.Query(ctx, listPaymentReceiptPhotoLinks, arg.OrganizationID, arg.PaymentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPaymentReceiptPhotoLinksRow
+	for rows.Next() {
+		var i ListPaymentReceiptPhotoLinksRow
+		if err := rows.Scan(&i.UploadID, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingPaymentReceipts = `-- name: ListPendingPaymentReceipts :many
 SELECT payment_id
 FROM payment_receipt
@@ -91,6 +203,40 @@ func (q *Queries) ListPendingPaymentReceipts(ctx context.Context, arg ListPendin
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockCashPaymentForPhoto = `-- name: LockCashPaymentForPhoto :one
+SELECT r.payment_id, r.tenant_id, p.amount, p.recorded_by_staff_user_id
+FROM payment_receipt r
+JOIN payment p ON p.organization_id = r.organization_id AND p.id = r.payment_id
+WHERE r.organization_id = $1 AND r.payment_id = $2
+FOR UPDATE OF r
+`
+
+type LockCashPaymentForPhotoParams struct {
+	OrganizationID uuid.UUID
+	PaymentID      uuid.UUID
+}
+
+type LockCashPaymentForPhotoRow struct {
+	PaymentID             uuid.UUID
+	TenantID              uuid.UUID
+	Amount                int64
+	RecordedByStaffUserID uuid.NullUUID
+}
+
+// A cash payment with a receipt and who recorded it, its receipt row locked until the transaction
+// ends, so two photo attachments for one payment take turns.
+func (q *Queries) LockCashPaymentForPhoto(ctx context.Context, arg LockCashPaymentForPhotoParams) (LockCashPaymentForPhotoRow, error) {
+	row := q.db.QueryRow(ctx, lockCashPaymentForPhoto, arg.OrganizationID, arg.PaymentID)
+	var i LockCashPaymentForPhotoRow
+	err := row.Scan(
+		&i.PaymentID,
+		&i.TenantID,
+		&i.Amount,
+		&i.RecordedByStaffUserID,
+	)
+	return i, err
 }
 
 const lockPaymentReceipt = `-- name: LockPaymentReceipt :one

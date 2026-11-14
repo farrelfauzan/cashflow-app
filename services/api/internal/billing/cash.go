@@ -42,6 +42,9 @@ type CashResult struct {
 	// ReceiptStatus is ReceiptPending right after recording; a repeated request answers the
 	// receipt's status now.
 	ReceiptStatus string
+	// Photo is PhotoMissing right after recording ("foto belum ada"); a repeated request answers
+	// the payment's photo now. AttachReceiptPhoto attaches it.
+	Photo ReceiptPhoto
 }
 
 // RecordCashPayment records cash a member collected from a tenant, received now, exactly as
@@ -67,7 +70,7 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 	}
 	org := p.OrganizationID
 	now := s.clock.Now()
-	status := ReceiptPending
+	status, photo := ReceiptPending, ReceiptPhoto{Status: PhotoMissing}
 	res, err := s.recordManual(ctx, p, valid, manualPayment{
 		action: authz.ActionCashRecord, receivedAt: now,
 		same: func(row dbgen.Payment) bool {
@@ -96,6 +99,11 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 				return fmt.Errorf("loading the cash payment's receipt: %w", err)
 			}
 			status = st
+			photos, err := currentReceiptPhotos(ctx, q, org, []uuid.UUID{row.ID})
+			if err != nil {
+				return err
+			}
+			photo = photos[row.ID]
 			return nil
 		},
 	})
@@ -105,7 +113,7 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 	if status == ReceiptPending {
 		s.enqueueReceipt(ctx, org, res.Payment.ID)
 	}
-	return CashResult{PaymentResult: res, ReceiptStatus: status}, nil
+	return CashResult{PaymentResult: res, ReceiptStatus: status, Photo: photo}, nil
 }
 
 // enqueueReceipt enqueues the receipt of a committed cash payment. A failure is logged, not

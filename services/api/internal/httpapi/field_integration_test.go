@@ -5,6 +5,8 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload/uploadtest"
 )
 
 // requireError checks an error answer's code and field ("" for none).
@@ -196,5 +200,84 @@ func TestFieldOverHTTP(t *testing.T) {
 			}
 		}
 		require.Equal(t, 3, denied, "bambang's cash, the admin's cash and the admin's cash on hand")
+	})
+}
+
+// TestAttachCashPaymentPhotoOverHTTP covers attachCashPaymentPhoto: the karyawan attaches the
+// photo of cash they recorded, once, and the answer is the photo's status.
+func TestAttachCashPaymentPhotoOverHTTP(t *testing.T) {
+	env := testenv.New(t)
+	env.Clock.Set(time.Date(2026, 11, 14, 9, 0, 0, 0, clock.Jakarta))
+	srv := newLinkServer(t, env, &lockedBuffer{})
+	a := newLinkOrg(t, env, "Griya Foto Kas", "0812993")
+	wati, _ := a.rent(t, "Wati Susanti", a.karyawan.MembershipID)
+
+	storage := uploadtest.NewStorage()
+	uploads := upload.NewService(upload.ServiceDeps{
+		Store: env.Store, Authz: env.Authz, Clock: env.Clock, Presigner: storage, Queue: &uploadtest.Queue{}, Log: env.Log,
+	})
+	receipt := func(t *testing.T) uuid.UUID {
+		t.Helper()
+		body := uploadtest.Image("image/jpeg", 1_024)
+		c, err := uploads.Create(t.Context(), a.karyawan, upload.CreateInput{
+			Purpose: upload.PurposeCashReceipt, TenantID: wati, ContentType: "image/jpeg", Size: int64(len(body)),
+		})
+		require.NoError(t, err)
+		u, err := url.Parse(c.Put.URL)
+		require.NoError(t, err)
+		storage.Put(strings.TrimPrefix(u.Path, "/"), body)
+		_, err = uploads.Complete(t.Context(), a.karyawan, c.Upload.ID)
+		require.NoError(t, err)
+		return c.Upload.ID
+	}
+
+	karyawan := newClient(t, srv.URL)
+	karyawan.signIn(env, a.o.Karyawan.Phone)
+	orgA := "/api/orgs/" + a.o.ID.String()
+	resp, body := karyawan.do(http.MethodPost, orgA+"/tenants/"+wati.String()+"/cash-payments", apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 300_000})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+	recorded := decode[apigen.CashPaymentResult](t, body)
+	require.Equal(t, apigen.ReceiptPhoto{Status: apigen.PhotoMissing}, recorded.Photo, "foto belum ada")
+	photoPath := func(paymentID string) string { return orgA + "/cash-payments/" + paymentID + "/photo" }
+	first := receipt(t)
+
+	t.Run("attaching answers the photo, and again changes nothing", func(t *testing.T) {
+		for _, name := range []string{"first", "again"} {
+			resp, body := karyawan.do(http.MethodPut, photoPath(recorded.Payment.Id.String()), apigen.AttachCashPaymentPhotoInput{UploadId: first})
+			require.Equal(t, http.StatusOK, resp.StatusCode, "%s: %s", name, body)
+			require.Equal(t, apigen.ReceiptPhoto{UploadId: &first, Status: apigen.PhotoPending}, decode[apigen.ReceiptPhoto](t, body), name)
+		}
+
+		resp, body := karyawan.do(http.MethodGet, orgA+"/field/today", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		payments := decode[apigen.FieldTodayList](t, body).Items[0].CashToday.Payments
+		require.Len(t, payments, 1)
+		require.Equal(t, apigen.ReceiptPhoto{UploadId: &first, Status: apigen.PhotoPending}, payments[0].Photo)
+	})
+
+	t.Run("refusals answer their code", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			path   string
+			body   any
+			status int
+			code   string
+			field  string
+		}{
+			{name: "a second photo", path: photoPath(recorded.Payment.Id.String()), body: apigen.AttachCashPaymentPhotoInput{UploadId: receipt(t)},
+				status: http.StatusConflict, code: "receipt_photo_attached"},
+			{name: "an unknown payment", path: photoPath(uuid.NewString()), body: apigen.AttachCashPaymentPhotoInput{UploadId: first},
+				status: http.StatusNotFound, code: "not_found"},
+			{name: "a payment id that is not a uuid", path: photoPath("nope"), body: apigen.AttachCashPaymentPhotoInput{UploadId: first},
+				status: http.StatusNotFound, code: "not_found"},
+			{name: "an unknown field", path: photoPath(recorded.Payment.Id.String()), body: map[string]any{"uploadId": first, "status": "clean"},
+				status: http.StatusBadRequest, code: "invalid_json"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				resp, body := karyawan.do(http.MethodPut, tc.path, tc.body)
+				require.Equal(t, tc.status, resp.StatusCode, string(body))
+				requireError(t, body, tc.code, tc.field)
+			})
+		}
 	})
 }

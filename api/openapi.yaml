@@ -1407,6 +1407,67 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/cash-payments/{paymentId}/photo:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/PaymentId"
+    put:
+      tags: [field]
+      operationId: attachCashPaymentPhoto
+      summary: Attach the photo of collected cash to its payment (needs cash:record; audited)
+      description: >
+        The karyawan saves "Terima tunai" first and attaches the photo after it ("foto belum ada"
+        until then, decision 46.10): start an upload with purpose cash_receipt for the payment's
+        tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the
+        member who recorded the payment may attach its photo, with cash:record on the tenant and
+        the payment's amount through every lease the tenant has or had, as when recording it (403
+        otherwise, audited).
+
+        The upload is accepted while its scan is still pending; the answer, getUpload and the
+        payment's photo on listFieldToday then show the scan's verdict. Links are append-only: a
+        payment that has a photo the scan did not refuse takes no other (409
+        receipt_photo_attached), and one whose photo was refused (rejected or infected) takes a new
+        one, so a bad photo is retaken but a good one is never swapped. Sending the same uploadId
+        again changes nothing and answers 200 with the payment's photo now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachCashPaymentPhotoInput" }
+      responses:
+        "200":
+          description: The payment's photo now
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReceiptPhoto" }
+        "400":
+          description: >
+            invalid_input (field uploadId) for a missing or malformed uploadId;
+            receipt_photo_upload_invalid (field uploadId) when the upload is not a cash_receipt
+            upload for the payment's tenant made by the caller, was never completed, or is already
+            another payment's photo. A body that is not the documented JSON, or names an unknown
+            field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: >
+            No such cash payment from the field in the organization (code not_found, no field), or
+            no such upload (code not_found, field uploadId)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            receipt_photo_attached: the payment already has a photo the scan did not refuse.
+            receipt_photo_upload_refused (field uploadId): the scan refused this upload; take
+            another photo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /orgs/{orgId}/field/today:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -2318,6 +2379,11 @@ components:
       schema: { type: string, format: uuid }
     UploadId:
       name: uploadId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PaymentId:
+      name: paymentId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -3446,9 +3512,39 @@ components:
       allOf:
         - $ref: "#/components/schemas/PaymentResult"
         - type: object
-          required: [receipt]
+          required: [receipt, photo]
           properties:
             receipt: { $ref: "#/components/schemas/PaymentReceipt" }
+            photo:
+              allOf:
+                - $ref: "#/components/schemas/ReceiptPhoto"
+              description: >
+                status missing right after recording ("foto belum ada"); a repeated request
+                answers the photo now. attachCashPaymentPhoto attaches it.
+
+    ReceiptPhotoStatus:
+      type: string
+      enum: [missing, pending, clean, rejected, infected]
+      # Explicit Go names, so these do not collide with UploadStatus.
+      x-enum-varnames: [PhotoMissing, PhotoPending, PhotoClean, PhotoRejected, PhotoInfected]
+      description: >
+        The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its
+        upload's status: pending while it is scanned, clean, or rejected or infected, when the
+        karyawan takes another photo and attaches it.
+
+    ReceiptPhoto:
+      type: object
+      required: [status]
+      properties:
+        uploadId: { type: string, format: uuid, description: "The photo's upload (getUpload); absent when missing." }
+        status: { $ref: "#/components/schemas/ReceiptPhotoStatus" }
+
+    AttachCashPaymentPhotoInput:
+      type: object
+      required: [uploadId]
+      additionalProperties: false
+      properties:
+        uploadId: { type: string, format: uuid, description: "A completed cash_receipt upload for the payment's tenant. Errors use field uploadId." }
 
     CashTotal:
       type: object
@@ -3479,11 +3575,12 @@ components:
 
     FieldCashPayment:
       type: object
-      required: [paymentId, amount, recordedAt]
+      required: [paymentId, amount, recordedAt, photo]
       properties:
         paymentId: { type: string, format: uuid }
         amount: { type: integer, format: int64, description: "What it counts now, net of corrections.", example: 300000 }
         recordedAt: { type: string, format: date-time }
+        photo: { $ref: "#/components/schemas/ReceiptPhoto" }
 
     FieldCashToday:
       type: object

@@ -399,6 +399,33 @@ func (e QrisStatusStatus) Valid() bool {
 	}
 }
 
+// Defines values for ReceiptPhotoStatus.
+const (
+	PhotoClean    ReceiptPhotoStatus = "clean"
+	PhotoInfected ReceiptPhotoStatus = "infected"
+	PhotoMissing  ReceiptPhotoStatus = "missing"
+	PhotoPending  ReceiptPhotoStatus = "pending"
+	PhotoRejected ReceiptPhotoStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the ReceiptPhotoStatus enum.
+func (e ReceiptPhotoStatus) Valid() bool {
+	switch e {
+	case PhotoClean:
+		return true
+	case PhotoInfected:
+		return true
+	case PhotoMissing:
+		return true
+	case PhotoPending:
+		return true
+	case PhotoRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RoleGrantRole.
 const (
 	Admin      RoleGrantRole = "admin"
@@ -757,6 +784,12 @@ type ActivePromise struct {
 	Version int `json:"version"`
 }
 
+// AttachCashPaymentPhotoInput defines model for AttachCashPaymentPhotoInput.
+type AttachCashPaymentPhotoInput struct {
+	// UploadId A completed cash_receipt upload for the payment's tenant. Errors use field uploadId.
+	UploadId openapi_types.UUID `json:"uploadId"`
+}
+
 // BankAccount Where to transfer by hand; the tenant writes their name in the transfer note.
 type BankAccount struct {
 	// AccountHolder Example: Suhwendi
@@ -809,6 +842,9 @@ type CashPaymentResult struct {
 	// Paid The invoices the payment paid, oldest period first. Empty when it all went to credit.
 	Paid    []PaidInvoice  `json:"paid"`
 	Payment AccountPayment `json:"payment"`
+
+	// Photo status missing right after recording ("foto belum ada"); a repeated request answers the photo now. attachCashPaymentPhoto attaches it.
+	Photo   ReceiptPhoto   `json:"photo"`
 	Receipt PaymentReceipt `json:"receipt"`
 }
 
@@ -1022,6 +1058,7 @@ type FieldCashPayment struct {
 	// Example: 300000
 	Amount     int64              `json:"amount"`
 	PaymentId  openapi_types.UUID `json:"paymentId"`
+	Photo      ReceiptPhoto       `json:"photo"`
 	RecordedAt time.Time          `json:"recordedAt"`
 }
 
@@ -2040,6 +2077,18 @@ type QrisStatus struct {
 // QrisStatusStatus none: no QR yet. pending: the QR can be paid. checking: the tenant said they paid and no answer has come yet. paid: the attempt was paid. expired: the QR expired or was cancelled; the tenant makes a new one.
 type QrisStatusStatus string
 
+// ReceiptPhoto defines model for ReceiptPhoto.
+type ReceiptPhoto struct {
+	// Status The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+	Status ReceiptPhotoStatus `json:"status"`
+
+	// UploadId The photo's upload (getUpload); absent when missing.
+	UploadId *openapi_types.UUID `json:"uploadId,omitempty"`
+}
+
+// ReceiptPhotoStatus The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+type ReceiptPhotoStatus string
+
 // RoleGrant defines model for RoleGrant.
 type RoleGrant struct {
 	// PropertyId Limits the role to this property. Leave it out for the whole organization.
@@ -2491,6 +2540,9 @@ type Page = int
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// PaymentId defines model for PaymentId.
+type PaymentId = openapi_types.UUID
+
 // Period Example: 2026-11
 type Period = string
 
@@ -2671,6 +2723,9 @@ type RequestLoginCodeJSONRequestBody = LoginCodeRequest
 
 // VerifyLoginCodeJSONRequestBody defines body for VerifyLoginCode for application/json ContentType.
 type VerifyLoginCodeJSONRequestBody = LoginCodeVerify
+
+// AttachCashPaymentPhotoJSONRequestBody defines body for AttachCashPaymentPhoto for application/json ContentType.
+type AttachCashPaymentPhotoJSONRequestBody = AttachCashPaymentPhotoInput
 
 // CreateChargeTypeJSONRequestBody defines body for CreateChargeType for application/json ContentType.
 type CreateChargeTypeJSONRequestBody = ChargeTypeInput

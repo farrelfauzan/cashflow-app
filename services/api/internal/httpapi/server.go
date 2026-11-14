@@ -181,6 +181,7 @@ func New(d Deps) *Server {
 				r.Get("/tenants/{tenantID}/promises", s.listTenantPromises)
 				r.Post("/tenants/{tenantID}/promises", s.makeTenantPromise)
 				r.Post("/tenants/{tenantID}/cash-payments", s.recordCashPayment)
+				r.Put("/cash-payments/{paymentID}/photo", s.attachCashPaymentPhoto)
 				r.Get("/field/today", s.listFieldToday)
 				r.Get("/field/cash", s.getMyFieldCash)
 				r.Post("/field/tenants/{tenantID}/promises", s.makeFieldPromise)

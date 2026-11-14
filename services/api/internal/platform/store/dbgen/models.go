@@ -245,6 +245,17 @@ type PaymentReceipt struct {
 	CreatedAt      time.Time
 }
 
+type PaymentReceiptPhoto struct {
+	UploadID              uuid.UUID
+	Seq                   *int64
+	OrganizationID        uuid.UUID
+	PaymentID             uuid.UUID
+	TenantID              uuid.UUID
+	UploadPurpose         string
+	AttachedByStaffUserID uuid.UUID
+	AttachedAt            time.Time
+}
+
 type PromiseConfirmation struct {
 	PromiseVersionID uuid.UUID
 	OrganizationID   uuid.UUID
