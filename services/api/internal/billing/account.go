@@ -154,6 +154,20 @@ func (s *Service) AuthorizeTenant(ctx context.Context, tx pgx.Tx, p authz.Princi
 	return s.authorizeThroughLeases(ctx, tx, p, req, leases)
 }
 
+// AuthorizeTenantInField checks action on a tenant inside tx for the field app (decision 47):
+// like AuthorizeTenant, but through the tenant's active leases only, so a tenant who moved from
+// one collector's room to another's is the current collector's, whatever their ended leases say.
+// A tenant with no active lease needs the organization-wide grant. A missing tenant is a
+// *NotFoundError with no field.
+func (s *Service) AuthorizeTenantInField(ctx context.Context, tx pgx.Tx, p authz.Principal, tenantID uuid.UUID, action string) error {
+	leases, err := fieldLeases(ctx, dbgen.New(tx), p.OrganizationID, tenantID, "")
+	if err != nil {
+		return err
+	}
+	req := authz.Request{Action: action, Resource: authz.Resource{Type: "tenant", ID: tenantID.String()}}
+	return s.authorizeThroughLeases(ctx, tx, p, req, leases)
+}
+
 // leaseScope is a lease through which a member may act on its tenant's money.
 type leaseScope struct {
 	PropertyID      uuid.UUID
@@ -172,6 +186,27 @@ func tenantLeases(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID
 	rows, err := q.ListTenantLeaseScopes(ctx, dbgen.ListTenantLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
 	if err != nil {
 		return nil, fmt.Errorf("loading the tenant's leases: %w", err)
+	}
+	out := make([]leaseScope, len(rows))
+	for i, r := range rows {
+		out[i] = leaseScope{PropertyID: r.PropertyID, CollectorUserID: r.CollectorStaffUserID.UUID}
+	}
+	return out, nil
+}
+
+// fieldLeases checks that the tenant exists in the organization and returns its active leases,
+// through which the field app acts on it (decision 47). A missing tenant is a *NotFoundError on
+// field.
+func fieldLeases(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, field string) ([]leaseScope, error) {
+	if _, err := q.GetTenant(ctx, dbgen.GetTenantParams{OrganizationID: org, ID: tenantID}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &NotFoundError{Field: field}
+		}
+		return nil, fmt.Errorf("loading tenant: %w", err)
+	}
+	rows, err := q.ListTenantActiveLeaseScopes(ctx, dbgen.ListTenantActiveLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return nil, fmt.Errorf("loading the tenant's active leases: %w", err)
 	}
 	out := make([]leaseScope, len(rows))
 	for i, r := range rows {

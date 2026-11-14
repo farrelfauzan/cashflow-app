@@ -56,6 +56,11 @@ const (
 	// ActionCashRead is reading every member's cash and deposits (the Supervisor).
 	ActionCashRead = "cash:read"
 
+	// ActionVisitRead and ActionVisitRecord are the karyawan's visit list and the outcomes they
+	// record on it, checked on the tenant through each of its active leases (decision 47).
+	ActionVisitRead   = "visit:read"
+	ActionVisitRecord = "visit:record"
+
 	ActionReportRead = "report:read"
 )
 

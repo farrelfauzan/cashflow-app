@@ -50,9 +50,10 @@ type CashResult struct {
 // RecordCashPayment records cash a member collected from a tenant, received now, exactly as
 // RecordPayment records a payment (FIFO over all the tenant's invoices, credit for the rest, the
 // promise hook, requestId idempotency), but authorized by cash:record (audited) with the amount on
-// the tenant through every lease it has or had: in the lease's property and assigned to its
-// collector, so a karyawan records cash only for tenants they collect from. A tenant with no lease
-// needs the organization-wide grant. A missing tenant is a *NotFoundError with no field.
+// the tenant through each of its active leases (decision 47): in the lease's property and assigned
+// to its collector, so a karyawan records cash only for tenants they collect from now, whoever
+// collected their ended leases. A tenant with no active lease needs the organization-wide grant.
+// A missing tenant is a *NotFoundError with no field.
 //
 // In the same transaction it records the tenant's receipt (payment_receipt, pending) and, once
 // that commits, enqueues its receipt:send task; a lost enqueue is caught by the sweep.
@@ -72,7 +73,7 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 	now := s.clock.Now()
 	status, photo := ReceiptPending, ReceiptPhoto{Status: PhotoMissing}
 	res, err := s.recordManual(ctx, p, valid, manualPayment{
-		action: authz.ActionCashRecord, receivedAt: now,
+		action: authz.ActionCashRecord, field: true, receivedAt: now,
 		same: func(row dbgen.Payment) bool {
 			note := ""
 			if row.Note != nil {

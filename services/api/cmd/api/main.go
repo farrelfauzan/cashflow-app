@@ -46,6 +46,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload/uploadtask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/visit"
 )
 
 func main() {
@@ -184,6 +185,7 @@ func run() error {
 		Promises:      promises,
 		Uploads:       uploads,
 		Deposits:      deposit.NewService(st, az, clk, log),
+		Visits:        visit.NewService(st, billingSvc, clk),
 		Webhooks:      webhooks,
 		TelegramCodes: tgCodes,
 		// A nil *Handler must stay a nil interface, so the route is not registered without a bot.

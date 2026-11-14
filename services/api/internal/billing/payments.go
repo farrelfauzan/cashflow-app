@@ -62,8 +62,10 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 // manualPayment is what differs between the ways a member records a payment by hand: the admin's
 // recordPayment and the karyawan's cash collection.
 type manualPayment struct {
-	// action is checked on the tenant, with the amount, through every lease the tenant has or had.
+	// action is checked on the tenant, with the amount, through every lease the tenant has or had,
+	// or only its active leases when field is set (the field app, decision 47).
 	action string
+	field  bool
 	// tenantField names the input field of the tenant in a not-found error; empty when the tenant
 	// came from the path.
 	tenantField string
@@ -84,7 +86,7 @@ func (s *Service) recordManual(ctx context.Context, p authz.Principal, in Paymen
 	var out PaymentResult
 	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		leases, err := tenantLeases(ctx, q, org, in.TenantID, how.tenantField)
+		leases, err := manualLeases(ctx, q, org, in.TenantID, how)
 		if err != nil {
 			return err
 		}
@@ -139,6 +141,15 @@ func (s *Service) recordManual(ctx context.Context, p authz.Principal, in Paymen
 		return PaymentResult{}, err
 	}
 	return out, nil
+}
+
+// manualLeases are the leases through which how.action is checked: the active ones for the field
+// app, every one otherwise.
+func manualLeases(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, how manualPayment) ([]leaseScope, error) {
+	if how.field {
+		return fieldLeases(ctx, q, org, tenantID, how.tenantField)
+	}
+	return tenantLeases(ctx, q, org, tenantID, how.tenantField)
 }
 
 // insertManualPayment inserts the payment under its requestId, or loads the one already stored

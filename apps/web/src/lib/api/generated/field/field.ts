@@ -34,13 +34,17 @@ import type {
   Error,
   ErrorResponse,
   FieldTodayList,
+  FieldVisitList,
   ListFieldTodayParams,
+  ListFieldVisitsParams,
   ListMyCashDepositsParams,
   ListMyUndepositedCashParams,
   MakeTenantPromiseRequest,
   ReceiptPhoto,
   TenantPromise,
-  UndepositedCashList
+  UndepositedCashList,
+  VisitOutcome,
+  VisitOutcomeInput
 } from '../model';
 
 import { apiRequest } from '../../client';
@@ -665,6 +669,176 @@ export const useRecordCashDeposit = <TError = ErrorType<Error | ErrorResponse>,
         TContext
       > => {
       return useMutation(getRecordCashDepositMutationOptions(options), queryClient);
+    }
+    /**
+ * Of the tenants the caller collects from on an active lease: those with an open visit (debt a week past due, promises broken, a number WhatsApp cannot reach), the oldest visit first; then those the caller recorded an outcome on today (status done), the latest first; the tenant id breaks ties. A tenant is listed only when the caller may read visits through each of its active leases (decision 47: ended leases do not count). One row per tenant, with every open reason. lastOutcome is the caller's latest outcome today (a not_home row stays open with it); unlinkedCashToday is the field cash the caller took from the tenant today that no outcome names yet ("Sudah bayar hari ini" sends one as paymentId).
+ * @summary Kunjungan hari ini, the caller's tenants to visit (needs visit:read)
+ */
+export const listFieldVisits = (
+    orgId: string,
+    params?: ListFieldVisitsParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<FieldVisitList>(
+      {url: `/orgs/${orgId}/field/visits`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListFieldVisitsQueryKey = (orgId: string,
+    params?: ListFieldVisitsParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/field/visits` });
+
+
+export const useListFieldVisitsQueryOptions = <TData = Awaited<ReturnType<typeof listFieldVisits>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListFieldVisitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFieldVisits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/field/visits`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFieldVisits>>> = ({ signal }) => listFieldVisits(orgId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFieldVisits>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListFieldVisitsQueryResult = NonNullable<Awaited<ReturnType<typeof listFieldVisits>>>
+export type ListFieldVisitsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListFieldVisits<TData = Awaited<ReturnType<typeof listFieldVisits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params: undefined |  ListFieldVisitsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFieldVisits>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listFieldVisits>>,
+          TError,
+          Awaited<ReturnType<typeof listFieldVisits>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListFieldVisits<TData = Awaited<ReturnType<typeof listFieldVisits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListFieldVisitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFieldVisits>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listFieldVisits>>,
+          TError,
+          Awaited<ReturnType<typeof listFieldVisits>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListFieldVisits<TData = Awaited<ReturnType<typeof listFieldVisits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListFieldVisitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFieldVisits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Kunjungan hari ini, the caller's tenants to visit (needs visit:read)
+ */
+
+export function useListFieldVisits<TData = Awaited<ReturnType<typeof listFieldVisits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListFieldVisitsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFieldVisits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListFieldVisitsQueryOptions(orgId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * An outcome points at what the field app already recorded, so money and promises keep one path: paid names a cash payment the caller recorded with recordCashPayment from this tenant today; promise names the latest version of a promise the caller made with makeFieldPromise for this tenant today; each backs one outcome. number_changed carries the tenant's new WhatsApp number, which the admin applies later; not_home carries nothing.
+ * It resolves the tenant's open visits it answers (decision 46.6): paid and promise the overdue and broken_promises ones, number_changed the undeliverable one, not_home none (the tenant stays on tomorrow's list). The tenant must have an open visit (409 visit_not_open). Needs visit:record on the tenant through each of its active leases (decision 47); 403 otherwise, audited.
+ * requestId makes a retry harmless: the same requestId with the same body from the same member answers 200 with the outcome already recorded; with any other body it is 409 request_id_reused.
+ * @summary Record what happened at a visit, "Catat hasil kunjungan" (needs visit:record)
+ */
+export const recordVisitOutcome = (
+    orgId: string,
+    tenantId: string,
+    visitOutcomeInput: BodyType<VisitOutcomeInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<VisitOutcome>(
+      {url: `/orgs/${orgId}/field/tenants/${tenantId}/visit-outcomes`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: visitOutcomeInput, signal
+    },
+      options);
+    }
+
+
+
+
+export const getRecordVisitOutcomeMutationKey = () => ['recordVisitOutcome'] as const;
+
+export const getRecordVisitOutcomeMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVisitOutcome>>, TError,RecordVisitOutcomeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordVisitOutcome>>, TError,RecordVisitOutcomeMutationVariables, TContext> => {
+
+const mutationKey = getRecordVisitOutcomeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordVisitOutcome>>, RecordVisitOutcomeMutationVariables> = (props) => {
+          const {orgId,tenantId,data} = props ?? {};
+
+          return  recordVisitOutcome(orgId,tenantId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordVisitOutcomeMutationResult = NonNullable<Awaited<ReturnType<typeof recordVisitOutcome>>>
+    export type RecordVisitOutcomeMutationBody = BodyType<VisitOutcomeInput>
+    export type RecordVisitOutcomeMutationError = ErrorType<Error | ErrorResponse>
+    export type RecordVisitOutcomeMutationVariables = {orgId: string;tenantId: string;data: BodyType<VisitOutcomeInput>}
+
+    /**
+ * @summary Record what happened at a visit, "Catat hasil kunjungan" (needs visit:record)
+ */
+export const useRecordVisitOutcome = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVisitOutcome>>, TError,RecordVisitOutcomeMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof recordVisitOutcome>>,
+        TError,
+        RecordVisitOutcomeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRecordVisitOutcomeMutationOptions(options), queryClient);
     }
     /**
  * makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the version's source is karyawan. Needs promise:create on the tenant through every lease the tenant has or had (a karyawan's own are the leases they collect); 403 otherwise. Allowed and denied checks are audited.

@@ -235,6 +235,15 @@ JOIN lease l ON l.organization_id = i.organization_id AND l.id = i.lease_id
 JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
 WHERE i.organization_id = @organization_id AND i.id = @id;
 
+-- name: ListTenantActiveLeaseScopes :many
+-- Every active lease of a tenant, with its property and collector: the field app acts on a
+-- tenant through these only (decision 47), so ended leases of another collector do not count.
+SELECT l.id, u.property_id, l.collector_staff_user_id
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE l.organization_id = @organization_id AND l.tenant_id = @tenant_id AND l.status = 'active'
+ORDER BY l.id;
+
 -- name: ListTenantLeaseScopes :many
 -- Every lease of a tenant, active or ended, with its property and collector, for authorizing
 -- an action on the tenant's money through each of them.

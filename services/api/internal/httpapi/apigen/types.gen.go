@@ -75,6 +75,24 @@ func (e FieldDueReason) Valid() bool {
 	}
 }
 
+// Defines values for FieldVisitStatus.
+const (
+	VisitDone FieldVisitStatus = "done"
+	VisitOpen FieldVisitStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the FieldVisitStatus enum.
+func (e FieldVisitStatus) Valid() bool {
+	switch e {
+	case VisitDone:
+		return true
+	case VisitOpen:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportAction.
 const (
 	Created ImportAction = "created"
@@ -504,6 +522,51 @@ func (e UploadStatus) Valid() bool {
 	case UploadStatusPending:
 		return true
 	case UploadStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VisitOutcomeKind.
+const (
+	VisitOutcomeKindNotHome       VisitOutcomeKind = "not_home"
+	VisitOutcomeKindNumberChanged VisitOutcomeKind = "number_changed"
+	VisitOutcomeKindPaid          VisitOutcomeKind = "paid"
+	VisitOutcomeKindPromise       VisitOutcomeKind = "promise"
+)
+
+// Valid indicates whether the value is a known member of the VisitOutcomeKind enum.
+func (e VisitOutcomeKind) Valid() bool {
+	switch e {
+	case VisitOutcomeKindNotHome:
+		return true
+	case VisitOutcomeKindNumberChanged:
+		return true
+	case VisitOutcomeKindPaid:
+		return true
+	case VisitOutcomeKindPromise:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VisitReasonCode.
+const (
+	VisitReasonCodeBrokenPromises VisitReasonCode = "broken_promises"
+	VisitReasonCodeOverdue        VisitReasonCode = "overdue"
+	VisitReasonCodeUndeliverable  VisitReasonCode = "undeliverable"
+)
+
+// Valid indicates whether the value is a known member of the VisitReasonCode enum.
+func (e VisitReasonCode) Valid() bool {
+	switch e {
+	case VisitReasonCodeBrokenPromises:
+		return true
+	case VisitReasonCodeOverdue:
+		return true
+	case VisitReasonCodeUndeliverable:
 		return true
 	default:
 		return false
@@ -1291,6 +1354,55 @@ type FieldUnit struct {
 	// UnitLabel Example: Kamar 3
 	UnitLabel string `json:"unitLabel"`
 }
+
+// FieldVisit defines model for FieldVisit.
+type FieldVisit struct {
+	LastOutcome *VisitOutcome `json:"lastOutcome,omitempty"`
+
+	// OldestUnpaidDueDate Absent when the tenant owes nothing.
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding Everything the tenant owes now.
+	//
+	// Example: 2900000
+	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of it past due.
+	//
+	// Example: 2200000
+	Overdue int64 `json:"overdue"`
+
+	// Reasons The open visits, oldest first; empty when done.
+	Reasons []VisitReason `json:"reasons"`
+
+	// Status open (a visit is still open, even after not_home) or done (visited today, nothing left open).
+	Status   FieldVisitStatus   `json:"status"`
+	TenantId openapi_types.UUID `json:"tenantId"`
+
+	// TenantName Example: Pak Darto
+	TenantName string `json:"tenantName"`
+
+	// Units The units of the tenant's active leases the caller collects, with the address for "Arahkan".
+	Units []FieldUnit `json:"units"`
+
+	// UnlinkedCashToday The caller's field cash from this tenant today that no outcome names yet, oldest first.
+	UnlinkedCashToday []FieldCashPayment `json:"unlinkedCashToday"`
+}
+
+// FieldVisitList defines model for FieldVisitList.
+type FieldVisitList struct {
+	Items []FieldVisit `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// FieldVisitStatus open (a visit is still open, even after not_home) or done (visited today, nothing left open).
+type FieldVisitStatus string
 
 // HeldCashPayment A field cash payment a member holds or deposited.
 type HeldCashPayment struct {
@@ -2713,6 +2825,72 @@ type User struct {
 	Phone string `json:"phone"`
 }
 
+// VisitOutcome defines model for VisitOutcome.
+type VisitOutcome struct {
+	Id openapi_types.UUID `json:"id"`
+
+	// NewPhone E.164.
+	//
+	// Example: +6281234567890
+	NewPhone *string `json:"newPhone,omitempty"`
+	Note     *string `json:"note,omitempty"`
+
+	// Outcome paid ("Terima uang tunai"), promise ("Penyewa membuat janji baru"), not_home ("Tidak bertemu"), number_changed ("Nomor WA penyewa berubah").
+	Outcome          VisitOutcomeKind    `json:"outcome"`
+	PaymentId        *openapi_types.UUID `json:"paymentId,omitempty"`
+	PromiseVersionId *openapi_types.UUID `json:"promiseVersionId,omitempty"`
+	RecordedAt       time.Time           `json:"recordedAt"`
+
+	// Resolved The reasons of the open visits it closed; empty for not_home.
+	Resolved []VisitReasonCode  `json:"resolved"`
+	TenantId openapi_types.UUID `json:"tenantId"`
+}
+
+// VisitOutcomeInput defines model for VisitOutcomeInput.
+type VisitOutcomeInput struct {
+	// NewPhone number_changed only: the tenant's new WhatsApp number, as typed.
+	//
+	// Example: 0812-3456-7890
+	NewPhone *string `json:"newPhone,omitempty"`
+
+	// Note Optional, at most 500 letters after trimming.
+	Note *string `json:"note,omitempty"`
+
+	// Outcome paid ("Terima uang tunai"), promise ("Penyewa membuat janji baru"), not_home ("Tidak bertemu"), number_changed ("Nomor WA penyewa berubah").
+	Outcome VisitOutcomeKind `json:"outcome"`
+
+	// PaymentId paid only: the caller's field cash from this tenant today.
+	PaymentId *openapi_types.UUID `json:"paymentId,omitempty"`
+
+	// PromiseVersionId promise only: the latest version makeFieldPromise answered, made today.
+	PromiseVersionId *openapi_types.UUID `json:"promiseVersionId,omitempty"`
+
+	// RequestId Made by the client once per Catat hasil form, and sent again unchanged on a retry.
+	RequestId openapi_types.UUID `json:"requestId"`
+}
+
+// VisitOutcomeKind paid ("Terima uang tunai"), promise ("Penyewa membuat janji baru"), not_home ("Tidak bertemu"), number_changed ("Nomor WA penyewa berubah").
+type VisitOutcomeKind string
+
+// VisitReason defines model for VisitReason.
+type VisitReason struct {
+	// BrokenPromises broken_promises only.
+	//
+	// Example: 2
+	BrokenPromises *int `json:"brokenPromises,omitempty"`
+
+	// Code overdue: debt a week past its due date ("Telat 7 hari", with daysOverdue); broken_promises: promises broken since the last such visit ("Janji lewat 2×", with brokenPromises); undeliverable: WhatsApp cannot reach the tenant's number ("WA gagal terkirim"; from slice 5).
+	Code VisitReasonCode `json:"code"`
+
+	// DaysOverdue overdue only: days the oldest unpaid invoice is past due now; 0 when nothing is overdue any more.
+	//
+	// Example: 7
+	DaysOverdue *int `json:"daysOverdue,omitempty"`
+}
+
+// VisitReasonCode overdue: debt a week past its due date ("Telat 7 hari", with daysOverdue); broken_promises: promises broken since the last such visit ("Janji lewat 2×", with brokenPromises); undeliverable: WhatsApp cannot reach the tenant's number ("WA gagal terkirim"; from slice 5).
+type VisitReasonCode string
+
 // DepositId defines model for DepositId.
 type DepositId = openapi_types.UUID
 
@@ -2794,6 +2972,13 @@ type ListMyUndepositedCashParams struct {
 
 // ListFieldTodayParams defines parameters for ListFieldToday.
 type ListFieldTodayParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListFieldVisitsParams defines parameters for ListFieldVisits.
+type ListFieldVisitsParams struct {
 	// Page The page to return, from 1. A page past the last has no items.
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
@@ -2969,6 +3154,9 @@ type RecordCashDepositJSONRequestBody = CashDepositInput
 
 // MakeFieldPromiseJSONRequestBody defines body for MakeFieldPromise for application/json ContentType.
 type MakeFieldPromiseJSONRequestBody = MakeTenantPromiseRequest
+
+// RecordVisitOutcomeJSONRequestBody defines body for RecordVisitOutcome for application/json ContentType.
+type RecordVisitOutcomeJSONRequestBody = VisitOutcomeInput
 
 // CreateLeaseJSONRequestBody defines body for CreateLease for application/json ContentType.
 type CreateLeaseJSONRequestBody = LeaseInput

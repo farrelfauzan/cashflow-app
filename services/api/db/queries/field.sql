@@ -7,15 +7,15 @@
 
 -- name: ListFieldToday :many
 -- One page of "Tagihan hari ini": of the tenants @collector_id collects from on an active lease, all
--- of whose leases, current or ended, are visible (in lease_ids), (a) those who owe on an invoice due
+-- of whose active leases are visible (in lease_ids; decision 47), (a) those who owe on an invoice due
 -- on or before @until (overdue, due today, or due within the coming days), oldest unpaid due date
 -- first, then (b) those not in (a) from whom @collector_id recorded cash in [@day_start, @day_end)
 -- (paid today), by name; the tenant id breaks ties. With each: what they owe in all, the part of it
 -- overdue on @today, and that cash. CountFieldToday has the same CTE and WHERE: change both
 -- together.
 WITH mine AS (
-    -- The tenants @collector_id collects from on an active lease, all of whose leases, current or
-    -- ended, are visible (in lease_ids). due: they owe on an invoice due on or before @until.
+    -- The tenants @collector_id collects from on an active lease, all of whose active leases are
+    -- visible (in lease_ids; ended leases do not count, decision 47). due: they owe on an invoice due on or before @until.
     -- A tenant who owes nothing (a (b) row) has no unpaid due date: it reads 0001-01-01 here, and
     -- the service uses it only when outstanding > 0.
     SELECT b.tenant_id, t.name AS tenant_name, b.outstanding,
@@ -44,7 +44,7 @@ WITH mine AS (
                     AND l.status = 'active' AND l.collector_staff_user_id = @collector_id)
       AND NOT EXISTS (SELECT 1 FROM lease l
                       WHERE l.organization_id = b.organization_id AND l.tenant_id = b.tenant_id
-                        AND NOT (l.id = ANY(@lease_ids::uuid[])))
+                        AND l.status = 'active' AND NOT (l.id = ANY(@lease_ids::uuid[])))
 )
 SELECT tenant_id, tenant_name, outstanding, oldest_unpaid_due_date, due, overdue, cash_today, cash_today_count
 FROM mine
@@ -58,8 +58,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountFieldToday :one
 -- Every row ListFieldToday would list, on all pages.
 WITH mine AS (
-    -- The tenants @collector_id collects from on an active lease, all of whose leases, current or
-    -- ended, are visible (in lease_ids). due: they owe on an invoice due on or before @until.
+    -- The tenants @collector_id collects from on an active lease, all of whose active leases are
+    -- visible (in lease_ids; ended leases do not count, decision 47). due: they owe on an invoice due on or before @until.
     -- A tenant who owes nothing (a (b) row) has no unpaid due date: it reads 0001-01-01 here, and
     -- the service uses it only when outstanding > 0.
     SELECT b.tenant_id, t.name AS tenant_name, b.outstanding,
@@ -88,7 +88,7 @@ WITH mine AS (
                     AND l.status = 'active' AND l.collector_staff_user_id = @collector_id)
       AND NOT EXISTS (SELECT 1 FROM lease l
                       WHERE l.organization_id = b.organization_id AND l.tenant_id = b.tenant_id
-                        AND NOT (l.id = ANY(@lease_ids::uuid[])))
+                        AND l.status = 'active' AND NOT (l.id = ANY(@lease_ids::uuid[])))
 )
 SELECT count(*)::bigint
 FROM mine

@@ -1288,6 +1288,47 @@ func (q *Queries) ListLeaseInvoicesForChange(ctx context.Context, arg ListLeaseI
 	return items, nil
 }
 
+const listTenantActiveLeaseScopes = `-- name: ListTenantActiveLeaseScopes :many
+SELECT l.id, u.property_id, l.collector_staff_user_id
+FROM lease l
+JOIN unit u ON u.organization_id = l.organization_id AND u.id = l.unit_id
+WHERE l.organization_id = $1 AND l.tenant_id = $2 AND l.status = 'active'
+ORDER BY l.id
+`
+
+type ListTenantActiveLeaseScopesParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type ListTenantActiveLeaseScopesRow struct {
+	ID                   uuid.UUID
+	PropertyID           uuid.UUID
+	CollectorStaffUserID uuid.NullUUID
+}
+
+// Every active lease of a tenant, with its property and collector: the field app acts on a
+// tenant through these only (decision 47), so ended leases of another collector do not count.
+func (q *Queries) ListTenantActiveLeaseScopes(ctx context.Context, arg ListTenantActiveLeaseScopesParams) ([]ListTenantActiveLeaseScopesRow, error) {
+	rows, err := q.db.Query(ctx, listTenantActiveLeaseScopes, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTenantActiveLeaseScopesRow
+	for rows.Next() {
+		var i ListTenantActiveLeaseScopesRow
+		if err := rows.Scan(&i.ID, &i.PropertyID, &i.CollectorStaffUserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTenantAllocations = `-- name: ListTenantAllocations :many
 SELECT seq, payment_id, invoice_id, amount
 FROM payment_allocation

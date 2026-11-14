@@ -287,6 +287,18 @@ type visible struct {
 // property and assigned to its collector. It never stops at an organization-wide Allow: the
 // bare request carries no property, so only the check through each lease meets a Deny that names
 // a property.
+// VisibleLeaseIDs authorizes action on resourceType as a collection inside tx (a member with no
+// access at all is denied and audited) and returns the ids of the organization's leases p may act
+// through: in the lease's property, assigned to its collector. The field app's lists pass them to
+// their queries.
+func (s *Service) VisibleLeaseIDs(ctx context.Context, tx pgx.Tx, p authz.Principal, action, resourceType string) ([]uuid.UUID, error) {
+	v, err := s.visibleLeases(ctx, tx, dbgen.New(tx), p, action, resourceType)
+	if err != nil {
+		return nil, err
+	}
+	return v.leaseIDs, nil
+}
+
 func (s *Service) visibleLeases(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, p authz.Principal, action, resourceType string) (visible, error) {
 	bare := authz.Request{Action: action, Resource: authz.Resource{Type: resourceType}}
 	all, err := s.authz.AuthorizeList(ctx, tx, p, bare)

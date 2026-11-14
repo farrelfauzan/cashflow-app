@@ -66,9 +66,9 @@ type Read struct {
 
 // Create starts an upload: it records it pending and answers a presigned PUT for exactly
 // in.Size bytes of in.ContentType. The permission is the action of the record it is for, in
-// the same transaction: cash:record on the tenant for a cash_receipt, through every lease the
-// tenant has or had (in the lease's property, owned by its collector, so a karyawan's "self"
-// applies), and cash:deposit on the caller's own upload for a cash_deposit. Both are audited.
+// the same transaction: cash:record on the tenant for a cash_receipt, through each of its active
+// leases (in the lease's property, owned by its collector, so a karyawan's "self" applies;
+// decision 47), and cash:deposit on the caller's own upload for a cash_deposit. Both are audited.
 func (s *Service) Create(ctx context.Context, p authz.Principal, in CreateInput) (Created, error) {
 	in, err := validCreate(in)
 	if err != nil {
@@ -170,7 +170,7 @@ func (s *Service) enqueue(ctx context.Context, org, id uuid.UUID) {
 // Get returns an upload and, only when it is clean, a download link valid for GetURLTTL that
 // downloads the file as an attachment. It is allowed with payment:check (the admin checking it),
 // cash:read (the Supervisor, who reads everything) or the action that started the upload, on the
-// upload's record (see Create): through every lease of a receipt's tenant, and for a deposit
+// upload's record (see Create): through each active lease of a receipt's tenant, and for a deposit
 // photo on the upload itself (payment:check and cash:read then need the whole organization). It
 // is a read, so only a denial is audited.
 func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Read, error) {
@@ -210,16 +210,17 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Rea
 
 // recordRequests returns the permission checks of an upload's record, one per way a member
 // reaches it, all of which must pass. A cash_receipt is checked as cash:record on its tenant
-// through each lease the tenant has or had (the lease's property, owned by its collector); a
-// tenant with no lease only by an organization-wide grant. A cash_deposit is checked as
+// through each of its active leases (the lease's property, owned by its collector; decision 47);
+// a tenant with no active lease only by an organization-wide grant. A cash_deposit is checked as
 // cash:deposit on the upload, owned by its uploader.
 func recordRequests(ctx context.Context, q *dbgen.Queries, org uuid.UUID, purpose string, tenantID, uploadID, uploader uuid.UUID) ([]authz.Request, error) {
 	switch purpose {
 	case PurposeCashReceipt:
 		base := authz.Request{Action: actionCashRecord, Resource: authz.Resource{Type: "tenant", ID: tenantID.String()}}
-		leases, err := q.ListTenantLeaseScopes(ctx, dbgen.ListTenantLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
+		// The field app acts through the tenant's active leases only (decision 47).
+		leases, err := q.ListTenantActiveLeaseScopes(ctx, dbgen.ListTenantActiveLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
 		if err != nil {
-			return nil, fmt.Errorf("loading the tenant's leases: %w", err)
+			return nil, fmt.Errorf("loading the tenant's active leases: %w", err)
 		}
 		if len(leases) == 0 {
 			return []authz.Request{base}, nil
