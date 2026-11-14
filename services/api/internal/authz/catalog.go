@@ -45,6 +45,12 @@ const (
 	ActionPromiseRead   = "promise:read"
 	ActionPromiseCreate = "promise:create"
 
+	// ActionCashRecord is cash a member collects from a tenant in the field, checked on the tenant
+	// through each of its leases (the karyawan's self is the lease's collector). ActionCashDeposit
+	// is the cash a member holds and hands over, checked on the member's own cash (self).
+	ActionCashRecord  = "cash:record"
+	ActionCashDeposit = "cash:deposit"
+
 	ActionReportRead = "report:read"
 )
 

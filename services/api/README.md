@@ -439,6 +439,10 @@ replay Bot API answers.
   promise version's "janji tercatat" confirmation (`promise:confirm`). `remindertask` runs
   `reminders:decide` from the worker at 08:00 Asia/Jakarta, one task per organization and day, and
   the sweep that re-enqueues anything still pending.
+- `internal/receipt`: the tenant's receipt for cash a karyawan collects (slice 6, S6-2), recorded
+  as a `payment_receipt` row with the cash payment (`billing.RecordCashPayment`) and sent at most
+  once by the `receipt:send` task (`receipttask`), which `reminders:sweep` re-enqueues while it is
+  still pending.
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.

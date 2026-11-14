@@ -236,6 +236,15 @@ type PaymentPromise struct {
 	ClosedAt       *time.Time
 }
 
+type PaymentReceipt struct {
+	PaymentID      uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	Status         string
+	SentAt         *time.Time
+	CreatedAt      time.Time
+}
+
 type PromiseConfirmation struct {
 	PromiseVersionID uuid.UUID
 	OrganizationID   uuid.UUID

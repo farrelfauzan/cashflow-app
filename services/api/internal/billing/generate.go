@@ -46,6 +46,9 @@ type Service struct {
 	clock    clock.Clock
 	log      *slog.Logger
 	promises Promises
+	// receipts enqueues the receipt of each cash payment once it commits; nil enqueues nothing
+	// (the sweep still finds the pending receipt).
+	receipts ReceiptQueue
 }
 
 // PaymentHook runs inside the transaction of every manual payment RecordPayment inserts, after
@@ -56,14 +59,28 @@ type PaymentHook interface {
 	PaymentRecorded(ctx context.Context, tx pgx.Tx, org, tenantID uuid.UUID) error
 }
 
+// Option configures a Service.
+type Option func(*Service)
+
+// SendReceipts makes the Service enqueue the receipt of each cash payment it records, once the
+// payment commits (receipttask.Client). Without it nothing is enqueued and the sweep sends the
+// pending receipt later.
+func SendReceipts(q ReceiptQueue) Option {
+	return func(s *Service) { s.receipts = q }
+}
+
 // NewService returns a Service. c decides "today" in Asia/Jakarta. promises is required: a
 // Service without it would record payments that never close the promise they keep, and could not
 // show promises to staff, so a nil one stops the program at wiring time.
-func NewService(st *store.Store, az *authz.Service, c clock.Clock, log *slog.Logger, promises Promises) *Service {
+func NewService(st *store.Store, az *authz.Service, c clock.Clock, log *slog.Logger, promises Promises, opts ...Option) *Service {
 	if promises == nil {
 		panic("billing.NewService: a Promises hook is required (promise.NewCloser)")
 	}
-	return &Service{store: st, authz: az, clock: c, log: log, promises: promises}
+	s := &Service{store: st, authz: az, clock: c, log: log, promises: promises}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Result counts what one generation run did.

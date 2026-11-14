@@ -23,6 +23,7 @@ const (
 	TemplatePromiseReminder = "promise_reminder"  // H-1 of a promised date
 	TemplatePromiseBroken   = "promise_broken"    // a promise's day passed without it being kept
 	TemplatePromiseRecorded = "promise_recorded"  // a promise (or an edit) was saved
+	TemplatePaymentReceipt  = "payment_receipt"   // cash a karyawan collected was recorded (slice 6)
 
 	// Staff notices (TG-5, decision 42: demo only, Telegram only). Each names the organization,
 	// the tenant and their unit, and carries no button.
@@ -215,6 +216,21 @@ func registerTenantTemplates() {
 		Text: "Halo {{.name}},\n\n" +
 			"Janji bayar Anda ke *{{.organization}}* sudah tercatat: {{.amount}} pada *{{.date}}*.\n\n" +
 			"Untuk membayar atau mengubah janji, buka tautan di bawah. Terima kasih.",
+	})
+	// The tenant's receipt for cash a karyawan collected (slice 6, decision 46.5), sent the moment
+	// the cash is recorded, so a karyawan who keeps money back shows up as a gap. No button. amount
+	// is the cash recorded and date the day it was received; paid is what it paid on one line, for
+	// example "Tagihan November 2026 Rp700.000 (lunas)"; balance is one sentence on what is still
+	// owed or the credit left.
+	register(Template{
+		Name:   TemplatePaymentReceipt,
+		Params: []string{"organization", "name", "amount", "date", "paid", "balance"},
+		Text: "Halo {{.name}},\n\n" +
+			"Pembayaran tunai Anda ke *{{.organization}}* sebesar *{{.amount}}* sudah diterima pada {{.date}}.\n\n" +
+			"Untuk: {{.paid}}\n" +
+			"{{.balance}}\n\n" +
+			"Simpan pesan ini sebagai bukti pembayaran. Jika jumlahnya tidak sama dengan uang yang Anda serahkan, " +
+			"segera hubungi pengelola.",
 	})
 }
 

@@ -53,16 +53,43 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 	if err != nil {
 		return PaymentResult{}, err
 	}
+	return s.recordManual(ctx, p, in, manualPayment{
+		action: authz.ActionPaymentRecord, tenantField: "tenantId", receivedAt: receivedAt(in.ReceivedOn),
+		same: func(row dbgen.Payment) bool { return samePayment(row, in) },
+	})
+}
+
+// manualPayment is what differs between the ways a member records a payment by hand: the admin's
+// recordPayment and the karyawan's cash collection.
+type manualPayment struct {
+	// action is checked on the tenant, with the amount, through every lease the tenant has or had.
+	action string
+	// tenantField names the input field of the tenant in a not-found error; empty when the tenant
+	// came from the path.
+	tenantField string
+	// receivedAt is stored on a new payment.
+	receivedAt time.Time
+	// same reports whether the payment already stored under the requestId is the one asked for.
+	same func(dbgen.Payment) bool
+	// inTx, when set, runs in the payment's transaction after it is inserted and allocated
+	// (created) or found under its requestId (not created). A repeat's transaction is rolled back.
+	inTx func(ctx context.Context, q *dbgen.Queries, row dbgen.Payment, created bool) error
+}
+
+// recordManual records a payment from a tenant by hand and allocates it FIFO over all the
+// tenant's invoices, with the tenant's promise hook, as RecordPayment describes; in is valid. It
+// authorizes how.action and answers what the payment paid.
+func (s *Service) recordManual(ctx context.Context, p authz.Principal, in PaymentInput, how manualPayment) (PaymentResult, error) {
 	org := p.OrganizationID
 	var out PaymentResult
-	err = s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
-		leases, err := tenantLeases(ctx, q, org, in.TenantID, "tenantId")
+		leases, err := tenantLeases(ctx, q, org, in.TenantID, how.tenantField)
 		if err != nil {
 			return err
 		}
 		amount := in.Amount
-		req := authz.Request{Action: authz.ActionPaymentRecord, Resource: authz.Resource{
+		req := authz.Request{Action: how.action, Resource: authz.Resource{
 			Type: "tenant", ID: in.TenantID.String(), Amount: &amount,
 		}}
 		if err := s.authorizeThroughLeases(ctx, tx, p, req, leases); err != nil {
@@ -75,7 +102,7 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 		if err := LockTenant(ctx, q, org, in.TenantID); err != nil {
 			return err
 		}
-		row, created, err := insertManualPayment(ctx, q, org, p.UserID, in)
+		row, created, err := insertManualPayment(ctx, q, org, p.UserID, in, how)
 		if err != nil {
 			return err
 		}
@@ -85,6 +112,11 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 			}
 			if err := s.promises.PaymentRecorded(ctx, tx, org, in.TenantID); err != nil {
 				return fmt.Errorf("closing the tenant's promise after a payment: %w", err)
+			}
+		}
+		if how.inTx != nil {
+			if err := how.inTx(ctx, q, row, created); err != nil {
+				return err
 			}
 		}
 		acct, err := loadAccount(ctx, q, org, in.TenantID, tenant.Today(s.clock))
@@ -110,8 +142,8 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 }
 
 // insertManualPayment inserts the payment under its requestId, or loads the one already stored
-// under it and checks it is the same payment. It reports whether it inserted.
-func insertManualPayment(ctx context.Context, q *dbgen.Queries, org, recordedBy uuid.UUID, in PaymentInput) (dbgen.Payment, bool, error) {
+// under it and checks with how.same that it is the same payment. It reports whether it inserted.
+func insertManualPayment(ctx context.Context, q *dbgen.Queries, org, recordedBy uuid.UUID, in PaymentInput, how manualPayment) (dbgen.Payment, bool, error) {
 	ref := in.RequestID.String()
 	var note *string
 	if in.Note != "" {
@@ -119,7 +151,7 @@ func insertManualPayment(ctx context.Context, q *dbgen.Queries, org, recordedBy 
 	}
 	row, err := q.InsertPaymentIfNew(ctx, dbgen.InsertPaymentIfNewParams{
 		ID: uuid.New(), OrganizationID: org, TenantID: in.TenantID, Amount: in.Amount, Method: in.Method,
-		ReceivedAt: receivedAt(in.ReceivedOn), Source: SourceManual, SourceRef: &ref,
+		ReceivedAt: how.receivedAt, Source: SourceManual, SourceRef: &ref,
 		RecordedByStaffUserID: uuid.NullUUID{UUID: recordedBy, Valid: true}, Note: note,
 	})
 	if err == nil {
@@ -132,7 +164,7 @@ func insertManualPayment(ctx context.Context, q *dbgen.Queries, org, recordedBy 
 	if err != nil {
 		return dbgen.Payment{}, false, fmt.Errorf("loading the payment of a repeated request: %w", err)
 	}
-	if !samePayment(row, in) {
+	if !how.same(row) {
 		return dbgen.Payment{}, false, ErrRequestIDReused
 	}
 	return row, false, nil
@@ -146,6 +178,18 @@ func samePayment(row dbgen.Payment, in PaymentInput) bool {
 	}
 	return row.TenantID == in.TenantID && row.Amount == in.Amount && row.Method == in.Method &&
 		receivedOn(row.ReceivedAt).Equal(in.ReceivedOn) && note == in.Note
+}
+
+// LoadPaymentResultTx reads one payment of a tenant inside tx, scoped to org, with what it pays
+// now and the tenant's totals; today is the current day in Asia/Jakarta (tenant.Today). It checks
+// no permission: the receipt sender, the platform's own work, uses it. Created is false. A payment
+// that is not the tenant's is an error.
+func LoadPaymentResultTx(ctx context.Context, tx pgx.Tx, org, tenantID, paymentID uuid.UUID, today time.Time) (PaymentResult, error) {
+	acct, err := loadAccount(ctx, dbgen.New(tx), org, tenantID, today)
+	if err != nil {
+		return PaymentResult{}, err
+	}
+	return paymentResult(acct, paymentID)
 }
 
 // paymentResult picks one payment out of its tenant's account, with the invoices it holds money

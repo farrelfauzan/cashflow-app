@@ -102,6 +102,11 @@ func tenantMessages() map[string]Message {
 		TemplatePromiseRecorded: {Template: TemplatePromiseRecorded, Buttons: change, Params: map[string]string{
 			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "amount": "Rp500.000", "date": "20 November 2026",
 		}},
+		TemplatePaymentReceipt: {Template: TemplatePaymentReceipt, Params: map[string]string{
+			"organization": "Griya Sejahtera", "name": "Rina Wulandari", "amount": "Rp1.000.000", "date": "14 November 2026",
+			"paid":    "Tagihan Oktober 2026 Rp700.000 (lunas); Tagihan November 2026 Rp300.000, sisa Rp400.000",
+			"balance": "Sisa tagihan Anda sekarang Rp400.000.",
+		}},
 	}
 }
 
@@ -135,6 +140,12 @@ func TestRenderTenantMessages(t *testing.T) {
 		TemplatePromiseRecorded: "Halo Rina Wulandari,\n\n" +
 			"Janji bayar Anda ke *Griya Sejahtera* sudah tercatat: Rp500.000 pada *20 November 2026*.\n\n" +
 			"Untuk membayar atau mengubah janji, buka tautan di bawah. Terima kasih.\n\nUbah janji:\nhttps://app.example.id/t/tok",
+		TemplatePaymentReceipt: "Halo Rina Wulandari,\n\n" +
+			"Pembayaran tunai Anda ke *Griya Sejahtera* sebesar *Rp1.000.000* sudah diterima pada 14 November 2026.\n\n" +
+			"Untuk: Tagihan Oktober 2026 Rp700.000 (lunas); Tagihan November 2026 Rp300.000, sisa Rp400.000\n" +
+			"Sisa tagihan Anda sekarang Rp400.000.\n\n" +
+			"Simpan pesan ini sebagai bukti pembayaran. Jika jumlahnya tidak sama dengan uang yang Anda serahkan, " +
+			"segera hubungi pengelola.",
 	}
 	msgs := tenantMessages()
 	require.Len(t, msgs, len(want))

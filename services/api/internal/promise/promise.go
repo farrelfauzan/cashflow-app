@@ -199,6 +199,19 @@ func (s *Service) MakeFromLink(ctx context.Context, token string, in Input) (Pro
 // promise:create on the tenant through each of its leases, checked and audited inside the
 // transaction that saves it. A missing tenant is a *billing.NotFoundError. See make for the rules.
 func (s *Service) MakeForTenant(ctx context.Context, p authz.Principal, tenantID uuid.UUID, in Input) (Promise, error) {
+	return s.makeByMember(ctx, p, tenantID, in, SourceAdmin)
+}
+
+// MakeFromField makes, or edits, a tenant's promise that a member recorded in the field app
+// ("Catat janji bayar" on Tagihan hari ini, slice 6): source karyawan. Otherwise it is
+// MakeForTenant: promise:create on the tenant through each of its leases (a karyawan's self is
+// the lease's collector), checked and audited in the transaction that saves it.
+func (s *Service) MakeFromField(ctx context.Context, p authz.Principal, tenantID uuid.UUID, in Input) (Promise, error) {
+	return s.makeByMember(ctx, p, tenantID, in, SourceKaryawan)
+}
+
+// makeByMember makes, or edits, a tenant's promise for member p with the given source.
+func (s *Service) makeByMember(ctx context.Context, p authz.Principal, tenantID uuid.UUID, in Input, source string) (Promise, error) {
 	in, err := in.checked()
 	if err != nil {
 		return Promise{}, err
@@ -208,7 +221,7 @@ func (s *Service) MakeForTenant(ctx context.Context, p authz.Principal, tenantID
 		if err := s.tenants.AuthorizeTenant(ctx, tx, p, tenantID, authz.ActionPromiseCreate); err != nil {
 			return err
 		}
-		out, err = s.make(ctx, tx, p.OrganizationID, tenantID, in, author{source: SourceAdmin, userID: p.UserID})
+		out, err = s.make(ctx, tx, p.OrganizationID, tenantID, in, author{source: source, userID: p.UserID})
 		return err
 	})
 	if err != nil {

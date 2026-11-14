@@ -35,6 +35,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/receipt/receipttask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice/noticetask"
@@ -119,8 +120,10 @@ func run() error {
 	az := authz.NewService(st, clk, log)
 	props := property.NewService(st, az, clk)
 	leaseQueue := invoicetask.NewLeaseQueue(invoicetask.NewClient(queueClient), log)
-	// A manual payment that keeps a tenant's promise closes it in the payment's transaction.
-	billingSvc := billing.NewService(st, az, clk, log, promise.NewCloser(st, clk, log))
+	// A manual payment that keeps a tenant's promise closes it in the payment's transaction. Cash a
+	// karyawan collects enqueues the tenant's receipt once it commits; the worker sends it.
+	billingSvc := billing.NewService(st, az, clk, log, promise.NewCloser(st, clk, log),
+		billing.SendReceipts(receipttask.NewClient(queueClient)))
 	tenants := tenant.NewService(st, az, clk, billingSvc, leaseQueue)
 	imports := tenantimport.NewService(st, az, props, tenants, clk)
 	cookieSecure := cfg.CookieSecure()
