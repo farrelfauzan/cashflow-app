@@ -246,6 +246,10 @@ func TestStaffLoginAndMembersOverHTTP(t *testing.T) {
 	t.Run("logout ends the session", func(t *testing.T) {
 		resp, _ := admin.do(http.MethodPost, "/api/auth/logout", nil)
 		require.Equal(t, http.StatusNoContent, resp.StatusCode)
+		// The cleared cookie leaves the jar too (clockFreeJar keeps Max-Age), not only the session.
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		require.Empty(t, admin.http.Jar.Cookies(u))
 		resp, _ = admin.do(http.MethodGet, "/api/me", nil)
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
