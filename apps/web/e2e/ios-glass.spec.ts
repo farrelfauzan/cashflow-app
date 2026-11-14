@@ -332,8 +332,13 @@ test.describe("on iOS and iPadOS", () => {
     expect(alphaOf((await glassLook(shown)).backgroundColor)).toBe(1);
     await attachViewportScreenshot(page, testInfo, "ios-solid-contrast");
 
-    // The form sheet too: solid, still floating, the form still on its card.
+    // The form sheet too: solid, still floating, the form still on its card, over the usual
+    // stronger dim.
     const sheet = await openEditKosMelati(page, true);
+    const dim = await page
+      .locator('[data-slot="sheet-overlay"]')
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(alphaOf(dim)).toBeCloseTo(0.5);
     const sheetBox = await box(sheet);
     if (isPhone(testInfo)) expect(sheetBox.x).toBe(8);
     else expect(sheetBox.y).toBe(12);

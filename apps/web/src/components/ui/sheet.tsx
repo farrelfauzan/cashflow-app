@@ -35,9 +35,9 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       // On iOS a lighter ink, so a glass sheet over it reads as cream (boards iOS-HP-Lembar and
-      // iOS-iPad).
+      // iOS-iPad); with Increase Contrast, the usual stronger dim.
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out data-[state=open]:fade-in-0 ios:bg-foreground/30",
+        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out data-[state=open]:fade-in-0 ios:bg-foreground/30 ios:contrast-more:bg-black/50",
         className,
       )}
       {...props}
