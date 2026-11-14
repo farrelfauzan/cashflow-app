@@ -33,7 +33,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var invoicedPrice *property.InvoicedPriceError
 	var billingInput *billing.InputError
 	var billingMissing *billing.NotFoundError
-	if s.failPromise(w, err) {
+	if s.failPromise(w, err) || s.failUpload(w, err) {
 		return
 	}
 	switch {

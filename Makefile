@@ -33,13 +33,19 @@ env: ## Create services/api/.env from the example if it is missing
 dev-up: ## Start PostgreSQL and Redis for local development
 	$(COMPOSE) up -d --wait
 
+.PHONY: dev-up-uploads
+dev-up-uploads: ## Also start MinIO (with its bucket) and ClamAV for uploads; ClamAV's first start takes a minute or two
+	$(COMPOSE) --profile uploads up -d --wait minio
+	$(COMPOSE) --profile uploads run --rm minio-init
+	$(COMPOSE) --profile uploads up -d clamav
+
 .PHONY: dev-down
-dev-down: ## Stop PostgreSQL and Redis (data is kept)
-	$(COMPOSE) down
+dev-down: ## Stop PostgreSQL and Redis, and MinIO and ClamAV if running (data is kept)
+	$(COMPOSE) --profile uploads down
 
 .PHONY: dev-reset
-dev-reset: ## Stop PostgreSQL and Redis and delete all their data
-	$(COMPOSE) down -v
+dev-reset: ## Stop PostgreSQL and Redis (and MinIO and ClamAV) and delete all their data
+	$(COMPOSE) --profile uploads down -v
 
 # ---- run -------------------------------------------------------------------------------
 
@@ -84,6 +90,10 @@ api-test: ## Unit tests with the race detector
 .PHONY: api-test-integration
 api-test-integration: ## Integration tests (needs Docker for testcontainers)
 	cd $(API_DIR) && go test -race -tags integration ./...
+
+.PHONY: api-test-clamav
+api-test-clamav: ## The clamd adapter against a real ClamAV container (slow: clamd loads its signatures first)
+	cd $(API_DIR) && go test -race -tags clamav -run TestAgainstClamAV ./internal/scan/clamd/
 
 .PHONY: api-lint
 api-lint: ## go vet and golangci-lint

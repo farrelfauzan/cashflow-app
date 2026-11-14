@@ -233,6 +233,59 @@ template's order) and the rendered `text`. A login code is the last line whose `
 and whose `template` is `login_code`; the code is `params[0]`. The file is created with mode 0600.
 Config refuses `DEVLOG_FILE` outside development or with any other provider.
 
+### Uploads: photos in MinIO, scanned by ClamAV (development)
+
+Staff photos (cash receipt and deposit photos, S6-1) go from the phone straight to an
+S3-compatible bucket through a presigned PUT, and stay `pending` until the worker's scan job has
+checked their real size and type and scanned them with ClamAV; only a clean file can be
+downloaded, through a short-lived link, always as an attachment. Production uses Cloudflare R2;
+development uses MinIO. Uploads are off until the `STORAGE_*` settings are set: the upload
+routes then answer 503 `uploads_unavailable` and the worker registers no scan jobs.
+
+To turn them on locally:
+
+```bash
+make dev-up-uploads   # MinIO on 127.0.0.1:9100 (console :9101) with the bucket, ClamAV on :3310
+```
+
+then uncomment the `STORAGE_*` and `CLAMAV_ADDR` lines at the end of `services/api/.env` (the
+values match `infra/compose.dev.yaml`; MinIO's console logs in as `cashflow` /
+`cashflow-dev-secret`) and restart `make api-run` and `make worker-run`. ClamAV loads its
+signatures for a minute or two after it starts (about 1 GB of memory); until it answers the worker
+logs "clamd does not answer yet" and retries the scans. The web app on `http://localhost:3000`
+PUTs to MinIO directly; MinIO allows that origin (`MINIO_API_CORS_ALLOW_ORIGIN`).
+
+| Setting | Meaning |
+|---|---|
+| `STORAGE_ENDPOINT` | the bucket's S3 endpoint as the API and the worker reach it (https outside development) |
+| `STORAGE_PRESIGN_ENDPOINT` | the endpoint the browser reaches, named in presigned URLs; empty means `STORAGE_ENDPOINT` |
+| `STORAGE_BUCKET`, `STORAGE_REGION` | the bucket; the region is `auto` for R2 when empty |
+| `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY` | the bucket's key (a secret: never logged) |
+| `STORAGE_PATH_STYLE` | `true` for MinIO (the bucket in the URL path) |
+| `CLAMAV_ADDR` | clamd's `host:port`, worker only, required with `STORAGE_*` |
+
+Try the flow by hand in Swagger (`/docs`), signed in as a karyawan: `createUpload` answers a
+`putUrl` and `putHeaders`; send the file with
+`curl -X PUT -H 'Content-Type: image/jpeg' --data-binary @foto.jpg '<putUrl>'` (exactly the
+declared size and type, or MinIO refuses it), then `completeUpload`, then `getUpload` until the
+status is no longer `pending`. To see the malware path, upload the EICAR test file, a harmless
+string every scanner reports:
+
+```bash
+printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > eicar.jpg
+```
+
+Declare it as `image/jpeg` with its size (68 bytes); the scan marks it `infected`, moves it to
+`quarantine/` in the bucket, and writes an `upload:scan` row to the audit log. A PDF or text file
+sent as `.jpg` ends `rejected`. Where objects live in the bucket: `incoming/` (what the PUT
+writes), `files/` (the scanned copy a clean upload is read from), `quarantine/`. On R2, add a
+lifecycle rule that deletes `incoming/` after a day, for PUTs that were never completed.
+
+Tests: unit tests use the fakes in `internal/upload/uploadtest` (an in-memory bucket and a
+scanner that flags EICAR); the integration tests run MinIO in Docker
+(`internal/storage/s3store`); `make api-test-clamav` runs the clamd adapter against a real
+`clamav/clamav` container, which is slow and so has its own build tag (`clamav`).
+
 ### Try the API in Swagger
 
 In development the API serves Swagger UI at http://localhost:8080/docs, from the same origin, so
@@ -393,7 +446,9 @@ replay Bot API answers.
 | Command | What it does |
 |---|---|
 | `make api-test` | unit tests |
-| `make api-test-integration` | tests that start PostgreSQL and Redis in Docker |
+| `make api-test-integration` | tests that start PostgreSQL, Redis and MinIO in Docker |
+| `make api-test-clamav` | the clamd adapter against a real ClamAV container (slow) |
+| `make dev-up-uploads` | MinIO and ClamAV for uploads (development) |
 | `make api-lint` | `go vet` and `golangci-lint` |
 | `make sqlc` | regenerate `internal/platform/store/dbgen` after editing `db/queries` or `db/migrations` |
 | `make api-gen` | regenerate `internal/httpapi/apigen` after editing `api/openapi.yaml` |
@@ -439,6 +494,12 @@ replay Bot API answers.
   promise version's "janji tercatat" confirmation (`promise:confirm`). `remindertask` runs
   `reminders:decide` from the worker at 08:00 Asia/Jakarta, one task per organization and day, and
   the sweep that re-enqueues anything still pending.
+- `internal/upload`: staff photo uploads (S6-1): starting one with a presigned PUT, completing
+  it, the scan that checks the real size and type and runs the malware scanner, quarantine, and
+  the short-lived download link of a clean file. `uploadtask` runs `upload:scan` and the
+  10-minute `upload:reconcile`; `uploadtest` has the fakes. The adapters are
+  `internal/storage/s3store` (R2 and MinIO, AWS SDK for Go v2) and `internal/scan/clamd` (clamd's
+  INSTREAM over TCP).
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.
 - `internal/platform/{config,logging,clock,queue}`: process plumbing.
 - `internal/platform/pgtest`, `internal/testenv`: integration test setup.

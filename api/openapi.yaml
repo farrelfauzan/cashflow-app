@@ -17,6 +17,7 @@ tags:
   - name: tenants
   - name: money
   - name: payment-page
+  - name: uploads
 
 paths:
   /auth/otp/request:
@@ -1574,6 +1575,125 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/uploads:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    post:
+      tags: [uploads]
+      operationId: createUpload
+      summary: Start a photo upload straight to storage (needs the action of the record it is for; audited)
+      description: >
+        Answers a presigned PUT URL that is valid for a few minutes (putExpiresAt). The browser
+        sends the file body to putUrl with method PUT and exactly the headers in putHeaders; the
+        body must be exactly size bytes, since the size is signed into the URL (storage has no
+        presigned POST, so this is the size limit). Then it calls completeUpload, and polls
+        getUpload until status is no longer pending.
+
+        The upload starts pending. A queue job checks the stored file's real size and type (from
+        its content, never its name or declared type), and scans it for malware: only a clean
+        file can be read, through getUpload's short-lived downloadUrl, always as a download.
+
+        What the upload is for decides the permission: purpose cash_receipt (a receipt photo for
+        tenantId) needs cash:record on the tenant, through every lease the tenant has or had, so a
+        karyawan may upload only for tenants they collect from; purpose cash_deposit (a deposit
+        photo, no tenantId) needs cash:deposit on the caller's own record.
+
+        Errors: 400 upload_purpose_unknown (field purpose), upload_type_not_allowed (field
+        contentType: only image/jpeg, image/png and image/webp), upload_too_large (field size:
+        at most 10 MB, 10485760 bytes), invalid_input (field size or tenantId); 404 not_found
+        with field tenantId for a tenant not in the organization; 503 uploads_unavailable when
+        this server has no file storage configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadInput" }
+      responses:
+        "201":
+          description: Created; PUT the file to putUrl, then call completeUpload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTicket" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such tenant in the organization (code not_found, field tenantId)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "This server has no file storage configured (code uploads_unavailable)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/uploads/{uploadId}/complete:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/UploadId"
+    post:
+      tags: [uploads]
+      operationId: completeUpload
+      summary: Say the PUT finished, so the scan starts (only the member who started the upload; audited)
+      description: >
+        Queues the scan. Calling it again is harmless and answers the upload as it is now. Only the
+        member who started the upload may complete it, and they must still have the permission
+        createUpload needed. A file that never arrived stays pending for a while and is then
+        rejected.
+      responses:
+        "200":
+          description: The upload, usually still pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Upload" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such upload in the organization (code upload_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "This server has no file storage configured (code uploads_unavailable)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/uploads/{uploadId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/UploadId"
+    get:
+      tags: [uploads]
+      operationId: getUpload
+      summary: An upload's scan status and, once it is clean, a short-lived download link
+      description: >
+        Allowed with payment:check or cash:read (through every lease of a receipt's tenant; for
+        a deposit photo, for the whole organization), or with the action that started the upload on the
+        same record (a karyawan reads the receipts of tenants they collect from and their own
+        deposit photos). downloadUrl is present only when status is clean, lasts a few minutes
+        (downloadExpiresAt) and always downloads the file as an attachment; ask again for a new
+        one. A pending, rejected or infected upload never has one.
+      responses:
+        "200":
+          description: The upload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Upload" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such upload in the organization (code upload_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "This server has no file storage configured (code uploads_unavailable)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /t/{token}:
     parameters:
       - name: token
@@ -2030,6 +2150,11 @@ components:
       schema: { type: string, format: uuid }
     InvoiceId:
       name: invoiceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UploadId:
+      name: uploadId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -3408,6 +3533,81 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/MissingMeterReading" }
+
+    UploadPurpose:
+      type: string
+      enum: [cash_receipt, cash_deposit]
+      description: >
+        What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment;
+        cash_deposit, a photo of a cash deposit (setor tunai).
+
+    UploadStatus:
+      type: string
+      enum: [pending, clean, rejected, infected]
+      description: >
+        pending until the scan has run; clean (can be downloaded); rejected (not a JPEG, PNG or
+        WebP image, not the declared size, larger than 10 MB, or the file never arrived);
+        infected (malware found; the file is quarantined and an admin sees it). Only pending
+        changes, once.
+
+    UploadInput:
+      type: object
+      required: [purpose, contentType, size]
+      properties:
+        purpose: { $ref: "#/components/schemas/UploadPurpose" }
+        tenantId:
+          type: string
+          format: uuid
+          description: Required for cash_receipt; must be left out for cash_deposit.
+        contentType:
+          type: string
+          description: The file's type as the browser reports it; image/jpeg, image/png or image/webp.
+          example: image/jpeg
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10485760
+          description: The file's exact size in bytes, at most 10 MB (10485760).
+          example: 2483120
+
+    Upload:
+      type: object
+      required: [id, purpose, status, size, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        purpose: { $ref: "#/components/schemas/UploadPurpose" }
+        tenantId: { type: string, format: uuid, description: The tenant of a cash_receipt. }
+        status: { $ref: "#/components/schemas/UploadStatus" }
+        contentType:
+          type: string
+          description: The type found in the file's content by the scan; absent while pending.
+          example: image/jpeg
+        size: { type: integer, format: int64, description: The declared size in bytes. }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, description: When completeUpload was first called. }
+        scannedAt: { type: string, format: date-time, description: When the scan decided the status. }
+        downloadUrl:
+          type: string
+          description: >
+            Only when status is clean (getUpload only): a short-lived link that downloads the file
+            as an attachment. Do not store it; ask getUpload again for a new one.
+        downloadExpiresAt: { type: string, format: date-time }
+
+    UploadTicket:
+      type: object
+      required: [upload, putUrl, putHeaders, putExpiresAt]
+      properties:
+        upload: { $ref: "#/components/schemas/Upload" }
+        putUrl:
+          type: string
+          description: Where to PUT the file body. Valid until putExpiresAt; never log it.
+        putHeaders:
+          type: object
+          additionalProperties: { type: string }
+          description: Headers the PUT must carry exactly, such as Content-Type.
+          example: { Content-Type: image/jpeg }
+        putExpiresAt: { type: string, format: date-time }
 
     PaymentLink:
       type: object
