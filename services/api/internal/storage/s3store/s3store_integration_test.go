@@ -30,7 +30,7 @@ import (
 )
 
 // rustfsImage is the S3-compatible server the tests and infra/compose.dev.yaml run (RustFS,
-// decision 46: RustFS's images are no longer pullable without a login).
+// decision 46: MinIO's images are no longer pullable without a login).
 const rustfsImage = "rustfs/rustfs:1.0.5"
 
 const (
