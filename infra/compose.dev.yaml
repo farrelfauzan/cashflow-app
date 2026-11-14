@@ -1,5 +1,9 @@
 # PostgreSQL and Redis for local development. Run the Go binaries on your machine with
 # `make api-run` and `make worker-run`. Ports are bound to localhost only.
+#
+# Uploads (S6-1) need two more services, in the "uploads" profile so `make dev-up` stays quick:
+# MinIO, the S3-compatible stand-in for R2, and ClamAV, which scans every upload. Start them with
+# `make dev-up-uploads`; services/api/README.md says which settings turn uploads on.
 name: cashflow-dev
 
 services:
@@ -36,6 +40,53 @@ services:
       timeout: 3s
       retries: 10
 
+  # S3-compatible storage on 127.0.0.1:9100 (the S3 API, which the API, the worker and the browser
+  # all reach) and 127.0.0.1:9101 (MinIO's console). Development credentials only. MinIO answers
+  # the browser's CORS preflight for the web app's origin; R2 gets the same rule on its bucket.
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    profiles: [uploads]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: cashflow
+      MINIO_ROOT_PASSWORD: cashflow-dev-secret
+      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:3000
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Creates the development bucket once MinIO is up; `make dev-up-uploads` runs it. Safe to rerun.
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    profiles: [uploads]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - mc alias set local http://minio:9000 cashflow cashflow-dev-secret &&
+        mc mb --ignore-existing local/cashflow-dev
+
+  # clamd on 127.0.0.1:3310. It loads its signature database on start, which takes a minute or
+  # two and about 1 GB of memory, and freshclam updates the database while it runs. Until clamd
+  # answers, scans fail and the worker retries them.
+  clamav:
+    image: clamav/clamav:1.4.3
+    profiles: [uploads]
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamavdata:/var/lib/clamav
+
 volumes:
   pgdata:
   redisdata:
+  miniodata:
+  clamavdata:

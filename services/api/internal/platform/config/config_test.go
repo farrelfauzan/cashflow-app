@@ -863,3 +863,129 @@ func TestAdminRunDaySending(t *testing.T) {
 		})
 	}
 }
+
+// storageTestSecret is the development MinIO password of infra/compose.dev.yaml.
+const storageTestSecret = "cashflow-dev-secret" //nolint:gosec // G101: a development placeholder, not a credential
+
+func TestStorageSettings(t *testing.T) {
+	t.Parallel()
+	minio := Storage{
+		Endpoint: "http://localhost:9100", Bucket: "cashflow-dev", Region: "us-east-1",
+		AccessKeyID: "cashflow", SecretAccessKey: storageTestSecret, PathStyle: true,
+	}
+	r2 := Storage{
+		Endpoint: "https://0123456789abcdef.r2.cloudflarestorage.com", Bucket: "cashflow-prod",
+		AccessKeyID: "id", SecretAccessKey: "secret",
+	}
+	with := func(s Storage, f func(*Storage)) Storage { f(&s); return s }
+	tests := []struct {
+		name    string
+		env     string
+		s       Storage
+		wantErr string
+	}{
+		{name: "nothing set in development turns uploads off", env: "development"},
+		{name: "nothing set in staging", env: "staging", wantErr: "uploads need a bucket in staging"},
+		{name: "nothing set in production", env: "production", wantErr: "uploads need a bucket in production"},
+		{name: "MinIO in development", env: "development", s: minio},
+		{name: "MinIO with a browser endpoint", env: "development", s: with(minio, func(s *Storage) { s.PresignEndpoint = "http://localhost:9100" })},
+		{name: "R2 in production", env: "production", s: r2},
+		{name: "only a bucket", env: "development", s: Storage{Bucket: "cashflow-dev"},
+			wantErr: "STORAGE_ENDPOINT, STORAGE_ACCESS_KEY_ID, STORAGE_SECRET_ACCESS_KEY"},
+		{name: "no secret", env: "production", s: with(r2, func(s *Storage) { s.SecretAccessKey = "" }), wantErr: "STORAGE_SECRET_ACCESS_KEY"},
+		{name: "http in production", env: "production", s: with(r2, func(s *Storage) { s.Endpoint = "http://r2.test" }), wantErr: "STORAGE_ENDPOINT must use https"},
+		{name: "a browser endpoint over http in staging", env: "staging", s: with(r2, func(s *Storage) { s.PresignEndpoint = "http://files.test" }),
+			wantErr: "STORAGE_PRESIGN_ENDPOINT must use https"},
+		{name: "an endpoint with the bucket in the path", env: "production", s: with(r2, func(s *Storage) { s.Endpoint += "/cashflow-prod" }), wantErr: "no path"},
+		{name: "a bucket name with capitals", env: "production", s: with(r2, func(s *Storage) { s.Bucket = "Cashflow" }), wantErr: "STORAGE_BUCKET"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.s.validate(tc.env)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+			if tc.s.SecretAccessKey != "" {
+				require.NotContains(t, err.Error(), tc.s.SecretAccessKey)
+			}
+		})
+	}
+}
+
+func TestStorageLogValueHidesTheSecret(t *testing.T) {
+	t.Parallel()
+	s := Storage{Endpoint: "https://r2.test", Bucket: "cashflow-prod", AccessKeyID: "id", SecretAccessKey: "very-secret-value"}
+	var b strings.Builder
+	slog.New(slog.NewTextHandler(&b, nil)).Info("x", "storage", s)
+	require.NotContains(t, b.String(), "very-secret-value")
+	require.Contains(t, b.String(), "cashflow-prod")
+}
+
+func TestWorkerUploadSettings(t *testing.T) {
+	t.Parallel()
+	base := map[string]string{"DATABASE_URL": "postgres://app@db/cashflow", "SECRETS_KEY": testKey}
+	minio := map[string]string{
+		"STORAGE_ENDPOINT": "http://localhost:9100", "STORAGE_BUCKET": "cashflow-dev",
+		"STORAGE_ACCESS_KEY_ID": "cashflow", "STORAGE_SECRET_ACCESS_KEY": storageTestSecret, "STORAGE_PATH_STYLE": "true",
+	}
+	env := func(maps ...map[string]string) map[string]string {
+		out := map[string]string{}
+		for _, m := range append([]map[string]string{base}, maps...) {
+			for k, v := range m {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+		want    func(t *testing.T, w Worker)
+	}{
+		{name: "no uploads", env: env(), want: func(t *testing.T, w Worker) { require.False(t, w.Storage.Enabled()) }},
+		{name: "a bucket and clamd", env: env(minio, map[string]string{"CLAMAV_ADDR": "localhost:3310"}), want: func(t *testing.T, w Worker) {
+			require.True(t, w.Storage.Enabled())
+			require.True(t, w.Storage.PathStyle)
+			require.Equal(t, "localhost:3310", w.ClamAVAddr)
+		}},
+		{name: "a bucket without clamd", env: env(minio), wantErr: "CLAMAV_ADDR"},
+		{name: "clamd without a port", env: env(minio, map[string]string{"CLAMAV_ADDR": "clamav"}), wantErr: "CLAMAV_ADDR must be host:port"},
+		{name: "clamd alone is ignored", env: env(map[string]string{"CLAMAV_ADDR": "localhost:3310"}), want: func(t *testing.T, w Worker) {
+			require.False(t, w.Storage.Enabled())
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := loadWorker(context.Background(), envconfig.MapLookuper(tc.env))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			tc.want(t, got)
+		})
+	}
+}
+
+func TestAPIUploadSettings(t *testing.T) {
+	t.Parallel()
+	got, err := loadAPI(context.Background(), envconfig.MapLookuper(map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+		"STORAGE_ENDPOINT": "http://minio:9000", "STORAGE_PRESIGN_ENDPOINT": "http://localhost:9100", "STORAGE_BUCKET": "cashflow-dev",
+		"STORAGE_ACCESS_KEY_ID": "cashflow", "STORAGE_SECRET_ACCESS_KEY": storageTestSecret,
+	}))
+	require.NoError(t, err)
+	require.True(t, got.Storage.Enabled())
+	require.Equal(t, "http://localhost:9100", got.Storage.PresignEndpoint)
+
+	_, err = loadAPI(context.Background(), envconfig.MapLookuper(map[string]string{
+		"DATABASE_URL": "postgres://app@db/cashflow", "AUTH_SECRET": testSecret, "SECRETS_KEY": testKey,
+		"STORAGE_BUCKET": "cashflow-dev",
+	}))
+	require.ErrorContains(t, err, "STORAGE_ENDPOINT")
+}

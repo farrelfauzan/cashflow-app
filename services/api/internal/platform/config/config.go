@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -97,6 +98,9 @@ type API struct {
 	// OpenAPISpec is the spec file Swagger UI shows at /docs. Only development serves it; the
 	// default works when the API runs from services/api, as `make api-run` does.
 	OpenAPISpec string `env:"OPENAPI_SPEC, default=../../api/openapi.yaml"`
+	// Storage is the bucket uploads go to (S6-1). Required outside development; in development
+	// without it the upload routes answer 503 uploads_unavailable.
+	Storage Storage `env:", prefix=STORAGE_"`
 }
 
 // DocsSpecPath returns the spec to serve at /docs, or "" outside development.
@@ -236,7 +240,10 @@ func (c API) validate() error {
 	if err := validWebOrigin(c.PublicWebOrigin, c.Env); err != nil {
 		return err
 	}
-	return c.WhatsApp().validate()
+	if err := c.WhatsApp().validate(); err != nil {
+		return err
+	}
+	return c.Storage.validate(c.Env)
 }
 
 // WhatsApp is the WhatsApp provider choice and its settings, as cmd/api and cmd/worker read them
@@ -364,6 +371,12 @@ type Worker struct {
 	Twilio           Twilio `env:", prefix=TWILIO_"`
 	// Telegram is as in API.
 	Telegram Telegram `env:", prefix=TELEGRAM_"`
+	// Storage is as in API: the scan job reads and quarantines uploads. Without it (development
+	// only) the worker registers no upload jobs.
+	Storage Storage `env:", prefix=STORAGE_"`
+	// ClamAVAddr is CLAMAV_ADDR, clamd's host:port on the internal network, which scans uploads.
+	// Required with Storage.
+	ClamAVAddr string `env:"CLAMAV_ADDR"`
 }
 
 // WhatsApp returns the worker's WhatsApp settings.
@@ -393,7 +406,103 @@ func (c Worker) validate() error {
 	if err := validWebOrigin(c.PublicWebOrigin, c.Env); err != nil {
 		return err
 	}
-	return c.WhatsApp().validate()
+	if err := c.WhatsApp().validate(); err != nil {
+		return err
+	}
+	if err := c.Storage.validate(c.Env); err != nil {
+		return err
+	}
+	return validClamAV(c.ClamAVAddr, c.Storage.Enabled())
+}
+
+// validClamAV checks CLAMAV_ADDR: required (as host:port) when uploads are on, since the scan
+// job needs it.
+func validClamAV(addr string, uploads bool) error {
+	if addr == "" {
+		if uploads {
+			return errors.New("CLAMAV_ADDR (clamd's host:port) is required when STORAGE_* is set: the worker scans every upload")
+		}
+		return nil
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || host == "" || port == "" {
+		return fmt.Errorf("CLAMAV_ADDR must be host:port, such as clamav:3310, got %q", addr)
+	}
+	return nil
+}
+
+// Storage is the S3-compatible bucket that holds uploads (S6-1): Cloudflare R2 in production,
+// MinIO in development. Every setting is optional in development, where leaving them all unset
+// turns uploads off; once one is set the bucket's settings are required. SecretAccessKey is a
+// secret: never log it (LogValue hides it) and never echo it in an error.
+type Storage struct {
+	// Endpoint is STORAGE_ENDPOINT, the bucket's S3 endpoint as the API and the worker reach it,
+	// such as https://<account>.r2.cloudflarestorage.com or http://localhost:9000.
+	Endpoint string `env:"ENDPOINT"`
+	// PresignEndpoint is STORAGE_PRESIGN_ENDPOINT, the endpoint the browser reaches, which
+	// presigned URLs name; empty means Endpoint.
+	PresignEndpoint string `env:"PRESIGN_ENDPOINT"`
+	// Bucket is STORAGE_BUCKET.
+	Bucket string `env:"BUCKET"`
+	// Region is STORAGE_REGION; empty means "auto", R2's region.
+	Region string `env:"REGION"`
+	// AccessKeyID and SecretAccessKey are STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY.
+	AccessKeyID     string `env:"ACCESS_KEY_ID"`
+	SecretAccessKey string `env:"SECRET_ACCESS_KEY"`
+	// PathStyle is STORAGE_PATH_STYLE: true puts the bucket in the URL path, as MinIO needs.
+	PathStyle bool `env:"PATH_STYLE"`
+}
+
+// Enabled reports whether any bucket setting is set, which turns uploads on.
+func (s Storage) Enabled() bool {
+	return s.Endpoint != "" || s.PresignEndpoint != "" || s.Bucket != "" || s.AccessKeyID != "" || s.SecretAccessKey != ""
+}
+
+// LogValue keeps the secret key out of logs.
+func (s Storage) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.Bool("enabled", s.Enabled()),
+		slog.String("endpoint", s.Endpoint),
+		slog.String("presign_endpoint", s.PresignEndpoint),
+		slog.String("bucket", s.Bucket),
+		slog.String("region", s.Region),
+		slog.Bool("path_style", s.PathStyle),
+		slog.Bool("secret_set", s.SecretAccessKey != ""),
+	)
+}
+
+var bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+
+// validate checks the bucket settings. Errors name the setting, never the secret's value.
+func (s Storage) validate(env string) error {
+	if !s.Enabled() {
+		if env == "development" {
+			return nil
+		}
+		return fmt.Errorf("uploads need a bucket in %s: set STORAGE_ENDPOINT, STORAGE_BUCKET, STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY", env)
+	}
+	var missing []string
+	for _, f := range []struct{ name, value string }{
+		{"STORAGE_ENDPOINT", s.Endpoint}, {"STORAGE_BUCKET", s.Bucket},
+		{"STORAGE_ACCESS_KEY_ID", s.AccessKeyID}, {"STORAGE_SECRET_ACCESS_KEY", s.SecretAccessKey},
+	} {
+		if f.value == "" {
+			missing = append(missing, f.name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("uploads need %s once any STORAGE_* setting is set", strings.Join(missing, ", "))
+	}
+	if err := validBaseURL("STORAGE_ENDPOINT", s.Endpoint, env, true); err != nil {
+		return err
+	}
+	if err := validBaseURL("STORAGE_PRESIGN_ENDPOINT", s.PresignEndpoint, env, true); err != nil {
+		return err
+	}
+	if !bucketName.MatchString(s.Bucket) {
+		return fmt.Errorf("STORAGE_BUCKET must be 3 to 63 lowercase letters, digits, dots or hyphens, got %q", s.Bucket)
+	}
+	return nil
 }
 
 // validAutoGoPayURL checks AUTOGOPAY_BASE_URL: empty (AutoGoPay's own gateway), or an absolute

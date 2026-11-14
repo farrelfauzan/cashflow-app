@@ -38,9 +38,12 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice/noticetask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/storage/s3store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/telegramlink"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload/uploadtask"
 )
 
 func main() {
@@ -157,6 +160,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	uploads, err := newUploads(cfg.Storage, st, az, uploadtask.NewClient(queueClient), clk, log)
+	if err != nil {
+		return err
+	}
 
 	srv := httpapi.New(httpapi.Deps{
 		Log:           log,
@@ -171,6 +178,7 @@ func run() error {
 		PayLinks:      payLinks,
 		QRIS:          qrisSvc,
 		Promises:      promises,
+		Uploads:       uploads,
 		Webhooks:      webhooks,
 		TelegramCodes: tgCodes,
 		// A nil *Handler must stay a nil interface, so the route is not registered without a bot.
@@ -212,6 +220,30 @@ func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, staff 
 		codes = telegramlink.NewCodes(st, links, clk, cfg.Telegram.BotUsername)
 	}
 	return codes, telegramlink.NewHandler(st, bot, staff, clk, log), nil
+}
+
+// newUploads builds the upload service on the configured bucket (S6-1). Without STORAGE_*
+// settings, which config.LoadAPI allows only in development, it returns nil and the upload
+// routes answer 503 uploads_unavailable.
+func newUploads(cfg config.Storage, st *store.Store, az *authz.Service, q upload.ScanQueue, clk clock.Clock, log *slog.Logger) (*upload.Service, error) {
+	if !cfg.Enabled() {
+		log.Info("uploads off: no STORAGE_* settings")
+		return nil, nil
+	}
+	bucket, err := s3store.New(storageConfig(cfg))
+	if err != nil {
+		return nil, err
+	}
+	log.Info("uploads on", "storage", cfg)
+	return upload.NewService(upload.ServiceDeps{Store: st, Authz: az, Clock: clk, Presigner: bucket, Queue: q, Log: log}), nil
+}
+
+// storageConfig is the bucket adapter's view of the STORAGE_* settings.
+func storageConfig(c config.Storage) s3store.Config {
+	return s3store.Config{
+		Endpoint: c.Endpoint, PresignEndpoint: c.PresignEndpoint, Bucket: c.Bucket, Region: c.Region,
+		AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey, PathStyle: c.PathStyle,
+	}
 }
 
 // telegramBotUsername is the bot's username when the environment has a bot, and empty otherwise,
