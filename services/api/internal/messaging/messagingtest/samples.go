@@ -51,6 +51,12 @@ func Samples() map[string]messaging.Message {
 		messaging.TemplatePromiseRecorded: {Template: messaging.TemplatePromiseRecorded, Buttons: change, Params: map[string]string{
 			"name": "Rina Wulandari", "organization": "Griya Sejahtera", "amount": "Rp500.000", "date": "20 November 2026",
 		}},
+		// The cash receipt carries no button.
+		messaging.TemplatePaymentReceipt: {Template: messaging.TemplatePaymentReceipt, Params: map[string]string{
+			"organization": "Griya Sejahtera", "name": "Rina Wulandari", "amount": "Rp1.000.000", "date": "14 November 2026",
+			"paid":    "Tagihan Oktober 2026 Rp700.000 (lunas); Tagihan November 2026 Rp300.000, sisa Rp400.000",
+			"balance": "Sisa tagihan Anda sekarang Rp400.000.",
+		}},
 		// Staff notices carry no button.
 		messaging.TemplateStaffPromiseMade: {Template: messaging.TemplateStaffPromiseMade, Params: map[string]string{
 			"organization": "Griya Sejahtera", "tenant": "Rina Wulandari", "unit": "Kamar 3, Kos Melati",

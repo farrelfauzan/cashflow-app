@@ -101,6 +101,11 @@ func (s *Server) recordPayment(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.writeJSON(w, createdStatus(res.Created), toAPIPaymentResult(res))
+}
+
+// toAPIPaymentResult is a recorded payment as recordPayment and recordCashPayment answer it.
+func toAPIPaymentResult(res billing.PaymentResult) apigen.PaymentResult {
 	totals := toAPITotals(res.Totals)
 	out := apigen.PaymentResult{
 		Payment: toAPIAccountPayment(res.Payment), Paid: make([]apigen.PaidInvoice, len(res.Paid)),
@@ -112,7 +117,7 @@ func (s *Server) recordPayment(w http.ResponseWriter, r *http.Request) {
 			Amount: inv.Amount, Outstanding: inv.Outstanding,
 		}
 	}
-	s.writeJSON(w, createdStatus(res.Created), out)
+	return out
 }
 
 func (s *Server) createCorrection(w http.ResponseWriter, r *http.Request) {

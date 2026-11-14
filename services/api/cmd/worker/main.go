@@ -30,6 +30,8 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/qris/qristask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/ratelimit"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/receipt"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/receipt/receipttask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/scan/clamd"
@@ -205,6 +207,11 @@ func run() error {
 		Queue: sendQueue,
 		Log:   log,
 	}
+	// Cash receipts (S6-2) go out like promise confirmations: to WhatsApp, or a linked tenant's
+	// Telegram chat; the sweep re-enqueues one whose enqueue was lost.
+	receipts := receipt.NewSender(receipt.SenderDeps{Store: st, Provider: msg, Clock: clk, Log: log})
+	receipttask.Worker{Sender: receipts, Log: log}.Register(mux)
+	sending.Also = append(sending.Also, receipttask.Sweeper{Sender: receipts, Queue: receipttask.NewClient(client)})
 	if cfg.Telegram.SendsToLinked() {
 		// msg is the router here, so a notice reaches only linked chats, never WhatsApp.
 		notices := staffnotice.NewSender(staffnotice.SenderDeps{Store: st, Principals: az, Provider: msg, Clock: clk, Log: log})

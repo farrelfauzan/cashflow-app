@@ -16,6 +16,7 @@ tags:
   - name: properties
   - name: tenants
   - name: money
+  - name: field
   - name: payment-page
   - name: uploads
 
@@ -1345,6 +1346,229 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/tenants/{tenantId}/cash-payments:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      tags: [field]
+      operationId: recordCashPayment
+      summary: Record cash collected from a tenant in the field, "Terima tunai" (needs cash:record; audited)
+      description: >
+        A cash payment received now, recorded by the caller. It pays the tenant's open invoices
+        oldest period first across all their leases (FIFO), what is left is credit, and a payment
+        that keeps the tenant's active promise closes it as kept: exactly as recordPayment, whose
+        answer it repeats. Needs cash:record with the amount on the tenant through every lease the
+        tenant has or had, in the lease's property and assigned to its collector, so a karyawan
+        records cash only for tenants they collect from (403 otherwise, audited); a tenant with no
+        lease needs the organization-wide grant. Admins record payments with recordPayment.
+
+        The tenant's receipt (template payment_receipt, cash only) is recorded with the payment and
+        sent once by the worker right after, through WhatsApp or, in a demo, the tenant's linked
+        Telegram chat: receipt.status is pending in the answer ("Kwitansi sedang dikirim").
+
+        requestId makes a retry or a double submit harmless: the same requestId with the same body
+        from the same member answers 200 with the payment already recorded and the receipt's status
+        now, nothing is recorded twice; the same requestId with any other body, or one that recorded
+        a payment through recordPayment, is 409 request_id_reused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CashPaymentInput" }
+      responses:
+        "201":
+          description: Recorded; the receipt is queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashPaymentResult" }
+        "200":
+          description: Already recorded under this requestId; nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashPaymentResult" }
+        "400":
+          description: >
+            invalid_input (field requestId, amount or note). A body that is not the documented JSON,
+            or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such tenant in the organization (code not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "The requestId was used for a different payment (code request_id_reused)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/cash-payments/{paymentId}/photo:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/PaymentId"
+    put:
+      tags: [field]
+      operationId: attachCashPaymentPhoto
+      summary: Attach the photo of collected cash to its payment (needs cash:record; audited)
+      description: >
+        The karyawan saves "Terima tunai" first and attaches the photo after it ("foto belum ada"
+        until then, decision 46.10): start an upload with purpose cash_receipt for the payment's
+        tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the
+        member who recorded the payment may attach its photo, with cash:record on the tenant and
+        the payment's amount through every lease the tenant has or had, as when recording it (403
+        otherwise, audited).
+
+        The upload is accepted while its scan is still pending; the answer, getUpload and the
+        payment's photo on listFieldToday then show the scan's verdict. Links are append-only: a
+        payment that has a photo the scan did not refuse takes no other (409
+        receipt_photo_attached), and one whose photo was refused (rejected or infected) takes a new
+        one, so a bad photo is retaken but a good one is never swapped. Sending the same uploadId
+        again changes nothing and answers 200 with the payment's photo now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachCashPaymentPhotoInput" }
+      responses:
+        "200":
+          description: The payment's photo now
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReceiptPhoto" }
+        "400":
+          description: >
+            invalid_input (field uploadId) for a missing or malformed uploadId;
+            receipt_photo_upload_invalid (field uploadId) when the upload is not a cash_receipt
+            upload for the payment's tenant made by the caller, was never completed, or is already
+            another payment's photo. A body that is not the documented JSON, or names an unknown
+            field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: >
+            No such cash payment from the field in the organization (code not_found, no field), or
+            no such upload (code not_found, field uploadId)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            receipt_photo_attached: the payment already has a photo the scan did not refuse.
+            receipt_photo_upload_refused (field uploadId): the scan refused this upload; take
+            another photo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/field/today:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [field]
+      operationId: listFieldToday
+      summary: Tagihan hari ini, the caller's tenants to collect from today (needs invoice:read)
+      description: >
+        Of the tenants the caller collects from (the collector of one of their active leases):
+        first those who owe on an invoice that is overdue, due today, or due in 1 or 2 days
+        (Asia/Jakarta), the oldest unpaid due date first, each with the reason of that oldest
+        invoice (with daysOverdue or daysUntilDue) even if they also paid cash today; then those
+        from whom the caller recorded cash today and who have nothing due in the window any more
+        (reason paid_today), by tenant name. The tenant id breaks ties. Each row has what the
+        tenant owes in all over every invoice, the overdue part, and the cash the caller recorded
+        from them today with each payment. A tenant fully paid some other way, or paid in cash to
+        another member, is not on it.
+
+        Needs invoice:read: a member with no access at all is 403 (audited). A tenant is listed
+        only when the caller may read invoices through every lease the tenant has or had (for a
+        karyawan, every lease is one they collect), since the amount owed spans them all; total
+        counts only those rows. It is the caller's own field list: an admin with the
+        organization-wide grant also sees only the tenants they collect from.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FieldTodayList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/field/cash:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [field]
+      operationId: getMyFieldCash
+      summary: The cash the caller holds, "Tunai di tangan" (needs cash:deposit on the caller's own cash)
+      description: >
+        Every cash payment the caller recorded, net of corrections, and how many. Cash deposits
+        (Setor tunai, coming next) will leave out what a deposit already covers. It is the caller's
+        own cash, checked as cash:deposit on a record the caller owns (the karyawan's own pay and
+        cash, "self"); a member without it is 403 (audited).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashTotal" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/field/tenants/{tenantId}/promises:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      tags: [field]
+      operationId: makeFieldPromise
+      summary: Record a tenant's payment promise from the field, "Catat janji bayar" (needs promise:create; audited)
+      description: >
+        makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the
+        version's source is karyawan. Needs promise:create on the tenant through every lease the
+        tenant has or had (a karyawan's own are the leases they collect); 403 otherwise. Allowed
+        and denied checks are audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MakeTenantPromiseRequest" }
+      responses:
+        "200":
+          description: The promise, with the new version last
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantPromise" }
+        "400":
+          description: >
+            invalid_input (field kind, promisedDate, promisedAmount, payingNow or note);
+            promise_date_out_of_range (field promisedDate); promise_no_next_invoice (field kind);
+            promise_amount_above_outstanding (field payingNow or promisedAmount). A body that is
+            not the documented JSON, or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "The tenant owes nothing, or nothing is left after payingNow (code promise_nothing_owed)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /orgs/{orgId}/dashboard:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -2155,6 +2379,11 @@ components:
       schema: { type: string, format: uuid }
     UploadId:
       name: uploadId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PaymentId:
+      name: paymentId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -3248,6 +3477,169 @@ components:
               type: array
               description: The invoices the payment paid, oldest period first. Empty when it all went to credit.
               items: { $ref: "#/components/schemas/PaidInvoice" }
+
+    CashPaymentInput:
+      type: object
+      required: [requestId, amount]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: >
+            Made by the client once per "Terima tunai" form it opens, and sent again unchanged on a
+            retry. Errors use field requestId.
+        amount: { type: integer, format: int64, minimum: 1, maximum: 1000000000000, example: 700000 }
+        note: { type: string, maxLength: 500, description: "Optional, at most 500 letters after trimming." }
+
+    PaymentReceiptStatus:
+      type: string
+      enum: [pending, sent, skipped]
+      # Explicit Go names, so these do not collide with InvitationState's sent.
+      x-enum-varnames: [ReceiptPending, ReceiptSent, ReceiptSkipped]
+      description: >
+        The tenant's receipt message. pending: recorded and queued, sent by the worker right away
+        ("Kwitansi sedang dikirim"); sent: handed to WhatsApp or the linked Telegram chat once
+        (whether it arrived is not known before slice 5); skipped: not sent, because the payment
+        was corrected to zero first.
+
+    PaymentReceipt:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/PaymentReceiptStatus" }
+
+    CashPaymentResult:
+      allOf:
+        - $ref: "#/components/schemas/PaymentResult"
+        - type: object
+          required: [receipt, photo]
+          properties:
+            receipt: { $ref: "#/components/schemas/PaymentReceipt" }
+            photo:
+              allOf:
+                - $ref: "#/components/schemas/ReceiptPhoto"
+              description: >
+                status missing right after recording ("foto belum ada"); a repeated request
+                answers the photo now. attachCashPaymentPhoto attaches it.
+
+    ReceiptPhotoStatus:
+      type: string
+      enum: [missing, pending, clean, rejected, infected]
+      # Explicit Go names, so these do not collide with UploadStatus.
+      x-enum-varnames: [PhotoMissing, PhotoPending, PhotoClean, PhotoRejected, PhotoInfected]
+      description: >
+        The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its
+        upload's status: pending while it is scanned, clean, or rejected or infected, when the
+        karyawan takes another photo and attaches it.
+
+    ReceiptPhoto:
+      type: object
+      required: [status]
+      properties:
+        uploadId: { type: string, format: uuid, description: "The photo's upload (getUpload); absent when missing." }
+        status: { $ref: "#/components/schemas/ReceiptPhotoStatus" }
+
+    AttachCashPaymentPhotoInput:
+      type: object
+      required: [uploadId]
+      additionalProperties: false
+      properties:
+        uploadId: { type: string, format: uuid, description: "A completed cash_receipt upload for the payment's tenant. Errors use field uploadId." }
+
+    CashTotal:
+      type: object
+      required: [amount, count]
+      description: An amount of cash, net of corrections, and how many cash payments make it up.
+      properties:
+        amount: { type: integer, format: int64, example: 2000000 }
+        count: { type: integer, minimum: 0, example: 2 }
+
+    FieldDueReason:
+      type: string
+      enum: [overdue, due_today, due_in_days, paid_today]
+      description: >
+        Why the tenant is on Tagihan hari ini. From the oldest invoice they still owe on: overdue
+        (past its due date, with daysOverdue: "Telat 7 hari"), due_today ("Jatuh tempo hari ini"),
+        or due_in_days (with daysUntilDue 1 or 2: "Jatuh tempo besok"); a tenant with such an
+        invoice keeps that reason even after paying part of it in cash today. paid_today: nothing
+        is due in the window any more, but the caller recorded cash from them today, so they stay
+        on the list for the rest of the day ("Tunai diterima"); no days field.
+
+    FieldUnit:
+      type: object
+      required: [unitLabel, propertyName, propertyAddress]
+      properties:
+        unitLabel: { type: string, example: Kamar 3 }
+        propertyName: { type: string, example: Kos Melati }
+        propertyAddress: { type: string, description: "For directions; empty when the property has no address.", example: "Jl. Melati No. 12, Bekasi" }
+
+    FieldCashPayment:
+      type: object
+      required: [paymentId, amount, recordedAt, photo]
+      properties:
+        paymentId: { type: string, format: uuid }
+        amount: { type: integer, format: int64, description: "What it counts now, net of corrections.", example: 300000 }
+        recordedAt: { type: string, format: date-time }
+        photo: { $ref: "#/components/schemas/ReceiptPhoto" }
+
+    FieldCashToday:
+      type: object
+      required: [amount, count, payments]
+      description: >
+        The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment,
+        net of corrections: amount 0, count 0 and no payments when none. Cash recorded through
+        recordPayment is not field cash and is not counted here.
+      properties:
+        amount: { type: integer, format: int64, example: 300000 }
+        count: { type: integer, minimum: 0, example: 1 }
+        payments:
+          type: array
+          description: Each cash payment, oldest recorded first.
+          items: { $ref: "#/components/schemas/FieldCashPayment" }
+
+    FieldTodayItem:
+      type: object
+      required: [tenantId, tenantName, units, reason, outstanding, overdue, cashToday]
+      properties:
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string, example: Wati Susanti }
+        units:
+          type: array
+          description: The units of the tenant's active leases the caller collects, by property then unit.
+          items: { $ref: "#/components/schemas/FieldUnit" }
+        reason: { $ref: "#/components/schemas/FieldDueReason" }
+        daysOverdue:
+          type: integer
+          minimum: 1
+          description: Only with reason overdue; 1 on the day after the due date (Asia/Jakarta).
+        daysUntilDue:
+          type: integer
+          minimum: 1
+          maximum: 2
+          description: Only with reason due_in_days; 1 when it is due tomorrow.
+        oldestUnpaidDueDate:
+          type: string
+          format: date
+          description: The due date of the oldest invoice the tenant still owes on. Missing when they owe nothing (a paid_today row may).
+        outstanding:
+          type: integer
+          format: int64
+          description: What the tenant owes now over all their invoices, due or not yet due.
+        overdue:
+          type: integer
+          format: int64
+          description: The part of outstanding still owed after its due date (debt from the day after it).
+        cashToday: { $ref: "#/components/schemas/FieldCashToday" }
+
+    FieldTodayList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/FieldTodayItem" }
 
     CorrectionInput:
       type: object

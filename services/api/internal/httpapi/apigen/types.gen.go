@@ -30,6 +30,30 @@ func (e CapabilityAccess) Valid() bool {
 	}
 }
 
+// Defines values for FieldDueReason.
+const (
+	FieldDueReasonDueInDays FieldDueReason = "due_in_days"
+	FieldDueReasonDueToday  FieldDueReason = "due_today"
+	FieldDueReasonOverdue   FieldDueReason = "overdue"
+	FieldDueReasonPaidToday FieldDueReason = "paid_today"
+)
+
+// Valid indicates whether the value is a known member of the FieldDueReason enum.
+func (e FieldDueReason) Valid() bool {
+	switch e {
+	case FieldDueReasonDueInDays:
+		return true
+	case FieldDueReasonDueToday:
+		return true
+	case FieldDueReasonOverdue:
+		return true
+	case FieldDueReasonPaidToday:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportAction.
 const (
 	Created ImportAction = "created"
@@ -240,6 +264,27 @@ func (e PaymentMethod) Valid() bool {
 	}
 }
 
+// Defines values for PaymentReceiptStatus.
+const (
+	ReceiptPending PaymentReceiptStatus = "pending"
+	ReceiptSent    PaymentReceiptStatus = "sent"
+	ReceiptSkipped PaymentReceiptStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the PaymentReceiptStatus enum.
+func (e PaymentReceiptStatus) Valid() bool {
+	switch e {
+	case ReceiptPending:
+		return true
+	case ReceiptSent:
+		return true
+	case ReceiptSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PromiseKind.
 const (
 	SpecificDate    PromiseKind = "specific_date"
@@ -348,6 +393,33 @@ func (e QrisStatusStatus) Valid() bool {
 	case QrisStatusStatusPaid:
 		return true
 	case QrisStatusStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReceiptPhotoStatus.
+const (
+	PhotoClean    ReceiptPhotoStatus = "clean"
+	PhotoInfected ReceiptPhotoStatus = "infected"
+	PhotoMissing  ReceiptPhotoStatus = "missing"
+	PhotoPending  ReceiptPhotoStatus = "pending"
+	PhotoRejected ReceiptPhotoStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the ReceiptPhotoStatus enum.
+func (e ReceiptPhotoStatus) Valid() bool {
+	switch e {
+	case PhotoClean:
+		return true
+	case PhotoInfected:
+		return true
+	case PhotoMissing:
+		return true
+	case PhotoPending:
+		return true
+	case PhotoRejected:
 		return true
 	default:
 		return false
@@ -712,6 +784,12 @@ type ActivePromise struct {
 	Version int `json:"version"`
 }
 
+// AttachCashPaymentPhotoInput defines model for AttachCashPaymentPhotoInput.
+type AttachCashPaymentPhotoInput struct {
+	// UploadId A completed cash_receipt upload for the payment's tenant. Errors use field uploadId.
+	UploadId openapi_types.UUID `json:"uploadId"`
+}
+
 // BankAccount Where to transfer by hand; the tenant writes their name in the transfer note.
 type BankAccount struct {
 	// AccountHolder Example: Suhwendi
@@ -734,6 +812,50 @@ type Capability struct {
 
 // CapabilityAccess defines model for Capability.Access.
 type CapabilityAccess string
+
+// CashPaymentInput defines model for CashPaymentInput.
+type CashPaymentInput struct {
+	// Amount Example: 700000
+	Amount int64 `json:"amount"`
+
+	// Note Optional, at most 500 letters after trimming.
+	Note *string `json:"note,omitempty"`
+
+	// RequestId Made by the client once per "Terima tunai" form it opens, and sent again unchanged on a retry. Errors use field requestId.
+	RequestId openapi_types.UUID `json:"requestId"`
+}
+
+// CashPaymentResult defines model for CashPaymentResult.
+type CashPaymentResult struct {
+	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
+	Credit int64 `json:"credit"`
+
+	// OldestUnpaidDueDate The due date of the oldest invoice not fully paid. Missing when nothing is owed.
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding What the tenant still owes over all their invoices, due or not yet due ("Total belum dibayar").
+	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of outstanding that is debt ("Tunggakan"): what is still owed on invoices whose due date is before today in Asia/Jakarta (debt from the day after the due date).
+	Overdue int64 `json:"overdue"`
+
+	// Paid The invoices the payment paid, oldest period first. Empty when it all went to credit.
+	Paid    []PaidInvoice  `json:"paid"`
+	Payment AccountPayment `json:"payment"`
+
+	// Photo status missing right after recording ("foto belum ada"); a repeated request answers the photo now. attachCashPaymentPhoto attaches it.
+	Photo   ReceiptPhoto   `json:"photo"`
+	Receipt PaymentReceipt `json:"receipt"`
+}
+
+// CashTotal An amount of cash, net of corrections, and how many cash payments make it up.
+type CashTotal struct {
+	// Amount Example: 2000000
+	Amount int64 `json:"amount"`
+
+	// Count Example: 2
+	Count int `json:"count"`
+}
 
 // ChargeType defines model for ChargeType.
 type ChargeType struct {
@@ -927,6 +1049,89 @@ type Error struct {
 		// Message Example: Kode salah atau sudah kedaluwarsa.
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// FieldCashPayment defines model for FieldCashPayment.
+type FieldCashPayment struct {
+	// Amount What it counts now, net of corrections.
+	//
+	// Example: 300000
+	Amount     int64              `json:"amount"`
+	PaymentId  openapi_types.UUID `json:"paymentId"`
+	Photo      ReceiptPhoto       `json:"photo"`
+	RecordedAt time.Time          `json:"recordedAt"`
+}
+
+// FieldCashToday The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
+type FieldCashToday struct {
+	// Amount Example: 300000
+	Amount int64 `json:"amount"`
+
+	// Count Example: 1
+	Count int `json:"count"`
+
+	// Payments Each cash payment, oldest recorded first.
+	Payments []FieldCashPayment `json:"payments"`
+}
+
+// FieldDueReason Why the tenant is on Tagihan hari ini. From the oldest invoice they still owe on: overdue (past its due date, with daysOverdue: "Telat 7 hari"), due_today ("Jatuh tempo hari ini"), or due_in_days (with daysUntilDue 1 or 2: "Jatuh tempo besok"); a tenant with such an invoice keeps that reason even after paying part of it in cash today. paid_today: nothing is due in the window any more, but the caller recorded cash from them today, so they stay on the list for the rest of the day ("Tunai diterima"); no days field.
+type FieldDueReason string
+
+// FieldTodayItem defines model for FieldTodayItem.
+type FieldTodayItem struct {
+	// CashToday The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
+	CashToday FieldCashToday `json:"cashToday"`
+
+	// DaysOverdue Only with reason overdue; 1 on the day after the due date (Asia/Jakarta).
+	DaysOverdue *int `json:"daysOverdue,omitempty"`
+
+	// DaysUntilDue Only with reason due_in_days; 1 when it is due tomorrow.
+	DaysUntilDue *int `json:"daysUntilDue,omitempty"`
+
+	// OldestUnpaidDueDate The due date of the oldest invoice the tenant still owes on. Missing when they owe nothing (a paid_today row may).
+	OldestUnpaidDueDate *openapi_types.Date `json:"oldestUnpaidDueDate,omitempty"`
+
+	// Outstanding What the tenant owes now over all their invoices, due or not yet due.
+	Outstanding int64 `json:"outstanding"`
+
+	// Overdue The part of outstanding still owed after its due date (debt from the day after it).
+	Overdue int64 `json:"overdue"`
+
+	// Reason Why the tenant is on Tagihan hari ini. From the oldest invoice they still owe on: overdue (past its due date, with daysOverdue: "Telat 7 hari"), due_today ("Jatuh tempo hari ini"), or due_in_days (with daysUntilDue 1 or 2: "Jatuh tempo besok"); a tenant with such an invoice keeps that reason even after paying part of it in cash today. paid_today: nothing is due in the window any more, but the caller recorded cash from them today, so they stay on the list for the rest of the day ("Tunai diterima"); no days field.
+	Reason   FieldDueReason     `json:"reason"`
+	TenantId openapi_types.UUID `json:"tenantId"`
+
+	// TenantName Example: Wati Susanti
+	TenantName string `json:"tenantName"`
+
+	// Units The units of the tenant's active leases the caller collects, by property then unit.
+	Units []FieldUnit `json:"units"`
+}
+
+// FieldTodayList defines model for FieldTodayList.
+type FieldTodayList struct {
+	Items []FieldTodayItem `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// FieldUnit defines model for FieldUnit.
+type FieldUnit struct {
+	// PropertyAddress For directions; empty when the property has no address.
+	//
+	// Example: Jl. Melati No. 12, Bekasi
+	PropertyAddress string `json:"propertyAddress"`
+
+	// PropertyName Example: Kos Melati
+	PropertyName string `json:"propertyName"`
+
+	// UnitLabel Example: Kamar 3
+	UnitLabel string `json:"unitLabel"`
 }
 
 // ImportAction defines model for ImportAction.
@@ -1769,6 +1974,15 @@ type PaymentPromise struct {
 	Version int `json:"version"`
 }
 
+// PaymentReceipt defines model for PaymentReceipt.
+type PaymentReceipt struct {
+	// Status The tenant's receipt message. pending: recorded and queued, sent by the worker right away ("Kwitansi sedang dikirim"); sent: handed to WhatsApp or the linked Telegram chat once (whether it arrived is not known before slice 5); skipped: not sent, because the payment was corrected to zero first.
+	Status PaymentReceiptStatus `json:"status"`
+}
+
+// PaymentReceiptStatus The tenant's receipt message. pending: recorded and queued, sent by the worker right away ("Kwitansi sedang dikirim"); sent: handed to WhatsApp or the linked Telegram chat once (whether it arrived is not known before slice 5); skipped: not sent, because the payment was corrected to zero first.
+type PaymentReceiptStatus string
+
 // PaymentResult defines model for PaymentResult.
 type PaymentResult struct {
 	// Credit Money paid and not yet used by any invoice; it pays the next invoice when made.
@@ -1862,6 +2076,18 @@ type QrisStatus struct {
 
 // QrisStatusStatus none: no QR yet. pending: the QR can be paid. checking: the tenant said they paid and no answer has come yet. paid: the attempt was paid. expired: the QR expired or was cancelled; the tenant makes a new one.
 type QrisStatusStatus string
+
+// ReceiptPhoto defines model for ReceiptPhoto.
+type ReceiptPhoto struct {
+	// Status The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+	Status ReceiptPhotoStatus `json:"status"`
+
+	// UploadId The photo's upload (getUpload); absent when missing.
+	UploadId *openapi_types.UUID `json:"uploadId,omitempty"`
+}
+
+// ReceiptPhotoStatus The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+type ReceiptPhotoStatus string
 
 // RoleGrant defines model for RoleGrant.
 type RoleGrant struct {
@@ -2314,6 +2540,9 @@ type Page = int
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// PaymentId defines model for PaymentId.
+type PaymentId = openapi_types.UUID
+
 // Period Example: 2026-11
 type Period = string
 
@@ -2333,6 +2562,13 @@ type UploadId = openapi_types.UUID
 type GetDashboardParams struct {
 	// Period A month, YYYY-MM; this month in Asia/Jakarta when empty. A bad value is a 400 with field period.
 	Period *Period `form:"period,omitempty" json:"period,omitempty"`
+}
+
+// ListFieldTodayParams defines parameters for ListFieldToday.
+type ListFieldTodayParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
 // ImportTenantsParams defines parameters for ImportTenants.
@@ -2488,11 +2724,17 @@ type RequestLoginCodeJSONRequestBody = LoginCodeRequest
 // VerifyLoginCodeJSONRequestBody defines body for VerifyLoginCode for application/json ContentType.
 type VerifyLoginCodeJSONRequestBody = LoginCodeVerify
 
+// AttachCashPaymentPhotoJSONRequestBody defines body for AttachCashPaymentPhoto for application/json ContentType.
+type AttachCashPaymentPhotoJSONRequestBody = AttachCashPaymentPhotoInput
+
 // CreateChargeTypeJSONRequestBody defines body for CreateChargeType for application/json ContentType.
 type CreateChargeTypeJSONRequestBody = ChargeTypeInput
 
 // CreateCorrectionJSONRequestBody defines body for CreateCorrection for application/json ContentType.
 type CreateCorrectionJSONRequestBody = CorrectionInput
+
+// MakeFieldPromiseJSONRequestBody defines body for MakeFieldPromise for application/json ContentType.
+type MakeFieldPromiseJSONRequestBody = MakeTenantPromiseRequest
 
 // CreateLeaseJSONRequestBody defines body for CreateLease for application/json ContentType.
 type CreateLeaseJSONRequestBody = LeaseInput
@@ -2538,6 +2780,9 @@ type CreateTenantJSONRequestBody = TenantInput
 
 // UpdateTenantJSONRequestBody defines body for UpdateTenant for application/json ContentType.
 type UpdateTenantJSONRequestBody = TenantInput
+
+// RecordCashPaymentJSONRequestBody defines body for RecordCashPayment for application/json ContentType.
+type RecordCashPaymentJSONRequestBody = CashPaymentInput
 
 // MakeTenantPromiseJSONRequestBody defines body for MakeTenantPromise for application/json ContentType.
 type MakeTenantPromiseJSONRequestBody = MakeTenantPromiseRequest
