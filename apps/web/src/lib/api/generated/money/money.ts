@@ -24,6 +24,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CashDeposit,
+  CashDepositConfirmationInput,
+  CashDepositList,
+  CashDepositPaymentList,
   CorrectionInput,
   CorrectionResult,
   Dashboard,
@@ -31,6 +35,8 @@ import type {
   ErrorResponse,
   GetDashboardParams,
   InvoiceList,
+  ListCashDepositPaymentsParams,
+  ListCashDepositsParams,
   ListInvoicesParams,
   ListLeaseMeteredChargesParams,
   ListMissingMeterReadingsParams,
@@ -715,6 +721,377 @@ export const useMakeTenantPromise = <TError = ErrorType<Error | ErrorResponse>,
         TContext
       > => {
       return useMutation(getMakeTenantPromiseMutationOptions(options), queryClient);
+    }
+    /**
+ * For the admin who counts deposits (payment:check) and the Supervisor (cash:read), granted for the whole organization: a deposit spans properties. 403 otherwise (audited).
+ * @summary Every member's deposits, newest first (needs payment:check or cash:read)
+ */
+export const listCashDeposits = (
+    orgId: string,
+    params?: ListCashDepositsParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<CashDepositList>(
+      {url: `/orgs/${orgId}/cash-deposits`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListCashDepositsQueryKey = (orgId: string,
+    params?: ListCashDepositsParams,) =>
+    apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/cash-deposits` });
+
+
+export const useListCashDepositsQueryOptions = <TData = Awaited<ReturnType<typeof listCashDeposits>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    params?: ListCashDepositsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDeposits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,params }, { url: `/orgs/${orgId}/cash-deposits`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCashDeposits>>> = ({ signal }) => listCashDeposits(orgId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCashDeposits>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCashDepositsQueryResult = NonNullable<Awaited<ReturnType<typeof listCashDeposits>>>
+export type ListCashDepositsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListCashDeposits<TData = Awaited<ReturnType<typeof listCashDeposits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params: undefined |  ListCashDepositsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDeposits>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCashDeposits>>,
+          TError,
+          Awaited<ReturnType<typeof listCashDeposits>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCashDeposits<TData = Awaited<ReturnType<typeof listCashDeposits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListCashDepositsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDeposits>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCashDeposits>>,
+          TError,
+          Awaited<ReturnType<typeof listCashDeposits>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCashDeposits<TData = Awaited<ReturnType<typeof listCashDeposits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListCashDepositsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDeposits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Every member's deposits, newest first (needs payment:check or cash:read)
+ */
+
+export function useListCashDeposits<TData = Awaited<ReturnType<typeof listCashDeposits>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    params?: ListCashDepositsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDeposits>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListCashDepositsQueryOptions(orgId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * As listCashDeposits lists it. The member who deposited it may read their own (cash:deposit, self). 404 for a deposit not in the organization; 403 (audited) for anyone else.
+ * @summary One deposit (needs payment:check or cash:read, or cash:deposit on one's own)
+ */
+export const getCashDeposit = (
+    orgId: string,
+    depositId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<CashDeposit>(
+      {url: `/orgs/${orgId}/cash-deposits/${depositId}`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetCashDepositQueryKey = (orgId: string,
+    depositId: string,) =>
+    apiQueryKey({ orgId,depositId }, { url: `/orgs/${orgId}/cash-deposits/${depositId}` });
+
+
+export const useGetCashDepositQueryOptions = <TData = Awaited<ReturnType<typeof getCashDeposit>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    depositId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCashDeposit>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,depositId }, { url: `/orgs/${orgId}/cash-deposits/${depositId}`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCashDeposit>>> = ({ signal }) => getCashDeposit(orgId,depositId, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && depositId !== null && depositId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCashDeposit>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCashDepositQueryResult = NonNullable<Awaited<ReturnType<typeof getCashDeposit>>>
+export type GetCashDepositQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetCashDeposit<TData = Awaited<ReturnType<typeof getCashDeposit>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCashDeposit>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCashDeposit>>,
+          TError,
+          Awaited<ReturnType<typeof getCashDeposit>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCashDeposit<TData = Awaited<ReturnType<typeof getCashDeposit>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCashDeposit>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCashDeposit>>,
+          TError,
+          Awaited<ReturnType<typeof getCashDeposit>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCashDeposit<TData = Awaited<ReturnType<typeof getCashDeposit>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCashDeposit>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary One deposit (needs payment:check or cash:read, or cash:deposit on one's own)
+ */
+
+export function useGetCashDeposit<TData = Awaited<ReturnType<typeof getCashDeposit>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCashDeposit>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetCashDepositQueryOptions(orgId,depositId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Oldest recorded first (the payment id breaks ties), each with its tenant, units, amount net of corrections now, and photo, so the admin can match a gap to a receipt. Checked as getCashDeposit.
+ * @summary The cash payments a deposit covers (needs payment:check or cash:read, or cash:deposit on one's own)
+ */
+export const listCashDepositPayments = (
+    orgId: string,
+    depositId: string,
+    params?: ListCashDepositPaymentsParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<CashDepositPaymentList>(
+      {url: `/orgs/${orgId}/cash-deposits/${depositId}/payments`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getListCashDepositPaymentsQueryKey = (orgId: string,
+    depositId: string,
+    params?: ListCashDepositPaymentsParams,) =>
+    apiQueryKey({ orgId,depositId,params }, { url: `/orgs/${orgId}/cash-deposits/${depositId}/payments` });
+
+
+export const useListCashDepositPaymentsQueryOptions = <TData = Awaited<ReturnType<typeof listCashDepositPayments>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    depositId: string,
+    params?: ListCashDepositPaymentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDepositPayments>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,depositId,params }, { url: `/orgs/${orgId}/cash-deposits/${depositId}/payments`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCashDepositPayments>>> = ({ signal }) => listCashDepositPayments(orgId,depositId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && depositId !== null && depositId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCashDepositPayments>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListCashDepositPaymentsQueryResult = NonNullable<Awaited<ReturnType<typeof listCashDepositPayments>>>
+export type ListCashDepositPaymentsQueryError = ErrorType<ErrorResponse>
+
+
+export function useListCashDepositPayments<TData = Awaited<ReturnType<typeof listCashDepositPayments>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string,
+    params: undefined |  ListCashDepositPaymentsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDepositPayments>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCashDepositPayments>>,
+          TError,
+          Awaited<ReturnType<typeof listCashDepositPayments>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCashDepositPayments<TData = Awaited<ReturnType<typeof listCashDepositPayments>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string,
+    params?: ListCashDepositPaymentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDepositPayments>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCashDepositPayments>>,
+          TError,
+          Awaited<ReturnType<typeof listCashDepositPayments>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListCashDepositPayments<TData = Awaited<ReturnType<typeof listCashDepositPayments>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string,
+    params?: ListCashDepositPaymentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDepositPayments>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The cash payments a deposit covers (needs payment:check or cash:read, or cash:deposit on one's own)
+ */
+
+export function useListCashDepositPayments<TData = Awaited<ReturnType<typeof listCashDepositPayments>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    depositId: string,
+    params?: ListCashDepositPaymentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listCashDepositPayments>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useListCashDepositPaymentsQueryOptions(orgId,depositId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * The admin counts the money and records receivedAmount, once. The difference from the deposit's expectedAmount (the payments' total) is its gap: 0 is matched ("Cocok"); any other is a "selisih setoran" that the check queue (S6-6) shows until it is closed with a note. Needs payment:check for the whole organization, with receivedAmount as the amount. Nobody confirms their own deposit (403, audited).
+ * The same body again answers 200 with the deposit; a deposit already confirmed with another amount or note is 409 deposit_already_confirmed.
+ * @summary Record the amount counted from a deposit (needs payment:check; audited)
+ */
+export const confirmCashDeposit = (
+    orgId: string,
+    depositId: string,
+    cashDepositConfirmationInput: BodyType<CashDepositConfirmationInput>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<CashDeposit>(
+      {url: `/orgs/${orgId}/cash-deposits/${depositId}/confirmation`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: cashDepositConfirmationInput, signal
+    },
+      options);
+    }
+
+
+
+
+export const getConfirmCashDepositMutationKey = () => ['confirmCashDeposit'] as const;
+
+export const getConfirmCashDepositMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmCashDeposit>>, TError,ConfirmCashDepositMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmCashDeposit>>, TError,ConfirmCashDepositMutationVariables, TContext> => {
+
+const mutationKey = getConfirmCashDepositMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmCashDeposit>>, ConfirmCashDepositMutationVariables> = (props) => {
+          const {orgId,depositId,data} = props ?? {};
+
+          return  confirmCashDeposit(orgId,depositId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmCashDepositMutationResult = NonNullable<Awaited<ReturnType<typeof confirmCashDeposit>>>
+    export type ConfirmCashDepositMutationBody = BodyType<CashDepositConfirmationInput>
+    export type ConfirmCashDepositMutationError = ErrorType<Error | ErrorResponse>
+    export type ConfirmCashDepositMutationVariables = {orgId: string;depositId: string;data: BodyType<CashDepositConfirmationInput>}
+
+    /**
+ * @summary Record the amount counted from a deposit (needs payment:check; audited)
+ */
+export const useConfirmCashDeposit = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmCashDeposit>>, TError,ConfirmCashDepositMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof confirmCashDeposit>>,
+        TError,
+        ConfirmCashDepositMutationVariables,
+        TContext
+      > => {
+      return useMutation(getConfirmCashDepositMutationOptions(options), queryClient);
     }
     /**
  * The month's money and who is in arrears now. The month's figures cover the invoices of that month: an invoice belongs to the month of its period (Tagihan November), which for a regular invoice is the month of its due date. Arrears are not tied to the month: every invoice still owed after its due date (debt from the day after it, Asia/Jakarta). A member limited to some properties sees, and every figure counts, only the invoices of leases in their properties.

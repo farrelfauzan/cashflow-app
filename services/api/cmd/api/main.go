@@ -20,6 +20,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/autogopay"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing/invoicetask"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/deposit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/provider"
@@ -182,6 +183,7 @@ func run() error {
 		QRIS:          qrisSvc,
 		Promises:      promises,
 		Uploads:       uploads,
+		Deposits:      deposit.NewService(st, az, clk, log),
 		Webhooks:      webhooks,
 		TelegramCodes: tgCodes,
 		// A nil *Handler must stay a nil interface, so the route is not registered without a bot.

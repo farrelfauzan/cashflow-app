@@ -33,6 +33,37 @@ type AutogopayAccount struct {
 	UpdatedByStaffUserID uuid.NullUUID
 }
 
+type CashDeposit struct {
+	ID                 uuid.UUID
+	OrganizationID     uuid.UUID
+	StaffUserID        uuid.UUID
+	RequestID          uuid.UUID
+	Amount             int64
+	ExpectedAmount     int64
+	PaymentCount       int32
+	Note               *string
+	PhotoUploadID      uuid.NullUUID
+	PhotoUploadPurpose string
+	CreatedAt          time.Time
+}
+
+type CashDepositConfirmation struct {
+	DepositID              uuid.UUID
+	OrganizationID         uuid.UUID
+	StaffUserID            uuid.UUID
+	ReceivedAmount         int64
+	Note                   *string
+	ConfirmedByStaffUserID uuid.UUID
+	ConfirmedAt            time.Time
+}
+
+type CashDepositPayment struct {
+	PaymentID      uuid.UUID
+	OrganizationID uuid.UUID
+	DepositID      uuid.UUID
+	StaffUserID    uuid.UUID
+}
+
 type ChargeType struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

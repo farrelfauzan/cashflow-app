@@ -242,8 +242,9 @@ func fieldTenant(r dbgen.ListFieldTodayRow, now time.Time) (FieldTenant, error) 
 	return item, nil
 }
 
-// FieldCash is the cash member p holds: every cash payment p recorded, net of its corrections,
-// and how many. Cash deposits (S6-3) will leave out what a deposit already covers.
+// FieldCash is the cash member p holds: every field cash payment p recorded (through
+// RecordCashPayment, so it has a receipt) that no deposit covers yet, net of its corrections, and
+// how many. A deposit (package deposit) takes all of it at once.
 //
 // It is p's own cash, so it is checked as cash:deposit on a record owned by p (the karyawan's
 // "self"); the check is not audited when allowed, as it reads and changes nothing, and a denial is
@@ -268,6 +269,93 @@ func (s *Service) FieldCash(ctx context.Context, p authz.Principal) (CashTotal, 
 	})
 	if err != nil {
 		return CashTotal{}, err
+	}
+	return out, nil
+}
+
+// HeldPayment is a field cash payment a member holds or deposited, with its tenant's units and
+// its photo.
+type HeldPayment struct {
+	PaymentID  uuid.UUID
+	TenantID   uuid.UUID
+	TenantName string
+	// Units are those of the tenant's leases, current or ended, collected by the member who took
+	// the cash, by property then unit.
+	Units      []FieldUnit
+	Amount     int64 // net of its corrections
+	RecordedAt time.Time
+	Photo      ReceiptPhoto
+}
+
+// DescribeHeldPaymentsTx adds to payments (PaymentID, TenantID, TenantName, Amount and RecordedAt
+// set) the units of their tenants collected by collector and their photos, inside tx scoped to
+// org. It checks no permission: the caller has.
+func DescribeHeldPaymentsTx(ctx context.Context, tx pgx.Tx, org, collector uuid.UUID, payments []HeldPayment) error {
+	if len(payments) == 0 {
+		return nil
+	}
+	q := dbgen.New(tx)
+	ids := make([]uuid.UUID, len(payments))
+	tenants := make([]uuid.UUID, len(payments))
+	for i, h := range payments {
+		ids[i], tenants[i] = h.PaymentID, h.TenantID
+	}
+	photos, err := currentReceiptPhotos(ctx, q, org, ids)
+	if err != nil {
+		return err
+	}
+	unitRows, err := q.ListCollectedUnits(ctx, dbgen.ListCollectedUnitsParams{OrganizationID: org, TenantIds: tenants, CollectorID: collector})
+	if err != nil {
+		return fmt.Errorf("listing the units of held cash: %w", err)
+	}
+	units := map[uuid.UUID][]FieldUnit{}
+	for _, u := range unitRows {
+		units[u.TenantID] = append(units[u.TenantID], FieldUnit{UnitLabel: u.UnitLabel, PropertyName: u.PropertyName, PropertyAddress: u.PropertyAddress})
+	}
+	for i := range payments {
+		payments[i].Photo = photos[payments[i].PaymentID]
+		payments[i].Units = units[payments[i].TenantID]
+		if payments[i].Units == nil {
+			payments[i].Units = []FieldUnit{}
+		}
+	}
+	return nil
+}
+
+// UndepositedCash is one page of the payments FieldCash adds up, oldest recorded first, the
+// payment id breaking ties. It is checked like FieldCash.
+func (s *Service) UndepositedCash(ctx context.Context, p authz.Principal, page listing.Page) (listing.Result[HeldPayment], error) {
+	req := authz.Request{Action: authz.ActionCashDeposit, Resource: authz.Resource{
+		Type: "cash", ID: p.UserID.String(), OwnerID: p.UserID,
+	}}
+	if err := s.authz.Check(ctx, p, req); err != nil {
+		return listing.Result[HeldPayment]{}, err
+	}
+	org := p.OrganizationID
+	out := listing.Result[HeldPayment]{Items: []HeldPayment{}, Page: page}
+	err := s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		staff := uuid.NullUUID{UUID: p.UserID, Valid: true}
+		total, err := q.GetFieldCash(ctx, dbgen.GetFieldCashParams{OrganizationID: org, StaffUserID: staff})
+		if err != nil {
+			return fmt.Errorf("counting the member's cash: %w", err)
+		}
+		rows, err := q.ListUndepositedCash(ctx, dbgen.ListUndepositedCashParams{
+			OrganizationID: org, StaffUserID: staff, PageLimit: page.Limit(), PageOffset: page.Offset(),
+		})
+		if err != nil {
+			return fmt.Errorf("listing the member's cash: %w", err)
+		}
+		for _, r := range rows {
+			out.Items = append(out.Items, HeldPayment{
+				PaymentID: r.ID, TenantID: r.TenantID, TenantName: r.TenantName, Amount: r.Net, RecordedAt: r.CreatedAt,
+			})
+		}
+		out.Total = total.Payments
+		return DescribeHeldPaymentsTx(ctx, tx, org, p.UserID, out.Items)
+	})
+	if err != nil {
+		return listing.Result[HeldPayment]{}, err
 	}
 	return out, nil
 }
