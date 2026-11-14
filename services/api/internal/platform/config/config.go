@@ -432,7 +432,7 @@ func validClamAV(addr string, uploads bool) error {
 }
 
 // Storage is the S3-compatible bucket that holds uploads (S6-1): Cloudflare R2 in production,
-// MinIO in development. Every setting is optional in development, where leaving them all unset
+// RustFS in development. Every setting is optional in development, where leaving them all unset
 // turns uploads off; once one is set the bucket's settings are required. SecretAccessKey is a
 // secret: never log it (LogValue hides it) and never echo it in an error.
 type Storage struct {
@@ -449,7 +449,7 @@ type Storage struct {
 	// AccessKeyID and SecretAccessKey are STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY.
 	AccessKeyID     string `env:"ACCESS_KEY_ID"`
 	SecretAccessKey string `env:"SECRET_ACCESS_KEY"`
-	// PathStyle is STORAGE_PATH_STYLE: true puts the bucket in the URL path, as MinIO needs.
+	// PathStyle is STORAGE_PATH_STYLE: true puts the bucket in the URL path, as RustFS needs.
 	PathStyle bool `env:"PATH_STYLE"`
 }
 

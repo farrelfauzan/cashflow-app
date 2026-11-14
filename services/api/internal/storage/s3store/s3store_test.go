@@ -30,7 +30,7 @@ func newStore(t *testing.T, endpoint, presign string) *s3store.Store {
 
 func TestPresignPut(t *testing.T) {
 	t.Parallel()
-	s := newStore(t, "http://minio:9000", "http://localhost:9100")
+	s := newStore(t, "http://rustfs:9000", "http://localhost:9100")
 	put, err := s.PresignPut(context.Background(), key, "image/jpeg", 2_483_120, 10*time.Minute)
 	require.NoError(t, err)
 
@@ -52,13 +52,13 @@ func TestPresignPut(t *testing.T) {
 
 func TestPresignGet(t *testing.T) {
 	t.Parallel()
-	s := newStore(t, "http://minio:9000", "")
+	s := newStore(t, "http://rustfs:9000", "")
 	raw, err := s.PresignGet(context.Background(), "files/uploads/7b0e0b2a-6f7c-4f43-9a52-3c6c1f0b9b11/00112233445566778899aabbccddeeff",
 		5*time.Minute, "bukti-7b0e0b2a.jpg", "image/jpeg")
 	require.NoError(t, err)
 	u, err := url.Parse(raw)
 	require.NoError(t, err)
-	require.Equal(t, "minio:9000", u.Host, "the internal endpoint when no presign endpoint is set")
+	require.Equal(t, "rustfs:9000", u.Host, "the internal endpoint when no presign endpoint is set")
 	q := u.Query()
 	require.Equal(t, "300", q.Get("X-Amz-Expires"))
 	require.True(t, strings.HasPrefix(q.Get("response-content-disposition"), `attachment; filename="bukti-7b0e0b2a.jpg"`), q.Get("response-content-disposition"))
@@ -67,7 +67,7 @@ func TestPresignGet(t *testing.T) {
 
 func TestKeysAreChecked(t *testing.T) {
 	t.Parallel()
-	s := newStore(t, "http://minio:9000", "")
+	s := newStore(t, "http://rustfs:9000", "")
 	ctx := context.Background()
 	for _, bad := range []string{"", "../etc/passwd", "files//x", "files/../x", "Files/X", "files/a?b", "/files/a"} {
 		_, err := s.PresignPut(ctx, bad, "image/jpeg", 1, time.Minute)
@@ -80,7 +80,7 @@ func TestKeysAreChecked(t *testing.T) {
 
 func TestNewNeedsTheBucket(t *testing.T) {
 	t.Parallel()
-	_, err := s3store.New(s3store.Config{Endpoint: "http://minio:9000"})
+	_, err := s3store.New(s3store.Config{Endpoint: "http://rustfs:9000"})
 	require.Error(t, err)
 	require.NotContains(t, s3store.Config{SecretAccessKey: "very-secret"}.String(), "very-secret")
 }

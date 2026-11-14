@@ -29,25 +29,25 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload/uploadtest"
 )
 
-// minioImage is the MinIO the tests and infra/compose.dev.yaml run.
-const minioImage = "minio/minio:RELEASE.2025-04-22T22-12-26Z"
+// rustfsImage is the S3-compatible server the tests and infra/compose.dev.yaml run (RustFS,
+// decision 46: RustFS's images are no longer pullable without a login).
+const rustfsImage = "rustfs/rustfs:1.0.5"
 
 const (
-	minioUser   = "cashflow"
-	minioSecret = "cashflow-test-secret"
-	bucket      = "cashflow-test"
+	s3User   = "cashflow"
+	s3Secret = "cashflow-test-secret"
+	bucket   = "cashflow-test"
 )
 
-// startMinIO runs MinIO for the length of the test, creates the bucket, and returns its
+// startRustFS runs RustFS for the length of the test, creates the bucket, and returns its
 // endpoint.
-func startMinIO(t *testing.T) string {
+func startRustFS(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
-	ctr, err := testcontainers.Run(ctx, minioImage,
+	ctr, err := testcontainers.Run(ctx, rustfsImage,
 		testcontainers.WithExposedPorts("9000/tcp"),
-		testcontainers.WithEnv(map[string]string{"MINIO_ROOT_USER": minioUser, "MINIO_ROOT_PASSWORD": minioSecret}),
-		testcontainers.WithCmd("server", "/data"),
-		testcontainers.WithWaitStrategy(wait.ForHTTP("/minio/health/ready").WithPort("9000/tcp").WithStartupTimeout(2*time.Minute)),
+		testcontainers.WithEnv(map[string]string{"RUSTFS_ACCESS_KEY": s3User, "RUSTFS_SECRET_KEY": s3Secret}),
+		testcontainers.WithWaitStrategy(wait.ForHTTP("/health/ready").WithPort("9000/tcp").WithStartupTimeout(2*time.Minute)),
 	)
 	testcontainers.CleanupContainer(t, ctr)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func startMinIO(t *testing.T) string {
 	admin := s3.New(s3.Options{
 		Region: "us-east-1", BaseEndpoint: aws.String(endpoint), UsePathStyle: true,
 		Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
-			return aws.Credentials{AccessKeyID: minioUser, SecretAccessKey: minioSecret}, nil
+			return aws.Credentials{AccessKeyID: s3User, SecretAccessKey: s3Secret}, nil
 		}),
 	})
 	_, err = admin.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)})
@@ -65,11 +65,11 @@ func startMinIO(t *testing.T) string {
 	return endpoint
 }
 
-func minioStore(t *testing.T, endpoint string) *s3store.Store {
+func s3Store(t *testing.T, endpoint string) *s3store.Store {
 	t.Helper()
 	s, err := s3store.New(s3store.Config{
 		Endpoint: endpoint, Bucket: bucket, Region: "us-east-1",
-		AccessKeyID: minioUser, SecretAccessKey: minioSecret, PathStyle: true,
+		AccessKeyID: s3User, SecretAccessKey: s3Secret, PathStyle: true,
 	})
 	require.NoError(t, err)
 	return s
@@ -90,11 +90,11 @@ func putTo(t *testing.T, put upload.PresignedPut, body []byte, headers map[strin
 	return resp.StatusCode
 }
 
-// TestAgainstMinIO runs the adapter against a real S3 implementation: the signed size and type
+// TestAgainstRustFS runs the adapter against a real S3 implementation: the signed size and type
 // are enforced by the bucket, and the presigned GET downloads as an attachment.
-func TestAgainstMinIO(t *testing.T) {
-	endpoint := startMinIO(t)
-	s := minioStore(t, endpoint)
+func TestAgainstRustFS(t *testing.T) {
+	endpoint := startRustFS(t)
+	s := s3Store(t, endpoint)
 	ctx := context.Background()
 	const key = "incoming/uploads/7b0e0b2a-6f7c-4f43-9a52-3c6c1f0b9b11/00112233445566778899aabbccddeeff"
 	photo := uploadtest.Image("image/jpeg", 30_000)
@@ -150,15 +150,15 @@ func TestAgainstMinIO(t *testing.T) {
 	})
 }
 
-// TestUploadFlowAgainstMinIO is the whole flow on a real bucket: start, PUT with net/http,
+// TestUploadFlowAgainstRustFS is the whole flow on a real bucket: start, PUT with net/http,
 // complete, scan (the fake scanner), download; an infected file ends in quarantine; and a second
 // PUT after the scan never changes what is downloaded.
-func TestUploadFlowAgainstMinIO(t *testing.T) {
-	endpoint := startMinIO(t)
-	bucketStore := minioStore(t, endpoint)
+func TestUploadFlowAgainstRustFS(t *testing.T) {
+	endpoint := startRustFS(t)
+	bucketStore := s3Store(t, endpoint)
 	env := testenv.New(t)
 	ctx := context.Background()
-	o := env.CreateOrg(t, "Griya MinIO", "0812895")
+	o := env.CreateOrg(t, "Griya RustFS", "0812895")
 	admin := env.Principal(t, o.ID, o.Admin.UserID)
 	karyawan := env.Principal(t, o.ID, o.Karyawan.UserID)
 	kos, err := env.Properties.Create(ctx, admin, property.PropertyInput{Name: "Kos Mawar", Kind: property.KindKos})

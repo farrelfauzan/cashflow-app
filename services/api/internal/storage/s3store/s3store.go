@@ -1,5 +1,5 @@
 // Package s3store keeps uploads in an S3-compatible bucket (S6-1): Cloudflare R2 in production,
-// MinIO in development and tests, through the AWS SDK for Go v2. It implements the upload
+// RustFS in development and tests, through the AWS SDK for Go v2. It implements the upload
 // package's Presigner (the API) and Objects (the worker).
 //
 // R2 has no presigned POST, so the size limit of an upload is its Content-Length, signed into
@@ -8,7 +8,7 @@
 // to attachment and its Content-Type to the type the scan found, so a file is never shown inline.
 //
 // Two endpoints: Endpoint is where the API and the worker reach the bucket, PresignEndpoint the
-// host the browser reaches (they differ when the bucket sits on an internal network, as MinIO in
+// host the browser reaches (they differ when the bucket sits on an internal network, as RustFS in
 // a compose network does). A presigned URL is signed for its host, so it is made with the
 // browser's endpoint.
 package s3store
@@ -40,11 +40,11 @@ type Config struct {
 	// PresignEndpoint is the endpoint in the URLs the browser uses; empty means Endpoint.
 	PresignEndpoint string
 	Bucket          string
-	// Region is "auto" for R2; MinIO accepts any, conventionally us-east-1.
+	// Region is "auto" for R2; RustFS accepts any, conventionally us-east-1.
 	Region          string
 	AccessKeyID     string
 	SecretAccessKey string
-	// PathStyle puts the bucket in the path (http://host/bucket/key), as MinIO needs; R2 takes
+	// PathStyle puts the bucket in the path (http://host/bucket/key), as RustFS needs; R2 takes
 	// either.
 	PathStyle bool
 	// HTTPClient is optional; the default has a timeout of RequestTimeout.
@@ -96,7 +96,7 @@ func New(cfg Config) (*Store, error) {
 				return creds, nil
 			}),
 			HTTPClient: hc,
-			// No checksum headers the bucket did not ask for: R2 and MinIO need none, and a
+			// No checksum headers the bucket did not ask for: R2 and RustFS need none, and a
 			// presigned PUT must carry only what the browser can send.
 			RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 			ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,

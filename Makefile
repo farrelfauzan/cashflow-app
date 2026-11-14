@@ -34,17 +34,17 @@ dev-up: ## Start PostgreSQL and Redis for local development
 	$(COMPOSE) up -d --wait
 
 .PHONY: dev-up-uploads
-dev-up-uploads: ## Also start MinIO (with its bucket) and ClamAV for uploads; ClamAV's first start takes a minute or two
-	$(COMPOSE) --profile uploads up -d --wait minio
-	$(COMPOSE) --profile uploads run --rm minio-init
+dev-up-uploads: ## Also start RustFS (with its bucket) and ClamAV for uploads; ClamAV's first start takes a minute or two
+	$(COMPOSE) --profile uploads up -d rustfs
+	$(COMPOSE) --profile uploads run --rm rustfs-init
 	$(COMPOSE) --profile uploads up -d clamav
 
 .PHONY: dev-down
-dev-down: ## Stop PostgreSQL and Redis, and MinIO and ClamAV if running (data is kept)
+dev-down: ## Stop PostgreSQL and Redis, and RustFS and ClamAV if running (data is kept)
 	$(COMPOSE) --profile uploads down
 
 .PHONY: dev-reset
-dev-reset: ## Stop PostgreSQL and Redis (and MinIO and ClamAV) and delete all their data
+dev-reset: ## Stop PostgreSQL and Redis (and RustFS and ClamAV) and delete all their data
 	$(COMPOSE) --profile uploads down -v
 
 # ---- run -------------------------------------------------------------------------------
