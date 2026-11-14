@@ -68,8 +68,9 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
         organizationName={organization.name}
         detail={[me.user.name, roles].filter((part) => part !== "").join(" · ")}
       />
-      {/* On the phone the page ends above the fixed tab bar (64px plus the home indicator). */}
-      <main className="flex min-w-0 flex-1 flex-col px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+88px)] md:px-8 md:py-[30px]">
+      {/* On the phone the page ends above the fixed tab bar (64px plus the home indicator), and
+          on iOS above the floating one (66px, 24px or the home indicator under it). */}
+      <main className="flex min-w-0 flex-1 flex-col px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+88px)] md:px-8 md:py-[30px] ios:max-md:pb-[calc(max(24px,env(safe-area-inset-bottom))+82px)]">
         <OrgAbilityProvider
           key={orgId}
           orgId={orgId}

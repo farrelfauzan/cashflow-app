@@ -17,6 +17,16 @@
    phone's sheet too. */
 @custom-variant rail-choice (&:where([data-sidebar-choice="collapsed"] *));
 
+/* iOS and iPadOS only (T-097e, board iOS-Aturan): -webkit-touch-callout exists only in WebKit on
+   iOS, so this is true there and false on Android, desktop Safari, Chrome and Firefox. CSS only:
+   no user-agent sniffing and no script. `ios:` utilities give the floating chrome its shape and
+   its solid look; the glass on top of it is the [data-glass] block at the end of this file. */
+@custom-variant ios {
+  @supports (-webkit-touch-callout: none) {
+    @slot;
+  }
+}
+
 /* Every color in the app is defined here, once. Components use the semantic tokens below
    (bg-background, text-muted-foreground, bg-warning, ...), never raw colors.
 
@@ -56,6 +66,17 @@
   --palette-line: #d8d2c6; /* decorative borders and dividers */
   --palette-stone: #7c8380; /* input outlines */
   --palette-error: #a3281c; /* errors and destructive actions */
+
+  /* The iOS glass on the floating chrome (T-097e, board iOS-Aturan): cream at 80% blurred,
+     a thin white edge with a highlight on its top, and a soft shadow. Contrast measured on the
+     glass over white, green or ink content: ink 9.1:1, slate 4.7:1, accent-strong 6.2:1. The
+     toasts keep their color by meaning at 84 to 96% (white text 4.7:1 and up). */
+  --glass-chrome: color-mix(in srgb, var(--palette-cream) 80%, transparent);
+  --glass-edge: rgb(255 255 255 / 0.65);
+  --glass-blur: blur(20px) saturate(160%);
+  --glass-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.75),
+    0 8px 24px color-mix(in srgb, var(--palette-ink) 16%, transparent);
 
   --radius: 0.625rem;
 
@@ -291,6 +312,65 @@
   @media (width < 48rem) and (prefers-reduced-motion: reduce) {
     &:active {
       scale: none;
+    }
+  }
+}
+
+/* The iOS glass (T-097e, board iOS-Aturan), only on chrome that floats over the page: the phone's
+   tab bar and top bar, the iPad side menu and the toasts; never behind body text, a form or a
+   table. An element opts in with data-glass ("chrome", or a toast's tone) and keeps its Tailwind
+   classes as the solid look everywhere else.
+   Outside any layer on purpose: these declarations beat the Tailwind utilities, and the
+   fallback below hands each one back to them with revert-layer.
+   Gated on iOS (-webkit-touch-callout) and on backdrop-filter, so Android and desktop never get
+   it and an iOS without backdrop-filter keeps the solid look. */
+@supports (-webkit-touch-callout: none) and
+  ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  [data-glass] {
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-shadow);
+  }
+
+  [data-glass="chrome"] {
+    background-color: var(--glass-chrome);
+  }
+
+  /* Toasts: the tone's color, a little see-through, with white text (board contrast table). */
+  [data-glass="create"] {
+    background-color: color-mix(in srgb, var(--primary) 90%, transparent);
+    border-radius: 18px;
+  }
+
+  [data-glass="destructive"] {
+    background-color: color-mix(in srgb, var(--destructive) 88%, transparent);
+    border-radius: 18px;
+  }
+
+  [data-glass="caution"] {
+    background-color: color-mix(in srgb, var(--warning) 96%, transparent);
+    border-radius: 18px;
+  }
+
+  [data-glass="neutral"] {
+    background-color: color-mix(in srgb, var(--foreground) 84%, transparent);
+    border-radius: 18px;
+  }
+
+  /* Solid again when the person asks for it. Written as an override and never as a negated
+     query: Safari does not know prefers-reduced-transparency (checked 2026-11-10), and an
+     unknown feature inside `not (...)` would hide the glass from everyone. So in Safari today
+     only Increase Contrast turns it solid; Reduce Transparency keeps the glass, at the contrast
+     above. */
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    [data-glass] {
+      -webkit-backdrop-filter: revert-layer;
+      backdrop-filter: revert-layer;
+      border: revert-layer;
+      border-radius: revert-layer;
+      box-shadow: revert-layer;
+      background-color: revert-layer;
     }
   }
 }

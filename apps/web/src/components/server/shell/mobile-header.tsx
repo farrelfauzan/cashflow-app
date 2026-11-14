@@ -8,10 +8,14 @@ type MobileHeaderProps = {
 
 // The phone's top bar (board HP-Tab): the organization and who is signed in, under the status
 // bar. Navigation is the tab bar at the bottom (PhoneTabBar). Hidden on iPad, where the side
-// menu is always open.
+// menu is always open. On iOS it floats as a rounded glass panel 8px from the edges, the page
+// scrolling under it (board iOS-HP-Tab, T-097e).
 export function MobileHeader({ organizationName, detail }: MobileHeaderProps) {
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-secondary px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 [view-transition-name:phone-top-bar] md:hidden">
+    <header
+      data-glass="chrome"
+      className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-secondary px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 [view-transition-name:phone-top-bar] md:hidden ios:top-[calc(env(safe-area-inset-top)+8px)] ios:mx-2 ios:mt-[calc(env(safe-area-inset-top)+8px)] ios:rounded-[18px] ios:border ios:bg-card ios:px-3 ios:py-2"
+    >
       <OrgTile
         name={organizationName}
         tone="solid"

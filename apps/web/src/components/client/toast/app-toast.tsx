@@ -18,6 +18,7 @@ type AppToastProps = ToastMessage & {
 // announces it.
 // It takes pointer events itself (pointer-events-auto): an open sheet or dialog turns them off
 // on the page, and the close button and the swipe must still work over it.
+// On iOS the color turns a little see-through over a blur (data-glass, board iOS-Aturan, T-097e).
 export function AppToast({
   id,
   tone,
@@ -30,6 +31,7 @@ export function AppToast({
   return (
     <div
       data-tone={tone}
+      data-glass={tone}
       className={cn(
         "pointer-events-auto flex w-full items-start gap-3 rounded-2xl py-3.5 pr-2 pl-4 shadow-xl shadow-foreground/20 md:w-[420px]",
         className,

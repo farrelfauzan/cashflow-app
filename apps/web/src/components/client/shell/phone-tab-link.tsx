@@ -15,8 +15,9 @@ type PhoneTabLinkProps = {
 };
 
 // One tab of the phone's tab bar (board HP-Tab): the icon on a mint pill and a bold label when it
-// is the current section, which is also marked for screen readers. 58px tall. While pressed the
-// mint pill shows behind any tab's icon (board HP-Tekan).
+// is the current section, which is also marked for screen readers. 58px tall; 56px in the
+// floating bar on iOS, where the other tabs are ink as on the board (iOS-HP-Tab). While pressed
+// the mint pill shows behind any tab's icon (board HP-Tekan).
 export function PhoneTabLink({ href, exact, label, icon }: PhoneTabLinkProps) {
   const pathname = usePathname();
   const current =
@@ -27,13 +28,13 @@ export function PhoneTabLink({ href, exact, label, icon }: PhoneTabLinkProps) {
       href={href}
       aria-current={current ? "page" : undefined}
       className={cn(
-        "group flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] font-semibold text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring",
-        current && "font-bold text-primary-strong",
+        "group flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] font-semibold text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring ios:min-h-14 ios:gap-0.5 ios:rounded-[26px]",
+        current ? "font-bold text-primary-strong" : "ios:text-foreground",
       )}
     >
       <span
         className={cn(
-          "flex h-[30px] w-[52px] items-center justify-center rounded-full transition-colors duration-100 group-active:bg-accent [&_svg]:size-[22px]",
+          "flex h-[30px] w-[52px] items-center justify-center rounded-full transition-colors duration-100 group-active:bg-accent ios:h-7 ios:w-[50px] [&_svg]:size-[22px]",
           current && "bg-accent text-primary",
         )}
       >
