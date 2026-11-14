@@ -1358,10 +1358,10 @@ paths:
         A cash payment received now, recorded by the caller. It pays the tenant's open invoices
         oldest period first across all their leases (FIFO), what is left is credit, and a payment
         that keeps the tenant's active promise closes it as kept: exactly as recordPayment, whose
-        answer it repeats. Needs cash:record with the amount on the tenant through every lease the
-        tenant has or had, in the lease's property and assigned to its collector, so a karyawan
-        records cash only for tenants they collect from (403 otherwise, audited); a tenant with no
-        lease needs the organization-wide grant. Admins record payments with recordPayment.
+        answer it repeats. Needs cash:record with the amount on the tenant through each of its active
+        leases, in the lease's property and assigned to its collector (decision 47: ended leases do
+        not count), so a karyawan records cash only for tenants they collect from now (403
+        otherwise, audited); a tenant with no active lease needs the organization-wide grant. Admins record payments with recordPayment.
 
         The tenant's receipt (template payment_receipt, cash only) is recorded with the payment and
         sent once by the worker right after, through WhatsApp or, in a demo, the tenant's linked
@@ -1420,7 +1420,7 @@ paths:
         until then, decision 46.10): start an upload with purpose cash_receipt for the payment's
         tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the
         member who recorded the payment may attach its photo, with cash:record on the tenant and
-        the payment's amount through every lease the tenant has or had, as when recording it (403
+        the payment's amount through each of the tenant's active leases, as when recording it (403
         otherwise, audited).
 
         The upload is accepted while its scan is still pending; the answer, getUpload and the
@@ -1487,8 +1487,9 @@ paths:
         another member, is not on it.
 
         Needs invoice:read: a member with no access at all is 403 (audited). A tenant is listed
-        only when the caller may read invoices through every lease the tenant has or had (for a
-        karyawan, every lease is one they collect), since the amount owed spans them all; total
+        only when the caller may read invoices through each of the tenant's active leases (for a
+        karyawan, each is one they collect; decision 47: ended leases do not count, though the
+        amount owed spans them); total
         counts only those rows. It is the caller's own field list: an admin with the
         organization-wide grant also sees only the tenants they collect from.
       parameters:
@@ -1866,8 +1867,8 @@ paths:
       summary: Record a tenant's payment promise from the field, "Catat janji bayar" (needs promise:create; audited)
       description: >
         makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the
-        version's source is karyawan. Needs promise:create on the tenant through every lease the
-        tenant has or had (a karyawan's own are the leases they collect); 403 otherwise. Allowed
+        version's source is karyawan. Needs promise:create on the tenant through each of its active
+        leases (a karyawan's own are the leases they collect; decision 47); 403 otherwise. Allowed
         and denied checks are audited.
       requestBody:
         required: true
@@ -2147,8 +2148,8 @@ paths:
         file can be read, through getUpload's short-lived downloadUrl, always as a download.
 
         What the upload is for decides the permission: purpose cash_receipt (a receipt photo for
-        tenantId) needs cash:record on the tenant, through every lease the tenant has or had, so a
-        karyawan may upload only for tenants they collect from; purpose cash_deposit (a deposit
+        tenantId) needs cash:record on the tenant, through each of its active leases (decision 47),
+        so a karyawan may upload only for tenants they collect from now; purpose cash_deposit (a deposit
         photo, no tenantId) needs cash:deposit on the caller's own record.
 
         Errors: 400 upload_purpose_unknown (field purpose), upload_type_not_allowed (field
@@ -2222,7 +2223,7 @@ paths:
       operationId: getUpload
       summary: An upload's scan status and, once it is clean, a short-lived download link
       description: >
-        Allowed with payment:check or cash:read (through every lease of a receipt's tenant; for
+        Allowed with payment:check or cash:read (through each active lease of a receipt's tenant; for
         a deposit photo, for the whole organization), or with the action that started the upload on the
         same record (a karyawan reads the receipts of tenants they collect from and their own
         deposit photos). downloadUrl is present only when status is clean, lasts a few minutes

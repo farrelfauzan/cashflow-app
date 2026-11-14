@@ -72,7 +72,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * A cash payment received now, recorded by the caller. It pays the tenant's open invoices oldest period first across all their leases (FIFO), what is left is credit, and a payment that keeps the tenant's active promise closes it as kept: exactly as recordPayment, whose answer it repeats. Needs cash:record with the amount on the tenant through every lease the tenant has or had, in the lease's property and assigned to its collector, so a karyawan records cash only for tenants they collect from (403 otherwise, audited); a tenant with no lease needs the organization-wide grant. Admins record payments with recordPayment.
+ * A cash payment received now, recorded by the caller. It pays the tenant's open invoices oldest period first across all their leases (FIFO), what is left is credit, and a payment that keeps the tenant's active promise closes it as kept: exactly as recordPayment, whose answer it repeats. Needs cash:record with the amount on the tenant through each of its active leases, in the lease's property and assigned to its collector (decision 47: ended leases do not count), so a karyawan records cash only for tenants they collect from now (403 otherwise, audited); a tenant with no active lease needs the organization-wide grant. Admins record payments with recordPayment.
  * The tenant's receipt (template payment_receipt, cash only) is recorded with the payment and sent once by the worker right after, through WhatsApp or, in a demo, the tenant's linked Telegram chat: receipt.status is pending in the answer ("Kwitansi sedang dikirim").
  * requestId makes a retry or a double submit harmless: the same requestId with the same body from the same member answers 200 with the payment already recorded and the receipt's status now, nothing is recorded twice; the same requestId with any other body, or one that recorded a payment through recordPayment, is 409 request_id_reused.
  * @summary Record cash collected from a tenant in the field, "Terima tunai" (needs cash:record; audited)
@@ -144,7 +144,7 @@ export const useRecordCashPayment = <TError = ErrorType<Error | ErrorResponse>,
       return useMutation(getRecordCashPaymentMutationOptions(options), queryClient);
     }
     /**
- * The karyawan saves "Terima tunai" first and attaches the photo after it ("foto belum ada" until then, decision 46.10): start an upload with purpose cash_receipt for the payment's tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the member who recorded the payment may attach its photo, with cash:record on the tenant and the payment's amount through every lease the tenant has or had, as when recording it (403 otherwise, audited).
+ * The karyawan saves "Terima tunai" first and attaches the photo after it ("foto belum ada" until then, decision 46.10): start an upload with purpose cash_receipt for the payment's tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the member who recorded the payment may attach its photo, with cash:record on the tenant and the payment's amount through each of the tenant's active leases, as when recording it (403 otherwise, audited).
  * The upload is accepted while its scan is still pending; the answer, getUpload and the payment's photo on listFieldToday then show the scan's verdict. Links are append-only: a payment that has a photo the scan did not refuse takes no other (409 receipt_photo_attached), and one whose photo was refused (rejected or infected) takes a new one, so a bad photo is retaken but a good one is never swapped. Sending the same uploadId again changes nothing and answers 200 with the payment's photo now.
  * @summary Attach the photo of collected cash to its payment (needs cash:record; audited)
  */
@@ -216,7 +216,7 @@ export const useAttachCashPaymentPhoto = <TError = ErrorType<Error | ErrorRespon
     }
     /**
  * Of the tenants the caller collects from (the collector of one of their active leases): first those who owe on an invoice that is overdue, due today, or due in 1 or 2 days (Asia/Jakarta), the oldest unpaid due date first, each with the reason of that oldest invoice (with daysOverdue or daysUntilDue) even if they also paid cash today; then those from whom the caller recorded cash today and who have nothing due in the window any more (reason paid_today), by tenant name. The tenant id breaks ties. Each row has what the tenant owes in all over every invoice, the overdue part, and the cash the caller recorded from them today with each payment. A tenant fully paid some other way, or paid in cash to another member, is not on it.
- * Needs invoice:read: a member with no access at all is 403 (audited). A tenant is listed only when the caller may read invoices through every lease the tenant has or had (for a karyawan, every lease is one they collect), since the amount owed spans them all; total counts only those rows. It is the caller's own field list: an admin with the organization-wide grant also sees only the tenants they collect from.
+ * Needs invoice:read: a member with no access at all is 403 (audited). A tenant is listed only when the caller may read invoices through each of the tenant's active leases (for a karyawan, each is one they collect; decision 47: ended leases do not count, though the amount owed spans them); total counts only those rows. It is the caller's own field list: an admin with the organization-wide grant also sees only the tenants they collect from.
  * @summary Tagihan hari ini, the caller's tenants to collect from today (needs invoice:read)
  */
 export const listFieldToday = (
@@ -841,7 +841,7 @@ export const useRecordVisitOutcome = <TError = ErrorType<Error | ErrorResponse>,
       return useMutation(getRecordVisitOutcomeMutationOptions(options), queryClient);
     }
     /**
- * makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the version's source is karyawan. Needs promise:create on the tenant through every lease the tenant has or had (a karyawan's own are the leases they collect); 403 otherwise. Allowed and denied checks are audited.
+ * makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the version's source is karyawan. Needs promise:create on the tenant through each of its active leases (a karyawan's own are the leases they collect; decision 47); 403 otherwise. Allowed and denied checks are audited.
  * @summary Record a tenant's payment promise from the field, "Catat janji bayar" (needs promise:create; audited)
  */
 export const makeFieldPromise = (
