@@ -75,7 +75,10 @@ export function MemberAccessForm({
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
+      <div
+        data-slot="form-sheet-body"
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
+      >
         <form
           id={formId}
           noValidate
@@ -112,7 +115,10 @@ export function MemberAccessForm({
           member={member}
         />
       </div>
-      <div className="flex gap-2.5 border-t px-6 py-4">
+      <div
+        data-slot="form-sheet-footer"
+        className="flex gap-2.5 border-t px-6 py-4"
+      >
         <SheetClose asChild>
           <Button
             type="button"

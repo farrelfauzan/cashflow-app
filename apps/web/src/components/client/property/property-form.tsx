@@ -106,6 +106,7 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
         id={formId}
         noValidate
         onSubmit={submit}
+        data-slot="form-sheet-body"
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
         {alert !== undefined && <FormAlert message={alert} />}
@@ -189,7 +190,10 @@ export function PropertyForm({ orgId, property, onSaved }: PropertyFormProps) {
           </p>
         </div>
       </form>
-      <div className="flex gap-2.5 border-t px-6 py-4">
+      <div
+        data-slot="form-sheet-footer"
+        className="flex gap-2.5 border-t px-6 py-4"
+      >
         <SheetClose asChild>
           <Button
             type="button"

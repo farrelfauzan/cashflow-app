@@ -98,7 +98,10 @@ export function MemberPanel({
       title = "Arti tiap peran";
       subtitle = "Peran bawaan yang sama di setiap usaha";
       body = (
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div
+          data-slot="form-sheet-body"
+          className="min-h-0 flex-1 overflow-y-auto px-6 py-5"
+        >
           {roleGuide}
         </div>
       );

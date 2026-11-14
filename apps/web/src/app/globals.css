@@ -317,9 +317,10 @@
 }
 
 /* The iOS glass (T-097e, board iOS-Aturan), only on chrome that floats over the page: the phone's
-   tab bar and top bar, the iPad side menu and the toasts; never behind body text, a form or a
-   table. An element opts in with data-glass ("chrome", or a toast's tone) and keeps its Tailwind
-   classes as the solid look everywhere else.
+   tab bar and top bar, the iPad side menu, the toasts, the phone's bottom sheets and the iPad's
+   drawer; never behind body text, a form or a table (a sheet's form sits on a white card). An
+   element opts in with data-glass ("chrome", "sheet", "drawer", or a toast's tone) and keeps its
+   Tailwind classes as the solid look everywhere else.
    Outside any layer on purpose: these declarations beat the Tailwind utilities, and the
    fallback below hands each one back to them with revert-layer.
    Gated on iOS (-webkit-touch-callout) and on backdrop-filter, so Android and desktop never get
@@ -333,8 +334,22 @@
     box-shadow: var(--glass-shadow);
   }
 
-  [data-glass="chrome"] {
+  [data-glass="chrome"],
+  [data-glass="sheet"],
+  [data-glass="drawer"] {
     background-color: var(--glass-chrome);
+  }
+
+  /* "sheet" is glass on the phone only: from md up the same panel is the centred dialog, which
+     does not float over the page's chrome and stays solid. "drawer" is glass on both. */
+  @media (width >= 48rem) {
+    [data-glass="sheet"] {
+      -webkit-backdrop-filter: revert-layer;
+      backdrop-filter: revert-layer;
+      border: revert-layer;
+      box-shadow: revert-layer;
+      background-color: revert-layer;
+    }
   }
 
   /* Toasts: the tone's color, a little see-through, with white text (board contrast table). */

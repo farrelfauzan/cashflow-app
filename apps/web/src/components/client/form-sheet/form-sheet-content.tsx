@@ -26,7 +26,9 @@ type FormSheetContentProps = Omit<
 // the bottom, 92% of the screen tall, rounded on top, with a grab handle, above the home
 // indicator; swiping down on the handle or the header closes it. From md up: the right-hand
 // drawer, 470px wide and full height, sliding from the right, exactly as before; or, with
-// wide="dialog", the centred dialog the billing forms had.
+// wide="dialog", the centred dialog the billing forms had. On iOS and iPadOS it is glass where it
+// floats (data-glass in globals.css): the sheet on the phone, and the drawer on the iPad; the
+// centred dialog stays solid.
 export function FormSheetContent({
   wide = "drawer",
   className,
@@ -40,6 +42,7 @@ export function FormSheetContent({
     <SheetContent
       {...props}
       side="bottom"
+      data-glass={wide === "drawer" ? "drawer" : "sheet"}
       ref={contentRef}
       onPointerDown={swipe.onPointerDown}
       onPointerMove={swipe.onPointerMove}
@@ -53,7 +56,7 @@ export function FormSheetContent({
         aria-hidden="true"
         className="absolute -top-px left-1/2 z-10 flex h-6 w-24 -translate-x-1/2 touch-none justify-center pt-2 md:hidden"
       >
-        <span className="h-[5px] w-10 rounded-full bg-border" />
+        <span className="h-[5px] w-10 rounded-full bg-border ios:bg-muted-foreground/50" />
       </div>
       {children}
     </SheetContent>

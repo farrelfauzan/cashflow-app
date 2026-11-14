@@ -23,7 +23,10 @@ export function MeterLockedView({
 }: MeterLockedViewProps) {
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5">
+      <div
+        data-slot="form-sheet-body"
+        className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
+      >
         <div className="flex flex-col items-start gap-2.5">
           <TenantChip tone="neutral">
             <Lock aria-hidden="true" className="mr-1.5 size-4" />
@@ -48,7 +51,10 @@ export function MeterLockedView({
         </dl>
         <p className="text-[15px] leading-normal md:text-base">{view.text}</p>
       </div>
-      <div className="flex gap-2.5 border-t px-6 py-4">
+      <div
+        data-slot="form-sheet-footer"
+        className="flex gap-2.5 border-t px-6 py-4"
+      >
         {onCorrect !== null && (
           <Button
             type="button"

@@ -37,8 +37,15 @@ const INTERACTIVE_SELECTOR =
 // The phone's sheet (board HP-Lembar): from the bottom, 92% of the screen tall, rounded on top,
 // above the home indicator and clear of a notch on the right; a finger on the header drags it
 // instead of panning the page.
-const BOTTOM_SHEET_CLASS =
-  "h-[92dvh] w-full gap-0 rounded-t-[20px] bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] max-md:[&_[data-slot=sheet-header]]:touch-none max-md:[&_[data-slot=sheet-header]]:select-none";
+// On iOS and iPadOS (boards iOS-HP-Lembar and iOS-Aturan) it floats 8px from the sides and the
+// bottom, round on every corner, a paper panel with a line edge that FormSheetContent's data-glass
+// turns into glass; the form's body sits on a white card inside it, never on the glass, and the
+// header and footer lose their lines.
+const BOTTOM_SHEET_CLASS = [
+  "h-[92dvh] w-full gap-0 rounded-t-[20px] bg-card p-0 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] max-md:[&_[data-slot=sheet-header]]:touch-none max-md:[&_[data-slot=sheet-header]]:select-none",
+  "ios:max-md:inset-x-2 ios:max-md:bottom-2 ios:max-md:h-[calc(92dvh-8px)] ios:max-md:w-auto ios:max-md:rounded-[32px] ios:max-md:border ios:max-md:bg-background ios:max-md:pb-[max(0px,calc(env(safe-area-inset-bottom)-8px))]",
+  "ios:max-md:[&_[data-slot=sheet-header]]:border-b-0 ios:max-md:[&_[data-slot=form-sheet-footer]]:border-t-0 ios:max-md:[&_[data-slot=form-sheet-body]]:mx-2 ios:max-md:[&_[data-slot=form-sheet-body]]:rounded-3xl ios:max-md:[&_[data-slot=form-sheet-body]]:bg-card",
+].join(" ");
 
 // From md up, over the bottom sheet's classes. "drawer": the right-hand drawer, 470px wide and
 // full height, sliding from the right, keeping the bottom and right safe-area padding as the
@@ -46,8 +53,13 @@ const BOTTOM_SHEET_CLASS =
 // as the billing dialogs set it (at most 560px wide and the screen less 2rem tall, rounded, its
 // whole content scrolling, no safe-area padding since it sits in the middle), zooming and fading in and out over 200ms instead of sliding.
 const WIDE_LAYOUT_CLASS: Record<FormSheetWideLayout, string> = {
-  drawer:
+  // On iPadOS (board iOS-iPad) the drawer floats 12px from the top, right and bottom, round,
+  // the same paper panel and white card as the phone's sheet.
+  drawer: [
     "md:inset-y-0 md:left-auto md:h-full md:w-[470px] md:rounded-none md:border-t-0 md:border-l md:data-[state=closed]:[--tw-exit-translate-y:0] md:data-[state=closed]:slide-out-to-right md:data-[state=open]:[--tw-enter-translate-y:0] md:data-[state=open]:slide-in-from-right",
+    "ios:md:inset-y-3 ios:md:right-3 ios:md:h-auto ios:md:max-w-[calc(100%-24px)] ios:md:rounded-[28px] ios:md:border ios:md:bg-background",
+    "ios:md:[&_[data-slot=sheet-header]]:border-b-0 ios:md:[&_[data-slot=form-sheet-footer]]:border-t-0 ios:md:[&_[data-slot=form-sheet-body]]:mx-2.5 ios:md:[&_[data-slot=form-sheet-body]]:rounded-[20px] ios:md:[&_[data-slot=form-sheet-body]]:bg-card",
+  ].join(" "),
   dialog:
     "md:top-1/2 md:right-auto md:bottom-auto md:left-1/2 md:h-auto md:max-h-[calc(100dvh-2rem)] md:max-w-[560px] md:-translate-x-1/2 md:-translate-y-1/2 md:overflow-y-auto md:rounded-2xl md:border md:pr-0 md:pb-0 md:outline-none md:data-[state=closed]:duration-200 md:data-[state=closed]:ease-[ease] md:data-[state=closed]:[--tw-exit-translate-y:0] md:data-[state=closed]:fade-out-0 md:data-[state=closed]:zoom-out-95 md:data-[state=open]:duration-200 md:data-[state=open]:ease-[ease] md:data-[state=open]:[--tw-enter-translate-y:0] md:data-[state=open]:fade-in-0 md:data-[state=open]:zoom-in-95",
 };

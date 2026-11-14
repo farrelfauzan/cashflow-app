@@ -31,6 +31,7 @@ export function LeasePanelFooter({
 }: LeasePanelFooterProps) {
   return (
     <div
+      data-slot="form-sheet-footer"
       className={cn(
         "flex gap-2.5 border-t px-6 py-4",
         wide && "md:justify-end",
