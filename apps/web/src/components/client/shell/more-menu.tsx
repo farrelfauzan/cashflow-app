@@ -62,14 +62,17 @@ export function MoreMenu({ label, sectionHrefs, children }: MoreMenuProps) {
           <span className="truncate">{label}</span>
         </button>
       </SheetTrigger>
+      {/* On iOS it floats as glass like the form sheets (board iOS-HP-Lembar), and its handle sits
+          8px from the sheet's outer edge, where theirs does. */}
       <SheetContent
         side="bottom"
-        className="max-h-[92dvh] gap-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)]"
+        data-glass="sheet"
+        className="max-h-[92dvh] gap-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] ios:inset-x-2 ios:bottom-2 ios:max-h-[calc(92dvh-8px)] ios:rounded-[32px] ios:border ios:bg-background ios:pb-[max(0px,calc(env(safe-area-inset-bottom)-8px))]"
       >
-        <div className="flex justify-center pt-2 pb-0.5">
+        <div className="-mt-px flex justify-center pt-2 pb-0.5">
           <span
             aria-hidden="true"
-            className="h-[5px] w-10 rounded-full bg-border"
+            className="h-[5px] w-10 rounded-full bg-border ios:bg-muted-foreground/50"
           />
         </div>
         <div className="flex min-h-14 items-center border-b pr-14 pl-5">

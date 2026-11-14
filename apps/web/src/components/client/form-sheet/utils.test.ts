@@ -135,13 +135,41 @@ describe("formSheetContentClass", () => {
       expect(classes).toContain("h-[92dvh]");
       expect(classes).toContain("rounded-t-[20px]");
     }
-    // They differ only in classes that apply from md up.
+    // They differ only in classes that apply from md up, on every device or on iPadOS.
     const differing = [
       ...drawer.filter((each) => !dialog.includes(each)),
       ...dialog.filter((each) => !drawer.includes(each)),
     ];
     expect(differing.length).toBeGreaterThan(0);
-    expect(differing.filter((each) => !each.startsWith("md:"))).toEqual([]);
+    expect(
+      differing.filter(
+        (each) => !each.startsWith("md:") && !each.startsWith("ios:md:"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("floats on iOS below md as a drawer and as a dialog, its body on a white card", () => {
+    for (const wide of ["drawer", "dialog"] as const) {
+      const classes = formSheetContentClass(wide).split(" ");
+      expect(classes).toContain("ios:max-md:inset-x-2");
+      expect(classes).toContain("ios:max-md:bottom-2");
+      expect(classes).toContain("ios:max-md:rounded-[32px]");
+      expect(classes).toContain(
+        "ios:max-md:[&_[data-slot=form-sheet-body]]:bg-card",
+      );
+    }
+  });
+
+  it("floats on iPadOS only as the drawer; the centred dialog stays as it is", () => {
+    const drawer = formSheetContentClass("drawer").split(" ");
+    expect(drawer).toContain("ios:md:inset-y-3");
+    expect(drawer).toContain("ios:md:right-3");
+    expect(drawer).toContain("ios:md:rounded-[28px]");
+    expect(
+      formSheetContentClass("dialog")
+        .split(" ")
+        .filter((each) => each.startsWith("ios:md:")),
+    ).toEqual([]);
   });
 
   it("is the 470px right-hand drawer from md up by default", () => {

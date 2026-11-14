@@ -23,7 +23,10 @@ export function TenantAdded({
 }: TenantAddedProps) {
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-7">
+      <div
+        data-slot="form-sheet-body"
+        className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-7"
+      >
         <div
           role="status"
           className="flex items-start gap-3.5 rounded-[14px] bg-accent p-4"
@@ -49,7 +52,10 @@ export function TenantAdded({
           </p>
         )}
       </div>
-      <div className="flex gap-2.5 border-t px-6 py-4">
+      <div
+        data-slot="form-sheet-footer"
+        className="flex gap-2.5 border-t px-6 py-4"
+      >
         {canManageLeases ? (
           <>
             <Button

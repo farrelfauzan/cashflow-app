@@ -94,6 +94,7 @@ export function UnitPriceForm({
         id={formId}
         noValidate
         onSubmit={submit}
+        data-slot="form-sheet-body"
         className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-5"
       >
         {alert !== undefined && <FormAlert message={alert} />}
@@ -164,7 +165,10 @@ export function UnitPriceForm({
           )}
         />
       </form>
-      <div className="flex gap-2.5 border-t px-6 py-4">
+      <div
+        data-slot="form-sheet-footer"
+        className="flex gap-2.5 border-t px-6 py-4"
+      >
         <Button
           type="button"
           variant="outline"

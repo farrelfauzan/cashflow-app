@@ -23,7 +23,10 @@ export function InviteResult({ member }: InviteResultProps) {
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-7">
+      <div
+        data-slot="form-sheet-body"
+        className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-6 py-7"
+      >
         <div
           role="status"
           className={cn(
@@ -70,7 +73,7 @@ export function InviteResult({ member }: InviteResultProps) {
             : `Kirim ulang undangannya nanti dari daftar anggota. ${member.name} tetap bisa masuk dengan nomor itu.`}
         </p>
       </div>
-      <div className="flex border-t px-6 py-4">
+      <div data-slot="form-sheet-footer" className="flex border-t px-6 py-4">
         <SheetClose asChild>
           <Button
             type="button"

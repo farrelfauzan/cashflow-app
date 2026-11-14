@@ -34,8 +34,10 @@ function SheetOverlay({
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
+      // On iOS a lighter ink, so a glass sheet over it reads as cream (boards iOS-HP-Lembar and
+      // iOS-iPad); with Increase Contrast, the usual stronger dim.
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out data-[state=open]:fade-in-0",
+        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=closed]:ease-in data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-250 data-[state=open]:ease-out data-[state=open]:fade-in-0 ios:bg-foreground/30 ios:contrast-more:bg-black/50",
         className,
       )}
       {...props}
@@ -113,8 +115,9 @@ function SheetContent({
         {...props}
       >
         {children}
+        {/* On iOS a round button, white at 70%, on the floating sheet or drawer (board iOS-HP-Lembar). */}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-3 right-[calc(env(safe-area-inset-right)+12px)] flex size-11 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <SheetPrimitive.Close className="absolute top-3 right-[calc(env(safe-area-inset-right)+12px)] flex size-11 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary ios:rounded-full ios:bg-card/70 ios:opacity-100">
             <XIcon className="size-5" />
             <span className="sr-only">Tutup</span>
           </SheetPrimitive.Close>

@@ -161,6 +161,7 @@ export function CorrectionDialog({
           id={formId}
           noValidate
           onSubmit={submit}
+          data-slot="form-sheet-body"
           className={BILLING_DIALOG_BODY_CLASS}
         >
           {alert !== undefined && <FormAlert message={alert} />}
@@ -234,7 +235,10 @@ export function CorrectionDialog({
 
           <LeaseInfoNote text={CORRECTION_NOTE} />
         </form>
-        <div className={BILLING_DIALOG_FOOTER_CLASS}>
+        <div
+          data-slot="form-sheet-footer"
+          className={BILLING_DIALOG_FOOTER_CLASS}
+        >
           <SheetClose asChild>
             <Button
               type="button"

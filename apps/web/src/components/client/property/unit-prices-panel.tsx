@@ -69,7 +69,10 @@ export function UnitPricesPanel({
           </SheetDescription>
         </SheetHeader>
         {unit !== undefined && (
-          <div className="flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-6 py-5">
+          <div
+            data-slot="form-sheet-body"
+            className="flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-6 py-5"
+          >
             <section
               aria-labelledby={`${id}-terms`}
               className="flex flex-col gap-2"
@@ -92,7 +95,7 @@ export function UnitPricesPanel({
             <UnitPriceHistory orgId={orgId} unitId={unit.id} today={today} />
           </div>
         )}
-        <div className="flex border-t px-6 py-4">
+        <div data-slot="form-sheet-footer" className="flex border-t px-6 py-4">
           <SheetClose asChild>
             <Button
               type="button"
