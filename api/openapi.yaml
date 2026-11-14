@@ -1513,10 +1513,11 @@ paths:
       operationId: getMyFieldCash
       summary: The cash the caller holds, "Tunai di tangan" (needs cash:deposit on the caller's own cash)
       description: >
-        Every cash payment the caller recorded, net of corrections, and how many. Cash deposits
-        (Setor tunai, coming next) will leave out what a deposit already covers. It is the caller's
-        own cash, checked as cash:deposit on a record the caller owns (the karyawan's own pay and
-        cash, "self"); a member without it is 403 (audited).
+        The field cash the caller holds: every cash payment they recorded with recordCashPayment
+        that no deposit covers yet, net of corrections, and how many. Send both to
+        recordCashDeposit as expectedAmount and expectedCount. It is the caller's own cash, checked
+        as cash:deposit on a record the caller owns (the karyawan's own pay and cash, "self"); a
+        member without it is 403 (audited).
       responses:
         "200":
           description: OK
@@ -1526,6 +1527,242 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/field/cash/payments:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [field]
+      operationId: listMyUndepositedCash
+      summary: The cash payments the caller holds, for Setor tunai (needs cash:deposit on the caller's own cash)
+      description: >
+        The field cash payments getMyFieldCash adds up, oldest recorded first (the payment id breaks
+        ties), each with its tenant, its amount net of corrections, and its photo. Checked as
+        getMyFieldCash.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UndepositedCashList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/field/cash-deposits:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [field]
+      operationId: listMyCashDeposits
+      summary: The caller's own deposits, newest first (needs cash:deposit on the caller's own cash)
+      description: >
+        The caller's deposits with their status: pending until an admin has counted the money, then
+        matched ("Cocok") or gap ("Selisih", with the difference). Checked as getMyFieldCash.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDepositList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [field]
+      operationId: recordCashDeposit
+      summary: Hand the cash the caller holds to the office, "Setor tunai" (needs cash:deposit on the caller's own cash; audited)
+      description: >
+        One deposit covers every field cash payment the caller holds (getMyFieldCash), never part
+        of them (decision 46.3). expectedAmount and expectedCount are the total and the count the
+        caller was shown; when the cash held changed since (another payment recorded, or one
+        corrected), nothing is recorded and the answer is 409 deposit_cash_changed: load it again.
+        amount is what the caller hands over, which may differ from expectedAmount. photoUploadId
+        is an optional photo of the money: a completed cash_deposit upload by the caller
+        (createUpload, PUT, completeUpload), accepted while its scan is pending.
+
+        The deposit is pending until an admin counts the money (confirmCashDeposit). Tenants'
+        balances never change: their payments were recorded when the cash was taken.
+
+        requestId makes a retry harmless: the same requestId with the same body from the same
+        member answers 200 with the deposit already recorded; with any other body it is 409
+        request_id_reused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CashDepositInput" }
+      responses:
+        "201":
+          description: Recorded, waiting for an admin to count it
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDeposit" }
+        "200":
+          description: Already recorded under this requestId; nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDeposit" }
+        "400":
+          description: >
+            invalid_input (field requestId, expectedAmount, expectedCount, amount or note);
+            deposit_photo_upload_invalid (field photoUploadId) when the upload is not a completed
+            cash_deposit upload by the caller, or is already another deposit's photo. A body that is
+            not the documented JSON, or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such upload (code not_found, field photoUploadId)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            nothing_to_deposit: the caller holds no field cash. deposit_cash_changed: the cash held
+            is not expectedAmount in expectedCount payments any more. deposit_photo_upload_refused
+            (field photoUploadId): the scan refused the photo; take another. request_id_reused.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orgs/{orgId}/cash-deposits:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [money]
+      operationId: listCashDeposits
+      summary: Every member's deposits, newest first (needs payment:check or cash:read)
+      description: >
+        For the admin who counts deposits (payment:check) and the Supervisor (cash:read), granted
+        for the whole organization: a deposit spans properties. 403 otherwise (audited).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          description: pending (not counted yet) or confirmed. Any other value is 400 invalid_input.
+          schema: { type: string, enum: [pending, confirmed] }
+        - name: staffUserId
+          in: query
+          description: Only this member's deposits.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDepositList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/cash-deposits/{depositId}:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/DepositId"
+    get:
+      tags: [money]
+      operationId: getCashDeposit
+      summary: One deposit (needs payment:check or cash:read, or cash:deposit on one's own)
+      description: >
+        As listCashDeposits lists it. The member who deposited it may read their own (cash:deposit,
+        self). 404 for a deposit not in the organization; 403 (audited) for anyone else.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDeposit" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/cash-deposits/{depositId}/payments:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/DepositId"
+    get:
+      tags: [money]
+      operationId: listCashDepositPayments
+      summary: The cash payments a deposit covers (needs payment:check or cash:read, or cash:deposit on one's own)
+      description: >
+        Oldest recorded first (the payment id breaks ties), each with its tenant, units, amount net
+        of corrections now, and photo, so the admin can match a gap to a receipt. Checked as
+        getCashDeposit.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDepositPaymentList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/cash-deposits/{depositId}/confirmation:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/DepositId"
+    post:
+      tags: [money]
+      operationId: confirmCashDeposit
+      summary: Record the amount counted from a deposit (needs payment:check; audited)
+      description: >
+        The admin counts the money and records receivedAmount, once. The difference from the
+        deposit's expectedAmount (the payments' total) is its gap: 0 is matched ("Cocok"); any
+        other is a "selisih setoran" that the check queue (S6-6) shows until it is closed with a
+        note. Needs payment:check for the whole organization, with receivedAmount as the amount.
+        Nobody confirms their own deposit (403, audited).
+
+        The same body again answers 200 with the deposit; a deposit already confirmed with another
+        amount or note is 409 deposit_already_confirmed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CashDepositConfirmationInput" }
+      responses:
+        "201":
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDeposit" }
+        "200":
+          description: Already confirmed with this body; nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashDeposit" }
+        "400":
+          description: >
+            invalid_input (field receivedAmount or note). A body that is not the documented JSON,
+            or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "deposit_already_confirmed: counted before, with another amount or note"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /orgs/{orgId}/field/tenants/{tenantId}/promises:
     parameters:
@@ -2384,6 +2621,11 @@ components:
       schema: { type: string, format: uuid }
     PaymentId:
       name: paymentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DepositId:
+      name: depositId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -3640,6 +3882,118 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/FieldTodayItem" }
+
+    HeldCashPayment:
+      type: object
+      required: [paymentId, tenantId, tenantName, units, amount, recordedAt, photo]
+      description: A field cash payment a member holds or deposited.
+      properties:
+        paymentId: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string, example: Rina Wulandari }
+        units:
+          type: array
+          description: >
+            The units of the tenant's leases, current or ended, collected by the member who took
+            the cash, by property then unit ("Bu Siti Aminah · Kamar 02").
+          items: { $ref: "#/components/schemas/FieldUnit" }
+        amount: { type: integer, format: int64, description: "Net of corrections.", example: 700000 }
+        recordedAt: { type: string, format: date-time }
+        photo: { $ref: "#/components/schemas/ReceiptPhoto" }
+
+    UndepositedCashList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/HeldCashPayment" }
+
+    CashDepositInput:
+      type: object
+      additionalProperties: false
+      required: [requestId, expectedAmount, expectedCount, amount]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Made by the client once per Setor tunai form, and sent again unchanged on a retry.
+        expectedAmount: { type: integer, format: int64, minimum: 0, maximum: 1000000000000, description: "getMyFieldCash's amount, as shown.", example: 2000000 }
+        expectedCount: { type: integer, minimum: 1, maximum: 1000000, description: "getMyFieldCash's count, as shown.", example: 2 }
+        amount: { type: integer, format: int64, minimum: 0, maximum: 1000000000000, description: "What the caller hands over.", example: 2000000 }
+        note: { type: string, maxLength: 500, description: "Optional, at most 500 letters after trimming." }
+        photoUploadId: { type: string, format: uuid, description: "Optional photo of the money: a completed cash_deposit upload by the caller." }
+
+    CashDepositStatus:
+      type: string
+      enum: [pending, matched, gap]
+      x-enum-varnames: [DepositPending, DepositMatched, DepositGap]
+      description: >
+        pending: an admin has not counted it yet ("Menunggu dihitung admin"); matched: the count
+        equals the payments' total ("Cocok"); gap: it differs ("Selisih"), see confirmation.gap.
+
+    CashDepositConfirmation:
+      type: object
+      required: [receivedAmount, gap, confirmedBy, confirmedByName, confirmedAt]
+      properties:
+        receivedAmount: { type: integer, format: int64, example: 1950000 }
+        gap: { type: integer, format: int64, description: "receivedAmount minus the deposit's expectedAmount: negative when money is missing.", example: -50000 }
+        note: { type: string }
+        confirmedBy: { type: string, format: uuid, description: The admin's staff user id. }
+        confirmedByName: { type: string, example: Sari Admin }
+        confirmedAt: { type: string, format: date-time }
+
+    CashDeposit:
+      type: object
+      required: [id, staffUserId, staffName, amount, expectedAmount, paymentCount, photo, recordedAt, status]
+      properties:
+        id: { type: string, format: uuid }
+        staffUserId: { type: string, format: uuid, description: The member who deposited it. }
+        staffName: { type: string, example: Dimas Karyawan }
+        amount: { type: integer, format: int64, description: "What the member said they hand over.", example: 2000000 }
+        expectedAmount: { type: integer, format: int64, description: "The total of the payments it covers, net of corrections when it was recorded.", example: 2000000 }
+        paymentCount: { type: integer, minimum: 1, example: 2 }
+        note: { type: string }
+        photo:
+          allOf:
+            - $ref: "#/components/schemas/ReceiptPhoto"
+          description: The photo of the money; status missing when none was sent.
+        recordedAt: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/CashDepositStatus" }
+        confirmation:
+          allOf:
+            - $ref: "#/components/schemas/CashDepositConfirmation"
+          description: Absent while pending.
+
+    CashDepositList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/CashDeposit" }
+
+    CashDepositPaymentList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/HeldCashPayment" }
+
+    CashDepositConfirmationInput:
+      type: object
+      additionalProperties: false
+      required: [receivedAmount]
+      properties:
+        receivedAmount: { type: integer, format: int64, minimum: 0, maximum: 1000000000000, description: "What the admin counted.", example: 1950000 }
+        note: { type: string, maxLength: 500, description: "Optional, at most 500 letters after trimming." }
 
     CorrectionInput:
       type: object

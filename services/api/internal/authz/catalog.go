@@ -33,9 +33,12 @@ const (
 	// ActionInvoiceShare mints a tenant payment link for an invoice, or revokes all of its links
 	// ("Salin link bayar"). It is checked on the invoice, in its lease's property and assigned to
 	// its collector, and audited.
-	ActionInvoiceShare     = "invoice:share"
-	ActionPaymentRead      = "payment:read"
-	ActionPaymentRecord    = "payment:record"
+	ActionInvoiceShare  = "invoice:share"
+	ActionPaymentRead   = "payment:read"
+	ActionPaymentRecord = "payment:record"
+	// ActionPaymentCheck is the admin checking money others recorded: a manual payment, a deposit's
+	// count.
+	ActionPaymentCheck     = "payment:check"
 	ActionCorrectionCreate = "correction:create"
 
 	// ActionPromiseRead and ActionPromiseCreate are a tenant's payment promises: list them, and
@@ -50,6 +53,8 @@ const (
 	// is the cash a member holds and hands over, checked on the member's own cash (self).
 	ActionCashRecord  = "cash:record"
 	ActionCashDeposit = "cash:deposit"
+	// ActionCashRead is reading every member's cash and deposits (the Supervisor).
+	ActionCashRead = "cash:read"
 
 	ActionReportRead = "report:read"
 )

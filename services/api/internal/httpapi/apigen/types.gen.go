@@ -30,6 +30,27 @@ func (e CapabilityAccess) Valid() bool {
 	}
 }
 
+// Defines values for CashDepositStatus.
+const (
+	DepositGap     CashDepositStatus = "gap"
+	DepositMatched CashDepositStatus = "matched"
+	DepositPending CashDepositStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CashDepositStatus enum.
+func (e CashDepositStatus) Valid() bool {
+	switch e {
+	case DepositGap:
+		return true
+	case DepositMatched:
+		return true
+	case DepositPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FieldDueReason.
 const (
 	FieldDueReasonDueInDays FieldDueReason = "due_in_days"
@@ -449,16 +470,16 @@ func (e RoleGrantRole) Valid() bool {
 
 // Defines values for UploadPurpose.
 const (
-	CashDeposit UploadPurpose = "cash_deposit"
-	CashReceipt UploadPurpose = "cash_receipt"
+	UploadPurposeCashDeposit UploadPurpose = "cash_deposit"
+	UploadPurposeCashReceipt UploadPurpose = "cash_receipt"
 )
 
 // Valid indicates whether the value is a known member of the UploadPurpose enum.
 func (e UploadPurpose) Valid() bool {
 	switch e {
-	case CashDeposit:
+	case UploadPurposeCashDeposit:
 		return true
-	case CashReceipt:
+	case UploadPurposeCashReceipt:
 		return true
 	default:
 		return false
@@ -483,6 +504,24 @@ func (e UploadStatus) Valid() bool {
 	case UploadStatusPending:
 		return true
 	case UploadStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCashDepositsParamsStatus.
+const (
+	ListCashDepositsParamsStatusConfirmed ListCashDepositsParamsStatus = "confirmed"
+	ListCashDepositsParamsStatusPending   ListCashDepositsParamsStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ListCashDepositsParamsStatus enum.
+func (e ListCashDepositsParamsStatus) Valid() bool {
+	switch e {
+	case ListCashDepositsParamsStatusConfirmed:
+		return true
+	case ListCashDepositsParamsStatusPending:
 		return true
 	default:
 		return false
@@ -813,6 +852,125 @@ type Capability struct {
 // CapabilityAccess defines model for Capability.Access.
 type CapabilityAccess string
 
+// CashDeposit defines model for CashDeposit.
+type CashDeposit struct {
+	// Amount What the member said they hand over.
+	//
+	// Example: 2000000
+	Amount int64 `json:"amount"`
+
+	// Confirmation Absent while pending.
+	Confirmation *CashDepositConfirmation `json:"confirmation,omitempty"`
+
+	// ExpectedAmount The total of the payments it covers, net of corrections when it was recorded.
+	//
+	// Example: 2000000
+	ExpectedAmount int64              `json:"expectedAmount"`
+	Id             openapi_types.UUID `json:"id"`
+	Note           *string            `json:"note,omitempty"`
+
+	// PaymentCount Example: 2
+	PaymentCount int `json:"paymentCount"`
+
+	// Photo The photo of the money; status missing when none was sent.
+	Photo      ReceiptPhoto `json:"photo"`
+	RecordedAt time.Time    `json:"recordedAt"`
+
+	// StaffName Example: Dimas Karyawan
+	StaffName string `json:"staffName"`
+
+	// StaffUserId The member who deposited it.
+	StaffUserId openapi_types.UUID `json:"staffUserId"`
+
+	// Status pending: an admin has not counted it yet ("Menunggu dihitung admin"); matched: the count equals the payments' total ("Cocok"); gap: it differs ("Selisih"), see confirmation.gap.
+	Status CashDepositStatus `json:"status"`
+}
+
+// CashDepositConfirmation defines model for CashDepositConfirmation.
+type CashDepositConfirmation struct {
+	ConfirmedAt time.Time `json:"confirmedAt"`
+
+	// ConfirmedBy The admin's staff user id.
+	ConfirmedBy openapi_types.UUID `json:"confirmedBy"`
+
+	// ConfirmedByName Example: Sari Admin
+	ConfirmedByName string `json:"confirmedByName"`
+
+	// Gap receivedAmount minus the deposit's expectedAmount: negative when money is missing.
+	//
+	// Example: -50000
+	Gap  int64   `json:"gap"`
+	Note *string `json:"note,omitempty"`
+
+	// ReceivedAmount Example: 1950000
+	ReceivedAmount int64 `json:"receivedAmount"`
+}
+
+// CashDepositConfirmationInput defines model for CashDepositConfirmationInput.
+type CashDepositConfirmationInput struct {
+	// Note Optional, at most 500 letters after trimming.
+	Note *string `json:"note,omitempty"`
+
+	// ReceivedAmount What the admin counted.
+	//
+	// Example: 1950000
+	ReceivedAmount int64 `json:"receivedAmount"`
+}
+
+// CashDepositInput defines model for CashDepositInput.
+type CashDepositInput struct {
+	// Amount What the caller hands over.
+	//
+	// Example: 2000000
+	Amount int64 `json:"amount"`
+
+	// ExpectedAmount getMyFieldCash's amount, as shown.
+	//
+	// Example: 2000000
+	ExpectedAmount int64 `json:"expectedAmount"`
+
+	// ExpectedCount getMyFieldCash's count, as shown.
+	//
+	// Example: 2
+	ExpectedCount int `json:"expectedCount"`
+
+	// Note Optional, at most 500 letters after trimming.
+	Note *string `json:"note,omitempty"`
+
+	// PhotoUploadId Optional photo of the money: a completed cash_deposit upload by the caller.
+	PhotoUploadId *openapi_types.UUID `json:"photoUploadId,omitempty"`
+
+	// RequestId Made by the client once per Setor tunai form, and sent again unchanged on a retry.
+	RequestId openapi_types.UUID `json:"requestId"`
+}
+
+// CashDepositList defines model for CashDepositList.
+type CashDepositList struct {
+	Items []CashDeposit `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// CashDepositPaymentList defines model for CashDepositPaymentList.
+type CashDepositPaymentList struct {
+	Items []HeldCashPayment `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
+// CashDepositStatus pending: an admin has not counted it yet ("Menunggu dihitung admin"); matched: the count equals the payments' total ("Cocok"); gap: it differs ("Selisih"), see confirmation.gap.
+type CashDepositStatus string
+
 // CashPaymentInput defines model for CashPaymentInput.
 type CashPaymentInput struct {
 	// Amount Example: 700000
@@ -1132,6 +1290,24 @@ type FieldUnit struct {
 
 	// UnitLabel Example: Kamar 3
 	UnitLabel string `json:"unitLabel"`
+}
+
+// HeldCashPayment A field cash payment a member holds or deposited.
+type HeldCashPayment struct {
+	// Amount Net of corrections.
+	//
+	// Example: 700000
+	Amount     int64              `json:"amount"`
+	PaymentId  openapi_types.UUID `json:"paymentId"`
+	Photo      ReceiptPhoto       `json:"photo"`
+	RecordedAt time.Time          `json:"recordedAt"`
+	TenantId   openapi_types.UUID `json:"tenantId"`
+
+	// TenantName Example: Rina Wulandari
+	TenantName string `json:"tenantName"`
+
+	// Units The units of the tenant's leases, current or ended, collected by the member who took the cash, by property then unit ("Bu Siti Aminah · Kamar 02").
+	Units []FieldUnit `json:"units"`
 }
 
 // ImportAction defines model for ImportAction.
@@ -2320,6 +2496,18 @@ type TenantPromiseVersion struct {
 // Example: 12
 type TermMonths = int
 
+// UndepositedCashList defines model for UndepositedCashList.
+type UndepositedCashList struct {
+	Items []HeldCashPayment `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+}
+
 // Unit defines model for Unit.
 type Unit struct {
 	CreatedAt     time.Time          `json:"createdAt"`
@@ -2525,6 +2713,9 @@ type User struct {
 	Phone string `json:"phone"`
 }
 
+// DepositId defines model for DepositId.
+type DepositId = openapi_types.UUID
+
 // InvoiceId defines model for InvoiceId.
 type InvoiceId = openapi_types.UUID
 
@@ -2558,10 +2749,47 @@ type TenantId = openapi_types.UUID
 // UploadId defines model for UploadId.
 type UploadId = openapi_types.UUID
 
+// ListCashDepositsParams defines parameters for ListCashDeposits.
+type ListCashDepositsParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Status pending (not counted yet) or confirmed. Any other value is 400 invalid_input.
+	Status *ListCashDepositsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// StaffUserId Only this member's deposits.
+	StaffUserId *openapi_types.UUID `form:"staffUserId,omitempty" json:"staffUserId,omitempty"`
+}
+
+// ListCashDepositsParamsStatus defines parameters for ListCashDeposits.
+type ListCashDepositsParamsStatus string
+
+// ListCashDepositPaymentsParams defines parameters for ListCashDepositPayments.
+type ListCashDepositPaymentsParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // GetDashboardParams defines parameters for GetDashboard.
 type GetDashboardParams struct {
 	// Period A month, YYYY-MM; this month in Asia/Jakarta when empty. A bad value is a 400 with field period.
 	Period *Period `form:"period,omitempty" json:"period,omitempty"`
+}
+
+// ListMyCashDepositsParams defines parameters for ListMyCashDeposits.
+type ListMyCashDepositsParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListMyUndepositedCashParams defines parameters for ListMyUndepositedCash.
+type ListMyUndepositedCashParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
 // ListFieldTodayParams defines parameters for ListFieldToday.
@@ -2724,6 +2952,9 @@ type RequestLoginCodeJSONRequestBody = LoginCodeRequest
 // VerifyLoginCodeJSONRequestBody defines body for VerifyLoginCode for application/json ContentType.
 type VerifyLoginCodeJSONRequestBody = LoginCodeVerify
 
+// ConfirmCashDepositJSONRequestBody defines body for ConfirmCashDeposit for application/json ContentType.
+type ConfirmCashDepositJSONRequestBody = CashDepositConfirmationInput
+
 // AttachCashPaymentPhotoJSONRequestBody defines body for AttachCashPaymentPhoto for application/json ContentType.
 type AttachCashPaymentPhotoJSONRequestBody = AttachCashPaymentPhotoInput
 
@@ -2732,6 +2963,9 @@ type CreateChargeTypeJSONRequestBody = ChargeTypeInput
 
 // CreateCorrectionJSONRequestBody defines body for CreateCorrection for application/json ContentType.
 type CreateCorrectionJSONRequestBody = CorrectionInput
+
+// RecordCashDepositJSONRequestBody defines body for RecordCashDeposit for application/json ContentType.
+type RecordCashDepositJSONRequestBody = CashDepositInput
 
 // MakeFieldPromiseJSONRequestBody defines body for MakeFieldPromise for application/json ContentType.
 type MakeFieldPromiseJSONRequestBody = MakeTenantPromiseRequest

@@ -500,6 +500,10 @@ replay Bot API answers.
   still pending. The karyawan attaches the photo of the cash after saving
   (`billing.AttachReceiptPhoto`, table `payment_receipt_photo`, append-only): a photo the scan
   refused can be replaced, a good one never.
+- `internal/deposit`: "Setor tunai" (S6-3). A karyawan deposits all the field cash they hold at
+  once (`cash_deposit` and `cash_deposit_payment`, each payment once); an admin records the amount
+  counted (`cash_deposit_confirmation`, never by the depositor), and a difference from the
+  payments' total is the deposit's gap. All three tables are append-only.
 - `internal/upload`: staff photo uploads (S6-1): starting one with a presigned PUT, completing
   it, the scan that checks the real size and type and runs the malware scanner, quarantine, and
   the short-lived download link of a clean file. `uploadtask` runs `upload:scan` and the

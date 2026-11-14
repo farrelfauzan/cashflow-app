@@ -118,12 +118,14 @@ WHERE l.organization_id = @organization_id AND l.tenant_id = ANY(@tenant_ids::uu
 ORDER BY l.tenant_id, p.name, u.label, l.id;
 
 -- name: GetFieldCash :one
--- The cash @staff_user_id holds: every cash payment they recorded, net of its corrections, and how
--- many. Cash deposits (S6-3) keep only the payments no deposit covers yet: they add that one
--- condition to the WHERE (a NOT EXISTS on the deposit's payment link).
+-- The cash @staff_user_id holds: every field cash payment they recorded (one with a receipt,
+-- recorded through recordCashPayment) that no deposit covers yet, net of its corrections, and how
+-- many.
 SELECT coalesce(sum(p.amount + (SELECT coalesce(sum(c.amount_delta), 0) FROM correction c
                                 WHERE c.organization_id = p.organization_id AND c.payment_id = p.id)), 0)::bigint AS amount,
        count(*)::bigint AS payments
 FROM payment p
 WHERE p.organization_id = @organization_id AND p.method = 'cash'
-  AND p.recorded_by_staff_user_id = @staff_user_id;
+  AND p.recorded_by_staff_user_id = @staff_user_id
+  AND EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)
+  AND NOT EXISTS (SELECT 1 FROM cash_deposit_payment dp WHERE dp.payment_id = p.id);
