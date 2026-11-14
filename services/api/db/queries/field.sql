@@ -1,7 +1,9 @@
 -- The karyawan's field app (slice 6, S6-2): "Tagihan hari ini" and the cash they hold. Read-only,
 -- in an organization scope (store.WithOrgSnapshot). Who may see a lease is the policy's decision,
 -- made in Go for every lease of the organization; the queries get the visible leases in lease_ids.
--- A cash payment counts net of its corrections.
+-- A cash payment counts net of its corrections. Today's cash is field cash only: the payments
+-- recordCashPayment recorded, which have a receipt row (payment_receipt) and can take a photo; cash
+-- an admin records through recordPayment is not listed here.
 
 -- name: ListFieldToday :many
 -- One page of "Tagihan hari ini": of the tenants @collector_id collects from on an active lease, all
@@ -26,10 +28,12 @@ WITH mine AS (
                                             WHERE c.organization_id = p.organization_id AND c.payment_id = p.id)), 0)
             FROM payment p
             WHERE p.organization_id = b.organization_id AND p.tenant_id = b.tenant_id AND p.method = 'cash'
+              AND EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)
               AND p.recorded_by_staff_user_id = @collector_id
               AND p.received_at >= @day_start AND p.received_at < @day_end)::bigint AS cash_today,
            (SELECT count(*) FROM payment p
             WHERE p.organization_id = b.organization_id AND p.tenant_id = b.tenant_id AND p.method = 'cash'
+              AND EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)
               AND p.recorded_by_staff_user_id = @collector_id
               AND p.received_at >= @day_start AND p.received_at < @day_end)::bigint AS cash_today_count
     FROM tenant_balance b
@@ -68,10 +72,12 @@ WITH mine AS (
                                             WHERE c.organization_id = p.organization_id AND c.payment_id = p.id)), 0)
             FROM payment p
             WHERE p.organization_id = b.organization_id AND p.tenant_id = b.tenant_id AND p.method = 'cash'
+              AND EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)
               AND p.recorded_by_staff_user_id = @collector_id
               AND p.received_at >= @day_start AND p.received_at < @day_end)::bigint AS cash_today,
            (SELECT count(*) FROM payment p
             WHERE p.organization_id = b.organization_id AND p.tenant_id = b.tenant_id AND p.method = 'cash'
+              AND EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)
               AND p.recorded_by_staff_user_id = @collector_id
               AND p.received_at >= @day_start AND p.received_at < @day_end)::bigint AS cash_today_count
     FROM tenant_balance b
@@ -96,6 +102,7 @@ SELECT p.id, p.tenant_id, p.created_at,
                     WHERE c.organization_id = p.organization_id AND c.payment_id = p.id))::bigint AS net
 FROM payment p
 WHERE p.organization_id = @organization_id AND p.tenant_id = ANY(@tenant_ids::uuid[]) AND p.method = 'cash'
+  AND EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)
   AND p.recorded_by_staff_user_id = @collector_id
   AND p.received_at >= @day_start AND p.received_at < @day_end
 ORDER BY p.tenant_id, p.created_at, p.seq;

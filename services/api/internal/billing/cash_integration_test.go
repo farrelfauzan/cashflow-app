@@ -668,6 +668,9 @@ func TestFieldToday(t *testing.T) {
 	w.record(t, billing.PaymentInput{RequestID: uuid.New(), TenantID: paid.tenantID, Amount: 700_000, Method: billing.MethodTransfer, ReceivedOn: day(2026, 11, 14)})
 	// Cash an admin records is the admin's, not the karyawan's.
 	w.record(t, billing.PaymentInput{RequestID: uuid.New(), TenantID: adminCash.tenantID, Amount: 100_000, Method: billing.MethodCash, ReceivedOn: day(2026, 11, 14)})
+	// Cash the admin records through recordPayment from a tenant he collects is not field cash: it
+	// has no receipt and can take no photo, so it is not on his list.
+	w.record(t, billing.PaymentInput{RequestID: uuid.New(), TenantID: adminOwn.tenantID, Amount: 100_000, Method: billing.MethodCash, ReceivedOn: day(2026, 11, 14)})
 	citra1, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(today, 200_000))
 	require.NoError(t, err)
 	citra2, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(today, 100_000))
@@ -761,6 +764,8 @@ func TestFieldToday(t *testing.T) {
 		admin := all(w.admin)
 		require.Equal(t, []string{"Joko Admins"}, names(admin), "the admin's cash from Mira does not list her: he does not collect from her")
 		require.Equal(t, adminOwn.tenantID, admin[0].TenantID)
+		require.Equal(t, billing.FieldCash{Payments: []billing.FieldCashPayment{}}, admin[0].CashToday,
+			"cash recorded through recordPayment is not field cash")
 		supervisor := env.Principal(t, w.org.ID, w.org.Supervisor.UserID)
 		require.Empty(t, all(supervisor), "the Supervisor collects from nobody")
 	})

@@ -7,7 +7,7 @@
 import type { FieldCashPayment } from './fieldCashPayment';
 
 /**
- * The cash the caller recorded from the tenant today (Asia/Jakarta), net of corrections: amount 0, count 0 and no payments when none.
+ * The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
  */
 export interface FieldCashToday {
   amount: number;

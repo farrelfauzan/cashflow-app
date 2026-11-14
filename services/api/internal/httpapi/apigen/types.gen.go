@@ -1062,7 +1062,7 @@ type FieldCashPayment struct {
 	RecordedAt time.Time          `json:"recordedAt"`
 }
 
-// FieldCashToday The cash the caller recorded from the tenant today (Asia/Jakarta), net of corrections: amount 0, count 0 and no payments when none.
+// FieldCashToday The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
 type FieldCashToday struct {
 	// Amount Example: 300000
 	Amount int64 `json:"amount"`
@@ -1079,7 +1079,7 @@ type FieldDueReason string
 
 // FieldTodayItem defines model for FieldTodayItem.
 type FieldTodayItem struct {
-	// CashToday The cash the caller recorded from the tenant today (Asia/Jakarta), net of corrections: amount 0, count 0 and no payments when none.
+	// CashToday The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
 	CashToday FieldCashToday `json:"cashToday"`
 
 	// DaysOverdue Only with reason overdue; 1 on the day after the due date (Asia/Jakarta).
