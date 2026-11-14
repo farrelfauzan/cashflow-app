@@ -1,7 +1,8 @@
 -- Cash deposits, "Setor tunai" (slice 6, S6-3, decision 46.3). Runs in an organization scope
 -- (store.WithOrgTx or WithOrgSnapshot). Field cash is a cash payment with a receipt, recorded
 -- through recordCashPayment; it is undeposited while no cash_deposit_payment covers it. A payment
--- counts net of its corrections.
+-- counts net of its corrections. GetFieldCash (field.sql), ListUndepositedCash and
+-- CoverUndepositedCash use the same filter: change all three together.
 
 -- name: ListUndepositedCash :many
 -- One page of the field cash @staff_user_id recorded that no deposit covers yet, oldest first, with
@@ -12,7 +13,7 @@ SELECT p.id, p.tenant_id, t.name AS tenant_name, p.created_at,
 FROM payment p
 JOIN payment_receipt r ON r.organization_id = p.organization_id AND r.payment_id = p.id
 JOIN tenant t ON t.organization_id = p.organization_id AND t.id = p.tenant_id
-WHERE p.organization_id = @organization_id AND p.recorded_by_staff_user_id = @staff_user_id
+WHERE p.organization_id = @organization_id AND p.method = 'cash' AND p.recorded_by_staff_user_id = @staff_user_id
   AND NOT EXISTS (SELECT 1 FROM cash_deposit_payment dp WHERE dp.payment_id = p.id)
 ORDER BY p.created_at, p.id
 LIMIT @page_limit OFFSET @page_offset;
@@ -38,7 +39,7 @@ WITH covered AS (
     SELECT p.id, p.organization_id, @deposit_id, p.recorded_by_staff_user_id
     FROM payment p
     JOIN payment_receipt r ON r.organization_id = p.organization_id AND r.payment_id = p.id
-    WHERE p.organization_id = @organization_id AND p.recorded_by_staff_user_id = @staff_user_id::uuid
+    WHERE p.organization_id = @organization_id AND p.method = 'cash' AND p.recorded_by_staff_user_id = @staff_user_id::uuid
       AND NOT EXISTS (SELECT 1 FROM cash_deposit_payment dp WHERE dp.payment_id = p.id)
     ON CONFLICT (payment_id) DO NOTHING
     RETURNING payment_id
