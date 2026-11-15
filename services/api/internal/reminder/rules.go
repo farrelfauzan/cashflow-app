@@ -82,6 +82,9 @@ type Input struct {
 	// LastH7VisitResolvedOn is the Asia/Jakarta calendar day (midnight UTC) the tenant's newest
 	// resolved h7 visit task was resolved, nil when none was.
 	LastH7VisitResolvedOn *time.Time
+	// HasActiveLease says the tenant has a lease still active. Without one (moved out with
+	// arrears) no karyawan collects from them, so no h7 visit is opened (decision 48).
+	HasActiveLease bool
 }
 
 // Decision is what the rules decided for one tenant on one day. Everything but the visit goes on
@@ -116,6 +119,9 @@ func (d Decision) HasMessage() bool {
 //     the broken-promise count (decision 41.4), only an invoice whose due+7 is after the day the
 //     tenant's last h7 visit task was resolved counts, so a resolved visit does not reopen the
 //     next morning for the same debt, while a debt reaching H+7 after the visit opens a new one.
+//     A tenant with no active lease gets no visit (decision 48): the field app lists only tenants
+//     with an active lease a karyawan collects (decision 47), so nobody could act on it; their
+//     arrears stay on the dashboard and follow the move-out-with-arrears setting.
 //   - The H-1 of the active promise's newest version when promised-1 <= today <= promised, once
 //     per version, so an edit to a new date gets its own; only while an invoice it covers still
 //     owes something (a covered invoice cancelled by "Rencana keluar" before the close owes
@@ -134,7 +140,7 @@ func Decide(in Input) Decision {
 		covered := in.Promise != nil && inv.Covered
 		due := inv.DueDate
 		if h7 := addDays(due, 7); !today.Before(h7) {
-			if !covered && (in.LastH7VisitResolvedOn == nil || h7.After(*in.LastH7VisitResolvedOn)) {
+			if !covered && in.HasActiveLease && (in.LastH7VisitResolvedOn == nil || h7.After(*in.LastH7VisitResolvedOn)) {
 				d.OpenH7Visit = true
 			}
 			continue

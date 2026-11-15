@@ -495,7 +495,8 @@ replay Bot API answers.
   broken), with the broken_promises visit task. `promisetask` runs the close from the worker at
   00:30 Asia/Jakarta.
 - `internal/reminder`: the daily reminder decisions (H-3, H0, H+3, a promise's H-1, a broken
-  promise's notice, and the h7 visit task at H+7), recorded once each as `reminder` rows, one per
+  promise's notice, and the h7 visit task at H+7, only for a tenant with an active lease, decision
+  48), recorded once each as `reminder` rows, one per
   tenant and run, then sent at most once with a fresh pay link (`reminder:send`), like each
   promise version's "janji tercatat" confirmation (`promise:confirm`). `remindertask` runs
   `reminders:decide` from the worker at 08:00 Asia/Jakarta, one task per organization and day, and

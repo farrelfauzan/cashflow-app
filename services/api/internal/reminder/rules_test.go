@@ -67,7 +67,7 @@ func TestDecideInvoiceWindows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := reminder.Decide(reminder.Input{Today: tc.today, Invoices: []reminder.Invoice{owing(invA, due)}})
+			got := reminder.Decide(reminder.Input{HasActiveLease: true, Today: tc.today, Invoices: []reminder.Invoice{owing(invA, due)}})
 			require.Equal(t, tc.want, got)
 			require.Equal(t, len(tc.want.Stages) > 0, got.HasMessage())
 		})
@@ -101,7 +101,7 @@ func TestDecideMonthEnds(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := reminder.Decide(reminder.Input{Today: tc.today, Invoices: []reminder.Invoice{owing(invA, tc.due)}})
+			got := reminder.Decide(reminder.Input{HasActiveLease: true, Today: tc.today, Invoices: []reminder.Invoice{owing(invA, tc.due)}})
 			if tc.want == "" {
 				require.Empty(t, got.Stages)
 				return
@@ -123,42 +123,42 @@ func TestDecideRecordedAndPaid(t *testing.T) {
 	}{
 		{
 			name: "H-3 already recorded: nothing the next day",
-			in:   reminder.Input{Today: day(2026, 11, 8), Invoices: []reminder.Invoice{owing(invA, due)}, Recorded: recorded(stage(invA, reminder.StageHMinus3))},
+			in:   reminder.Input{HasActiveLease: true, Today: day(2026, 11, 8), Invoices: []reminder.Invoice{owing(invA, due)}, Recorded: recorded(stage(invA, reminder.StageHMinus3))},
 		},
 		{
 			name: "H-3 recorded: H0 still fires in its own window",
-			in:   reminder.Input{Today: due, Invoices: []reminder.Invoice{owing(invA, due)}, Recorded: recorded(stage(invA, reminder.StageHMinus3))},
+			in:   reminder.Input{HasActiveLease: true, Today: due, Invoices: []reminder.Invoice{owing(invA, due)}, Recorded: recorded(stage(invA, reminder.StageHMinus3))},
 			want: reminder.Decision{Stages: stages(stage(invA, reminder.StageH0))},
 		},
 		{
 			name: "H-3 missed entirely: the first run in H0's window sends H0 only",
-			in:   reminder.Input{Today: day(2026, 11, 11), Invoices: []reminder.Invoice{owing(invA, due)}},
+			in:   reminder.Input{HasActiveLease: true, Today: day(2026, 11, 11), Invoices: []reminder.Invoice{owing(invA, due)}},
 			want: reminder.Decision{Stages: stages(stage(invA, reminder.StageH0))},
 		},
 		{
 			name: "H+3 already recorded: nothing",
-			in:   reminder.Input{Today: day(2026, 11, 15), Invoices: []reminder.Invoice{owing(invA, due)}, Recorded: recorded(stage(invA, reminder.StageHPlus3))},
+			in:   reminder.Input{HasActiveLease: true, Today: day(2026, 11, 15), Invoices: []reminder.Invoice{owing(invA, due)}, Recorded: recorded(stage(invA, reminder.StageHPlus3))},
 		},
 		{
 			name: "a paid invoice owes nothing: no H0",
-			in:   reminder.Input{Today: due, Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 0}}},
+			in:   reminder.Input{HasActiveLease: true, Today: due, Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 0}}},
 		},
 		{
 			name: "a paid invoice: no visit at H+7",
-			in:   reminder.Input{Today: day(2026, 11, 20), Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 0}}},
+			in:   reminder.Input{HasActiveLease: true, Today: day(2026, 11, 20), Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 0}}},
 		},
 		{
 			name: "a cancelled invoice (owing below zero is impossible, zero is cancelled): nothing",
-			in:   reminder.Input{Today: day(2026, 11, 7), Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 0}}},
+			in:   reminder.Input{HasActiveLease: true, Today: day(2026, 11, 7), Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 0}}},
 		},
 		{
 			name: "a partly paid invoice still owes: H+3",
-			in:   reminder.Input{Today: day(2026, 11, 13), Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 1}}},
+			in:   reminder.Input{HasActiveLease: true, Today: day(2026, 11, 13), Invoices: []reminder.Invoice{{ID: invA, DueDate: due, Outstanding: 1}}},
 			want: reminder.Decision{Stages: stages(stage(invA, reminder.StageHPlus3))},
 		},
 		{
 			name: "no invoices: nothing",
-			in:   reminder.Input{Today: due},
+			in:   reminder.Input{HasActiveLease: true, Today: due},
 		},
 	}
 	for _, tc := range tests {
@@ -174,7 +174,7 @@ func TestDecideRecordedAndPaid(t *testing.T) {
 func TestDecideSeveralInvoices(t *testing.T) {
 	t.Parallel()
 	today := day(2026, 11, 13)
-	got := reminder.Decide(reminder.Input{
+	got := reminder.Decide(reminder.Input{HasActiveLease: true,
 		Today: today,
 		Invoices: []reminder.Invoice{
 			owing(invA, day(2026, 10, 1)),  // due+43: visit list
@@ -220,7 +220,7 @@ func TestDecideActivePromise(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := reminder.Decide(reminder.Input{Today: tc.today, Invoices: []reminder.Invoice{tc.inv}, Promise: tc.promise})
+			got := reminder.Decide(reminder.Input{HasActiveLease: true, Today: tc.today, Invoices: []reminder.Invoice{tc.inv}, Promise: tc.promise})
 			require.Equal(t, tc.want, got)
 		})
 	}
@@ -267,7 +267,7 @@ func TestDecidePromiseH1(t *testing.T) {
 				// A covered invoice still owing, due well after the window, so it adds no stage.
 				invoices = []reminder.Invoice{{ID: uuid.New(), DueDate: day(2027, 6, 1), Outstanding: 500_000, Covered: true}}
 			}
-			got := reminder.Decide(reminder.Input{Today: tc.today, Promise: &p, Invoices: invoices})
+			got := reminder.Decide(reminder.Input{HasActiveLease: true, Today: tc.today, Promise: &p, Invoices: invoices})
 			require.Equal(t, tc.want, got.PromiseH1)
 			require.Equal(t, tc.want != uuid.Nil, got.HasMessage())
 		})
@@ -313,7 +313,7 @@ func TestDecideBrokenNotice(t *testing.T) {
 			if !tc.today.IsZero() {
 				runDay = tc.today
 			}
-			got := reminder.Decide(reminder.Input{Today: runDay, Broken: tc.broken, Promise: tc.promise})
+			got := reminder.Decide(reminder.Input{HasActiveLease: true, Today: runDay, Broken: tc.broken, Promise: tc.promise})
 			require.Equal(t, tc.want, got.BrokenNotice)
 		})
 	}
@@ -324,7 +324,7 @@ func TestDecideBrokenNotice(t *testing.T) {
 func TestDecideOneMessage(t *testing.T) {
 	t.Parallel()
 	today := day(2026, 11, 13)
-	got := reminder.Decide(reminder.Input{
+	got := reminder.Decide(reminder.Input{HasActiveLease: true,
 		Today:    today,
 		Invoices: []reminder.Invoice{covered(owing(invA, day(2026, 11, 10))), owing(invB, day(2026, 11, 15))},
 		Broken:   []reminder.BrokenPromise{{ID: broken1, ClosedOn: today}},
@@ -394,9 +394,29 @@ func TestDecideH7AfterAResolvedVisit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := reminder.Decide(reminder.Input{Today: today, Invoices: tc.invoices, Promise: tc.promise, LastH7VisitResolvedOn: tc.resolved})
+			got := reminder.Decide(reminder.Input{HasActiveLease: true, Today: today, Invoices: tc.invoices, Promise: tc.promise, LastH7VisitResolvedOn: tc.resolved})
 			require.Equal(t, tc.want, got.OpenH7Visit)
 			require.False(t, got.HasMessage())
 		})
 	}
+}
+
+// TestDecideNoH7WithoutAnActiveLease: a tenant who moved out with arrears gets no h7 visit, since
+// no karyawan collects from them (decision 48); the messages still go out.
+func TestDecideNoH7WithoutAnActiveLease(t *testing.T) {
+	t.Parallel()
+	today := day(2026, 11, 13)
+	in := reminder.Input{
+		Today: today,
+		Invoices: []reminder.Invoice{
+			owing(invA, day(2026, 10, 1)),  // due+43: the visit list, with an active lease
+			owing(invB, day(2026, 11, 10)), // due+3: H+3
+		},
+	}
+	withLease := in
+	withLease.HasActiveLease = true
+	require.True(t, reminder.Decide(withLease).OpenH7Visit, "the same debt with an active lease opens a visit")
+
+	got := reminder.Decide(in)
+	require.Equal(t, reminder.Decision{Stages: stages(stage(invB, reminder.StageHPlus3))}, got)
 }
