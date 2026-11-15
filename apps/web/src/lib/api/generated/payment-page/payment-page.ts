@@ -34,7 +34,9 @@ import type {
   PaymentPage,
   PaymentPreview,
   PaymentPromise,
+  PaymentProof,
   QrisStatus,
+  SendPaymentProofBody,
   TelegramDeepLink
 } from '../model';
 
@@ -774,6 +776,77 @@ export const useMakePaymentPromise = <TError = ErrorType<Error | ErrorResponse>,
         TContext
       > => {
       return useMutation(getMakePaymentPromiseMutationOptions(options), queryClient);
+    }
+    /**
+ * No session: the token grants it (payment:proof), and link errors answer as for getPaymentPage, checked before the file is read. The body is multipart/form-data with one part, file: a JPEG, PNG or WebP photo of at most 10 MB, judged by its content, not its name or declared type. The photo goes through our API into object storage, so the page makes no request to another origin; it stays pending until the malware scan finds it clean, and the admin sees it in Antrean cek (S6-6), where it is matched to a payment. Sending a proof records no payment and changes nothing the tenant owes. Each call sends a new proof. Limited per token and per client address together with getPaymentPage, and to 10 proofs per link per hour (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer. 503 uploads_unavailable when this server has no file storage (development without STORAGE_* settings).
+ * @summary The tenant sends a photo of their bank transfer (public; "Kirim bukti transfer")
+ */
+export const sendPaymentProof = (
+    token: string,
+    sendPaymentProofBody: BodyType<SendPaymentProofBody>,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+      const formData = new FormData();
+formData.append(`file`, sendPaymentProofBody.file);
+
+      return apiRequest<PaymentProof>(
+      {url: `/t/${token}/proof`, method: 'POST',
+      headers: {'Content-Type': 'multipart/form-data', },
+       data: formData, signal
+    },
+      options);
+    }
+
+
+
+
+export const getSendPaymentProofMutationKey = () => ['sendPaymentProof'] as const;
+
+export const getSendPaymentProofMutationOptions = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPaymentProof>>, TError,SendPaymentProofMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendPaymentProof>>, TError,SendPaymentProofMutationVariables, TContext> => {
+
+const mutationKey = getSendPaymentProofMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendPaymentProof>>, SendPaymentProofMutationVariables> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  sendPaymentProof(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendPaymentProofMutationResult = NonNullable<Awaited<ReturnType<typeof sendPaymentProof>>>
+    export type SendPaymentProofMutationBody = BodyType<SendPaymentProofBody>
+    export type SendPaymentProofMutationError = ErrorType<Error | ErrorResponse>
+    export type SendPaymentProofMutationVariables = {token: string;data: BodyType<SendPaymentProofBody>}
+
+    /**
+ * @summary The tenant sends a photo of their bank transfer (public; "Kirim bukti transfer")
+ */
+export const useSendPaymentProof = <TError = ErrorType<Error | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPaymentProof>>, TError,SendPaymentProofMutationVariables, TContext>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof sendPaymentProof>>,
+        TError,
+        SendPaymentProofMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSendPaymentProofMutationOptions(options), queryClient);
     }
     /**
  * Telegram is a demo channel (decision 42): development and staging, with test accounts. No session: the token grants it, and link errors answer as for getPaymentPage. Answers the bot's deep link, https://t.me/<bot>?start=<code>. The code is fresh randomness, never the link token or anything derived from it; it works once and for 10 minutes, and asking again makes another without cancelling the first. Opening the link and pressing Start in Telegram links that chat to the tenant (getPaymentPage then shows telegram.linked); a new link replaces the tenant's older one, and /stop in the chat unlinks it. 404 telegram_unavailable when the environment has no bot or does not send to linked chats (TELEGRAM_MESSAGES off), so the page hides the button (getPaymentPage's telegram.available is false then). Limited per token and per client address together with getPaymentPage (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer. The deep link holds the code: open it, never log it or send it anywhere else.

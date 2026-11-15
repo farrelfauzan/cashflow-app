@@ -10,7 +10,7 @@ import type { UploadStatus } from './uploadStatus';
 export interface Upload {
   id: string;
   purpose: UploadPurpose;
-  /** The tenant of a cash_receipt. */
+  /** The tenant of a cash_receipt or a transfer_proof. */
   tenantId?: string;
   status: UploadStatus;
   /** The type found in the file's content by the scan; absent while pending. */

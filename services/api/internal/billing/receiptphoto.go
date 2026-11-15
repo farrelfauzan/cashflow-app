@@ -105,7 +105,7 @@ func (s *Service) AttachReceiptPhoto(ctx context.Context, p authz.Principal, pay
 			return fmt.Errorf("loading the upload: %w", err)
 		}
 		if up.Purpose != upload.PurposeCashReceipt || up.TenantID.UUID != pay.TenantID ||
-			up.UploadedByStaffUserID != p.UserID || up.CompletedAt == nil {
+			up.UploadedByStaffUserID.UUID != p.UserID || up.CompletedAt == nil {
 			return ErrReceiptPhotoInvalid
 		}
 		if photoRefused(up.Status) {

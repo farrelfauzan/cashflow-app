@@ -476,6 +476,17 @@ type TenantBalance struct {
 	Credit              int64
 }
 
+type TransferProof struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	PaymentLinkID  uuid.UUID
+	InvoiceID      uuid.UUID
+	UploadID       uuid.UUID
+	UploadPurpose  string
+	CreatedAt      time.Time
+}
+
 type Unit struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID
@@ -507,7 +518,7 @@ type Upload struct {
 	DeclaredSize          int64
 	ContentType           *string
 	Status                string
-	UploadedByStaffUserID uuid.UUID
+	UploadedByStaffUserID uuid.NullUUID
 	CreatedAt             time.Time
 	CompletedAt           *time.Time
 	ScannedAt             *time.Time

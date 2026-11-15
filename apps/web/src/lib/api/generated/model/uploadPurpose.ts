@@ -6,7 +6,7 @@
  */
 
 /**
- * What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+ * What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
  */
 export type UploadPurpose = typeof UploadPurpose[keyof typeof UploadPurpose];
 
@@ -14,4 +14,5 @@ export type UploadPurpose = typeof UploadPurpose[keyof typeof UploadPurpose];
 export const UploadPurpose = {
   cash_receipt: 'cash_receipt',
   cash_deposit: 'cash_deposit',
+  transfer_proof: 'transfer_proof',
 } as const;

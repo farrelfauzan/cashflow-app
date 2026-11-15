@@ -3,7 +3,19 @@
 
 -- name: InsertUpload :one
 INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, uploaded_by_staff_user_id, created_at)
-VALUES (@id, @organization_id, @purpose, sqlc.narg(tenant_id), @object_key, @declared_size, @uploaded_by_staff_user_id, @created_at)
+VALUES (@id, @organization_id, @purpose, sqlc.narg(tenant_id), @object_key, @declared_size, @uploaded_by_staff_user_id::uuid, @created_at)
+RETURNING *;
+
+-- name: InsertTransferProofUpload :one
+-- A tenant's transfer proof (S6-5): no staff uploader, and completed when it is recorded, since
+-- the API stored the file itself before recording it.
+INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, created_at, completed_at)
+VALUES (@id, @organization_id, 'transfer_proof', @tenant_id::uuid, @object_key, @declared_size, @created_at, @created_at)
+RETURNING *;
+
+-- name: InsertTransferProof :one
+INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
+VALUES (@id, @organization_id, @tenant_id, @payment_link_id, @invoice_id, @upload_id, @created_at)
 RETURNING *;
 
 -- name: GetUpload :one

@@ -165,7 +165,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	uploads, err := newUploads(cfg.Storage, st, az, uploadtask.NewClient(queueClient), clk, log)
+	uploads, proofs, err := newUploads(cfg.Storage, st, az, payLinks, uploadtask.NewClient(queueClient), clk, log)
 	if err != nil {
 		return err
 	}
@@ -184,6 +184,7 @@ func run() error {
 		QRIS:          qrisSvc,
 		Promises:      promises,
 		Uploads:       uploads,
+		Proofs:        proofs,
 		Deposits:      deposit.NewService(st, az, clk, log),
 		Visits:        visit.NewService(st, billingSvc, clk),
 		Webhooks:      webhooks,
@@ -229,20 +230,22 @@ func newTelegram(cfg config.API, st *store.Store, links *paylink.Service, staff 
 	return codes, telegramlink.NewHandler(st, bot, staff, clk, log), nil
 }
 
-// newUploads builds the upload service on the configured bucket (S6-1). Without STORAGE_*
-// settings, which config.LoadAPI allows only in development, it returns nil and the upload
-// routes answer 503 uploads_unavailable.
-func newUploads(cfg config.Storage, st *store.Store, az *authz.Service, q upload.ScanQueue, clk clock.Clock, log *slog.Logger) (*upload.Service, error) {
+// newUploads builds, on the configured bucket, the staff upload service (S6-1) and the payment
+// page's transfer proofs (S6-5). Without STORAGE_* settings, which config.LoadAPI allows only in
+// development, both are nil and their routes answer 503 uploads_unavailable.
+func newUploads(cfg config.Storage, st *store.Store, az *authz.Service, links upload.LinkOpener, q upload.ScanQueue, clk clock.Clock, log *slog.Logger) (*upload.Service, *upload.Proofs, error) {
 	if !cfg.Enabled() {
 		log.Info("uploads off: no STORAGE_* settings")
-		return nil, nil
+		return nil, nil, nil
 	}
 	bucket, err := s3store.New(storageConfig(cfg))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	log.Info("uploads on", "storage", cfg)
-	return upload.NewService(upload.ServiceDeps{Store: st, Authz: az, Clock: clk, Presigner: bucket, Queue: q, Log: log}), nil
+	uploads := upload.NewService(upload.ServiceDeps{Store: st, Authz: az, Clock: clk, Presigner: bucket, Queue: q, Log: log})
+	proofs := upload.NewProofs(upload.ProofsDeps{Store: st, Links: links, Objects: bucket, Queue: q, Clock: clk, Log: log})
+	return uploads, proofs, nil
 }
 
 // storageConfig is the bucket adapter's view of the STORAGE_* settings.

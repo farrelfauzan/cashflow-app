@@ -71,10 +71,94 @@ func (q *Queries) GetUpload(ctx context.Context, arg GetUploadParams) (Upload, e
 	return i, err
 }
 
+const insertTransferProof = `-- name: InsertTransferProof :one
+INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at
+`
+
+type InsertTransferProofParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	PaymentLinkID  uuid.UUID
+	InvoiceID      uuid.UUID
+	UploadID       uuid.UUID
+	CreatedAt      time.Time
+}
+
+func (q *Queries) InsertTransferProof(ctx context.Context, arg InsertTransferProofParams) (TransferProof, error) {
+	row := q.db.QueryRow(ctx, insertTransferProof,
+		arg.ID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.PaymentLinkID,
+		arg.InvoiceID,
+		arg.UploadID,
+		arg.CreatedAt,
+	)
+	var i TransferProof
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.PaymentLinkID,
+		&i.InvoiceID,
+		&i.UploadID,
+		&i.UploadPurpose,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertTransferProofUpload = `-- name: InsertTransferProofUpload :one
+INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, created_at, completed_at)
+VALUES ($1, $2, 'transfer_proof', $3::uuid, $4, $5, $6, $6)
+RETURNING id, organization_id, purpose, tenant_id, object_key, declared_size, content_type, status, uploaded_by_staff_user_id, created_at, completed_at, scanned_at
+`
+
+type InsertTransferProofUploadParams struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	ObjectKey      string
+	DeclaredSize   int64
+	CreatedAt      time.Time
+}
+
+// A tenant's transfer proof (S6-5): no staff uploader, and completed when it is recorded, since
+// the API stored the file itself before recording it.
+func (q *Queries) InsertTransferProofUpload(ctx context.Context, arg InsertTransferProofUploadParams) (Upload, error) {
+	row := q.db.QueryRow(ctx, insertTransferProofUpload,
+		arg.ID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.ObjectKey,
+		arg.DeclaredSize,
+		arg.CreatedAt,
+	)
+	var i Upload
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Purpose,
+		&i.TenantID,
+		&i.ObjectKey,
+		&i.DeclaredSize,
+		&i.ContentType,
+		&i.Status,
+		&i.UploadedByStaffUserID,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.ScannedAt,
+	)
+	return i, err
+}
+
 const insertUpload = `-- name: InsertUpload :one
 
 INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, uploaded_by_staff_user_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES ($1, $2, $3, $4, $5, $6, $7::uuid, $8)
 RETURNING id, organization_id, purpose, tenant_id, object_key, declared_size, content_type, status, uploaded_by_staff_user_id, created_at, completed_at, scanned_at
 `
 

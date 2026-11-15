@@ -488,8 +488,9 @@ func (e RoleGrantRole) Valid() bool {
 
 // Defines values for UploadPurpose.
 const (
-	UploadPurposeCashDeposit UploadPurpose = "cash_deposit"
-	UploadPurposeCashReceipt UploadPurpose = "cash_receipt"
+	UploadPurposeCashDeposit   UploadPurpose = "cash_deposit"
+	UploadPurposeCashReceipt   UploadPurpose = "cash_receipt"
+	UploadPurposeTransferProof UploadPurpose = "transfer_proof"
 )
 
 // Valid indicates whether the value is a known member of the UploadPurpose enum.
@@ -498,6 +499,8 @@ func (e UploadPurpose) Valid() bool {
 	case UploadPurposeCashDeposit:
 		return true
 	case UploadPurposeCashReceipt:
+		return true
+	case UploadPurposeTransferProof:
 		return true
 	default:
 		return false
@@ -2262,6 +2265,15 @@ type PaymentPromise struct {
 	Version int `json:"version"`
 }
 
+// PaymentProof defines model for PaymentProof.
+type PaymentProof struct {
+	// CreatedAt When it was received.
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Id The proof.
+	Id openapi_types.UUID `json:"id"`
+}
+
 // PaymentReceipt defines model for PaymentReceipt.
 type PaymentReceipt struct {
 	// Status The tenant's receipt message. pending: recorded and queued, sent by the worker right away ("Kwitansi sedang dikirim"); sent: handed to WhatsApp or the linked Telegram chat once (whether it arrived is not known before slice 5); skipped: not sent, because the payment was corrected to zero first.
@@ -2761,7 +2773,7 @@ type Upload struct {
 	DownloadUrl *string            `json:"downloadUrl,omitempty"`
 	Id          openapi_types.UUID `json:"id"`
 
-	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
 	Purpose UploadPurpose `json:"purpose"`
 
 	// ScannedAt When the scan decided the status.
@@ -2773,7 +2785,7 @@ type Upload struct {
 	// Status pending until the scan has run; clean (can be downloaded); rejected (not a JPEG, PNG or WebP image, not the declared size, larger than 10 MB, or the file never arrived); infected (malware found; the file is quarantined and an admin sees it). Only pending changes, once.
 	Status UploadStatus `json:"status"`
 
-	// TenantId The tenant of a cash_receipt.
+	// TenantId The tenant of a cash_receipt or a transfer_proof.
 	TenantId *openapi_types.UUID `json:"tenantId,omitempty"`
 }
 
@@ -2784,7 +2796,7 @@ type UploadInput struct {
 	// Example: image/jpeg
 	ContentType string `json:"contentType"`
 
-	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
 	Purpose UploadPurpose `json:"purpose"`
 
 	// Size The file's exact size in bytes, at most 10 MB (10485760).
@@ -2796,7 +2808,7 @@ type UploadInput struct {
 	TenantId *openapi_types.UUID `json:"tenantId,omitempty"`
 }
 
-// UploadPurpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai).
+// UploadPurpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
 type UploadPurpose string
 
 // UploadStatus pending until the scan has run; clean (can be downloaded); rejected (not a JPEG, PNG or WebP image, not the declared size, larger than 10 MB, or the file never arrived); infected (malware found; the file is quarantined and an admin sees it). Only pending changes, once.
@@ -3131,6 +3143,12 @@ type GetPaymentPreviewParams struct {
 	Amount int64 `form:"amount" json:"amount"`
 }
 
+// SendPaymentProofMultipartBody defines parameters for SendPaymentProof.
+type SendPaymentProofMultipartBody struct {
+	// File The photo, at most 10 MB; image/jpeg, image/png or image/webp.
+	File openapi_types.File `json:"file"`
+}
+
 // RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.
 type RequestLoginCodeJSONRequestBody = LoginCodeRequest
 
@@ -3220,6 +3238,9 @@ type CreateUploadJSONRequestBody = UploadInput
 
 // MakePaymentPromiseJSONRequestBody defines body for MakePaymentPromise for application/json ContentType.
 type MakePaymentPromiseJSONRequestBody = MakePaymentPromiseRequest
+
+// SendPaymentProofMultipartRequestBody defines body for SendPaymentProof for multipart/form-data ContentType.
+type SendPaymentProofMultipartRequestBody SendPaymentProofMultipartBody
 
 // CreatePaymentQrisJSONRequestBody defines body for CreatePaymentQris for application/json ContentType.
 type CreatePaymentQrisJSONRequestBody = CreateQrisRequest

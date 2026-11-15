@@ -236,7 +236,9 @@ Config refuses `DEVLOG_FILE` outside development or with any other provider.
 ### Uploads: photos in RustFS, scanned by ClamAV (development)
 
 Staff photos (cash receipt and deposit photos, S6-1) go from the phone straight to an
-S3-compatible bucket through a presigned PUT, and stay `pending` until the worker's scan job has
+S3-compatible bucket through a presigned PUT; a tenant's transfer proof (S6-5) is posted to the
+API (`sendPaymentProof`, multipart, 10 MB) and the API puts it in the same bucket. Both stay
+`pending` until the worker's scan job has
 checked their real size and type and scanned them with ClamAV; only a clean file can be
 downloaded, through a short-lived link, always as an attachment. Production uses Cloudflare R2;
 development uses RustFS. Uploads are off until the `STORAGE_*` settings are set: the upload
@@ -280,6 +282,10 @@ Declare it as `image/jpeg` with its size (68 bytes); the scan marks it `infected
 sent as `.jpg` ends `rejected`. Where objects live in the bucket: `incoming/` (what the PUT
 writes), `files/` (the scanned copy a clean upload is read from), `quarantine/`. On R2, add a
 lifecycle rule that deletes `incoming/` after a day, for PUTs that were never completed.
+
+A tenant's proof needs no session: open a payment link from the database seed or "Salin link
+bayar", then `curl -F 'file=@foto.jpg' http://localhost:8080/api/t/<token>/proof`; an admin reads it with `getUpload` (purpose
+`transfer_proof`).
 
 Tests: unit tests use the fakes in `internal/upload/uploadtest` (an in-memory bucket and a
 scanner that flags EICAR); the integration tests run RustFS in Docker
@@ -510,7 +516,8 @@ replay Bot API answers.
   (`visit_outcome_task`). The field app acts on a tenant through its active leases only
   (decision 47; `billing.AuthorizeTenantInField`).
 - `internal/upload`: staff photo uploads (S6-1): starting one with a presigned PUT, completing
-  it, the scan that checks the real size and type and runs the malware scanner, quarantine, and
+  it, the tenant's transfer proof from the payment page (S6-5, `Proofs`, table `transfer_proof`,
+  append-only), the scan that checks the real size and type and runs the malware scanner, quarantine, and
   the short-lived download link of a clean file. `uploadtask` runs `upload:scan` and the
   10-minute `upload:reconcile`; `uploadtest` has the fakes. The adapters are
   `internal/storage/s3store` (R2 and RustFS, AWS SDK for Go v2) and `internal/scan/clamd` (clamd's

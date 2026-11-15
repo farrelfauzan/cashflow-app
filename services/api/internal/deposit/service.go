@@ -172,7 +172,7 @@ func checkPhoto(ctx context.Context, q *dbgen.Queries, p authz.Principal, id uui
 	if err != nil {
 		return fmt.Errorf("loading the deposit photo: %w", err)
 	}
-	if up.Purpose != upload.PurposeCashDeposit || up.UploadedByStaffUserID != p.UserID || up.CompletedAt == nil {
+	if up.Purpose != upload.PurposeCashDeposit || up.UploadedByStaffUserID.UUID != p.UserID || up.CompletedAt == nil {
 		return ErrPhotoInvalid
 	}
 	if up.Status == upload.StatusRejected || up.Status == upload.StatusInfected {

@@ -1,8 +1,9 @@
-// Package upload keeps staff photos (cash receipt and cash deposit photos for now) in object
-// storage, R2 in production (S6-1, decision 18).
+// Package upload keeps photos in object storage, R2 in production (S6-1, decision 18): staff
+// photos (cash receipt and cash deposit photos) and the tenant's transfer proof (S6-5).
 //
-// A photo goes from the phone straight to storage through a presigned PUT; the database keeps
-// only its key. The upload stays pending until the scan job (Checker.Scan, run by the
+// A staff photo goes from the phone straight to storage through a presigned PUT; the database
+// keeps only its key. A tenant's transfer proof is sent to our API from the payment page, which
+// stores it the same way (Proofs.Send), so the page makes no request to another origin. The upload stays pending until the scan job (Checker.Scan, run by the
 // upload:scan task) has checked the stored file's real size and type and scanned it for malware.
 // Only a clean upload can be read, through a short-lived presigned GET that downloads it as an
 // attachment. A rejected or infected file is moved to the quarantine prefix and flagged.
@@ -17,8 +18,8 @@
 // replace a file after it was scanned. A PUT that arrives after the scan lands in incoming/ and
 // is never read; a lifecycle rule on the bucket should expire incoming/ after a day.
 //
-// Service is the API side (create, complete, read); Checker is the worker side (scan,
-// reconcile). The storage and scanner adapters live in internal/storage/s3store and
+// Service is the API side for staff (create, complete, read) and Proofs the payment page's;
+// Checker is the worker side (scan, reconcile). The storage and scanner adapters live in internal/storage/s3store and
 // internal/scan/clamd; uploadtest has hand-written fakes of both.
 package upload
 
@@ -40,6 +41,9 @@ import (
 const (
 	PurposeCashReceipt = "cash_receipt"
 	PurposeCashDeposit = "cash_deposit"
+	// PurposeTransferProof is a tenant's photo of a bank transfer, sent from the payment page
+	// (Proofs.Send). It has no staff uploader, and staff cannot start one.
+	PurposeTransferProof = "transfer_proof"
 )
 
 // An upload's status. Only pending changes, once, to one of the other three.
@@ -146,6 +150,13 @@ type Presigner interface {
 	PresignGet(ctx context.Context, key string, ttl time.Duration, filename, contentType string) (string, error)
 }
 
+// ObjectWriter stores a file the API received itself (a tenant's transfer proof). The API's
+// storage adapter implements it.
+type ObjectWriter interface {
+	// PutObject stores body at key as contentType, replacing what is there.
+	PutObject(ctx context.Context, key, contentType string, body []byte) error
+}
+
 // Objects reads and moves stored files. The worker's storage adapter implements it.
 type Objects interface {
 	// Head returns the size of the object at key, or ErrObjectNotFound.
@@ -178,7 +189,7 @@ type Upload struct {
 	// ContentType is the type the scan found in the content, empty while pending.
 	ContentType string
 	Size        int64
-	UploadedBy  uuid.UUID // staff user id
+	UploadedBy  uuid.UUID // staff user id; uuid.Nil for a transfer proof
 	CreatedAt   time.Time
 	CompletedAt *time.Time
 	ScannedAt   *time.Time

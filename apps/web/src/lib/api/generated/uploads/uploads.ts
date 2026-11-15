@@ -195,7 +195,7 @@ export const useCompleteUpload = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCompleteUploadMutationOptions(options), queryClient);
     }
     /**
- * Allowed with payment:check or cash:read (through each active lease of a receipt's tenant; for a deposit photo, for the whole organization), or with the action that started the upload on the same record (a karyawan reads the receipts of tenants they collect from and their own deposit photos). downloadUrl is present only when status is clean, lasts a few minutes (downloadExpiresAt) and always downloads the file as an attachment; ask again for a new one. A pending, rejected or infected upload never has one.
+ * Allowed with payment:check or cash:read (through each active lease of a receipt's tenant; for a deposit photo, for the whole organization), or with the action that started the upload on the same record (a karyawan reads the receipts of tenants they collect from and their own deposit photos). A tenant's transfer proof (transfer_proof) is read with payment:check or cash:read through each lease of its tenant, current or ended; no karyawan reads it, and completeUpload refuses it (403), since the API stored it itself. downloadUrl is present only when status is clean, lasts a few minutes (downloadExpiresAt) and always downloads the file as an attachment; ask again for a new one. A pending, rejected or infected upload never has one.
  * @summary An upload's scan status and, once it is clean, a short-lived download link
  */
 export const getUpload = (

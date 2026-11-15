@@ -259,15 +259,17 @@ of the same organization can do. Both must pass.
   - Karyawan: `visit:*`, `cash:record` and `charge:record` (meter amounts) on assigned
     tenants, and read their own payslip and commission.
 - **Separation of duties** (guardrail): whoever checked a payroll run or created an expense
-  cannot approve it (`"actor": true` denies).
+  cannot approve it (`"actor": true` denies). Nobody confirms their own cash deposit (decision
+  46.3): the service refuses it and a table CHECK rejects it.
 - **No self-granted access** (guardrail): nobody runs `member:manage` on their own membership.
 - **Changing roles** needs `member:manage` on the member and `role:assign` on every role that is
   added or removed.
 - **Not RBAC principals**: penyewa and pemegang porsi have no accounts. A penyewa link token
-  grants only `invoice:read`, `payment:attempt` and `promise:create` on that one invoice or
-  lease, and, in demo environments only (decision 42), `telegram:link`: linking a Telegram chat
-  to that tenant, which replaces the tenant's earlier link and tells the earlier chat. Pemegang
-  porsi only receive the WA report.
+  grants only `invoice:read`, `payment:attempt`, `promise:create` and `payment:proof` (sending a
+  photo of a bank transfer, which the admin checks; slice 6) on that one invoice or lease, and,
+  in demo environments only (decision 42), `telegram:link`: linking a Telegram chat to that
+  tenant, which replaces the tenant's earlier link and tells the earlier chat. Pemegang porsi
+  only receive the WA report.
 - **Enforcement**: the service layer calls `authz.Service.Authorize(ctx, tx, principal, request)`
   inside the transaction that makes the change, for every API handler and every queued job, not
   only in middleware or the UI. `Check` is the same without a transaction, for checks that must
