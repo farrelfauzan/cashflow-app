@@ -12,6 +12,7 @@ import { jakartaToday } from "@/lib/format/date";
 import type { ProofSheetStep } from "./type";
 import {
   BACK_LABEL,
+  CLOSE_LABEL,
   NOTE_LABEL,
   previewAmount,
   PROOF_CALLOUT,
@@ -66,7 +67,8 @@ type TransferProofSheetProps = {
 // when; the API previews what it would pay and "Simpan pembayaran" records it as a transfer for the
 // proof's own tenant. "Bukan pembayaran" turns the drawer into a note that takes the proof off the
 // queue. While the photo is being scanned it is not shown and cannot be matched. A member who may
-// only read (the Supervisor) sees the photo and "Tutup".
+// answer items but not record payments gets only "Bukan pembayaran"; one who may only read (the
+// Supervisor) sees the photo and "Tutup".
 export function TransferProofSheet({
   orgId,
   itemId,
@@ -209,6 +211,26 @@ export function TransferProofSheet({
         saving={match.saving}
         pending={match.pending}
         primaryDisabled={!upload.ready}
+        balanced
+      />
+    );
+  } else if (canAct) {
+    // May answer items but not record payments (a custom role): the proof can only be taken off
+    // the queue as not a payment, which needs payment:check alone.
+    body = (
+      <>
+        {photo}
+        {pendingCallout}
+      </>
+    );
+    footer = (
+      <CheckSheetFooter
+        readOnly={false}
+        secondaryLabel={CLOSE_LABEL}
+        primaryLabel={PROOF_REJECT}
+        onPrimary={() => setStep("reject")}
+        saving={false}
+        pending={false}
         balanced
       />
     );
