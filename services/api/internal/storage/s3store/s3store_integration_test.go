@@ -133,6 +133,26 @@ func TestAgainstRustFS(t *testing.T) {
 		require.ErrorIs(t, err, upload.ErrObjectNotFound)
 	})
 
+	t.Run("PutObject stores a file the API received, and refuses a bad key", func(t *testing.T) {
+		const proofKey = "incoming/uploads/7b0e0b2a-6f7c-4f43-9a52-3c6c1f0b9b11/ffeeddccbbaa99887766554433221100"
+		proof := uploadtest.Image("image/png", 12_345)
+		require.NoError(t, s.PutObject(ctx, proofKey, "image/png", proof))
+		size, err := s.Head(ctx, proofKey)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(proof)), size)
+		body, err := s.Open(ctx, proofKey)
+		require.NoError(t, err)
+		got, err := io.ReadAll(body)
+		require.NoError(t, err)
+		require.NoError(t, body.Close())
+		require.Equal(t, proof, got)
+
+		for _, bad := range []string{"incoming/uploads/../secret", "incoming//uploads/x", "/etc/passwd"} {
+			err := s.PutObject(ctx, bad, "image/png", proof)
+			require.ErrorContains(t, err, "refusing key", bad)
+		}
+	})
+
 	t.Run("the presigned GET downloads as an attachment", func(t *testing.T) {
 		link, err := s.PresignGet(ctx, stored, time.Minute, "bukti-1.jpg", "image/jpeg")
 		require.NoError(t, err)
