@@ -590,3 +590,37 @@ func TestReminderTableRules(t *testing.T) {
 		}
 	})
 }
+
+// TestDecideNoH7VisitWithoutAnActiveLease: a tenant who moved out with arrears gets no h7 visit
+// (decision 48), since the visit list shows only tenants with an active lease a karyawan
+// collects; one who still rents the room gets it. The arrears stay.
+func TestDecideNoH7VisitWithoutAnActiveLease(t *testing.T) {
+	env := testenv.New(t)
+	env.Clock.Set(wib(time.November, 2, 9, 0))
+	w := newWorld(t, env, "Griya Pindah", "0812975")
+	due := day(2026, 11, 10)
+	rina := w.renter(t, "Rina Wulandari", due) // moves out owing
+	budi := w.renter(t, "Budi Santoso", due)   // stays, owing
+	env.Clock.Set(wib(time.November, 3, 9, 0))
+	w.generate(t)
+
+	env.Clock.Set(wib(time.November, 12, 10, 0))
+	var leaseID uuid.UUID
+	require.NoError(t, w.inTx(func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id FROM lease WHERE tenant_id = $1`, rina).Scan(&leaseID)
+	}))
+	_, err := env.Tenants.MoveOut(context.Background(), w.admin, leaseID, day(2026, 11, 12))
+	require.NoError(t, err)
+	acct, err := env.Billing.Account(context.Background(), w.admin, rina)
+	require.NoError(t, err)
+	require.Positive(t, acct.Outstanding, "Rina moved out owing the period she started")
+
+	res := w.decide(t, wib(time.November, 17, 8, 0)) // H+7 of both invoices
+	require.Equal(t, 1, res.VisitTasks, "only Budi's visit opens")
+	require.Len(t, w.openVisits(t, budi), 1)
+	require.Empty(t, w.openVisits(t, rina))
+
+	res = w.decide(t, wib(time.November, 18, 8, 0))
+	require.Zero(t, res.VisitTasks)
+	require.Empty(t, w.openVisits(t, rina), "nor the day after")
+}

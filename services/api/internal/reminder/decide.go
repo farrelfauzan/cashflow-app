@@ -245,6 +245,12 @@ func loadInput(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, t
 		in.Broken = append(in.Broken, BrokenPromise{ID: b.ID, ClosedOn: tenant.DayOf(*b.ClosedAt), Notified: b.Notified})
 	}
 
+	leases, err := q.ListTenantActiveLeaseScopes(ctx, dbgen.ListTenantActiveLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return Input{}, fmt.Errorf("reminder: loading the active leases: %w", err)
+	}
+	in.HasActiveLease = len(leases) > 0
+
 	resolved, err := q.LastResolvedVisitAt(ctx, dbgen.LastResolvedVisitAtParams{OrganizationID: org, TenantID: tenantID, Reason: VisitReasonH7})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
