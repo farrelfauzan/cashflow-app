@@ -1,7 +1,8 @@
 "use client";
 
 import { CopyAccountNumberButton } from "./copy-account-number-button";
-import type { TransferView } from "./type";
+import { SendProofButton } from "./send-proof-button";
+import type { ProofSender, TransferView } from "./type";
 import {
   PARTIAL_ALLOWED_TEXT,
   RECORDED_BY_ADMIN_TEXT,
@@ -11,11 +12,17 @@ import {
 
 type BankTransferSectionProps = {
   transfer: TransferView;
+  // "Kirim bukti transfer" under the instructions.
+  proof: ProofSender;
 };
 
 // "Transfer bank": the organization's account, the copy button, and what to write in the
-// transfer note. An admin records the payment once the money arrives.
-export function BankTransferSection({ transfer }: BankTransferSectionProps) {
+// transfer note. An admin records the payment once the money arrives; "Kirim bukti transfer"
+// sends them a photo of the transfer.
+export function BankTransferSection({
+  transfer,
+  proof,
+}: BankTransferSectionProps) {
   return (
     <section
       aria-labelledby="bank-transfer-title"
@@ -42,6 +49,7 @@ export function BankTransferSection({ transfer }: BankTransferSectionProps) {
         <li>{PARTIAL_ALLOWED_TEXT}</li>
         <li className="text-muted-foreground">{RECORDED_BY_ADMIN_TEXT}</li>
       </ul>
+      <SendProofButton proof={proof} />
     </section>
   );
 }

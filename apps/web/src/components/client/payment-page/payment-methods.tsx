@@ -6,7 +6,12 @@ import { BankTransferMethod } from "./bank-transfer-method";
 import { PaymentMethodTabs } from "./payment-method-tabs";
 import { QrisChecking } from "./qris-checking";
 import { QrisPanel } from "./qris-panel";
-import type { QrisOfferView, QrisPayment, TransferView } from "./type";
+import type {
+  ProofSender,
+  QrisOfferView,
+  QrisPayment,
+  TransferView,
+} from "./type";
 import { QRIS_UNAVAILABLE_TEXT, qrisCheckingRows } from "./utils";
 
 type PaymentMethodsProps = {
@@ -18,6 +23,8 @@ type PaymentMethodsProps = {
   chosen: number | null;
   transfer: TransferView | null;
   noTransferText: string;
+  // "Kirim bukti transfer" on the Transfer bank tab.
+  proof: ProofSender;
 };
 
 // How to pay when the organization has set up QRIS (boards "Bayar QRIS", "QR kedaluwarsa",
@@ -30,6 +37,7 @@ export function PaymentMethods({
   chosen,
   transfer,
   noTransferText,
+  proof,
 }: PaymentMethodsProps) {
   const { card } = qris.model;
 
@@ -56,6 +64,7 @@ export function PaymentMethods({
             <BankTransferMethod
               transfer={transfer}
               noTransferText={noTransferText}
+              proof={proof}
             />
           }
         />

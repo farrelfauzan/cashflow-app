@@ -7,6 +7,7 @@ import { ActivePromiseCard } from "./active-promise-card";
 import { ChoiceRadioGroup } from "./choice-radio-group";
 import { PaymentPageHeader } from "./payment-page-header";
 import { PaymentSummaryCard } from "./payment-summary-card";
+import { ProofsWaitingSection } from "./proofs-waiting-section";
 import { TelegramCard } from "./telegram-card";
 import type {
   ActivePromiseView,
@@ -32,6 +33,8 @@ type PayChoiceViewProps = {
   // For "Hubungkan Telegram": the link's token goes only into the generated request's path.
   token: string;
   onLinkGone: () => void;
+  // A transfer proof was sent in this visit.
+  proofSent: boolean;
 };
 
 // Bayar-Pilih (board "Bayar-Pilih"): what is owed, then "Mau bayar berapa?" with one primary that
@@ -49,6 +52,7 @@ export function PayChoiceView({
   onEditPromise,
   token,
   onLinkGone,
+  proofSent,
 }: PayChoiceViewProps) {
   return (
     <>
@@ -63,6 +67,7 @@ export function PayChoiceView({
         total={view.total}
         credit={view.credit}
       />
+      <ProofsWaitingSection rows={view.proofs} sent={proofSent} />
       {activePromise !== null && (
         <ActivePromiseCard text={activePromise.text} onEdit={onEditPromise} />
       )}

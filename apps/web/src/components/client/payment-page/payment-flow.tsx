@@ -14,12 +14,14 @@ import { PaymentPageFooter } from "./payment-page-footer";
 import { PaymentPageHeader } from "./payment-page-header";
 import { PromiseForm } from "./promise-form";
 import { PromiseRecordedView } from "./promise-recorded-view";
+import { ProofsWaitingSection } from "./proofs-waiting-section";
 import { QrisAnnouncer } from "./qris-announcer";
 import type {
   OpenPaymentPageView,
   PayChoice,
   PayFlowMode,
   QrisCard,
+  ProofSender,
   QrisPayment,
 } from "./type";
 import {
@@ -65,6 +67,13 @@ export function PaymentFlow({
 }: PaymentFlowProps) {
   const [mode, setMode] = useState<PayFlowMode>(() => initialFlowMode(view));
   const card = qris === null ? null : qris.model.card;
+  // A transfer proof was received in this visit: the line above "Bukti transfer terkirim".
+  const [proofSent, setProofSent] = useState(false);
+  const proof: ProofSender = {
+    token,
+    onSent: () => setProofSent(true),
+    onLinkGone,
+  };
   const offer = view.qris;
 
   // Follows the card from render to render (React's "previous props" pattern): a QR found on
@@ -99,6 +108,7 @@ export function PaymentFlow({
         activePromise={active}
         token={token}
         onLinkGone={onLinkGone}
+        proofSent={proofSent}
         onEditPromise={
           active !== null && promiseOffer !== null && !resuming
             ? () =>
@@ -132,17 +142,20 @@ export function PaymentFlow({
                   chosen={null}
                   transfer={view.transfer}
                   noTransferText={view.noTransferText}
+                  proof={proof}
                 />
               ) : (
                 <BankTransferMethod
                   transfer={view.transfer}
                   noTransferText={view.noTransferText}
+                  proof={proof}
                 />
               )
             }
             onBack={
               showsPayBack(view, card) ? () => setMode(choiceMode("all")) : null
             }
+            proofSent={proofSent}
           />
         );
       case "entry": {
@@ -206,6 +219,7 @@ export function PaymentFlow({
                 }
               />
             )}
+            <ProofsWaitingSection rows={view.proofs} sent={proofSent} />
             <PaymentMethods
               token={token}
               offer={offer}
@@ -213,6 +227,7 @@ export function PaymentFlow({
               chosen={mode.amount}
               transfer={view.transfer}
               noTransferText={view.noTransferText}
+              proof={proof}
             />
             <PaymentPageFooter />
           </>

@@ -1,6 +1,8 @@
 // What the tenant payment page (/t/[token]) renders, built from getPaymentPage by utils.ts.
 // Every amount is a field the API sent, formatted; nothing here is computed rupiah.
 
+import type { RefObject } from "react";
+
 import type {
   MakePaymentPromiseRequest,
   PaymentPromise,
@@ -64,6 +66,8 @@ export type OpenPaymentPageView = {
   // "Pengingat lewat Telegram" on the choice (a demo channel, decision 42); null when this
   // environment has no bot.
   telegram: TelegramOfferView | null;
+  // "Bukti transfer terkirim": the proofs still waiting for the admin, newest first.
+  proofs: ProofRowView[];
 };
 
 // The Telegram card: offer "Hubungkan Telegram", or say the tenant is linked.
@@ -311,6 +315,8 @@ export type PaidPaymentPageView = {
   // lists it as paid Rp0.
   invoice: PaidInvoiceView | null;
   credit: string | null;
+  // "Bukti transfer terkirim", as on the open page.
+  proofs: ProofRowView[];
 };
 
 export type PaymentPageView = OpenPaymentPageView | PaidPaymentPageView;
@@ -441,4 +447,63 @@ export type MakePromise = {
 export type QrisGuideApp = {
   name: string;
   steps: string;
+};
+
+// "Kirim bukti transfer" (board "Kirim bukti transfer", Bayar-Bukti).
+
+// What the Transfer bank card needs to offer "Kirim bukti transfer".
+export type ProofSender = {
+  // The link's token: it goes only into the generated request's path.
+  token: string;
+  // A proof was received: the page says so above "Bukti transfer terkirim".
+  onSent: () => void;
+  // The send found that the link no longer works.
+  onLinkGone: () => void;
+};
+
+// One row of "Bukti transfer terkirim", from the API's proofsWaiting.
+export type ProofRowView = {
+  id: string;
+  // "Dikirim Sen 16 Nov, 09.12"
+  sentLine: string;
+};
+
+// What a refused sendPaymentProof (or the page's own check of the photo) shows in the sheet.
+export type ProofErrorView =
+  // The link stopped working: the page shows "Link tidak berlaku".
+  | { kind: "link-gone" }
+  // The photo itself was refused (not an image, too large): the message under the photo, and
+  // "Kirim foto" waits for another photo.
+  | { kind: "file"; message: string }
+  // No answer arrived (the signal dropped): "Coba lagi" sends the same photo.
+  | { kind: "retry"; message: string }
+  // Too many proofs, uploads not available here, anything else: a message in the sheet.
+  | { kind: "alert"; message: string };
+
+export type ShownProofError = Exclude<ProofErrorView, { kind: "link-gone" }>;
+
+// The photo in the sheet: the file that is sent and the object URL its preview shows.
+export type ProofPhoto = {
+  file: File;
+  previewUrl: string;
+};
+
+export type ProofSheetState =
+  | { kind: "closed" }
+  // A photo was chosen and is being made ready to send (shrunk, re-encoded).
+  | { kind: "preparing" }
+  | { kind: "ready"; photo: ProofPhoto; error: ShownProofError | null }
+  // Sending; `percent` is null until the browser reports the upload's size.
+  | { kind: "sending"; photo: ProofPhoto; percent: number | null };
+
+// What useSendProof gives the button and its sheet.
+export type SendProof = {
+  state: ProofSheetState;
+  // The hidden file input, opened by "Kirim bukti transfer" and "Pilih foto lain".
+  inputRef: RefObject<HTMLInputElement | null>;
+  pickPhoto: () => void;
+  // The input's change: a photo was chosen.
+  choose: (file: File) => void;
+  send: () => void;
+  close: () => void;
 };
