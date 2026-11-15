@@ -55,6 +55,9 @@ export function ProofPhoto({
 
   function failed() {
     if (failures === 0) onReload();
+    // The second failure hides the photo, and the large view with it: say so, or the drawer
+    // would keep refusing every close.
+    if (failures >= 1) onZoomedChange(false);
     setFailures((count) => count + 1);
   }
 
