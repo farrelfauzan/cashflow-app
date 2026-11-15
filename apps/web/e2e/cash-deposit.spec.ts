@@ -218,8 +218,9 @@ test.describe("Karyawan", () => {
       .filter({ hasText: COLLECTED_TENANT })
       .filter({ hasText: formatRupiah(amount) });
     await expect(row).toHaveCount(1);
-    // Recorded just now, with no photo yet.
-    await expect(row).toContainText("Foto belum ada");
+    // Recorded just now with its photo (decision 50): still being scanned, or already clean.
+    await expect(row).toContainText(/Foto (sedang diperiksa|tersimpan)/);
+    await expect(row).not.toContainText("Foto belum ada");
 
     // The amount starts at the total, and the button names it.
     await expect(page.getByLabel(AMOUNT_LABEL)).toHaveValue(

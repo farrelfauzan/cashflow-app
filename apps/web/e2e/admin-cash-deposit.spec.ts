@@ -215,6 +215,7 @@ test.describe("Admin of the whole organization", () => {
       storageState: JUWITA.storageState,
     });
     let deposit: CashDeposit;
+    let paidAmount: number;
     try {
       const tenants = await call<TenantList>(
         karyawan,
@@ -230,6 +231,7 @@ test.describe("Admin of the whole organization", () => {
         amount: Number(`1${runId()}${projectDigit(testInfo)}0`),
         photoUploadId: await cashPhoto(page, karyawan, orgId, tenant.id),
       };
+      paidAmount = payment.amount;
       await call<CashPaymentResult>(
         karyawan,
         "POST",
@@ -295,8 +297,13 @@ test.describe("Admin of the whole organization", () => {
     await expect(
       sheet.getByRole("list", { name: "Kwitansi dalam setoran ini" }),
     ).toContainText(COLLECTED_TENANT);
-    // Recorded through the API with no photo.
-    await expect(sheet).toContainText("Foto belum ada");
+    // This run's cash came with its photo (decision 50): still being scanned, or already clean.
+    const receipt = sheet
+      .getByRole("list", { name: "Kwitansi dalam setoran ini" })
+      .getByRole("listitem")
+      .filter({ hasText: formatRupiah(paidAmount) });
+    await expect(receipt).toHaveCount(1);
+    await expect(receipt).toContainText(/Foto (sedang diperiksa|tersimpan)/);
     const field = sheet.getByLabel(RECEIVED_LABEL);
     // The admin types their own count: the field opens empty.
     await expect(field).toHaveValue("");
