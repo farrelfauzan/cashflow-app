@@ -6,7 +6,7 @@
  */
 
 /**
- * The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+ * The photo of a cash payment. missing: none ("foto belum ada"), only on payments recorded before photos were required (decision 50); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it (attachCashPaymentPhoto).
  */
 export type ReceiptPhotoStatus = typeof ReceiptPhotoStatus[keyof typeof ReceiptPhotoStatus];
 

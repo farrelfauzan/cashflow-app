@@ -54,10 +54,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeError(w, http.StatusConflict, "receipt_photo_attached", "Pembayaran ini sudah punya foto.")
 	case errors.Is(err, billing.ErrReceiptPhotoInvalid):
 		s.writeErrorField(w, http.StatusBadRequest, "receipt_photo_upload_invalid",
-			"Foto ini tidak bisa dipakai untuk pembayaran ini. Ambil foto lagi.", "uploadId")
+			"Foto ini tidak bisa dipakai untuk pembayaran ini. Ambil foto lagi.", billingErrorField(err, "uploadId"))
 	case errors.Is(err, billing.ErrReceiptPhotoRefused):
 		s.writeErrorField(w, http.StatusConflict, "receipt_photo_upload_refused",
-			"Foto ini ditolak saat diperiksa. Ambil foto lagi.", "uploadId")
+			"Foto ini ditolak saat diperiksa. Ambil foto lagi.", billingErrorField(err, "uploadId"))
 	case errors.Is(err, billing.ErrCorrectionNoChange):
 		s.writeErrorField(w, http.StatusConflict, "correction_no_change",
 			"Nominal baru sama dengan nominal sekarang. Tidak ada yang dikoreksi.", "newAmount")
@@ -252,4 +252,13 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		s.log.Error("writing response", "error", err)
 	}
+}
+
+// billingErrorField returns the input field a billing error names (a *billing.FieldError), or def.
+func billingErrorField(err error, def string) string {
+	var fe *billing.FieldError
+	if errors.As(err, &fe) {
+		return fe.Field
+	}
+	return def
 }

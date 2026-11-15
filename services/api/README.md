@@ -514,9 +514,10 @@ replay Bot API answers.
 - `internal/receipt`: the tenant's receipt for cash a karyawan collects (slice 6, S6-2), recorded
   as a `payment_receipt` row with the cash payment (`billing.RecordCashPayment`) and sent at most
   once by the `receipt:send` task (`receipttask`), which `reminders:sweep` re-enqueues while it is
-  still pending. The karyawan attaches the photo of the cash after saving
-  (`billing.AttachReceiptPhoto`, table `payment_receipt_photo`, append-only): a photo the scan
-  refused can be replaced, a good one never.
+  still pending. The photo of the cash comes with it (decision 50): the app uploads it first and
+  `RecordCashPayment` links it in the payment's transaction (table `payment_receipt_photo`,
+  append-only), so field cash is never recorded without one. A photo the scan refused is retaken
+  with `billing.AttachReceiptPhoto`; a good one is never replaced.
 - `internal/deposit`: "Setor tunai" (S6-3). A karyawan deposits all the field cash they hold at
   once (`cash_deposit` and `cash_deposit_payment`, each payment once); an admin records the amount
   counted (`cash_deposit_confirmation`, never by the depositor), and a difference from the

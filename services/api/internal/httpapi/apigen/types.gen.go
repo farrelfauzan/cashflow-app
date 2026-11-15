@@ -1121,6 +1121,9 @@ type CashPaymentInput struct {
 	// Note Optional, at most 500 letters after trimming.
 	Note *string `json:"note,omitempty"`
 
+	// PhotoUploadId The photo of the cash, uploaded before saving (decision 50): a cash_receipt upload for this tenant that the caller started (createUpload), PUT and completed (completeUpload), not yet another payment's photo and not refused by the scan. It may still be pending; the payment and the tenant's receipt do not wait for the scan. Errors use field photoUploadId.
+	PhotoUploadId openapi_types.UUID `json:"photoUploadId"`
+
 	// RequestId Made by the client once per "Terima tunai" form it opens, and sent again unchanged on a retry. Errors use field requestId.
 	RequestId openapi_types.UUID `json:"requestId"`
 }
@@ -1143,7 +1146,7 @@ type CashPaymentResult struct {
 	Paid    []PaidInvoice  `json:"paid"`
 	Payment AccountPayment `json:"payment"`
 
-	// Photo status missing right after recording ("foto belum ada"); a repeated request answers the photo now. attachCashPaymentPhoto attaches it.
+	// Photo The photo recorded with the payment (pending while it is scanned); a repeated request answers the photo now. missing only for payments recorded before photos were required (decision 50).
 	Photo   ReceiptPhoto   `json:"photo"`
 	Receipt PaymentReceipt `json:"receipt"`
 }
@@ -2654,14 +2657,14 @@ type QrisStatusStatus string
 
 // ReceiptPhoto defines model for ReceiptPhoto.
 type ReceiptPhoto struct {
-	// Status The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+	// Status The photo of a cash payment. missing: none ("foto belum ada"), only on payments recorded before photos were required (decision 50); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it (attachCashPaymentPhoto).
 	Status ReceiptPhotoStatus `json:"status"`
 
 	// UploadId The photo's upload (getUpload); absent when missing.
 	UploadId *openapi_types.UUID `json:"uploadId,omitempty"`
 }
 
-// ReceiptPhotoStatus The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it.
+// ReceiptPhotoStatus The photo of a cash payment. missing: none ("foto belum ada"), only on payments recorded before photos were required (decision 50); otherwise its upload's status: pending while it is scanned, clean, or rejected or infected, when the karyawan takes another photo and attaches it (attachCashPaymentPhoto).
 type ReceiptPhotoStatus string
 
 // RoleGrant defines model for RoleGrant.

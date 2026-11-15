@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -97,32 +98,10 @@ func (s *Service) AttachReceiptPhoto(ctx context.Context, p authz.Principal, pay
 			return ErrReceiptPhotoAttached
 		}
 
-		up, err := q.GetUpload(ctx, dbgen.GetUploadParams{OrganizationID: org, ID: uploadID})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return &NotFoundError{Field: "uploadId"}
+		if photo, err = linkReceiptPhoto(ctx, q, org, p.UserID, paymentID, pay.TenantID, uploadID, "uploadId", s.clock.Now()); err != nil {
+			return err
 		}
-		if err != nil {
-			return fmt.Errorf("loading the upload: %w", err)
-		}
-		if up.Purpose != upload.PurposeCashReceipt || up.TenantID.UUID != pay.TenantID ||
-			up.UploadedByStaffUserID.UUID != p.UserID || up.CompletedAt == nil {
-			return ErrReceiptPhotoInvalid
-		}
-		if photoRefused(up.Status) {
-			return ErrReceiptPhotoRefused
-		}
-		n, err := q.InsertPaymentReceiptPhoto(ctx, dbgen.InsertPaymentReceiptPhotoParams{
-			UploadID: uploadID, OrganizationID: org, PaymentID: paymentID, TenantID: pay.TenantID,
-			AttachedByStaffUserID: p.UserID, AttachedAt: s.clock.Now(),
-		})
-		if err != nil {
-			return fmt.Errorf("linking the cash payment's photo: %w", err)
-		}
-		if n == 0 {
-			// Another payment's photo: this one was not among this payment's links.
-			return ErrReceiptPhotoInvalid
-		}
-		photo, changed = ReceiptPhoto{UploadID: uploadID, Status: up.Status}, true
+		changed = true
 		return nil
 	})
 	if errors.Is(err, errRepeat) {
@@ -133,6 +112,52 @@ func (s *Service) AttachReceiptPhoto(ctx context.Context, p authz.Principal, pay
 	}
 	return photo, changed, nil
 }
+
+// linkReceiptPhoto links upload uploadID as a photo of cash payment paymentID from tenantID,
+// attached by member by, and answers the photo. The upload must be in org (a *NotFoundError on
+// field otherwise), a completed cash_receipt upload for the tenant made by that member and not
+// already another payment's photo (ErrReceiptPhotoInvalid), and not refused by the scan
+// (ErrReceiptPhotoRefused); a pending one is accepted and its scan decides later. Both errors carry
+// field as a *FieldError. It checks no permission: the caller has.
+func linkReceiptPhoto(ctx context.Context, q *dbgen.Queries, org, by, paymentID, tenantID, uploadID uuid.UUID, field string, now time.Time) (ReceiptPhoto, error) {
+	up, err := q.GetUpload(ctx, dbgen.GetUploadParams{OrganizationID: org, ID: uploadID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ReceiptPhoto{}, &NotFoundError{Field: field}
+	}
+	if err != nil {
+		return ReceiptPhoto{}, fmt.Errorf("loading the upload: %w", err)
+	}
+	if up.Purpose != upload.PurposeCashReceipt || up.TenantID.UUID != tenantID ||
+		up.UploadedByStaffUserID.UUID != by || up.CompletedAt == nil {
+		return ReceiptPhoto{}, &FieldError{Field: field, Err: ErrReceiptPhotoInvalid}
+	}
+	if photoRefused(up.Status) {
+		return ReceiptPhoto{}, &FieldError{Field: field, Err: ErrReceiptPhotoRefused}
+	}
+	n, err := q.InsertPaymentReceiptPhoto(ctx, dbgen.InsertPaymentReceiptPhotoParams{
+		UploadID: uploadID, OrganizationID: org, PaymentID: paymentID, TenantID: tenantID,
+		AttachedByStaffUserID: by, AttachedAt: now,
+	})
+	if err != nil {
+		return ReceiptPhoto{}, fmt.Errorf("linking the cash payment's photo: %w", err)
+	}
+	if n == 0 {
+		// Already a photo, of another payment or (for a new payment) of none other.
+		return ReceiptPhoto{}, &FieldError{Field: field, Err: ErrReceiptPhotoInvalid}
+	}
+	return ReceiptPhoto{UploadID: uploadID, Status: up.Status}, nil
+}
+
+// FieldError is an expected error about one input field: Err is the sentinel (such as
+// ErrReceiptPhotoInvalid), Field the input it is about.
+type FieldError struct {
+	Field string
+	Err   error
+}
+
+func (e *FieldError) Error() string { return fmt.Sprintf("%s: %v", e.Field, e.Err) }
+
+func (e *FieldError) Unwrap() error { return e.Err }
 
 // ReceiptPhotosTx returns the photo of each of the given payments inside tx scoped to org; a
 // payment with none is PhotoMissing. It checks no permission: the caller has.
