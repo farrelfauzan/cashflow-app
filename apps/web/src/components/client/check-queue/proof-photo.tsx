@@ -122,7 +122,7 @@ export function ProofPhoto({
             type="button"
             variant="ghost"
             onClick={() => setZoomed(true)}
-            className="h-11 justify-start gap-1.5 self-start px-1 text-base font-semibold text-primary hover:bg-accent hover:text-primary md:text-[17px]"
+            className="-ml-1 h-11 justify-start gap-1.5 self-start px-1 text-base font-semibold text-primary hover:bg-accent hover:text-primary has-[>svg]:px-1 md:text-[17px]"
           >
             <Maximize2 aria-hidden="true" className="size-[18px]" />
             {ZOOM_LABEL}

@@ -22,8 +22,9 @@ type CheckSheetFooterProps = {
   pending: boolean;
   // The primary cannot go yet (a photo still being scanned), whatever else is the case.
   primaryDisabled?: boolean;
-  // A long secondary label ("Bukan pembayaran"): on the phone both buttons share the width
-  // equally, so neither label breaks.
+  // Long labels on both buttons ("Bukan pembayaran", "Simpan, bukan pembayaran"): each button
+  // starts from its label's width and they share what is left, at 15px on the phone, so neither
+  // label breaks on a 390px screen.
   balanced?: boolean;
 };
 
@@ -41,8 +42,11 @@ export function CheckSheetFooter({
   primaryDisabled = false,
   balanced = false,
 }: CheckSheetFooterProps) {
-  const secondaryClass =
-    "h-13 flex-1 rounded-xl border-[1.5px] bg-card px-3 text-base font-semibold whitespace-nowrap md:text-[17px]";
+  const fit = "flex-auto px-2.5 text-[15px] whitespace-nowrap";
+  const secondaryClass = cn(
+    "h-13 flex-1 rounded-xl border-[1.5px] bg-card px-3 text-base font-semibold whitespace-nowrap md:text-[17px]",
+    balanced && fit,
+  );
   if (readOnly) {
     return (
       <SheetClose asChild>
@@ -76,8 +80,8 @@ export function CheckSheetFooter({
         onClick={onPrimary}
         disabled={saving || primaryDisabled}
         className={cn(
-          "h-13 rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]",
-          balanced ? "flex-1 md:flex-[1.6]" : "flex-[1.6]",
+          "h-13 flex-[1.6] rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]",
+          balanced && fit,
         )}
       >
         {saving ? SAVING_LABEL : primaryLabel}

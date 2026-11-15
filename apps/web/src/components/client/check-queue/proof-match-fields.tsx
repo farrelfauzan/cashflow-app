@@ -30,7 +30,7 @@ export function ProofMatchFields({
 }: ProofMatchFieldsProps) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-1 items-start gap-[18px] md:grid-cols-[1.2fr_1fr] md:gap-3">
+      <div className="grid grid-cols-1 items-start gap-[18px] md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] md:gap-3">
         <Controller
           control={form.control}
           name="amount"
