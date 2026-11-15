@@ -265,6 +265,16 @@ PUTs to RustFS directly; RustFS allows that origin (`RUSTFS_CORS_ALLOWED_ORIGINS
 | `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY` | the bucket's key (a secret: never logged) |
 | `STORAGE_PATH_STYLE` | `true` for RustFS (the bucket in the URL path) |
 | `CLAMAV_ADDR` | clamd's `host:port`, worker only, required with `STORAGE_*` |
+| `UPLOAD_SCANNER` | worker only: `clamd` (the default) or, in development only, `fake` (see below) |
+
+**Without ClamAV (end-to-end tests).** ClamAV needs about 1 GB and minutes to load its
+signatures, too much for the web app's Playwright job. There the worker runs with
+`UPLOAD_SCANNER=fake` and no `CLAMAV_ADDR`: `internal/scan/devscan` reports a file as infected
+(`Eicar-Test-Signature`, as clamd does) exactly when its content holds the EICAR test string, and
+everything else as clean. The file's name, declared type and anything else about it change
+nothing. It is no malware scan, so the worker refuses to start with it outside development, and it
+is never a default. The size and type checks of the scan job run as usual, so a text file sent as
+a photo still ends `rejected`; for an infected photo, append the EICAR string to a real JPEG.
 
 Try the flow by hand in Swagger (`/docs`), signed in as a karyawan: `createUpload` answers a
 `putUrl` and `putHeaders`; send the file with
