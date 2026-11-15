@@ -86,3 +86,50 @@ func TestPreviewPayment(t *testing.T) {
 		})
 	}
 }
+
+// TestPreviewRecordedPayment: a payment a member records may exceed what is owed; the rest is
+// credit, as FIFO allocation would leave it.
+func TestPreviewRecordedPayment(t *testing.T) {
+	t.Parallel()
+	oct, nov := uuid.New(), uuid.New()
+	octNov := []billing.OpenBalance{{InvoiceID: oct, Balance: 750_000}, {InvoiceID: nov, Balance: 1_250_000}}
+	tests := []struct {
+		name    string
+		open    []billing.OpenBalance
+		amount  int64
+		want    billing.Preview
+		wantErr error
+	}{
+		{
+			name: "within what is owed it is PreviewPayment, with no credit", open: octNov, amount: 1_000_000,
+			want: billing.Preview{Amount: 1_000_000, OutstandingBefore: 2_000_000, OutstandingAfter: 1_000_000, Items: []billing.PreviewItem{
+				{InvoiceID: oct, Balance: 750_000, Applied: 750_000, BalanceAfter: 0, PaidInFull: true},
+				{InvoiceID: nov, Balance: 1_250_000, Applied: 250_000, BalanceAfter: 1_000_000},
+			}},
+		},
+		{
+			name: "above what is owed pays everything and the rest is credit", open: octNov, amount: 2_100_000,
+			want: billing.Preview{Amount: 2_100_000, OutstandingBefore: 2_000_000, OutstandingAfter: 0, CreditAdded: 100_000, Items: []billing.PreviewItem{
+				{InvoiceID: oct, Balance: 750_000, Applied: 750_000, BalanceAfter: 0, PaidInFull: true},
+				{InvoiceID: nov, Balance: 1_250_000, Applied: 1_250_000, BalanceAfter: 0, PaidInFull: true},
+			}},
+		},
+		{
+			name: "nothing owed: all of it is credit", open: []billing.OpenBalance{{InvoiceID: oct, Balance: 0}}, amount: 500_000,
+			want: billing.Preview{Amount: 500_000, CreditAdded: 500_000, Items: []billing.PreviewItem{}},
+		},
+		{name: "zero is refused", open: octNov, amount: 0, wantErr: billing.ErrPreviewAmountInvalid},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := billing.PreviewRecordedPayment(tc.open, tc.amount)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}

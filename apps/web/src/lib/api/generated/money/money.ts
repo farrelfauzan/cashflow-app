@@ -48,8 +48,10 @@ import type {
   MissingMeterReadingList,
   PaymentInput,
   PaymentResult,
+  PreviewTenantPaymentParams,
   TenantAccount,
   TenantOpenInvoice,
+  TenantPaymentPreview,
   TenantPromise,
   TenantPromiseList
 } from '../model';
@@ -439,6 +441,111 @@ export function useGetTenantAccount<TData = Awaited<ReturnType<typeof getTenantA
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = useGetTenantAccountQueryOptions(orgId,tenantId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
+ * Records nothing. The amount pays the tenant's invoices oldest period first, as FIFO allocation would if the payment were recorded now; what no invoice takes is creditAdded, the credit the payment would leave, so an amount above what the tenant owes is allowed (unlike getPaymentPreview on the payment page). For "Cocokkan ke tagihan" in Antrean cek and anywhere a member records a payment. Needs invoice:read through every lease the tenant has or had, like getTenantAccount; only a denial is audited. 400 invalid_input (field amount) when amount is missing, not a whole number or below 1.
+ * @summary What recording a payment of an amount for a tenant would pay (needs invoice:read)
+ */
+export const previewTenantPayment = (
+    orgId: string,
+    tenantId: string,
+    params: PreviewTenantPaymentParams,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<TenantPaymentPreview>(
+      {url: `/orgs/${orgId}/tenants/${tenantId}/payment-preview`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+
+
+
+
+export const getPreviewTenantPaymentQueryKey = (orgId: string,
+    tenantId: string,
+    params?: PreviewTenantPaymentParams,) =>
+    apiQueryKey({ orgId,tenantId,params }, { url: `/orgs/${orgId}/tenants/${tenantId}/payment-preview` });
+
+
+export const usePreviewTenantPaymentQueryOptions = <TData = Awaited<ReturnType<typeof previewTenantPayment>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    tenantId: string,
+    params: PreviewTenantPaymentParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewTenantPayment>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,tenantId,params }, { url: `/orgs/${orgId}/tenants/${tenantId}/payment-preview`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof previewTenantPayment>>> = ({ signal }) => previewTenantPayment(orgId,tenantId,params, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && tenantId !== null && tenantId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof previewTenantPayment>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type PreviewTenantPaymentQueryResult = NonNullable<Awaited<ReturnType<typeof previewTenantPayment>>>
+export type PreviewTenantPaymentQueryError = ErrorType<ErrorResponse>
+
+
+export function usePreviewTenantPayment<TData = Awaited<ReturnType<typeof previewTenantPayment>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params: PreviewTenantPaymentParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewTenantPayment>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof previewTenantPayment>>,
+          TError,
+          Awaited<ReturnType<typeof previewTenantPayment>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function usePreviewTenantPayment<TData = Awaited<ReturnType<typeof previewTenantPayment>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params: PreviewTenantPaymentParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewTenantPayment>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof previewTenantPayment>>,
+          TError,
+          Awaited<ReturnType<typeof previewTenantPayment>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function usePreviewTenantPayment<TData = Awaited<ReturnType<typeof previewTenantPayment>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params: PreviewTenantPaymentParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewTenantPayment>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary What recording a payment of an amount for a tenant would pay (needs invoice:read)
+ */
+
+export function usePreviewTenantPayment<TData = Awaited<ReturnType<typeof previewTenantPayment>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string,
+    params: PreviewTenantPaymentParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof previewTenantPayment>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = usePreviewTenantPaymentQueryOptions(orgId,tenantId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

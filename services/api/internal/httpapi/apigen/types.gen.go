@@ -2563,6 +2563,28 @@ type TenantOpenInvoice struct {
 	UnitLabel    string             `json:"unitLabel"`
 }
 
+// TenantPaymentPreview defines model for TenantPaymentPreview.
+type TenantPaymentPreview struct {
+	// Amount The amount previewed, as asked.
+	//
+	// Example: 1000000
+	Amount int64 `json:"amount"`
+
+	// CreditAdded What no invoice takes, which the payment would add to the tenant's credit.
+	//
+	// Example: 0
+	CreditAdded int64 `json:"creditAdded"`
+
+	// Items The invoices the amount reaches, oldest period first; the last may be paid in part.
+	Items []PaymentPreviewItem `json:"items"`
+
+	// OutstandingAfter What they would still owe after paying amount.
+	OutstandingAfter int64 `json:"outstandingAfter"`
+
+	// OutstandingBefore What the tenant owes now over all their invoices.
+	OutstandingBefore int64 `json:"outstandingBefore"`
+}
+
 // TenantPromise defines model for TenantPromise.
 type TenantPromise struct {
 	// ClosedAt When it stopped being active.
@@ -3132,6 +3154,12 @@ type ListTenantsParamsStatus string
 
 // ListTenantsParamsSort defines parameters for ListTenants.
 type ListTenantsParamsSort string
+
+// PreviewTenantPaymentParams defines parameters for PreviewTenantPayment.
+type PreviewTenantPaymentParams struct {
+	// Amount Whole rupiah.
+	Amount int64 `form:"amount" json:"amount"`
+}
 
 // ListTenantPromisesParams defines parameters for ListTenantPromises.
 type ListTenantPromisesParams struct {

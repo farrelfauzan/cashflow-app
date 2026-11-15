@@ -1247,6 +1247,39 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /orgs/{orgId}/tenants/{tenantId}/payment-preview:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [money]
+      operationId: previewTenantPayment
+      summary: What recording a payment of an amount for a tenant would pay (needs invoice:read)
+      description: >
+        Records nothing. The amount pays the tenant's invoices oldest period first, as FIFO
+        allocation would if the payment were recorded now; what no invoice takes is creditAdded,
+        the credit the payment would leave, so an amount above what the tenant owes is allowed
+        (unlike getPaymentPreview on the payment page). For "Cocokkan ke tagihan" in Antrean cek
+        and anywhere a member records a payment. Needs invoice:read through every lease the
+        tenant has or had, like getTenantAccount; only a denial is audited. 400 invalid_input
+        (field amount) when amount is missing, not a whole number or below 1.
+      parameters:
+        - name: amount
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Whole rupiah.
+      responses:
+        "200":
+          description: The preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantPaymentPreview" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /orgs/{orgId}/tenants/{tenantId}/open-invoices:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -4981,6 +5014,18 @@ components:
           type: array
           description: The invoices the amount reaches, oldest period first; the last may be paid in part.
           items: { $ref: "#/components/schemas/PaymentPreviewItem" }
+
+    TenantPaymentPreview:
+      allOf:
+        - $ref: "#/components/schemas/PaymentPreview"
+        - type: object
+          required: [creditAdded]
+          properties:
+            creditAdded:
+              type: integer
+              format: int64
+              example: 0
+              description: What no invoice takes, which the payment would add to the tenant's credit.
 
     CreateQrisRequest:
       type: object
