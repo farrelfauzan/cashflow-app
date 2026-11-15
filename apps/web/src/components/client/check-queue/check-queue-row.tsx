@@ -14,7 +14,7 @@ type CheckQueueRowProps = {
 
 // One waiting item: its icon tile, the kind in capitals, the main line and the detail; on the
 // right its chip and when it arrived (under the text on the phone). A row that opens a drawer is
-// one button at least 76px tall; a transfer proof is a plain row for now.
+// one button at least 76px tall.
 export function CheckQueueRow({ row, onOpen }: CheckQueueRowProps) {
   const Icon = row.icon;
   const content = (
