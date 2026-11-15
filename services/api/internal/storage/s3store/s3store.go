@@ -1,6 +1,6 @@
 // Package s3store keeps uploads in an S3-compatible bucket (S6-1): Cloudflare R2 in production,
 // RustFS in development and tests, through the AWS SDK for Go v2. It implements the upload
-// package's Presigner (the API) and Objects (the worker).
+// package's Presigner and ObjectWriter (the API) and Objects (the worker).
 //
 // R2 has no presigned POST, so the size limit of an upload is its Content-Length, signed into
 // the presigned PUT together with its Content-Type: a body of any other size or type is refused
@@ -14,6 +14,7 @@
 package s3store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -174,6 +175,22 @@ func (s *Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 		return nil, wrap("GET", err)
 	}
 	return out.Body, nil
+}
+
+// PutObject implements upload.ObjectWriter: the API stores a file it received itself (a tenant's
+// transfer proof).
+func (s *Store) PutObject(ctx context.Context, key, contentType string, body []byte) error {
+	if err := checkKey(key); err != nil {
+		return err
+	}
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), ContentType: aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(body))), Body: bytes.NewReader(body),
+	})
+	if err != nil {
+		return wrap("PUT", err)
+	}
+	return nil
 }
 
 // Move implements upload.Objects: a server-side copy, then a delete of the source. A copy that

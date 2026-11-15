@@ -128,11 +128,12 @@ func (s *Service) Complete(ctx context.Context, p authz.Principal, id uuid.UUID)
 		if row, err = getUpload(ctx, q, org, id); err != nil {
 			return err
 		}
-		reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID)
+		reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID.UUID)
 		if err != nil {
 			return err
 		}
-		if row.UploadedByStaffUserID != p.UserID {
+		// A transfer proof has no staff uploader, so no member completes it.
+		if !row.UploadedByStaffUserID.Valid || row.UploadedByStaffUserID.UUID != p.UserID {
 			return s.authz.Deny(ctx, p, reqs[0])
 		}
 		if err := s.authorizeAll(ctx, tx, p, reqs); err != nil {
@@ -150,19 +151,19 @@ func (s *Service) Complete(ctx context.Context, p authz.Principal, id uuid.UUID)
 		return Upload{}, err
 	}
 	if row.Status == StatusPending {
-		s.enqueue(ctx, org, id)
+		enqueueScan(ctx, s.queue, s.log, org, id)
 	}
 	return fromRow(row), nil
 }
 
-// enqueue queues an upload's scan once its completion is committed. It does not wait on the
+// enqueueScan queues an upload's scan once its completion is committed. It does not wait on the
 // request's cancellation, since the upload is already completed; a failure is logged and the
 // reconcile enqueues the scan later.
-func (s *Service) enqueue(ctx context.Context, org, id uuid.UUID) {
+func enqueueScan(ctx context.Context, queue ScanQueue, log *slog.Logger, org, id uuid.UUID) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), enqueueTimeout)
 	defer cancel()
-	if err := s.queue.EnqueueScan(ctx, org, id); err != nil {
-		s.log.ErrorContext(ctx, "enqueueing an upload's scan; the reconcile will enqueue it",
+	if err := queue.EnqueueScan(ctx, org, id); err != nil {
+		log.ErrorContext(ctx, "enqueueing an upload's scan; the reconcile will enqueue it",
 			"organization", org, "upload", id, "error", err)
 	}
 }
@@ -171,8 +172,10 @@ func (s *Service) enqueue(ctx context.Context, org, id uuid.UUID) {
 // downloads the file as an attachment. It is allowed with payment:check (the admin checking it),
 // cash:read (the Supervisor, who reads everything) or the action that started the upload, on the
 // upload's record (see Create): through each active lease of a receipt's tenant, and for a deposit
-// photo on the upload itself (payment:check and cash:read then need the whole organization). It
-// is a read, so only a denial is audited.
+// photo on the upload itself (payment:check and cash:read then need the whole organization). A
+// tenant's transfer proof is read with payment:check (or cash:read) through each lease of its
+// tenant, current or ended, as admin paths check (decision 47). It is a read, so only a denial is
+// audited.
 func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Read, error) {
 	org := p.OrganizationID
 	var row dbgen.Upload
@@ -182,7 +185,7 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Rea
 		if row, err = getUpload(ctx, q, org, id); err != nil {
 			return err
 		}
-		reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID)
+		reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID.UUID)
 		if err != nil {
 			return err
 		}
@@ -212,7 +215,9 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Rea
 // reaches it, all of which must pass. A cash_receipt is checked as cash:record on its tenant
 // through each of its active leases (the lease's property, owned by its collector; decision 47);
 // a tenant with no active lease only by an organization-wide grant. A cash_deposit is checked as
-// cash:deposit on the upload, owned by its uploader.
+// cash:deposit on the upload, owned by its uploader. A transfer_proof is checked as payment:check
+// on its tenant through each of its leases, active or ended, and with no lease only by an
+// organization-wide grant: it is the admin's to check (S6-6).
 func recordRequests(ctx context.Context, q *dbgen.Queries, org uuid.UUID, purpose string, tenantID, uploadID, uploader uuid.UUID) ([]authz.Request, error) {
 	switch purpose {
 	case PurposeCashReceipt:
@@ -221,6 +226,22 @@ func recordRequests(ctx context.Context, q *dbgen.Queries, org uuid.UUID, purpos
 		leases, err := q.ListTenantActiveLeaseScopes(ctx, dbgen.ListTenantActiveLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
 		if err != nil {
 			return nil, fmt.Errorf("loading the tenant's active leases: %w", err)
+		}
+		if len(leases) == 0 {
+			return []authz.Request{base}, nil
+		}
+		out := make([]authz.Request, len(leases))
+		for i, l := range leases {
+			out[i] = base
+			out[i].Resource.PropertyID = l.PropertyID
+			out[i].Resource.OwnerID = l.CollectorStaffUserID.UUID
+		}
+		return out, nil
+	case PurposeTransferProof:
+		base := authz.Request{Action: actionPaymentCheck, Resource: authz.Resource{Type: "tenant", ID: tenantID.String()}}
+		leases, err := q.ListTenantLeaseScopes(ctx, dbgen.ListTenantLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
+		if err != nil {
+			return nil, fmt.Errorf("loading the tenant's leases: %w", err)
 		}
 		if len(leases) == 0 {
 			return []authz.Request{base}, nil
@@ -284,7 +305,7 @@ func getUpload(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (dbgen.
 func fromRow(r dbgen.Upload) Upload {
 	out := Upload{
 		ID: r.ID, Purpose: r.Purpose, TenantID: r.TenantID.UUID, Status: r.Status, Size: r.DeclaredSize,
-		UploadedBy: r.UploadedByStaffUserID, CreatedAt: r.CreatedAt, CompletedAt: r.CompletedAt, ScannedAt: r.ScannedAt,
+		UploadedBy: r.UploadedByStaffUserID.UUID, CreatedAt: r.CreatedAt, CompletedAt: r.CompletedAt, ScannedAt: r.ScannedAt,
 	}
 	if r.ContentType != nil {
 		out.ContentType = *r.ContentType

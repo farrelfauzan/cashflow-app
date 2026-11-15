@@ -1,5 +1,5 @@
 // Package uploadtest has hand-written fakes of the upload package's ports: object storage
-// (Storage, both the API's Presigner and the worker's Objects), the malware scanner (Scanner)
+// (Storage: the API's Presigner and ObjectWriter and the worker's Objects), the malware scanner (Scanner)
 // and the scan queue (Queue). Tests only.
 package uploadtest
 
@@ -67,7 +67,7 @@ func (s *Storage) Keys() []string {
 }
 
 // Calls returns the bucket operations made so far ("head <key>", "open <key>",
-// "move <src> <dst>"), oldest first.
+// "move <src> <dst>", "put <key> <content type>"), oldest first.
 func (s *Storage) Calls() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,6 +87,18 @@ func (s *Storage) PresignPut(_ context.Context, key, contentType string, size in
 func (s *Storage) PresignGet(_ context.Context, key string, ttl time.Duration, filename, contentType string) (string, error) {
 	q := url.Values{"filename": {filename}, "type": {contentType}, "ttl": {ttl.String()}}
 	return "https://storage.test/" + key + "?" + q.Encode(), nil
+}
+
+// PutObject implements upload.ObjectWriter: the API storing a file itself (a transfer proof).
+func (s *Storage) PutObject(_ context.Context, key, contentType string, body []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, "put "+key+" "+contentType)
+	if s.Err != nil {
+		return s.Err
+	}
+	s.objects[key] = slices.Clone(body)
+	return nil
 }
 
 // Head implements upload.Objects.

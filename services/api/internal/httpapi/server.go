@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"time"
 
@@ -66,6 +67,9 @@ type Deps struct {
 	// file storage (development without STORAGE_*): the upload routes then answer 503
 	// uploads_unavailable.
 	Uploads *upload.Service
+	// Proofs receives the tenant's transfer proof photos from the payment page (S6-5). Nil, like
+	// Uploads, when this server has no file storage.
+	Proofs *upload.Proofs
 	// Deposits records, lists and confirms cash deposits, "Setor tunai" (S6-3).
 	Deposits *deposit.Service
 	// Visits lists the karyawan's visits and records their outcomes (S6-4).
@@ -151,6 +155,7 @@ func New(d Deps) *Server {
 		r.With(publicPageHeaders).Post("/t/{token}/check", s.checkPaymentQris)
 		r.With(publicPageHeaders).Post("/t/{token}/promise", s.makePaymentPromise)
 		r.With(publicPageHeaders).Post("/t/{token}/telegram", s.linkPaymentPageTelegram)
+		r.With(publicPageHeaders).Post("/t/{token}/proof", s.sendPaymentProof)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireSession)
@@ -237,7 +242,7 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	timeoutBody := `{"error":{"code":"timeout","message":"Permintaan terlalu lama. Coba lagi."}}`
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           http.TimeoutHandler(s.handler, requestTimeout, timeoutBody),
+		Handler:           s.serverHandler(http.TimeoutHandler(s.handler, requestTimeout, timeoutBody)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -340,11 +345,49 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	})
 }
 
+// limitBody caps every request body at n bytes, except a tenant's transfer proof, which sets its
+// own larger limit (sendPaymentProof): an outer limit could not be raised by an inner one.
 func limitBody(n int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body = http.MaxBytesReader(w, r.Body, n)
+			if !isPaymentProof(r) {
+				r.Body = http.MaxBytesReader(w, r.Body, n)
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// paymentProofPath is the one route that receives a large body slowly: the tenant's transfer
+// proof photo, up to 10 MB from a phone.
+var paymentProofPath = regexp.MustCompile(`^/api/t/[^/]+/proof$`)
+
+// isPaymentProof reports whether r is a tenant sending a transfer proof (sendPaymentProof).
+func isPaymentProof(r *http.Request) bool {
+	return r.Method == http.MethodPost && paymentProofPath.MatchString(r.URL.Path)
+}
+
+// proofTimeout is how long a transfer proof may take to arrive and be stored: 10 MB over a slow
+// phone connection does not fit the server's ReadTimeout and requestTimeout.
+const proofTimeout = 2 * time.Minute
+
+// serverHandler serves every request through timeout (the router behind http.TimeoutHandler),
+// except a transfer proof, which goes to the router directly with its connection's read and
+// write deadlines and its context moved to proofTimeout. Should the connection not allow it, the
+// server's own deadlines stay and a slow upload fails as before.
+func (s *Server) serverHandler(timeout http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isPaymentProof(r) {
+			timeout.ServeHTTP(w, r)
+			return
+		}
+		deadline := time.Now().Add(proofTimeout)
+		rc := http.NewResponseController(w)
+		if err := errors.Join(rc.SetReadDeadline(deadline), rc.SetWriteDeadline(deadline.Add(5*time.Second))); err != nil {
+			s.log.WarnContext(r.Context(), "keeping the server's deadlines for a transfer proof", "error", err)
+		}
+		ctx, cancel := context.WithDeadline(r.Context(), deadline)
+		defer cancel()
+		s.handler.ServeHTTP(w, r.WithContext(ctx))
+	})
 }

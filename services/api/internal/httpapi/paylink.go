@@ -152,6 +152,10 @@ func toAPIPaymentPage(p paylink.Page) apigen.PaymentPage {
 	for i, inv := range p.OpenInvoices {
 		out.OpenInvoices[i] = toAPIPaymentPageInvoice(inv)
 	}
+	out.ProofsWaiting = make([]apigen.PaymentProof, len(p.ProofsWaiting))
+	for i, pr := range p.ProofsWaiting {
+		out.ProofsWaiting[i] = apigen.PaymentProof{Id: pr.ID, CreatedAt: pr.CreatedAt}
+	}
 	if b := p.BankAccount; b != nil {
 		out.BankAccount = &apigen.BankAccount{BankName: b.BankName, AccountNumber: b.AccountNumber, AccountHolder: b.AccountHolder}
 	}

@@ -3,7 +3,19 @@
 
 -- name: InsertUpload :one
 INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, uploaded_by_staff_user_id, created_at)
-VALUES (@id, @organization_id, @purpose, sqlc.narg(tenant_id), @object_key, @declared_size, @uploaded_by_staff_user_id, @created_at)
+VALUES (@id, @organization_id, @purpose, sqlc.narg(tenant_id), @object_key, @declared_size, @uploaded_by_staff_user_id::uuid, @created_at)
+RETURNING *;
+
+-- name: InsertTransferProofUpload :one
+-- A tenant's transfer proof (S6-5): no staff uploader, and completed when it is recorded, since
+-- the API stored the file itself before recording it.
+INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, created_at, completed_at)
+VALUES (@id, @organization_id, 'transfer_proof', @tenant_id::uuid, @object_key, @declared_size, @created_at, @created_at)
+RETURNING *;
+
+-- name: InsertTransferProof :one
+INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
+VALUES (@id, @organization_id, @tenant_id, @payment_link_id, @invoice_id, @upload_id, @created_at)
 RETURNING *;
 
 -- name: GetUpload :one
@@ -38,3 +50,15 @@ LIMIT @row_limit;
 SELECT * FROM upload
 WHERE organization_id = @organization_id AND id = @id
 FOR UPDATE;
+
+-- name: ListWaitingTransferProofs :many
+-- A tenant's newest transfer proofs still waiting for the admin, for the payment page: those whose
+-- photo the scan has not refused (pending or clean). Until the check queue (S6-6) resolves
+-- proofs, every such proof waits.
+SELECT tp.id, tp.created_at
+FROM transfer_proof tp
+JOIN upload u ON u.organization_id = tp.organization_id AND u.id = tp.upload_id
+WHERE tp.organization_id = @organization_id AND tp.tenant_id = @tenant_id
+  AND u.status IN ('pending', 'clean')
+ORDER BY tp.created_at DESC, tp.id DESC
+LIMIT @max_rows;
