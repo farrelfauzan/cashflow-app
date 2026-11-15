@@ -8,10 +8,16 @@ import type { BankAccount } from './bankAccount';
 import type { PaymentPageInvoice } from './paymentPageInvoice';
 import type { PaymentPageTelegram } from './paymentPageTelegram';
 import type { PaymentPromise } from './paymentPromise';
+import type { PaymentProof } from './paymentProof';
 import type { PromiseDates } from './promiseDates';
 
 export interface PaymentPage {
   telegram: PaymentPageTelegram;
+  /**
+     * The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti transfer terkirim"). A proof whose photo the malware scan refused is not listed. Never a photo or a link to one.
+     * @maxItems 5
+     */
+  proofsWaiting: PaymentProof[];
   /** The tenant's active payment promise with its newest version's terms, or null when there is none. It stays active until it is closed, even once everything is paid. */
   promise: PaymentPromise | null;
   /** The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible). */

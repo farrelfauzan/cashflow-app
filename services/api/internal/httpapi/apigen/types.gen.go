@@ -2143,6 +2143,9 @@ type PaymentPage struct {
 	// PromiseDates The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible).
 	PromiseDates *PromiseDates `json:"promiseDates"`
 
+	// ProofsWaiting The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti transfer terkirim"). A proof whose photo the malware scan refused is not listed. Never a photo or a link to one.
+	ProofsWaiting []PaymentProof `json:"proofsWaiting"`
+
 	// QrisAvailable True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
 	QrisAvailable bool `json:"qrisAvailable"`
 

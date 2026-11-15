@@ -43,6 +43,19 @@ type Page struct {
 	// TelegramLinked is true when the tenant has a live Telegram link in this organization
 	// (decision 42). Whether the bot is configured at all is the caller's to say.
 	TelegramLinked bool
+	// ProofsWaiting are the tenant's newest transfer proofs still waiting for the admin, from
+	// any of their links, newest first, at most MaxProofsWaiting ("Bukti transfer terkirim"). A
+	// proof the scan refused is not waiting. No photo or link to one is shown.
+	ProofsWaiting []PageProof
+}
+
+// MaxProofsWaiting is how many waiting transfer proofs the page lists.
+const MaxProofsWaiting = 5
+
+// PageProof is a transfer proof the tenant sent.
+type PageProof struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
 }
 
 // PageInvoice is one invoice as the tenant sees it.
@@ -151,6 +164,13 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 		return Page{}, fmt.Errorf("paylink: checking for a Telegram link: %w", err)
 	}
 
+	proofs, err := q.ListWaitingTransferProofs(ctx, dbgen.ListWaitingTransferProofsParams{
+		OrganizationID: org, TenantID: tenantID, MaxRows: MaxProofsWaiting,
+	})
+	if err != nil {
+		return Page{}, fmt.Errorf("paylink: listing the tenant's transfer proofs: %w", err)
+	}
+
 	out := Page{
 		OrganizationName: o.DisplayName,
 		TenantName:       t.Name,
@@ -162,6 +182,10 @@ func (s *Service) readPage(ctx context.Context, tx pgx.Tx, q *dbgen.Queries, org
 		QRISAvailable:    qrisAvailable,
 		Promise:          promises,
 		TelegramLinked:   telegramLinked,
+		ProofsWaiting:    make([]PageProof, len(proofs)),
+	}
+	for i, p := range proofs {
+		out.ProofsWaiting[i] = PageProof{ID: p.ID, CreatedAt: p.CreatedAt}
 	}
 	found := false
 	for _, inv := range acct.Invoices {

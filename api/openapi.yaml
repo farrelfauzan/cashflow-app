@@ -4674,9 +4674,18 @@ components:
 
     PaymentPage:
       type: object
-      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable, promise, promiseDates, nextInvoiceDueDate, telegram]
+      required: [organizationName, tenantName, invoice, outstanding, credit, paid, openInvoices, bankAccount, qrisAvailable, promise, promiseDates, nextInvoiceDueDate, telegram, proofsWaiting]
       properties:
         telegram: { $ref: "#/components/schemas/PaymentPageTelegram" }
+        proofsWaiting:
+          type: array
+          maxItems: 5
+          description: >
+            The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to
+            check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti
+            transfer terkirim"). A proof whose photo the malware scan refused is not listed. Never
+            a photo or a link to one.
+          items: { $ref: "#/components/schemas/PaymentProof" }
         promise:
           description: >
             The tenant's active payment promise with its newest version's terms, or null when

@@ -240,6 +240,50 @@ func (q *Queries) ListStaleUploads(ctx context.Context, arg ListStaleUploadsPara
 	return items, nil
 }
 
+const listWaitingTransferProofs = `-- name: ListWaitingTransferProofs :many
+SELECT tp.id, tp.created_at
+FROM transfer_proof tp
+JOIN upload u ON u.organization_id = tp.organization_id AND u.id = tp.upload_id
+WHERE tp.organization_id = $1 AND tp.tenant_id = $2
+  AND u.status IN ('pending', 'clean')
+ORDER BY tp.created_at DESC, tp.id DESC
+LIMIT $3
+`
+
+type ListWaitingTransferProofsParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	MaxRows        int32
+}
+
+type ListWaitingTransferProofsRow struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+}
+
+// A tenant's newest transfer proofs still waiting for the admin, for the payment page: those whose
+// photo the scan has not refused (pending or clean). Until the check queue (S6-6) resolves
+// proofs, every such proof waits.
+func (q *Queries) ListWaitingTransferProofs(ctx context.Context, arg ListWaitingTransferProofsParams) ([]ListWaitingTransferProofsRow, error) {
+	rows, err := q.db.Query(ctx, listWaitingTransferProofs, arg.OrganizationID, arg.TenantID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWaitingTransferProofsRow
+	for rows.Next() {
+		var i ListWaitingTransferProofsRow
+		if err := rows.Scan(&i.ID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockUpload = `-- name: LockUpload :one
 SELECT id, organization_id, purpose, tenant_id, object_key, declared_size, content_type, status, uploaded_by_staff_user_id, created_at, completed_at, scanned_at FROM upload
 WHERE organization_id = $1 AND id = $2
