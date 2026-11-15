@@ -129,6 +129,13 @@ jobs:
           ./bin/migrate
           ./bin/admin seed-demo
           ./bin/admin generate-invoices
+          # e2e/check-queue.spec.ts records a new phone number on a visit, which needs an open
+          # visit: today's daily jobs open them (H+7). Kos Bulanan Sejahtera only, so no other
+          # organization's spec sees the extra reminders.
+          bulanan=$(docker compose -f ../../infra/compose.dev.yaml exec -T postgres \
+            psql -U cashflow_owner -d cashflow -tAc \
+            "select id from organization where name = 'Kos Bulanan Sejahtera'")
+          ./bin/admin run-day -day "$(TZ=Asia/Jakarta date +%F)" -org "$bulanan"
       # seed-demo gives Griya Sejahtera a fake AutoGoPay key, so its payment pages offer QRIS,
       # and e2e/payment-page-qris.spec.ts pays, expires and fails QRs through the stand-in's
       # /_control routes. It keeps its QRs in memory, so it starts before the API and the worker.

@@ -80,6 +80,17 @@ export const JUWITA: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "juwita.json"),
 };
 
+// Karyawan of the whole of Kos Bulanan Sejahtera, collector of Qori Amalia (Kamar 17), Rizki
+// Ananda (Kamar 18) and Toko Berkah Jaya (Ruko 1). Only the "Antrean cek" spec records his cash,
+// deposits it and records visit outcomes (on the iPad project), so no other spec races it.
+// Signed in by the setup project only.
+export const KURNIA: SeededStaff = {
+  phone: "0812-0009-0014",
+  name: "Mas Kurnia Aji",
+  organizations: ["Kos Bulanan Sejahtera"],
+  storageState: join(__dirname, "..", ".auth", "kurnia.json"),
+};
+
 // Every member the setup project signs in once per run.
 export const SETUP_STAFF: readonly SeededStaff[] = [
   HENDRA,
@@ -89,6 +100,7 @@ export const SETUP_STAFF: readonly SeededStaff[] = [
   LESTARI,
   UDIN,
   JUWITA,
+  KURNIA,
 ];
 
 // A seeded member the login spec signs in through the UI. Each is used by one test in one

@@ -14,8 +14,8 @@ type InvoicesHeaderProps = {
   canGoNext: boolean;
   onPrevious: () => void;
   onNext: () => void;
-  // The links to Penagihan's sub-screens ("Setoran tunai"): right of the title on iPad, full
-  // width under it on the phone.
+  // The links to Penagihan's sub-screens ("Setoran tunai", "Antrean cek"): right of the title on
+  // iPad, full width under it on the phone.
   links: ReactNode;
 };
 
