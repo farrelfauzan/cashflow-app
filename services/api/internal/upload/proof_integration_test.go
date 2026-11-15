@@ -204,15 +204,16 @@ func TestProofSend(t *testing.T) {
 
 		var tp dbgen.TransferProof
 		err := env.Store.WithOrgTx(ctx, w.org.ID, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at
-				FROM transfer_proof WHERE id = $1`, proof.ID).Scan(&tp.ID, &tp.OrganizationID, &tp.TenantID, &tp.PaymentLinkID,
-				&tp.InvoiceID, &tp.UploadID, &tp.UploadPurpose, &tp.CreatedAt)
+			return tx.QueryRow(ctx, `SELECT id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at,
+				sent_by_staff_user_id FROM transfer_proof WHERE id = $1`, proof.ID).Scan(&tp.ID, &tp.OrganizationID, &tp.TenantID, &tp.PaymentLinkID,
+				&tp.InvoiceID, &tp.UploadID, &tp.UploadPurpose, &tp.CreatedAt, &tp.SentByStaffUserID)
 		})
 		require.NoError(t, err)
 		require.Equal(t, dbgen.TransferProof{
-			ID: proof.ID, OrganizationID: w.org.ID, TenantID: w.rina, PaymentLinkID: rinaLink, InvoiceID: rinaInvoice,
+			ID: proof.ID, OrganizationID: w.org.ID, TenantID: w.rina,
+			PaymentLinkID: uuid.NullUUID{UUID: rinaLink, Valid: true}, InvoiceID: uuid.NullUUID{UUID: rinaInvoice, Valid: true},
 			UploadID: proof.UploadID, UploadPurpose: upload.PurposeTransferProof, CreatedAt: tp.CreatedAt,
-		}, tp)
+		}, tp, "sent from the link, by no member")
 		require.True(t, tp.CreatedAt.Equal(proof.CreatedAt))
 
 		require.Equal(t, []uuid.UUID{proof.UploadID}, w.queue.Enqueued())
@@ -260,10 +261,12 @@ func TestProofSend(t *testing.T) {
 			})
 		}
 
-		t.Run("nobody completes a transfer proof", func(t *testing.T) {
+		t.Run("nobody completes a tenant's transfer proof", func(t *testing.T) {
+			// Completing is checked as sending (payment:proof, decision 49); a link's proof has no
+			// staff uploader, so even those who may send one are denied.
 			for _, p := range []authz.Principal{w.admin, w.supervisor, w.dimas} {
 				_, err := w.uploads.Complete(ctx, p, proof.UploadID)
-				requireForbidden(t, env, w.org.ID, err, authz.ActionPaymentCheck)
+				requireForbidden(t, env, w.org.ID, err, authz.ActionPaymentProof)
 			}
 		})
 	})
@@ -282,13 +285,13 @@ func TestProofSend(t *testing.T) {
 		require.True(t, ok)
 	})
 
-	t.Run("staff cannot start a transfer proof upload", func(t *testing.T) {
-		for _, p := range []authz.Principal{w.admin, w.dimas} {
-			_, err := w.uploads.Create(ctx, p, upload.CreateInput{
-				Purpose: upload.PurposeTransferProof, TenantID: w.rina, ContentType: "image/jpeg", Size: 100,
-			})
-			require.ErrorIs(t, err, upload.ErrPurposeUnknown)
-		}
+	t.Run("only members with payment:proof start a transfer proof upload", func(t *testing.T) {
+		// Decision 49: the admin and the tenant's collector may (TestStaffProof covers them); the
+		// Supervisor may not.
+		_, err := w.uploads.Create(ctx, w.supervisor, upload.CreateInput{
+			Purpose: upload.PurposeTransferProof, TenantID: w.rina, ContentType: "image/jpeg", Size: 100,
+		})
+		requireForbidden(t, env, w.org.ID, err, authz.ActionPaymentProof)
 	})
 }
 
@@ -609,8 +612,9 @@ func TestProofSchema(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err)
-		pgErr := pgError(t, insertProof(b.org.ID, a.rina, rinaLink, rinaInvoice, newProofUpload(t, a.rina)), "42501")
-		require.Contains(t, pgErr.Message, "row-level security")
+		// The sender trigger runs before RLS's check and finds no upload of A in B's scope.
+		pgErr := pgError(t, insertProof(b.org.ID, a.rina, rinaLink, rinaInvoice, newProofUpload(t, a.rina)), "23503")
+		require.Contains(t, pgErr.Message, "names no upload of its organization")
 	})
 
 	t.Run("a proof cannot be changed or removed", func(t *testing.T) {
@@ -641,7 +645,8 @@ func TestProofSchema(t *testing.T) {
 		}{
 			{"all of Rina's", a.rina, rinaLink, rinaInvoice, func(t *testing.T) uuid.UUID { return newProofUpload(t, a.rina) }, ""},
 			{"another tenant's upload", a.rina, rinaLink, rinaInvoice, func(t *testing.T) uuid.UUID { return newProofUpload(t, a.budi) }, "23503"},
-			{"an upload that is not a transfer proof", a.rina, rinaLink, rinaInvoice, func(*testing.T) uuid.UUID { return receipt }, "23503"},
+			// A receipt has a staff uploader, so the sender trigger refuses it before the key does.
+			{"an upload that is not a transfer proof", a.rina, rinaLink, rinaInvoice, func(*testing.T) uuid.UUID { return receipt }, "23514"},
 			{"an upload already behind a proof", a.rina, rinaLink, rinaInvoice, func(*testing.T) uuid.UUID { return rinaProof.UploadID }, "23505"},
 			{"another tenant's link", a.rina, budiLink, budiInvoice, func(t *testing.T) uuid.UUID { return newProofUpload(t, a.rina) }, "23503"},
 			{"another invoice than the link's", a.rina, rinaLink, budiInvoice, func(t *testing.T) uuid.UUID { return newProofUpload(t, a.rina) }, "23503"},
@@ -658,7 +663,7 @@ func TestProofSchema(t *testing.T) {
 		}
 	})
 
-	t.Run("only a transfer proof upload has no staff uploader, and it has a tenant", func(t *testing.T) {
+	t.Run("only a transfer proof upload may have no staff uploader, and it has a tenant", func(t *testing.T) {
 		insert := func(purpose string, tenantID, uploader *uuid.UUID) error {
 			return asApp(a.org.ID, `INSERT INTO upload (id, organization_id, purpose, tenant_id, object_key, declared_size, uploaded_by_staff_user_id, created_at)
 				VALUES ($1, $2, $3, $4, $5, 10, $6, now())`, uuid.New(), a.org.ID, purpose, tenantID, newKey(a.org.ID), uploader)
@@ -672,7 +677,7 @@ func TestProofSchema(t *testing.T) {
 			wantCode string
 		}{
 			{"a transfer proof with a tenant and no uploader", upload.PurposeTransferProof, &rina, nil, ""},
-			{"a transfer proof with a staff uploader", upload.PurposeTransferProof, &rina, &dimas, "23514"},
+			{"a transfer proof with a staff uploader (decision 49)", upload.PurposeTransferProof, &rina, &dimas, ""},
 			{"a transfer proof without a tenant", upload.PurposeTransferProof, nil, nil, "23514"},
 			{"a receipt without an uploader", upload.PurposeCashReceipt, &rina, nil, "23514"},
 			{"a deposit without an uploader", upload.PurposeCashDeposit, nil, nil, "23514"},
