@@ -329,7 +329,7 @@ describe("depositErrorKind and isForbidden", () => {
   it.each([
     { error: apiError(409, "deposit_cash_changed"), want: "cash_changed" },
     { error: apiError(409, "nothing_to_deposit"), want: "nothing_to_deposit" },
-    { error: apiError(409, "request_id_reused"), want: "other" },
+    { error: apiError(409, "request_id_reused"), want: "request_reused" },
     { error: apiError(400, "invalid_input"), want: "other" },
     { error: new Error("boom"), want: "other" },
   ])("classifies $want", ({ error, want }) => {

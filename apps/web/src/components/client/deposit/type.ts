@@ -48,4 +48,5 @@ export type PastDepositView = {
 
 // How the screen answers a refused deposit: load the cash again (deposit_cash_changed,
 // nothing_to_deposit), or show the API's message the way every form does.
-export type DepositErrorKind = "cash_changed" | "nothing_to_deposit" | "other";
+export type DepositErrorKind =
+  "cash_changed" | "nothing_to_deposit" | "request_reused" | "other";

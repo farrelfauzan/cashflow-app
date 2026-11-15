@@ -221,6 +221,9 @@ export function depositErrorKind(error: unknown): DepositErrorKind {
   if (!(error instanceof ApiError)) return "other";
   if (error.code === "deposit_cash_changed") return "cash_changed";
   if (error.code === "nothing_to_deposit") return "nothing_to_deposit";
+  // A deposit under this request id is already recorded (an answer lost, then an edited
+  // amount): the screen reloads and shows it waiting.
+  if (error.code === "request_id_reused") return "request_reused";
   return "other";
 }
 

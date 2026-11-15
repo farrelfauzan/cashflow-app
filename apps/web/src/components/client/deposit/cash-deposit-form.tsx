@@ -94,7 +94,7 @@ export function CashDepositForm({
       void cashChanged();
       return;
     }
-    if (kind === "nothing_to_deposit") {
+    if (kind === "nothing_to_deposit" || kind === "request_reused") {
       // The empty state (or the waiting deposit) takes the form's place.
       void refresh();
       return;
