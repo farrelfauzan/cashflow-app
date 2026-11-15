@@ -8,14 +8,16 @@ type CheckTilesProps = {
   tiles: readonly CheckTile[];
 };
 
-// The figures of an item side by side ("Total kwitansi", "Diterima admin", "Selisih"); three
-// tiles stack on the phone.
+// The figures of an item side by side ("Total kwitansi", "Diterima admin", "Selisih"). They
+// stack on the phone: a phone number does not fit in half its width.
 export function CheckTiles({ tiles }: CheckTilesProps) {
   return (
     <dl
       className={cn(
         "grid gap-2.5",
-        tiles.length >= 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2",
+        tiles.length >= 3
+          ? "grid-cols-1 sm:grid-cols-3"
+          : "grid-cols-1 sm:grid-cols-2",
       )}
     >
       {tiles.map((tile) => (

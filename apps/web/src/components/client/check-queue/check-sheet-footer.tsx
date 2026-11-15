@@ -34,7 +34,7 @@ export function CheckSheetFooter({
   pending,
 }: CheckSheetFooterProps) {
   const secondaryClass =
-    "h-13 flex-1 rounded-xl border-[1.5px] bg-card text-base font-semibold whitespace-normal md:text-[17px]";
+    "h-13 flex-1 rounded-xl border-[1.5px] bg-card px-3 text-base font-semibold whitespace-nowrap md:text-[17px]";
   if (readOnly) {
     return (
       <SheetClose asChild>
@@ -67,7 +67,7 @@ export function CheckSheetFooter({
         form={formId}
         onClick={onPrimary}
         disabled={saving}
-        className="h-13 flex-2 rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]"
+        className="h-13 flex-[1.6] rounded-xl px-3 text-base font-semibold whitespace-normal md:text-[17px]"
       >
         {saving ? SAVING_LABEL : primaryLabel}
       </Button>
