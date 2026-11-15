@@ -90,6 +90,25 @@ jobs:
       # qris_unavailable). The pool grows with it, so the slots stay below the pool.
       QRIS_MAX_CONCURRENT: "8"
       DATABASE_MAX_CONNS: "20"
+      # Object storage for uploads (tenants' transfer proofs, e2e/check-queue-proofs.spec.ts):
+      # RustFS from the dev compose file, with the bucket and key of infra/compose.dev.yaml, for
+      # the API and the worker. Without these the upload routes answer 503 uploads_unavailable and
+      # that spec fails, saying so.
+      STORAGE_ENDPOINT: http://127.0.0.1:9100
+      # The host named in presigned download links, which the browser loads (the proof's photo in
+      # Antrean cek). localhost, because e2e/support/page-checks.ts counts a request to any other
+      # host as an outside request.
+      STORAGE_PRESIGN_ENDPOINT: http://localhost:9100
+      STORAGE_BUCKET: cashflow-dev
+      STORAGE_REGION: us-east-1
+      STORAGE_ACCESS_KEY_ID: cashflow
+      STORAGE_SECRET_ACCESS_KEY: cashflow-dev-secret
+      # RustFS takes the bucket in the URL path.
+      STORAGE_PATH_STYLE: "true"
+      # The worker's scanner without ClamAV (development only, never set with CLAMAV_ADDR): a file
+      # holding the EICAR test string is infected, any other is clean. ClamAV needs about 1 GB and
+      # minutes to load its signatures. The API reads the same setting, so it is set for both.
+      UPLOAD_SCANNER: fake
       # 127.0.0.1, not localhost: Node may resolve localhost to ::1 first.
       API_DEV_ORIGIN: http://127.0.0.1:8080
       API_INTERNAL_URL: http://127.0.0.1:8080
@@ -120,6 +139,12 @@ jobs:
             sleep 1
           done
           exit 1
+      # RustFS on 127.0.0.1:9100 and its bucket: `run` starts rustfs (rustfs-init depends on it)
+      # and waits until rustfs-init has made the bucket. ClamAV, in the same profile, is not
+      # started. The proof photo is loaded by an <img>, which needs no CORS, so
+      # RUSTFS_CORS_ALLOWED_ORIGINS (http://localhost:3000) does not matter here.
+      - name: Start object storage
+        run: docker compose -f infra/compose.dev.yaml --profile uploads run --rm rustfs-init
       - name: Build the API
         working-directory: services/api
         run: go build -trimpath -o bin/ ./cmd/...
