@@ -424,3 +424,39 @@ func TestVisitTaskRules(t *testing.T) {
 		}
 	})
 }
+
+// TestBrokenPromisesOpenNoVisitWithoutAnActiveLease: a tenant who moved out and keeps breaking
+// promises from the payment link gets no broken_promises visit (decision 48), since no karyawan
+// collects from them; one who still rents gets it at the threshold.
+func TestBrokenPromisesOpenNoVisitWithoutAnActiveLease(t *testing.T) {
+	env := testenv.New(t)
+	env.Clock.Set(wib(time.November, 2, 9, 0))
+	w := newWorld(t, env, "Griya Pindah", "0812966")
+	rina := w.rent(t, "Rina Wulandari") // moves out owing
+	budi := w.rent(t, "Budi Santoso")   // stays
+
+	var leaseID uuid.UUID
+	require.NoError(t, w.inTx(func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id FROM lease WHERE tenant_id = $1`, rina.tenantID).Scan(&leaseID)
+	}))
+	// Out on the day after she moved in: the period she started is billed in full and stays owed.
+	env.Clock.Set(wib(time.November, 3, 9, 0))
+	_, err := env.Tenants.MoveOut(context.Background(), w.admin, leaseID, day(2026, 11, 3))
+	require.NoError(t, err)
+
+	breakOne := func(t *testing.T, r renter, madeOn int) promise.CloseResult {
+		t.Helper()
+		env.Clock.Set(wib(time.November, madeOn, 9, 0))
+		w.forTenant(t, r, onDay(day(2026, 11, madeOn+1)))
+		env.Clock.Set(wib(time.November, madeOn+2, 0, 30))
+		return w.closeDue(t)
+	}
+	for _, madeOn := range []int{4, 6, 8} {
+		require.Equal(t, promise.CloseResult{Due: 1, Broken: 1}, breakOne(t, rina, madeOn), "made on %d Nov", madeOn)
+	}
+	require.Empty(t, w.openVisits(t, rina), "three broken promises, no active lease: no visit")
+
+	require.Equal(t, promise.CloseResult{Due: 1, Broken: 1}, breakOne(t, budi, 10))
+	require.Equal(t, promise.CloseResult{Due: 1, Broken: 1, VisitTasks: 1}, breakOne(t, budi, 12))
+	require.Len(t, w.openVisits(t, budi), 1, "the tenant still renting gets it")
+}
