@@ -41,6 +41,10 @@ export function useProofPreview({
     {
       query: {
         enabled: debounced !== null,
+        // A preview is what saving would do now: never answer from an older read (a second proof
+        // of the same tenant and amount opened after a save would show the pre-save answer).
+        staleTime: 0,
+        gcTime: 0,
         retry: false,
         refetchOnWindowFocus: false,
         placeholderData: keepPreviousData,

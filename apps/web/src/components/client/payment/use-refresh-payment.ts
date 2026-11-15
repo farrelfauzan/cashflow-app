@@ -6,11 +6,13 @@ import {
   getGetDashboardQueryKey,
   getGetTenantAccountQueryKey,
   getListTenantOpenInvoicesQueryKey,
+  getPreviewTenantPaymentQueryKey,
 } from "@/lib/api/generated/money/money";
 import { isInvoicesQueryKey } from "./utils";
 
 // After a payment is recorded: reload the tenant's account (the page behind the panel) and open
-// invoices ("Salin link bayar"), the dashboard and every invoice list. Cached money is never
+// invoices ("Salin link bayar"), any preview of a payment for them, the dashboard and every
+// invoice list. Cached money is never
 // patched; the API's answer is the one shown. The promise settles once the active queries have
 // refetched.
 export function useRefreshPayment(
@@ -25,6 +27,9 @@ export function useRefreshPayment(
       }),
       queryClient.invalidateQueries({
         queryKey: getListTenantOpenInvoicesQueryKey(orgId, tenantId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: getPreviewTenantPaymentQueryKey(orgId, tenantId),
       }),
       queryClient.invalidateQueries({
         queryKey: getGetDashboardQueryKey(orgId),
