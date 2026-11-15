@@ -14,7 +14,7 @@ import type { PromiseDates } from './promiseDates';
 export interface PaymentPage {
   telegram: PaymentPageTelegram;
   /**
-     * The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti transfer terkirim"). A proof whose photo the malware scan refused is not listed. Never a photo or a link to one.
+     * The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti transfer terkirim"). A proof whose photo the malware scan refused, or that the admin answered in Antrean cek (matched to a payment or dismissed), is not listed. Never a photo or a link to one.
      * @maxItems 5
      */
   proofsWaiting: PaymentProof[];

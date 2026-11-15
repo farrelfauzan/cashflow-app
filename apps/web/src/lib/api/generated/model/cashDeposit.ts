@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CashDepositConfirmation } from './cashDepositConfirmation';
+import type { CashDepositGapClosure } from './cashDepositGapClosure';
 import type { CashDepositStatus } from './cashDepositStatus';
 import type { ReceiptPhoto } from './receiptPhoto';
 
@@ -26,4 +27,6 @@ export interface CashDeposit {
   status: CashDepositStatus;
   /** Absent while pending. */
   confirmation?: CashDepositConfirmation;
+  /** When the admin closed the gap between the counted cash and the payments in Antrean cek (dismissCheckItem on deposit_gap, "Selisih ditutup"); absent otherwise. */
+  gapClosure?: CashDepositGapClosure;
 }

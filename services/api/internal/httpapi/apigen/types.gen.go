@@ -32,19 +32,85 @@ func (e CapabilityAccess) Valid() bool {
 
 // Defines values for CashDepositStatus.
 const (
-	DepositGap     CashDepositStatus = "gap"
-	DepositMatched CashDepositStatus = "matched"
-	DepositPending CashDepositStatus = "pending"
+	CashDepositStatusDepositGap     CashDepositStatus = "gap"
+	CashDepositStatusDepositMatched CashDepositStatus = "matched"
+	CashDepositStatusDepositPending CashDepositStatus = "pending"
 )
 
 // Valid indicates whether the value is a known member of the CashDepositStatus enum.
 func (e CashDepositStatus) Valid() bool {
 	switch e {
-	case DepositGap:
+	case CashDepositStatusDepositGap:
 		return true
-	case DepositMatched:
+	case CashDepositStatusDepositMatched:
 		return true
-	case DepositPending:
+	case CashDepositStatusDepositPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CheckQueueKind.
+const (
+	CheckQueueKindDepositGap         CheckQueueKind = "deposit_gap"
+	CheckQueueKindPhoneChanged       CheckQueueKind = "phone_changed"
+	CheckQueueKindQrisAmountMismatch CheckQueueKind = "qris_amount_mismatch"
+	CheckQueueKindTransferProof      CheckQueueKind = "transfer_proof"
+	CheckQueueKindUploadInfected     CheckQueueKind = "upload_infected"
+)
+
+// Valid indicates whether the value is a known member of the CheckQueueKind enum.
+func (e CheckQueueKind) Valid() bool {
+	switch e {
+	case CheckQueueKindDepositGap:
+		return true
+	case CheckQueueKindPhoneChanged:
+		return true
+	case CheckQueueKindQrisAmountMismatch:
+		return true
+	case CheckQueueKindTransferProof:
+		return true
+	case CheckQueueKindUploadInfected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CheckResolutionOutcome.
+const (
+	CheckResolutionOutcomeApplied   CheckResolutionOutcome = "applied"
+	CheckResolutionOutcomeDismissed CheckResolutionOutcome = "dismissed"
+	CheckResolutionOutcomeMatched   CheckResolutionOutcome = "matched"
+)
+
+// Valid indicates whether the value is a known member of the CheckResolutionOutcome enum.
+func (e CheckResolutionOutcome) Valid() bool {
+	switch e {
+	case CheckResolutionOutcomeApplied:
+		return true
+	case CheckResolutionOutcomeDismissed:
+		return true
+	case CheckResolutionOutcomeMatched:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CheckTransferProofUploadStatus.
+const (
+	CheckTransferProofUploadStatusClean   CheckTransferProofUploadStatus = "clean"
+	CheckTransferProofUploadStatusPending CheckTransferProofUploadStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CheckTransferProofUploadStatus enum.
+func (e CheckTransferProofUploadStatus) Valid() bool {
+	switch e {
+	case CheckTransferProofUploadStatusClean:
+		return true
+	case CheckTransferProofUploadStatusPending:
 		return true
 	default:
 		return false
@@ -95,16 +161,16 @@ func (e FieldVisitStatus) Valid() bool {
 
 // Defines values for ImportAction.
 const (
-	Created ImportAction = "created"
-	Matched ImportAction = "matched"
+	ImportActionCreated ImportAction = "created"
+	ImportActionMatched ImportAction = "matched"
 )
 
 // Valid indicates whether the value is a known member of the ImportAction enum.
 func (e ImportAction) Valid() bool {
 	switch e {
-	case Created:
+	case ImportActionCreated:
 		return true
-	case Matched:
+	case ImportActionMatched:
 		return true
 	default:
 		return false
@@ -931,9 +997,12 @@ type CashDeposit struct {
 	// ExpectedAmount The total of the payments it covers, net of corrections when it was recorded.
 	//
 	// Example: 2000000
-	ExpectedAmount int64              `json:"expectedAmount"`
-	Id             openapi_types.UUID `json:"id"`
-	Note           *string            `json:"note,omitempty"`
+	ExpectedAmount int64 `json:"expectedAmount"`
+
+	// GapClosure When the admin closed the gap between the counted cash and the payments in Antrean cek (dismissCheckItem on deposit_gap, "Selisih ditutup"); absent otherwise.
+	GapClosure *CashDepositGapClosure `json:"gapClosure,omitempty"`
+	Id         openapi_types.UUID     `json:"id"`
+	Note       *string                `json:"note,omitempty"`
 
 	// PaymentCount Example: 2
 	PaymentCount int `json:"paymentCount"`
@@ -981,6 +1050,13 @@ type CashDepositConfirmationInput struct {
 	//
 	// Example: 1950000
 	ReceivedAmount int64 `json:"receivedAmount"`
+}
+
+// CashDepositGapClosure defines model for CashDepositGapClosure.
+type CashDepositGapClosure struct {
+	ClosedAt time.Time  `json:"closedAt"`
+	ClosedBy CheckStaff `json:"closedBy"`
+	Note     string     `json:"note"`
 }
 
 // CashDepositInput defines model for CashDepositInput.
@@ -1104,6 +1180,174 @@ type ChargeTypeInput struct {
 // ChargeTypeList defines model for ChargeTypeList.
 type ChargeTypeList struct {
 	ChargeTypes []ChargeType `json:"chargeTypes"`
+}
+
+// CheckDepositGap defines model for CheckDepositGap.
+type CheckDepositGap struct {
+	ConfirmedAt time.Time  `json:"confirmedAt"`
+	ConfirmedBy CheckStaff `json:"confirmedBy"`
+	Depositor   CheckStaff `json:"depositor"`
+
+	// ExpectedAmount The total of the payments it covers.
+	ExpectedAmount int64 `json:"expectedAmount"`
+
+	// Gap receivedAmount minus expectedAmount; below 0 is a shortfall.
+	Gap          int64 `json:"gap"`
+	PaymentCount int   `json:"paymentCount"`
+
+	// ReceivedAmount What the admin counted.
+	ReceivedAmount int64 `json:"receivedAmount"`
+}
+
+// CheckPhoneChanged defines model for CheckPhoneChanged.
+type CheckPhoneChanged struct {
+	// CurrentPhone Example: +6281234567890
+	CurrentPhone string `json:"currentPhone"`
+
+	// NewPhone Example: +6281298765432
+	NewPhone   string      `json:"newPhone"`
+	Note       *string     `json:"note,omitempty"`
+	RecordedBy CheckStaff  `json:"recordedBy"`
+	Tenant     CheckTenant `json:"tenant"`
+}
+
+// CheckQrisAmountMismatch defines model for CheckQrisAmountMismatch.
+type CheckQrisAmountMismatch struct {
+	AttemptId openapi_types.UUID `json:"attemptId"`
+
+	// QrAmount The amount of the QR.
+	QrAmount int64 `json:"qrAmount"`
+
+	// RecordedAmount What the payment was recorded at.
+	RecordedAmount *int64 `json:"recordedAmount,omitempty"`
+
+	// ReportedAmount What AutoGoPay reported, when known; absent when reconcile recorded the QR's amount first and only the server log has the report.
+	ReportedAmount *int64      `json:"reportedAmount,omitempty"`
+	Tenant         CheckTenant `json:"tenant"`
+
+	// TransactionId AutoGoPay's id of the QR.
+	TransactionId string `json:"transactionId"`
+}
+
+// CheckQueueCounts defines model for CheckQueueCounts.
+type CheckQueueCounts struct {
+	DepositGap         int `json:"deposit_gap"`
+	PhoneChanged       int `json:"phone_changed"`
+	QrisAmountMismatch int `json:"qris_amount_mismatch"`
+	TransferProof      int `json:"transfer_proof"`
+	UploadInfected     int `json:"upload_infected"`
+}
+
+// CheckQueueItem One waiting item; exactly the object named after its kind is present.
+type CheckQueueItem struct {
+	// CreatedAt When it arrived on the queue.
+	CreatedAt  time.Time        `json:"createdAt"`
+	DepositGap *CheckDepositGap `json:"depositGap,omitempty"`
+
+	// Id The source row; the action URLs take it.
+	Id                 openapi_types.UUID       `json:"id"`
+	Kind               CheckQueueKind           `json:"kind"`
+	PhoneChanged       *CheckPhoneChanged       `json:"phoneChanged,omitempty"`
+	QrisAmountMismatch *CheckQrisAmountMismatch `json:"qrisAmountMismatch,omitempty"`
+	TransferProof      *CheckTransferProof      `json:"transferProof,omitempty"`
+	UploadInfected     *CheckUploadInfected     `json:"uploadInfected,omitempty"`
+}
+
+// CheckQueueKind defines model for CheckQueueKind.
+type CheckQueueKind string
+
+// CheckQueuePage defines model for CheckQueuePage.
+type CheckQueuePage struct {
+	// Counts How many items of each kind wait, whatever kind was asked for.
+	Counts CheckQueueCounts `json:"counts"`
+	Items  []CheckQueueItem `json:"items"`
+
+	// Page The page returned, from 1.
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+
+	// Total Every row matching the filters that the member may see, on all pages.
+	Total int `json:"total"`
+
+	// Waiting How many items wait in all.
+	Waiting int `json:"waiting"`
+}
+
+// CheckResolution defines model for CheckResolution.
+type CheckResolution struct {
+	Id      openapi_types.UUID     `json:"id"`
+	ItemId  openapi_types.UUID     `json:"itemId"`
+	Kind    CheckQueueKind         `json:"kind"`
+	Note    *string                `json:"note,omitempty"`
+	Outcome CheckResolutionOutcome `json:"outcome"`
+
+	// PaymentId The transfer payment a matched proof became.
+	PaymentId  *openapi_types.UUID `json:"paymentId,omitempty"`
+	ResolvedAt time.Time           `json:"resolvedAt"`
+
+	// ResolvedBy The staff user who answered it.
+	ResolvedBy openapi_types.UUID `json:"resolvedBy"`
+}
+
+// CheckResolutionOutcome defines model for CheckResolution.Outcome.
+type CheckResolutionOutcome string
+
+// CheckStaff defines model for CheckStaff.
+type CheckStaff struct {
+	// Name Example: Dimas Karyawan
+	Name        string             `json:"name"`
+	StaffUserId openapi_types.UUID `json:"staffUserId"`
+}
+
+// CheckTenant defines model for CheckTenant.
+type CheckTenant struct {
+	Id openapi_types.UUID `json:"id"`
+
+	// Name Example: Rina Wulandari
+	Name string `json:"name"`
+
+	// Units The units of the tenant's leases, active ones first, then the newest.
+	Units []CheckTenantUnit `json:"units"`
+}
+
+// CheckTenantUnit defines model for CheckTenantUnit.
+type CheckTenantUnit struct {
+	// Active False for a lease that ended.
+	Active bool `json:"active"`
+
+	// PropertyName Example: Kos Melati
+	PropertyName string `json:"propertyName"`
+
+	// UnitLabel Example: Kamar 11
+	UnitLabel string `json:"unitLabel"`
+}
+
+// CheckTransferProof defines model for CheckTransferProof.
+type CheckTransferProof struct {
+	// InvoiceId The invoice of the link it was sent from.
+	InvoiceId openapi_types.UUID `json:"invoiceId"`
+	Tenant    CheckTenant        `json:"tenant"`
+
+	// UploadId The photo; read it with getUpload once clean.
+	UploadId openapi_types.UUID `json:"uploadId"`
+
+	// UploadStatus pending while the photo is being scanned ("sedang diperiksa"); it cannot be matched yet.
+	UploadStatus CheckTransferProofUploadStatus `json:"uploadStatus"`
+}
+
+// CheckTransferProofUploadStatus pending while the photo is being scanned ("sedang diperiksa"); it cannot be matched yet.
+type CheckTransferProofUploadStatus string
+
+// CheckUploadInfected defines model for CheckUploadInfected.
+type CheckUploadInfected struct {
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+	Purpose   UploadPurpose      `json:"purpose"`
+	ScannedAt *time.Time         `json:"scannedAt,omitempty"`
+	Tenant    *CheckTenant       `json:"tenant,omitempty"`
+	UploadId  openapi_types.UUID `json:"uploadId"`
+
+	// UploadedBy The member who uploaded it; absent for a tenant's proof.
+	UploadedBy *CheckStaff `json:"uploadedBy,omitempty"`
 }
 
 // Collector defines model for Collector.
@@ -1259,6 +1503,12 @@ type DashboardCorrection struct {
 	TenantId   openapi_types.UUID  `json:"tenantId"`
 	TenantName string              `json:"tenantName"`
 	Unit       *UnitRef            `json:"unit,omitempty"`
+}
+
+// DismissCheckItemRequest defines model for DismissCheckItemRequest.
+type DismissCheckItemRequest struct {
+	// Note Why it is taken off the queue.
+	Note string `json:"note"`
 }
 
 // Error defines model for Error.
@@ -1857,6 +2107,28 @@ type MakeTenantPromiseRequest struct {
 	PromisedDate *openapi_types.Date `json:"promisedDate,omitempty"`
 }
 
+// MatchTransferProofRequest defines model for MatchTransferProofRequest.
+type MatchTransferProofRequest struct {
+	// Amount The transfer, in whole rupiah.
+	Amount int64   `json:"amount"`
+	Note   *string `json:"note,omitempty"`
+
+	// ReceivedOn The day it arrived in the account; not in the future.
+	ReceivedOn openapi_types.Date `json:"receivedOn"`
+
+	// RequestId Made by the client once per form.
+	RequestId openapi_types.UUID `json:"requestId"`
+
+	// TenantId Whose payment it is; the proof's tenant when absent.
+	TenantId *openapi_types.UUID `json:"tenantId,omitempty"`
+}
+
+// MatchTransferProofResult defines model for MatchTransferProofResult.
+type MatchTransferProofResult struct {
+	Payment    PaymentResult   `json:"payment"`
+	Resolution CheckResolution `json:"resolution"`
+}
+
 // MeResponse defines model for MeResponse.
 type MeResponse struct {
 	Organizations []Organization `json:"organizations"`
@@ -2143,7 +2415,7 @@ type PaymentPage struct {
 	// PromiseDates The days a promise made now may name (specific_date); for an edit of the active promise, no later than 60 days from its first version. Null when the tenant owes nothing, or when the active promise has reached that bound (no edit is possible).
 	PromiseDates *PromiseDates `json:"promiseDates"`
 
-	// ProofsWaiting The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti transfer terkirim"). A proof whose photo the malware scan refused is not listed. Never a photo or a link to one.
+	// ProofsWaiting The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti transfer terkirim"). A proof whose photo the malware scan refused, or that the admin answered in Antrean cek (matched to a payment or dismissed), is not listed. Never a photo or a link to one.
 	ProofsWaiting []PaymentProof `json:"proofsWaiting"`
 
 	// QrisAvailable True when the organization has set up QRIS (an AutoGoPay account), so the page offers "Bayar QRIS". False: show bank transfer only, with no outage warning. It says nothing about whether AutoGoPay is up; createPaymentQris answers 503 qris_unavailable for that.
@@ -2906,6 +3178,9 @@ type VisitReason struct {
 // VisitReasonCode overdue: debt a week past its due date ("Telat 7 hari", with daysOverdue); broken_promises: promises broken since the last such visit ("Janji lewat 2×", with brokenPromises); undeliverable: WhatsApp cannot reach the tenant's number ("WA gagal terkirim"; from slice 5).
 type VisitReasonCode string
 
+// CheckItemId defines model for CheckItemId.
+type CheckItemId = openapi_types.UUID
+
 // DepositId defines model for DepositId.
 type DepositId = openapi_types.UUID
 
@@ -2963,6 +3238,16 @@ type ListCashDepositPaymentsParams struct {
 	// Page The page to return, from 1. A page past the last has no items.
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListCheckQueueParams defines parameters for ListCheckQueue.
+type ListCheckQueueParams struct {
+	// Page The page to return, from 1. A page past the last has no items.
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Kind Only items of this kind. Any other value is 400 invalid_input.
+	Kind *CheckQueueKind `form:"kind,omitempty" json:"kind,omitempty"`
 }
 
 // GetDashboardParams defines parameters for GetDashboard.
@@ -3166,6 +3451,12 @@ type AttachCashPaymentPhotoJSONRequestBody = AttachCashPaymentPhotoInput
 
 // CreateChargeTypeJSONRequestBody defines body for CreateChargeType for application/json ContentType.
 type CreateChargeTypeJSONRequestBody = ChargeTypeInput
+
+// MatchTransferProofJSONRequestBody defines body for MatchTransferProof for application/json ContentType.
+type MatchTransferProofJSONRequestBody = MatchTransferProofRequest
+
+// DismissCheckItemJSONRequestBody defines body for DismissCheckItem for application/json ContentType.
+type DismissCheckItemJSONRequestBody = DismissCheckItemRequest
 
 // CreateCorrectionJSONRequestBody defines body for CreateCorrection for application/json ContentType.
 type CreateCorrectionJSONRequestBody = CorrectionInput

@@ -19,6 +19,7 @@ tags:
   - name: field
   - name: payment-page
   - name: uploads
+  - name: check-queue
 
 paths:
   /auth/otp/request:
@@ -1637,6 +1638,146 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/check-queue:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [check-queue]
+      operationId: listCheckQueue
+      summary: Antrean cek, what the system cannot settle on its own (needs payment:check or cash:read)
+      description: >
+        The items still waiting, oldest first, of one kind or every kind: a tenant's transfer
+        proof (transfer_proof; its photo may still be being scanned, uploadStatus pending), a
+        confirmed deposit whose counted cash differs from its payments (deposit_gap), an upload
+        the malware scan found infected (upload_infected; an infected proof is listed here, not as
+        a proof), a QRIS payment AutoGoPay reported at another amount than its QR
+        (qris_amount_mismatch, decision 39.5) and a new number a karyawan brought back from a visit
+        (phone_changed). Each item has kind, id (its source row: the proof, the deposit, the
+        upload, the QRIS attempt, the visit outcome) and createdAt, plus the one object named after
+        its kind. counts and waiting cover every kind whatever kind asks for, so a badge can call
+        it with pageSize=1. Needs payment:check or cash:read for the whole organization (the admin
+        who checks payments, the Supervisor); 403 otherwise (audited). An answered item leaves the
+        list (matchTransferProof, applyPhoneChange, dismissCheckItem).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: kind
+          in: query
+          description: Only items of this kind. Any other value is 400 invalid_input.
+          schema: { $ref: "#/components/schemas/CheckQueueKind" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckQueuePage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/check-queue/transfer_proof/{itemId}/match:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/CheckItemId"
+    post:
+      tags: [check-queue]
+      operationId: matchTransferProof
+      summary: A tenant's transfer proof becomes a transfer payment ("Simpan pembayaran")
+      description: >
+        Records a transfer payment for the proof's tenant (or tenantId) as recordPayment does:
+        FIFO, oldest invoice first, the rest is credit, the tenant's promise kept when it is paid;
+        previewTenantPayment shows the same beforehand. The proof leaves the queue in the
+        payment's transaction. No receipt is sent (decision 46.5: cash only). Needs payment:record
+        with the amount on the tenant (as recordPayment) and payment:check on the proof, both
+        audited. The same requestId again answers the same payment and resolution with 200 and
+        records nothing. 409 upload_not_ready while the photo is still being scanned (the admin
+        has not seen it), 409 upload_refused when the scan refused it, 409 check_item_resolved when
+        the proof was already answered, 409 request_id_reused when the requestId recorded another
+        payment. 404 for a proof not in the organization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatchTransferProofRequest" }
+      responses:
+        "201":
+          description: The payment and the proof's resolution
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MatchTransferProofResult" }
+        "200":
+          description: A repeated requestId; nothing new was recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MatchTransferProofResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/check-queue/phone_changed/{itemId}/apply:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/CheckItemId"
+    post:
+      tags: [check-queue]
+      operationId: applyPhoneChange
+      summary: The new number a karyawan brought back becomes the tenant's ("Pakai nomor baru")
+      description: >
+        Sets the tenant's phone to the visit outcome's new number and takes the item off the
+        queue, together. Needs payment:check on the item (audited) and tenant:manage on the tenant,
+        as updateTenant. 409 phone_taken (field phone) when another tenant has the number, 409
+        check_item_resolved when the item was already answered. 404 for an item not in the
+        organization or a visit outcome that is not a new number.
+      responses:
+        "200":
+          description: The item's resolution
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckResolution" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/check-queue/{kind}/{itemId}/dismiss:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - name: kind
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/CheckQueueKind" }
+      - $ref: "#/components/parameters/CheckItemId"
+    post:
+      tags: [check-queue]
+      operationId: dismissCheckItem
+      summary: Takes an item off the queue with a note ("Bukan pembayaran sewa", "Tutup selisih", "Sudah ditangani")
+      description: >
+        For any kind: a proof that is not rent, a deposit gap closed (the deposit then shows
+        gapClosure), an infected file or an amount mismatch handled (fix the money with a
+        correction on the tenant's account first), a new number not used. Records no money. Needs
+        payment:check on the item (audited). 409 check_item_resolved when it was already answered;
+        404 for an unknown kind or an item not in the organization (or one that never was on the
+        queue, such as a deposit with no gap).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DismissCheckItemRequest" }
+      responses:
+        "200":
+          description: The item's resolution
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckResolution" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
   /orgs/{orgId}/cash-deposits:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -2757,6 +2898,12 @@ components:
       name: propertyId
       in: path
       required: true
+      schema: { type: string, format: uuid }
+    CheckItemId:
+      name: itemId
+      in: path
+      required: true
+      description: The item's source row (the proof, the deposit, the upload, the QRIS attempt or the visit outcome).
       schema: { type: string, format: uuid }
     LeaseId:
       name: leaseId
@@ -4125,6 +4272,190 @@ components:
           allOf:
             - $ref: "#/components/schemas/CashDepositConfirmation"
           description: Absent while pending.
+        gapClosure:
+          allOf:
+            - $ref: "#/components/schemas/CashDepositGapClosure"
+          description: >
+            When the admin closed the gap between the counted cash and the payments in Antrean cek
+            (dismissCheckItem on deposit_gap, "Selisih ditutup"); absent otherwise.
+
+    CheckQueueKind:
+      type: string
+      enum: [transfer_proof, deposit_gap, upload_infected, qris_amount_mismatch, phone_changed]
+
+    CheckQueueCounts:
+      type: object
+      required: [transfer_proof, deposit_gap, upload_infected, qris_amount_mismatch, phone_changed]
+      properties:
+        transfer_proof: { type: integer }
+        deposit_gap: { type: integer }
+        upload_infected: { type: integer }
+        qris_amount_mismatch: { type: integer }
+        phone_changed: { type: integer }
+
+    CheckQueuePage:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items, counts, waiting]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/CheckQueueItem" }
+            counts:
+              allOf:
+                - $ref: "#/components/schemas/CheckQueueCounts"
+              description: How many items of each kind wait, whatever kind was asked for.
+            waiting: { type: integer, description: How many items wait in all. }
+
+    CheckQueueItem:
+      type: object
+      required: [kind, id, createdAt]
+      description: One waiting item; exactly the object named after its kind is present.
+      properties:
+        kind: { $ref: "#/components/schemas/CheckQueueKind" }
+        id: { type: string, format: uuid, description: The source row; the action URLs take it. }
+        createdAt: { type: string, format: date-time, description: When it arrived on the queue. }
+        transferProof: { $ref: "#/components/schemas/CheckTransferProof" }
+        depositGap: { $ref: "#/components/schemas/CheckDepositGap" }
+        uploadInfected: { $ref: "#/components/schemas/CheckUploadInfected" }
+        qrisAmountMismatch: { $ref: "#/components/schemas/CheckQrisAmountMismatch" }
+        phoneChanged: { $ref: "#/components/schemas/CheckPhoneChanged" }
+
+    CheckTenant:
+      type: object
+      required: [id, name, units]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Rina Wulandari }
+        units:
+          type: array
+          description: The units of the tenant's leases, active ones first, then the newest.
+          items: { $ref: "#/components/schemas/CheckTenantUnit" }
+
+    CheckTenantUnit:
+      type: object
+      required: [unitLabel, propertyName, active]
+      properties:
+        unitLabel: { type: string, example: Kamar 11 }
+        propertyName: { type: string, example: Kos Melati }
+        active: { type: boolean, description: False for a lease that ended. }
+
+    CheckStaff:
+      type: object
+      required: [staffUserId, name]
+      properties:
+        staffUserId: { type: string, format: uuid }
+        name: { type: string, example: Dimas Karyawan }
+
+    CheckTransferProof:
+      type: object
+      required: [tenant, invoiceId, uploadId, uploadStatus]
+      properties:
+        tenant: { $ref: "#/components/schemas/CheckTenant" }
+        invoiceId: { type: string, format: uuid, description: The invoice of the link it was sent from. }
+        uploadId: { type: string, format: uuid, description: The photo; read it with getUpload once clean. }
+        uploadStatus:
+          type: string
+          enum: [pending, clean]
+          description: pending while the photo is being scanned ("sedang diperiksa"); it cannot be matched yet.
+
+    CheckDepositGap:
+      type: object
+      required: [depositor, expectedAmount, receivedAmount, gap, paymentCount, confirmedBy, confirmedAt]
+      properties:
+        depositor: { $ref: "#/components/schemas/CheckStaff" }
+        expectedAmount: { type: integer, format: int64, description: The total of the payments it covers. }
+        receivedAmount: { type: integer, format: int64, description: What the admin counted. }
+        gap: { type: integer, format: int64, description: "receivedAmount minus expectedAmount; below 0 is a shortfall." }
+        paymentCount: { type: integer }
+        confirmedBy: { $ref: "#/components/schemas/CheckStaff" }
+        confirmedAt: { type: string, format: date-time }
+
+    CheckUploadInfected:
+      type: object
+      required: [uploadId, purpose]
+      properties:
+        uploadId: { type: string, format: uuid }
+        purpose: { $ref: "#/components/schemas/UploadPurpose" }
+        tenant: { $ref: "#/components/schemas/CheckTenant" }
+        uploadedBy:
+          allOf:
+            - $ref: "#/components/schemas/CheckStaff"
+          description: The member who uploaded it; absent for a tenant's proof.
+        scannedAt: { type: string, format: date-time }
+
+    CheckQrisAmountMismatch:
+      type: object
+      required: [attemptId, tenant, transactionId, qrAmount]
+      properties:
+        attemptId: { type: string, format: uuid }
+        tenant: { $ref: "#/components/schemas/CheckTenant" }
+        transactionId: { type: string, description: AutoGoPay's id of the QR. }
+        qrAmount: { type: integer, format: int64, description: The amount of the QR. }
+        recordedAmount: { type: integer, format: int64, description: What the payment was recorded at. }
+        reportedAmount:
+          type: integer
+          format: int64
+          description: >
+            What AutoGoPay reported, when known; absent when reconcile recorded the QR's amount
+            first and only the server log has the report.
+
+    CheckPhoneChanged:
+      type: object
+      required: [tenant, currentPhone, newPhone, recordedBy]
+      properties:
+        tenant: { $ref: "#/components/schemas/CheckTenant" }
+        currentPhone: { type: string, example: "+6281234567890" }
+        newPhone: { type: string, example: "+6281298765432" }
+        recordedBy: { $ref: "#/components/schemas/CheckStaff" }
+        note: { type: string }
+
+    CheckResolution:
+      type: object
+      required: [id, kind, itemId, outcome, resolvedBy, resolvedAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/CheckQueueKind" }
+        itemId: { type: string, format: uuid }
+        outcome: { type: string, enum: [matched, applied, dismissed] }
+        paymentId: { type: string, format: uuid, description: The transfer payment a matched proof became. }
+        note: { type: string }
+        resolvedBy: { type: string, format: uuid, description: The staff user who answered it. }
+        resolvedAt: { type: string, format: date-time }
+
+    MatchTransferProofRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, amount, receivedOn]
+      properties:
+        requestId: { type: string, format: uuid, description: Made by the client once per form. }
+        tenantId: { type: string, format: uuid, description: Whose payment it is; the proof's tenant when absent. }
+        amount: { type: integer, format: int64, minimum: 1, description: "The transfer, in whole rupiah." }
+        receivedOn: { type: string, format: date, description: The day it arrived in the account; not in the future. }
+        note: { type: string, maxLength: 500 }
+
+    MatchTransferProofResult:
+      type: object
+      required: [resolution, payment]
+      properties:
+        resolution: { $ref: "#/components/schemas/CheckResolution" }
+        payment: { $ref: "#/components/schemas/PaymentResult" }
+
+    DismissCheckItemRequest:
+      type: object
+      additionalProperties: false
+      required: [note]
+      properties:
+        note: { type: string, minLength: 1, maxLength: 500, description: Why it is taken off the queue. }
+
+    CashDepositGapClosure:
+      type: object
+      required: [closedAt, closedBy, note]
+      properties:
+        closedAt: { type: string, format: date-time }
+        closedBy: { $ref: "#/components/schemas/CheckStaff" }
+        note: { type: string }
 
     CashDepositList:
       allOf:
@@ -4683,8 +5014,9 @@ components:
           description: >
             The tenant's newest transfer proofs (sendPaymentProof) still waiting for the admin to
             check them, sent from any of the tenant's links, newest first, at most 5 ("Bukti
-            transfer terkirim"). A proof whose photo the malware scan refused is not listed. Never
-            a photo or a link to one.
+            transfer terkirim"). A proof whose photo the malware scan refused, or that the admin
+            answered in Antrean cek (matched to a payment or dismissed), is not listed. Never a
+            photo or a link to one.
           items: { $ref: "#/components/schemas/PaymentProof" }
         promise:
           description: >

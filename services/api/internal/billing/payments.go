@@ -59,6 +59,27 @@ func (s *Service) RecordPayment(ctx context.Context, p authz.Principal, in Payme
 	})
 }
 
+// RecordPaymentWith is RecordPayment with inTx run in the payment's transaction, after the
+// payment is inserted and allocated (created) or found under its requestId (not created, and the
+// transaction is then rolled back), so what a caller records with the payment commits only with
+// it: Antrean cek's resolution of the transfer proof the payment matched (S6-6). tx is scoped to
+// the principal's organization; an error from inTx rolls the payment back.
+func (s *Service) RecordPaymentWith(ctx context.Context, p authz.Principal, in PaymentInput,
+	inTx func(ctx context.Context, tx pgx.Tx, paymentID uuid.UUID, created bool) error,
+) (PaymentResult, error) {
+	in, err := ValidPayment(in, tenant.Today(s.clock))
+	if err != nil {
+		return PaymentResult{}, err
+	}
+	return s.recordManual(ctx, p, in, manualPayment{
+		action: authz.ActionPaymentRecord, tenantField: "tenantId", receivedAt: receivedAt(in.ReceivedOn),
+		same: func(row dbgen.Payment) bool { return samePayment(row, in) },
+		inTx: func(ctx context.Context, tx pgx.Tx, row dbgen.Payment, created bool) error {
+			return inTx(ctx, tx, row.ID, created)
+		},
+	})
+}
+
 // manualPayment is what differs between the ways a member records a payment by hand: the admin's
 // recordPayment and the karyawan's cash collection.
 type manualPayment struct {
@@ -75,7 +96,7 @@ type manualPayment struct {
 	same func(dbgen.Payment) bool
 	// inTx, when set, runs in the payment's transaction after it is inserted and allocated
 	// (created) or found under its requestId (not created). A repeat's transaction is rolled back.
-	inTx func(ctx context.Context, q *dbgen.Queries, row dbgen.Payment, created bool) error
+	inTx func(ctx context.Context, tx pgx.Tx, row dbgen.Payment, created bool) error
 }
 
 // recordManual records a payment from a tenant by hand and allocates it FIFO over all the
@@ -117,7 +138,7 @@ func (s *Service) recordManual(ctx context.Context, p authz.Principal, in Paymen
 			}
 		}
 		if how.inTx != nil {
-			if err := how.inTx(ctx, q, row, created); err != nil {
+			if err := how.inTx(ctx, tx, row, created); err != nil {
 				return err
 			}
 		}

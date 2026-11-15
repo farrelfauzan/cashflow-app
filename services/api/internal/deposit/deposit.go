@@ -108,6 +108,17 @@ type Deposit struct {
 	RecordedAt     time.Time
 	Status         string
 	Confirmation   *Confirmation // nil while pending
+	// GapClosure is how the admin closed the gap between the counted cash and the payments in
+	// Antrean cek (S6-6); nil otherwise.
+	GapClosure *GapClosure
+}
+
+// GapClosure is a deposit gap the admin closed with a note ("Selisih ditutup").
+type GapClosure struct {
+	ClosedAt     time.Time
+	ClosedBy     uuid.UUID
+	ClosedByName string
+	Note         string
 }
 
 // Query filters List. Empty fields filter nothing.

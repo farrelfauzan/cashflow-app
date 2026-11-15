@@ -510,6 +510,11 @@ replay Bot API answers.
   once (`cash_deposit` and `cash_deposit_payment`, each payment once); an admin records the amount
   counted (`cash_deposit_confirmation`, never by the depositor), and a difference from the
   payments' total is the deposit's gap. All three tables are append-only.
+- `internal/checkqueue`: Antrean cek (S6-6). The waiting items are read from the
+  `check_queue_item` view over their sources (transfer proofs, deposit gaps, infected uploads,
+  QRIS amount mismatches, new numbers from visits); an answer (`check_resolution`, append-only,
+  one per item) matches a proof to a transfer payment in the payment's transaction, applies a new
+  number to the tenant, or dismisses an item with a note.
 - `internal/visit`: the karyawan's visit list and "Catat hasil kunjungan" (S6-4). An outcome
   (`visit_outcome`, append-only) points at the field cash or field promise already recorded, or
   carries a new number for the admin, and resolves the open `visit_task` rows it answers

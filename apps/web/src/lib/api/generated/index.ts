@@ -1,4 +1,5 @@
 export * from './auth/auth';
+export * from './check-queue/check-queue';
 export * from './field/field';
 export * from './members/members';
 export * from './money/money';

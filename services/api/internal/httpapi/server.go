@@ -19,6 +19,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/auth"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/checkqueue"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/deposit"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/member"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/messaging/telegram"
@@ -74,6 +75,8 @@ type Deps struct {
 	Deposits *deposit.Service
 	// Visits lists the karyawan's visits and records their outcomes (S6-4).
 	Visits *visit.Service
+	// CheckQueue reads and answers Antrean cek (S6-6).
+	CheckQueue *checkqueue.Service
 	// Webhooks handles AutoGoPay's callbacks.
 	Webhooks *qris.Webhook
 	// TelegramCodes makes the payment page's one-time Telegram deep links (decision 42, demo
@@ -202,6 +205,10 @@ func New(d Deps) *Server {
 				r.Get("/cash-deposits/{depositID}", s.getCashDeposit)
 				r.Get("/cash-deposits/{depositID}/payments", s.listCashDepositPayments)
 				r.Post("/cash-deposits/{depositID}/confirmation", s.confirmCashDeposit)
+				r.Get("/check-queue", s.listCheckQueue)
+				r.Post("/check-queue/transfer_proof/{itemID}/match", s.matchTransferProof)
+				r.Post("/check-queue/phone_changed/{itemID}/apply", s.applyPhoneChange)
+				r.Post("/check-queue/{kind}/{itemID}/dismiss", s.dismissCheckItem)
 				r.Post("/field/tenants/{tenantID}/promises", s.makeFieldPromise)
 				r.Get("/field/visits", s.listFieldVisits)
 				r.Post("/field/tenants/{tenantID}/visit-outcomes", s.recordVisitOutcome)

@@ -73,6 +73,29 @@ type ChargeType struct {
 	UpdatedAt      time.Time
 }
 
+type CheckQueueItem struct {
+	Kind           string
+	OrganizationID uuid.UUID
+	ItemID         uuid.UUID
+	CreatedAt      time.Time
+}
+
+type CheckResolution struct {
+	ID              uuid.UUID
+	OrganizationID  uuid.UUID
+	Kind            string
+	TransferProofID uuid.NullUUID
+	CashDepositID   uuid.NullUUID
+	UploadID        uuid.NullUUID
+	QrisAttemptID   uuid.NullUUID
+	VisitOutcomeID  uuid.NullUUID
+	Outcome         string
+	PaymentID       uuid.NullUUID
+	Note            *string
+	StaffUserID     uuid.UUID
+	CreatedAt       time.Time
+}
+
 type Correction struct {
 	ID                   uuid.UUID
 	Seq                  int64
