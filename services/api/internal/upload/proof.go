@@ -75,17 +75,20 @@ type Proof struct {
 // Send stores a transfer proof photo the tenant behind token sent, and queues its scan. The token
 // grants it (payment:proof, CLAUDE.md "Not RBAC principals"); there is no principal to authorize.
 // A malformed, unknown or revoked token is paylink.ErrLinkNotFound and an expired one
-// paylink.ErrLinkExpired, as for the page; both are checked before the file is read, so only the
-// holder of a working link can make us read or store anything.
+// paylink.ErrLinkExpired, as for the page; both are checked before open is called, so only the
+// holder of a working link can make us read any of the request body or store anything. open
+// returns the file (for HTTP, the multipart part: reading up to it reads the body); its error is
+// returned as it is.
 //
 // The file is read into memory, at most MaxSize bytes (ErrTooLarge above it, an InputError when
 // empty), and must be a JPEG, PNG or WebP by its content (ErrTypeNotAllowed); the scan checks the
 // stored copy again, as for staff photos. At most InFlight proofs are held at once; a request
-// waits for a free slot until its context ends. The file is stored at its incoming key, then the
+// waits for a free slot until its context ends, and a slow sender holds its slot until the
+// request's deadline. The file is stored at its incoming key, then the
 // upload (pending, already completed) and the proof are recorded together, and the scan queued
 // after the commit (the reconcile covers a lost enqueue). Should recording fail after the file
 // was stored, the file stays in incoming/ and is never read, as for an abandoned staff upload.
-func (s *Proofs) Send(ctx context.Context, token string, file io.Reader) (Proof, error) {
+func (s *Proofs) Send(ctx context.Context, token string, open func() (io.Reader, error)) (Proof, error) {
 	org, linkID, err := s.links.Resolve(ctx, token)
 	if err != nil {
 		return Proof{}, err
@@ -104,6 +107,10 @@ func (s *Proofs) Send(ctx context.Context, token string, file io.Reader) (Proof,
 	}
 	defer func() { <-s.slots }()
 
+	file, err := open()
+	if err != nil {
+		return Proof{}, err
+	}
 	body, contentType, err := readProof(file)
 	if err != nil {
 		return Proof{}, err

@@ -167,6 +167,42 @@ func TestPaymentProofsOverHTTP(t *testing.T) {
 		}
 	})
 
+	t.Run("a link that does not work is refused without reading the body", func(t *testing.T) {
+		// A sender that trickles a multipart preamble that never ends: the answer must not wait
+		// for any of it.
+		pr, pw := io.Pipe()
+		t.Cleanup(func() { _ = pr.Close() })
+		go func() {
+			defer func() { _ = pw.Close() }()
+			if _, err := pw.Write([]byte("--xyz\r\n")); err != nil {
+				return
+			}
+			chunk := bytes.Repeat([]byte("a"), 1024)
+			for {
+				if _, err := pw.Write(chunk); err != nil {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+		reqCtx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, srv.URL+"/api/t/"+strings.Repeat("B", 43)+"/proof", pr)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=xyz")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("X-Forwarded-For", caller.freshIP())
+		start := time.Now()
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		data, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		require.Less(t, time.Since(start), 2*time.Second, "answered without reading the body")
+		require.True(t, resp.Close, "the connection is closed")
+		requireAPIError(t, result{StatusCode: resp.StatusCode, Header: resp.Header}, data, http.StatusNotFound, "payment_link_not_found", "")
+	})
+
 	t.Run("an eleventh proof on one link within the hour is 429 rate_limited", func(t *testing.T) {
 		r := a.rentWithLink(t, "Sari Puspita")
 		small := uploadtest.Image("image/webp", 1000)

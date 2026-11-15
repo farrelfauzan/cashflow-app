@@ -81,7 +81,7 @@ func (w *proofWorld) mint(t *testing.T, invoiceID uuid.UUID) (uuid.UUID, string)
 // send sends body as a transfer proof through token and requires it to succeed.
 func (w *proofWorld) send(t *testing.T, token string, body []byte) upload.Proof {
 	t.Helper()
-	proof, err := w.proofs.Send(context.Background(), token, bytes.NewReader(body))
+	proof, err := w.proofs.Send(context.Background(), token, opener(bytes.NewReader(body)))
 	require.NoError(t, err)
 	return proof
 }
@@ -316,7 +316,7 @@ func TestProofRefusals(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				before := w.counts(t)
 				file := &untouchedReader{}
-				_, err := w.proofs.Send(ctx, tc.token, file)
+				_, err := w.proofs.Send(ctx, tc.token, opener(file))
 				require.ErrorIs(t, err, paylink.ErrLinkNotFound)
 				require.False(t, file.wasRead(), "the file was read")
 				require.Equal(t, before, w.counts(t), "nothing stored or recorded")
@@ -340,7 +340,7 @@ func TestProofRefusals(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				before := w.counts(t)
-				_, err := w.proofs.Send(ctx, rinaToken, bytes.NewReader(tc.body))
+				_, err := w.proofs.Send(ctx, rinaToken, opener(bytes.NewReader(tc.body)))
 				if tc.input {
 					var input *upload.InputError
 					require.ErrorAs(t, err, &input)
@@ -368,7 +368,7 @@ func TestProofRefusals(t *testing.T) {
 	t.Run("a storage failure records nothing", func(t *testing.T) {
 		before := w.counts(t)
 		w.storage.Err = uploadtest.ErrDown
-		_, err := w.proofs.Send(ctx, rinaToken, bytes.NewReader(uploadtest.Image("image/jpeg", 1000)))
+		_, err := w.proofs.Send(ctx, rinaToken, opener(bytes.NewReader(uploadtest.Image("image/jpeg", 1000))))
 		w.storage.Err = nil
 		require.ErrorIs(t, err, uploadtest.ErrDown)
 		after := w.counts(t)
@@ -392,7 +392,7 @@ func TestProofRefusals(t *testing.T) {
 
 		before := w.counts(t)
 		file := &untouchedReader{}
-		_, err = w.proofs.Send(ctx, token, file)
+		_, err = w.proofs.Send(ctx, token, opener(file))
 		require.ErrorIs(t, err, paylink.ErrLinkExpired)
 		require.False(t, file.wasRead())
 		require.Equal(t, before, w.counts(t))
@@ -416,7 +416,7 @@ func TestProofSlots(t *testing.T) {
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(gate.release) }) }
 	go func() {
-		p, err := proofs.Send(ctx, token, gate)
+		p, err := proofs.Send(ctx, token, opener(gate))
 		done <- sent{p, err}
 	}()
 	// Whatever happens below, let the first Send finish so no goroutine outlives the test.
@@ -434,7 +434,7 @@ func TestProofSlots(t *testing.T) {
 	short, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	second := &untouchedReader{}
-	_, err := proofs.Send(short, token, second)
+	_, err := proofs.Send(short, token, opener(second))
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.False(t, second.wasRead(), "it waited for a slot without reading")
 	require.Equal(t, before, w.counts(t), "the second stored nothing")
@@ -453,7 +453,7 @@ func TestProofSlots(t *testing.T) {
 	require.Equal(t, body, stored)
 
 	// The slot is free again.
-	_, err = proofs.Send(ctx, token, bytes.NewReader(body))
+	_, err = proofs.Send(ctx, token, opener(bytes.NewReader(body)))
 	require.NoError(t, err)
 }
 
@@ -709,4 +709,9 @@ func TestProofSchema(t *testing.T) {
 			})
 		}
 	})
+}
+
+// opener hands Send a file that is already open.
+func opener(r io.Reader) func() (io.Reader, error) {
+	return func() (io.Reader, error) { return r, nil }
 }

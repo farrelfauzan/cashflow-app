@@ -3,6 +3,8 @@ package httpapi
 import (
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"time"
 
@@ -25,12 +27,18 @@ const (
 // proofFormMessage answers a body that is not multipart/form-data with a file part first.
 const proofFormMessage = "Kirim foto bukti transfer sebagai file."
 
+// errProofForm is a multipart body whose first part is missing or not named file.
+var errProofForm = errors.New("httpapi: the proof's first part is not file")
+
 // sendPaymentProof is "Kirim bukti transfer" on the payment page (S6-5). Public like
 // getPaymentPage, with the same limits counted before the token is looked up, and its own per-link
 // limit; the token grants it (payment:proof), so there is no principal to authorize. It is the one
 // route with a body above maxBodyBytes and more time than requestTimeout (limitBody,
 // serverHandler). The token is never logged.
 func (s *Server) sendPaymentProof(w http.ResponseWriter, r *http.Request) {
+	// Every answer closes the connection: the server then writes it at once instead of first
+	// reading up to 256 KB of a body it was refused with, at whatever pace the sender trickles it.
+	w.Header().Set("Connection", "close")
 	token := chi.URLParam(r, "token")
 	if !s.allowPaymentPage(w, r, token) {
 		return
@@ -50,27 +58,36 @@ func (s *Server) sendPaymentProof(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, proofBodyBytes)
+	// Reading the Content-Type header reads nothing of the body.
 	mr, err := r.MultipartReader()
 	if err != nil {
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", proofFormMessage, "file")
 		return
 	}
-	part, err := mr.NextPart()
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			s.failProof(w, r, upload.ErrTooLarge)
-			return
+	// The first part is read only once Send has opened the link: a request with a link that does
+	// not work never has its body read.
+	var part *multipart.Part
+	defer func() {
+		if part != nil {
+			_ = part.Close()
 		}
-		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", proofFormMessage, "file")
-		return
+	}()
+	open := func() (io.Reader, error) {
+		p, err := mr.NextPart()
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				return nil, upload.ErrTooLarge
+			}
+			return nil, errProofForm
+		}
+		part = p
+		if p.FormName() != "file" {
+			return nil, errProofForm
+		}
+		return p, nil
 	}
-	defer func() { _ = part.Close() }()
-	if part.FormName() != "file" {
-		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", proofFormMessage, "file")
-		return
-	}
-	proof, err := s.Proofs.Send(r.Context(), token, part)
+	proof, err := s.Proofs.Send(r.Context(), token, open)
 	if err != nil {
 		s.failProof(w, r, err)
 		return
@@ -82,6 +99,8 @@ func (s *Server) sendPaymentProof(w http.ResponseWriter, r *http.Request) {
 func (s *Server) failProof(w http.ResponseWriter, r *http.Request, err error) {
 	var input *upload.InputError
 	switch {
+	case errors.Is(err, errProofForm):
+		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", proofFormMessage, "file")
 	case errors.As(err, &input):
 		s.writeErrorField(w, http.StatusBadRequest, "invalid_input", input.Message, "file")
 	case errors.Is(err, upload.ErrTypeNotAllowed):
