@@ -74,21 +74,18 @@ func TestFieldAppChecksActiveLeasesOnly(t *testing.T) {
 
 	var sariCash uuid.UUID
 	t.Run("the new collector records cash, its photo and a promise", func(t *testing.T) {
+		up := ph.receipt(t, sari, budi, cleanPhoto)
+		_, err := ph.uploads.Get(ctx, sari, up)
+		require.NoError(t, err)
 		allowed := w.audited(t, authz.ActionCashRecord, "allow")
-		res, err := w.billing.RecordCashPayment(ctx, sari, cashIn(budi, 500_000))
+		res, err := w.billing.RecordCashPayment(ctx, sari,
+			billing.CashInput{RequestID: uuid.New(), TenantID: budi.tenantID, Amount: 500_000, PhotoUploadID: up})
 		require.NoError(t, err)
 		require.True(t, res.Created)
 		sariCash = res.Payment.ID
 		require.EqualValues(t, 500_000, res.Paid[0].Amount, "FIFO still pays the room he left first")
 		require.Equal(t, allowed+1, w.audited(t, authz.ActionCashRecord, "allow"))
-
-		up := ph.receipt(t, sari, budi, cleanPhoto)
-		_, err = ph.uploads.Get(ctx, sari, up)
-		require.NoError(t, err)
-		photo, changed, err := w.billing.AttachReceiptPhoto(ctx, sari, sariCash, up)
-		require.NoError(t, err)
-		require.True(t, changed)
-		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusPending}, photo)
+		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusPending}, res.Photo)
 
 		p, err := promises.MakeFromField(ctx, sari, budi.tenantID, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: ptrTo(day(2026, 11, 20))})
 		require.NoError(t, err)
@@ -105,7 +102,7 @@ func TestFieldAppChecksActiveLeasesOnly(t *testing.T) {
 			do     func() error
 		}{
 			{name: "record cash", action: authz.ActionCashRecord, do: func() error {
-				_, err := w.billing.RecordCashPayment(ctx, andi, cashIn(budi, 100_000))
+				_, err := w.billing.RecordCashPayment(ctx, andi, w.cashIn(t, andi, budi, 100_000))
 				return err
 			}},
 			{name: "start a receipt photo upload", action: authz.ActionCashRecord, do: func() error {
@@ -146,7 +143,7 @@ func TestFieldAppChecksActiveLeasesOnly(t *testing.T) {
 
 	t.Run("a karyawan whose only lease with the tenant ended cannot record cash", func(t *testing.T) {
 		for _, p := range []authz.Principal{andi, sari, w.karyawan} {
-			_, err := w.billing.RecordCashPayment(ctx, p, cashIn(wati, 50_000))
+			_, err := w.billing.RecordCashPayment(ctx, p, w.cashIn(t, p, wati, 50_000))
 			require.ErrorIs(t, err, authz.ErrForbidden, "a tenant with no active lease needs the organization-wide grant")
 		}
 	})
@@ -155,7 +152,7 @@ func TestFieldAppChecksActiveLeasesOnly(t *testing.T) {
 		require.NotContains(t, fieldNames(t, andi), "Indra Gunawan")
 		require.NotContains(t, fieldNames(t, sari), "Indra Gunawan")
 		for _, p := range []authz.Principal{andi, sari} {
-			_, err := w.billing.RecordCashPayment(ctx, p, cashIn(indra, 50_000))
+			_, err := w.billing.RecordCashPayment(ctx, p, w.cashIn(t, p, indra, 50_000))
 			require.ErrorIs(t, err, authz.ErrForbidden)
 		}
 	})

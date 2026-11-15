@@ -96,7 +96,7 @@ func TestVisitsOverHTTP(t *testing.T) {
 
 	t.Run("recordVisitOutcome answers 201, then 200 for the same request", func(t *testing.T) {
 		resp, body := karyawan.do(http.MethodPost, orgA+"/tenants/"+wati.String()+"/cash-payments",
-			apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 700_000})
+			apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 700_000, PhotoUploadId: env.CashPhoto(t, a.o.ID, a.o.Karyawan.UserID, wati)})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		paymentID := decode[apigen.CashPaymentResult](t, body).Payment.Id
 
@@ -106,7 +106,7 @@ func TestVisitsOverHTTP(t *testing.T) {
 		require.Len(t, unlinked, 1)
 		require.Equal(t, paymentID, unlinked[0].PaymentId)
 		require.EqualValues(t, 700_000, unlinked[0].Amount)
-		require.Equal(t, apigen.PhotoMissing, unlinked[0].Photo.Status)
+		require.Equal(t, apigen.PhotoPending, unlinked[0].Photo.Status, "the photo recorded with the cash")
 
 		in := apigen.VisitOutcomeInput{RequestId: uuid.New(), Outcome: apigen.VisitOutcomeKindPaid, PaymentId: &paymentID, Note: ptrTo("Lunas")}
 		resp, body = karyawan.do(http.MethodPost, outcomePath(wati), in)

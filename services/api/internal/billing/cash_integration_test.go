@@ -4,6 +4,7 @@ package billing_test
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 	"sync"
@@ -74,9 +75,14 @@ func (w fieldWorld) collected(t *testing.T, name string, start time.Time, collec
 	return meterWorld{world: w.world}.rentCollected(t, w.kos, name, start, collector)
 }
 
-// cashIn is cash of amount from r with a fresh requestId.
-func cashIn(r rental, amount int64) billing.CashInput {
-	return billing.CashInput{RequestID: uuid.New(), TenantID: r.tenantID, Amount: amount}
+// cashIn is cash of amount from r recorded by p, with a fresh requestId and a fresh photo by p
+// (decision 50).
+func (w *world) cashIn(t *testing.T, p authz.Principal, r rental, amount int64) billing.CashInput {
+	t.Helper()
+	return billing.CashInput{
+		RequestID: uuid.New(), TenantID: r.tenantID, Amount: amount,
+		PhotoUploadID: w.env.CashPhoto(t, w.org.ID, p.UserID, r.tenantID),
+	}
 }
 
 // receiptRows are the organization's receipts by payment.
@@ -189,13 +195,31 @@ func (ph photos) insertedReceipt(t *testing.T, uploader, tenantID uuid.UUID) uui
 	return id
 }
 
-// paid is a fresh cash payment from r recorded by the world's karyawan.
+// paid is a cash payment of Rp10.000 from r recorded by the world's karyawan before photos were
+// required (decision 50), so with no photo ("foto belum ada"): its rows written as
+// RecordCashPayment wrote them then, the payment allocated and its receipt pending.
 func (w fieldWorld) paid(t *testing.T, r rental) uuid.UUID {
 	t.Helper()
-	res, err := w.billing.RecordCashPayment(context.Background(), w.karyawan, cashIn(r, 10_000))
-	require.NoError(t, err)
-	require.Equal(t, billing.ReceiptPhoto{Status: billing.PhotoMissing}, res.Photo, "foto belum ada")
-	return res.Payment.ID
+	id, ref := uuid.New(), uuid.NewString()
+	w.mustTx(t, func(ctx context.Context, tx pgx.Tx, q *dbgen.Queries) error {
+		if err := billing.LockTenant(ctx, q, w.org.ID, r.tenantID); err != nil {
+			return err
+		}
+		if _, err := q.InsertPaymentIfNew(ctx, dbgen.InsertPaymentIfNewParams{
+			ID: id, OrganizationID: w.org.ID, TenantID: r.tenantID, Amount: 10_000, Method: billing.MethodCash,
+			ReceivedAt: w.env.Clock.Now(), Source: billing.SourceManual, SourceRef: &ref,
+			RecordedByStaffUserID: uuid.NullUUID{UUID: w.karyawan.UserID, Valid: true},
+		}); err != nil {
+			return err
+		}
+		if _, err := billing.Allocate(ctx, tx, w.org.ID, r.tenantID); err != nil {
+			return err
+		}
+		return q.InsertPaymentReceipt(ctx, dbgen.InsertPaymentReceiptParams{
+			PaymentID: id, OrganizationID: w.org.ID, TenantID: r.tenantID, CreatedAt: w.env.Clock.Now(),
+		})
+	})
+	return id
 }
 
 func TestAttachReceiptPhoto(t *testing.T) {
@@ -420,25 +444,32 @@ func TestAttachReceiptPhoto(t *testing.T) {
 	})
 
 	t.Run("a repeated cash payment answers its photo now", func(t *testing.T) {
-		in := cashIn(wati, 15_000)
+		up := ph.receipt(t, w.karyawan, wati, cleanPhoto)
+		in := billing.CashInput{RequestID: uuid.New(), TenantID: wati.tenantID, Amount: 15_000, PhotoUploadID: up}
 		res, err := w.billing.RecordCashPayment(ctx, w.karyawan, in)
 		require.NoError(t, err)
-		require.Equal(t, billing.ReceiptPhoto{Status: billing.PhotoMissing}, res.Photo)
+		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusPending}, res.Photo)
+		ph.scan(t, up, upload.StatusClean)
 		again, err := w.billing.RecordCashPayment(ctx, w.karyawan, in)
 		require.NoError(t, err)
 		require.False(t, again.Created)
-		require.Equal(t, billing.ReceiptPhoto{Status: billing.PhotoMissing}, again.Photo)
-
-		up := ph.receipt(t, w.karyawan, wati, cleanPhoto)
-		_, _, err = attach(w.karyawan, res.Payment.ID, up)
-		require.NoError(t, err)
-		again, err = w.billing.RecordCashPayment(ctx, w.karyawan, in)
-		require.NoError(t, err)
-		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusPending}, again.Photo)
-		ph.scan(t, up, upload.StatusClean)
-		again, err = w.billing.RecordCashPayment(ctx, w.karyawan, in)
-		require.NoError(t, err)
 		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusClean}, again.Photo)
+	})
+
+	t.Run("a payment recorded with its photo takes no other until the scan refuses it", func(t *testing.T) {
+		up := ph.receipt(t, w.karyawan, wati, infectedPhoto)
+		res, err := w.billing.RecordCashPayment(ctx, w.karyawan,
+			billing.CashInput{RequestID: uuid.New(), TenantID: wati.tenantID, Amount: 15_000, PhotoUploadID: up})
+		require.NoError(t, err)
+		_, _, err = attach(w.karyawan, res.Payment.ID, ph.receipt(t, w.karyawan, wati, cleanPhoto))
+		require.ErrorIs(t, err, billing.ErrReceiptPhotoAttached, "pending: the scan decides first")
+
+		ph.scan(t, up, upload.StatusInfected)
+		retake := ph.receipt(t, w.karyawan, wati, cleanPhoto)
+		photo, changed, err := attach(w.karyawan, res.Payment.ID, retake)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, billing.ReceiptPhoto{UploadID: retake, Status: upload.StatusPending}, photo)
 	})
 
 	t.Run("the field list carries each cash payment's photo", func(t *testing.T) {
@@ -483,7 +514,7 @@ func TestRecordCashPayment(t *testing.T) {
 		denied := w.audited(t, authz.ActionCashRecord, "deny")
 		payments := w.count(t, "payment")
 
-		res, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(own, 300_000))
+		res, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, own, 300_000))
 		require.NoError(t, err)
 		require.True(t, res.Created)
 		require.Equal(t, billing.ReceiptPending, res.ReceiptStatus)
@@ -507,7 +538,7 @@ func TestRecordCashPayment(t *testing.T) {
 			"the Supervisor":            {supervisor, own},
 			"an admin (recordPayment)":  {w.admin, own},
 		} {
-			_, err := w.billing.RecordCashPayment(ctx, c.p, cashIn(c.r, 100_000))
+			_, err := w.billing.RecordCashPayment(ctx, c.p, w.cashIn(t, c.p, c.r, 100_000))
 			require.ErrorIs(t, err, authz.ErrForbidden, name)
 		}
 		require.Equal(t, denied+5, w.audited(t, authz.ActionCashRecord, "deny"))
@@ -526,7 +557,7 @@ func TestRecordCashPayment(t *testing.T) {
 
 	t.Run("the receipt is recorded with the payment and enqueued once it commits", func(t *testing.T) {
 		before := len(w.queue.enqueued())
-		res, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(own, 50_000))
+		res, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, own, 50_000))
 		require.NoError(t, err)
 		rows := w.receiptRows(t)
 		row, ok := rows[res.Payment.ID]
@@ -554,7 +585,7 @@ func TestRecordCashPayment(t *testing.T) {
 	})
 
 	t.Run("the same requestId records once and answers the receipt's status now", func(t *testing.T) {
-		in := cashIn(own, 20_000)
+		in := w.cashIn(t, w.karyawan, own, 20_000)
 		first, err := w.billing.RecordCashPayment(ctx, w.karyawan, in)
 		require.NoError(t, err)
 		require.True(t, first.Created)
@@ -585,23 +616,30 @@ func TestRecordCashPayment(t *testing.T) {
 		_, err = w.billing.RecordCashPayment(ctx, w.karyawan, changed)
 		require.ErrorIs(t, err, billing.ErrRequestIDReused)
 
+		otherPhoto := in
+		otherPhoto.PhotoUploadID = env.CashPhoto(t, w.org.ID, w.karyawan.UserID, own.tenantID)
+		_, err = w.billing.RecordCashPayment(ctx, w.karyawan, otherPhoto)
+		require.ErrorIs(t, err, billing.ErrRequestIDReused, "the same cash comes with the same photo")
+
 		viaAdmin := billing.PaymentInput{RequestID: uuid.New(), TenantID: own.tenantID, Amount: 5_000, Method: billing.MethodCash, ReceivedOn: day(2026, 11, 3)}
 		w.record(t, viaAdmin)
-		_, err = w.billing.RecordCashPayment(ctx, w.admin, billing.CashInput{RequestID: viaAdmin.RequestID, TenantID: own.tenantID, Amount: 5_000})
+		_, err = w.billing.RecordCashPayment(ctx, w.admin, billing.CashInput{RequestID: viaAdmin.RequestID, TenantID: own.tenantID, Amount: 5_000,
+			PhotoUploadID: env.CashPhoto(t, w.org.ID, w.admin.UserID, own.tenantID)})
 		require.ErrorIs(t, err, authz.ErrForbidden, "the admin has no cash:record")
 		require.Equal(t, payments, w.count(t, "payment")-1)
 	})
 
 	t.Run("bad input names its field", func(t *testing.T) {
 		for field, in := range map[string]billing.CashInput{
-			"requestId": {TenantID: own.tenantID, Amount: 1},
-			"amount":    {RequestID: uuid.New(), TenantID: own.tenantID},
-			"note":      {RequestID: uuid.New(), TenantID: own.tenantID, Amount: 1, Note: string(make([]rune, 501))},
+			"requestId":     {TenantID: own.tenantID, Amount: 1},
+			"amount":        {RequestID: uuid.New(), TenantID: own.tenantID},
+			"note":          {RequestID: uuid.New(), TenantID: own.tenantID, Amount: 1, Note: string(make([]rune, 501))},
+			"photoUploadId": {RequestID: uuid.New(), TenantID: own.tenantID, Amount: 1},
 		} {
 			_, err := w.billing.RecordCashPayment(ctx, w.karyawan, in)
 			requireInput(t, err, field)
 		}
-		_, err := w.billing.RecordCashPayment(ctx, w.karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: uuid.New(), Amount: 1})
+		_, err := w.billing.RecordCashPayment(ctx, w.karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: uuid.New(), Amount: 1, PhotoUploadID: uuid.New()})
 		requireNotFound(t, err, "")
 	})
 }
@@ -620,7 +658,7 @@ func TestCashPaysFIFOWithCredit(t *testing.T) {
 	invs := w.invoices(t, r.renter)
 	require.Len(t, invs, 2)
 
-	res, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(r, 1_500_000))
+	res, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, r, 1_500_000))
 	require.NoError(t, err)
 	require.Equal(t, []billing.PaidInvoice{
 		{InvoiceID: invs[0].InvoiceID, Kind: billing.InvoiceRegular, Period: day(2026, 10, 28), PeriodEnd: day(2026, 11, 27), DueDate: day(2026, 10, 28), Amount: 700_000},
@@ -671,15 +709,15 @@ func TestFieldToday(t *testing.T) {
 	// Cash the admin records through recordPayment from a tenant he collects is not field cash: it
 	// has no receipt and can take no photo, so it is not on his list.
 	w.record(t, billing.PaymentInput{RequestID: uuid.New(), TenantID: adminOwn.tenantID, Amount: 100_000, Method: billing.MethodCash, ReceivedOn: day(2026, 11, 14)})
-	citra1, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(today, 200_000))
+	citra1, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, today, 200_000))
 	require.NoError(t, err)
-	citra2, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(today, 100_000))
+	citra2, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, today, 100_000))
 	require.NoError(t, err)
-	_, err = w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(ahead, 100_000))
+	_, err = w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, ahead, 100_000))
 	require.NoError(t, err)
-	lia, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(paidCash, 700_000))
+	lia, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, paidCash, 700_000))
 	require.NoError(t, err)
-	_, err = w.billing.RecordCashPayment(ctx, w.dina, cashIn(dinas, 700_000))
+	_, err = w.billing.RecordCashPayment(ctx, w.dina, w.cashIn(t, w.dina, dinas, 700_000))
 	require.NoError(t, err)
 
 	all := func(p authz.Principal) []billing.FieldTenant {
@@ -704,7 +742,7 @@ func TestFieldToday(t *testing.T) {
 			out.Amount += p.Payment.Net
 			out.Count++
 			out.Payments = append(out.Payments, billing.FieldCashPayment{PaymentID: p.Payment.ID, Amount: p.Payment.Net, RecordedAt: p.Payment.CreatedAt,
-				Photo: billing.ReceiptPhoto{Status: billing.PhotoMissing}})
+				Photo: p.Photo})
 		}
 		return out
 	}
@@ -812,12 +850,12 @@ func TestFieldCash(t *testing.T) {
 	}
 	require.Equal(t, billing.CashTotal{}, cash(w.karyawan))
 
-	first, err := w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(a, 300_000))
+	first, err := w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, a, 300_000))
 	require.NoError(t, err)
 	setNow(env, 2026, 11, 15, 9, 0)
-	_, err = w.billing.RecordCashPayment(ctx, w.karyawan, cashIn(a, 200_000))
+	_, err = w.billing.RecordCashPayment(ctx, w.karyawan, w.cashIn(t, w.karyawan, a, 200_000))
 	require.NoError(t, err)
-	_, err = w.billing.RecordCashPayment(ctx, w.dina, cashIn(b, 700_000))
+	_, err = w.billing.RecordCashPayment(ctx, w.dina, w.cashIn(t, w.dina, b, 700_000))
 	require.NoError(t, err)
 	w.record(t, billing.PaymentInput{RequestID: uuid.New(), TenantID: a.tenantID, Amount: 50_000, Method: billing.MethodCash, ReceivedOn: day(2026, 11, 15)})
 
@@ -856,9 +894,14 @@ func TestCashCollectionIsolation(t *testing.T) {
 	rb := b.collected(t, "Budi Santoso", day(2026, 11, 14), b.karyawan.MembershipID)
 	a.generate(t)
 	b.generate(t)
-	pa, err := a.billing.RecordCashPayment(ctx, a.karyawan, cashIn(ra, 100_000))
+	pha, phb := newPhotos(a), newPhotos(b)
+	upA := pha.receipt(t, a.karyawan, ra, cleanPhoto)
+	upB := phb.receipt(t, b.karyawan, rb, cleanPhoto)
+	pa, err := a.billing.RecordCashPayment(ctx, a.karyawan,
+		billing.CashInput{RequestID: uuid.New(), TenantID: ra.tenantID, Amount: 100_000, PhotoUploadID: upA})
 	require.NoError(t, err)
-	pb, err := b.billing.RecordCashPayment(ctx, b.karyawan, cashIn(rb, 100_000))
+	pb, err := b.billing.RecordCashPayment(ctx, b.karyawan,
+		billing.CashInput{RequestID: uuid.New(), TenantID: rb.tenantID, Amount: 100_000, PhotoUploadID: upB})
 	require.NoError(t, err)
 
 	t.Run("each organization sees only its own receipts", func(t *testing.T) {
@@ -878,7 +921,9 @@ func TestCashCollectionIsolation(t *testing.T) {
 	})
 
 	t.Run("another organization's tenant is not found and its cash not counted", func(t *testing.T) {
-		_, err := a.billing.RecordCashPayment(ctx, a.karyawan, cashIn(rb, 1_000))
+		// No upload can name another organization's tenant, so the photo is a's own.
+		_, err := a.billing.RecordCashPayment(ctx, a.karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: rb.tenantID, Amount: 1_000,
+			PhotoUploadID: pha.receipt(t, a.karyawan, ra, cleanPhoto)})
 		requireNotFound(t, err, "")
 		items, err := a.billing.FieldToday(ctx, a.karyawan, listing.FirstPage)
 		require.NoError(t, err)
@@ -924,14 +969,6 @@ func TestCashCollectionIsolation(t *testing.T) {
 		requireCode(t, err, "23503")
 	})
 
-	pha, phb := newPhotos(a), newPhotos(b)
-	upA := pha.receipt(t, a.karyawan, ra, cleanPhoto)
-	upB := phb.receipt(t, b.karyawan, rb, cleanPhoto)
-	_, _, err = a.billing.AttachReceiptPhoto(ctx, a.karyawan, pa.Payment.ID, upA)
-	require.NoError(t, err)
-	_, _, err = b.billing.AttachReceiptPhoto(ctx, b.karyawan, pb.Payment.ID, upB)
-	require.NoError(t, err)
-
 	t.Run("each organization sees only its own photo links", func(t *testing.T) {
 		for _, w := range []fieldWorld{a, b} {
 			var all, foreign int
@@ -952,10 +989,14 @@ func TestCashCollectionIsolation(t *testing.T) {
 	t.Run("another organization's payment or upload is not found", func(t *testing.T) {
 		_, _, err := a.billing.AttachReceiptPhoto(ctx, a.karyawan, pb.Payment.ID, upA)
 		requireNotFound(t, err, "")
-		fresh, err := a.billing.RecordCashPayment(ctx, a.karyawan, cashIn(ra, 1_000))
-		require.NoError(t, err)
-		_, _, err = a.billing.AttachReceiptPhoto(ctx, a.karyawan, fresh.Payment.ID, phb.receipt(t, b.karyawan, rb, cleanPhoto))
+		_, _, err = a.billing.AttachReceiptPhoto(ctx, a.karyawan, a.paid(t, ra), phb.receipt(t, b.karyawan, rb, cleanPhoto))
 		requireNotFound(t, err, "uploadId")
+
+		payments := a.count(t, "payment")
+		_, err = a.billing.RecordCashPayment(ctx, a.karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: ra.tenantID, Amount: 1_000,
+			PhotoUploadID: phb.receipt(t, b.karyawan, rb, cleanPhoto)})
+		requireNotFound(t, err, "photoUploadId")
+		require.Equal(t, payments, a.count(t, "payment"), "nothing recorded")
 	})
 
 	t.Run("no photo link can be written for another organization", func(t *testing.T) {
@@ -1007,3 +1048,171 @@ func TestCashCollectionIsolation(t *testing.T) {
 
 // ptrTo is a pointer to v.
 func ptrTo[T any](v T) *T { return &v }
+
+// TestCashComesWithItsPhoto: field cash is recorded only with its photo, linked in the payment's
+// transaction (decision 50); a photo that cannot be used records nothing.
+func TestCashComesWithItsPhoto(t *testing.T) {
+	env := testenv.New(t)
+	ctx := context.Background()
+	setNow(env, 2026, 11, 14, 9, 0)
+	w := newFieldWorld(t, env, "0812864", "0812-8640-0099")
+	wati := w.collected(t, "Wati Susanti", day(2026, 11, 14), w.karyawan.MembershipID)
+	bambang := w.collected(t, "Bambang Wijaya", day(2026, 11, 14), w.karyawan.MembershipID)
+	hadi := w.collected(t, "Hadi Saputra", day(2026, 11, 14), w.dina.MembershipID)
+	w.generate(t)
+	ph := newPhotos(w)
+	record := func(p authz.Principal, r rental, photo uuid.UUID) (billing.CashResult, error) {
+		return w.billing.RecordCashPayment(ctx, p, billing.CashInput{RequestID: uuid.New(), TenantID: r.tenantID, Amount: 50_000, PhotoUploadID: photo})
+	}
+
+	t.Run("a photo still being scanned records the cash and queues the receipt", func(t *testing.T) {
+		up := ph.receipt(t, w.karyawan, wati, cleanPhoto)
+		res, err := record(w.karyawan, wati, up)
+		require.NoError(t, err)
+		require.True(t, res.Created)
+		require.Equal(t, billing.ReceiptPending, res.ReceiptStatus, "the receipt does not wait for the scan")
+		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusPending}, res.Photo)
+		require.Contains(t, w.queue.enqueued(), res.Payment.ID)
+
+		var row struct {
+			payment, tenant, by uuid.UUID
+			at                  time.Time
+		}
+		w.mustTx(t, func(ctx context.Context, tx pgx.Tx, _ *dbgen.Queries) error {
+			return tx.QueryRow(ctx, "SELECT payment_id, tenant_id, attached_by_staff_user_id, attached_at FROM payment_receipt_photo WHERE upload_id = $1", up).
+				Scan(&row.payment, &row.tenant, &row.by, &row.at)
+		})
+		require.Equal(t, res.Payment.ID, row.payment)
+		require.Equal(t, wati.tenantID, row.tenant)
+		require.Equal(t, w.org.Karyawan.UserID, row.by)
+		require.True(t, row.at.Equal(env.Clock.Now()))
+	})
+
+	t.Run("a clean photo records the cash", func(t *testing.T) {
+		up := ph.scanned(t, w.karyawan, wati, cleanPhoto, upload.StatusClean)
+		res, err := record(w.karyawan, wati, up)
+		require.NoError(t, err)
+		require.Equal(t, billing.ReceiptPhoto{UploadID: up, Status: upload.StatusClean}, res.Photo)
+	})
+
+	used := ph.receipt(t, w.karyawan, wati, cleanPhoto)
+	_, err := record(w.karyawan, wati, used)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name  string
+		photo func(t *testing.T) uuid.UUID
+		check func(t *testing.T, err error)
+	}{
+		{name: "no photo", photo: func(*testing.T) uuid.UUID { return uuid.Nil },
+			check: func(t *testing.T, err error) { requireInput(t, err, "photoUploadId") }},
+		{name: "an unknown upload", photo: func(*testing.T) uuid.UUID { return uuid.New() },
+			check: func(t *testing.T, err error) { requireNotFound(t, err, "photoUploadId") }},
+		{name: "a receipt for another tenant", photo: func(t *testing.T) uuid.UUID {
+			return ph.receipt(t, w.karyawan, bambang, cleanPhoto)
+		}, check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
+		{name: "a receipt another member made", photo: func(t *testing.T) uuid.UUID {
+			return ph.insertedReceipt(t, w.dina.UserID, wati.tenantID)
+		}, check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
+		{name: "an upload never completed", photo: func(t *testing.T) uuid.UUID {
+			return ph.started(t, w.karyawan, upload.PurposeCashReceipt, wati.tenantID, cleanPhoto)
+		}, check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
+		{name: "a cash deposit photo", photo: func(t *testing.T) uuid.UUID {
+			id := ph.started(t, w.karyawan, upload.PurposeCashDeposit, uuid.Nil, cleanPhoto)
+			_, err := ph.uploads.Complete(ctx, w.karyawan, id)
+			require.NoError(t, err)
+			return id
+		}, check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
+		{name: "another payment's photo", photo: func(*testing.T) uuid.UUID { return used },
+			check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
+		{name: "a photo the scan rejected", photo: func(t *testing.T) uuid.UUID {
+			return ph.scanned(t, w.karyawan, wati, notAPhoto, upload.StatusRejected)
+		}, check: requirePhotoField(billing.ErrReceiptPhotoRefused)},
+		{name: "a photo the scan found infected", photo: func(t *testing.T) uuid.UUID {
+			return ph.scanned(t, w.karyawan, wati, infectedPhoto, upload.StatusInfected)
+		}, check: requirePhotoField(billing.ErrReceiptPhotoRefused)},
+	} {
+		t.Run(tc.name+" records nothing", func(t *testing.T) {
+			photo := tc.photo(t)
+			payments, receipts, links := w.count(t, "payment"), w.count(t, "payment_receipt"), w.count(t, "payment_receipt_photo")
+			queued := len(w.queue.enqueued())
+			_, err := record(w.karyawan, wati, photo)
+			tc.check(t, err)
+			require.Equal(t, payments, w.count(t, "payment"))
+			require.Equal(t, receipts, w.count(t, "payment_receipt"))
+			require.Equal(t, links, w.count(t, "payment_receipt_photo"))
+			require.Len(t, w.queue.enqueued(), queued, "no receipt is queued")
+		})
+	}
+
+	t.Run("another karyawan cannot use the collector's photo for their own tenant", func(t *testing.T) {
+		_, err := record(w.dina, hadi, ph.insertedReceipt(t, w.karyawan.UserID, hadi.tenantID))
+		requirePhotoField(billing.ErrReceiptPhotoInvalid)(t, err)
+	})
+
+	t.Run("a refused cash:record is checked before the photo, and audited", func(t *testing.T) {
+		denied := w.audited(t, authz.ActionCashRecord, "deny")
+		_, err := record(w.dina, wati, ph.receipt(t, w.karyawan, wati, cleanPhoto))
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		require.Equal(t, denied+1, w.audited(t, authz.ActionCashRecord, "deny"))
+	})
+
+	t.Run("one photo backs one payment, even when two are saved at once", func(t *testing.T) {
+		for round := range 5 {
+			up := ph.receipt(t, w.karyawan, bambang, cleanPhoto)
+			payments := w.count(t, "payment")
+			errs := make(chan error, 2)
+			var wg sync.WaitGroup
+			for range 2 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, err := record(w.karyawan, bambang, up)
+					errs <- err
+				}()
+			}
+			wg.Wait()
+			close(errs)
+			var ok, invalid int
+			for err := range errs {
+				switch {
+				case err == nil:
+					ok++
+				case errors.Is(err, billing.ErrReceiptPhotoInvalid):
+					invalid++
+				default:
+					require.NoError(t, err, "round %d", round)
+				}
+			}
+			require.Equal(t, 1, ok, "round %d", round)
+			require.Equal(t, 1, invalid, "round %d", round)
+			require.Equal(t, payments+1, w.count(t, "payment"), "round %d", round)
+		}
+	})
+
+	t.Run("a payment recorded before photos were required repeats without one", func(t *testing.T) {
+		legacy := w.paid(t, wati)
+		var ref string
+		w.mustTx(t, func(ctx context.Context, tx pgx.Tx, _ *dbgen.Queries) error {
+			return tx.QueryRow(ctx, "SELECT source_ref FROM payment WHERE id = $1", legacy).Scan(&ref)
+		})
+		res, err := w.billing.RecordCashPayment(ctx, w.karyawan, billing.CashInput{
+			RequestID: uuid.MustParse(ref), TenantID: wati.tenantID, Amount: 10_000,
+			PhotoUploadID: ph.receipt(t, w.karyawan, wati, cleanPhoto),
+		})
+		require.NoError(t, err)
+		require.False(t, res.Created)
+		require.Equal(t, billing.ReceiptPhoto{Status: billing.PhotoMissing}, res.Photo, "a repeat links nothing")
+	})
+}
+
+// requirePhotoField checks err is target about the photoUploadId field.
+func requirePhotoField(target error) func(t *testing.T, err error) {
+	return func(t *testing.T, err error) {
+		t.Helper()
+		require.ErrorIs(t, err, target)
+		var fe *billing.FieldError
+		require.ErrorAs(t, err, &fe)
+		require.Equal(t, "photoUploadId", fe.Field)
+	}
+}

@@ -165,11 +165,17 @@ func (w *world) brokenPromise(t *testing.T, tenantID uuid.UUID, closedAt time.Ti
 	})
 }
 
-// cash records amount of field cash from r taken by p, now.
+// cash records amount of field cash from r taken by p, now, with a fresh photo.
 func (w *world) cash(t *testing.T, p authz.Principal, r rental, amount int64) billing.CashResult {
 	t.Helper()
+	return w.cashWith(t, p, r, amount, w.env.CashPhoto(t, w.org.ID, p.UserID, r.tenantID))
+}
+
+// cashWith records amount of field cash from r taken by p, now, with photo (decision 50).
+func (w *world) cashWith(t *testing.T, p authz.Principal, r rental, amount int64, photo uuid.UUID) billing.CashResult {
+	t.Helper()
 	res, err := w.env.Billing.RecordCashPayment(context.Background(), p, billing.CashInput{
-		RequestID: uuid.New(), TenantID: r.tenantID, Amount: amount,
+		RequestID: uuid.New(), TenantID: r.tenantID, Amount: amount, PhotoUploadID: photo,
 	})
 	require.NoError(t, err)
 	return res
@@ -183,8 +189,8 @@ func (w *world) fieldPromise(t *testing.T, p authz.Principal, r rental, on time.
 	return got.Latest().ID
 }
 
-// photo attaches a receipt photo, uploaded by p and still being scanned, to p's cash payment.
-func (w *world) photo(t *testing.T, p authz.Principal, r rental, paymentID uuid.UUID) uuid.UUID {
+// photo is a receipt photo of r uploaded by p, completed and still being scanned.
+func (w *world) photo(t *testing.T, p authz.Principal, r rental) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
 	body := uploadtest.Image("image/jpeg", 2_048)
@@ -196,8 +202,6 @@ func (w *world) photo(t *testing.T, p authz.Principal, r rental, paymentID uuid.
 	require.NoError(t, err)
 	w.storage.Put(strings.TrimPrefix(u.Path, "/"), body)
 	_, err = w.uploads.Complete(ctx, p, c.Upload.ID)
-	require.NoError(t, err)
-	_, _, err = w.env.Billing.AttachReceiptPhoto(ctx, p, paymentID, c.Upload.ID)
 	require.NoError(t, err)
 	return c.Upload.ID
 }
@@ -690,8 +694,8 @@ func TestListFieldVisits(t *testing.T) {
 	w.openTask(t, fajar.tenantID, visit.TaskH7, wib(2026, 11, 8, 6, 0))
 
 	setNow(env, 2026, 11, 14, 8, 0)
-	agusCash1 := w.cash(t, w.karyawan, agus, 200_000)
-	agusPhoto := w.photo(t, w.karyawan, agus, agusCash1.Payment.ID)
+	agusPhoto := w.photo(t, w.karyawan, agus)
+	agusCash1 := w.cashWith(t, w.karyawan, agus, 200_000, agusPhoto)
 	setNow(env, 2026, 11, 14, 8, 30)
 	agusCash2 := w.cash(t, w.karyawan, agus, 100_000)
 	setNow(env, 2026, 11, 14, 9, 0)
@@ -763,7 +767,7 @@ func TestListFieldVisits(t *testing.T) {
 			{PaymentID: agusCash1.Payment.ID, Amount: 200_000, RecordedAt: agusCash1.Payment.CreatedAt,
 				Photo: billing.ReceiptPhoto{UploadID: agusPhoto, Status: upload.StatusPending}},
 			{PaymentID: agusCash2.Payment.ID, Amount: 100_000, RecordedAt: agusCash2.Payment.CreatedAt,
-				Photo: billing.ReceiptPhoto{Status: billing.PhotoMissing}},
+				Photo: agusCash2.Photo},
 		}, row.UnlinkedCashToday)
 		require.Equal(t, noCash, byName(all(t, w.karyawan), "Dewi Anggraini").UnlinkedCashToday, "named by her paid outcome")
 	})

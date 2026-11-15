@@ -107,7 +107,8 @@ func TestCashKeepsAPromise(t *testing.T) {
 	_, err := w.promises.MakeFromField(ctx, karyawan, wati.tenantID, amountOn(day(2026, 11, 20), 300_000, 0))
 	require.NoError(t, err)
 
-	in := billing.CashInput{RequestID: uuid.New(), TenantID: wati.tenantID, Amount: 200_000}
+	in := billing.CashInput{RequestID: uuid.New(), TenantID: wati.tenantID, Amount: 200_000,
+		PhotoUploadID: env.CashPhoto(t, w.org.ID, karyawan.UserID, wati.tenantID)}
 	for range 2 {
 		_, err := env.Billing.RecordCashPayment(ctx, karyawan, in)
 		require.NoError(t, err)
@@ -115,7 +116,8 @@ func TestCashKeepsAPromise(t *testing.T) {
 	w.requireStatus(t, wati, promise.StatusActive, time.Time{})
 
 	env.Clock.Set(wib(time.November, 15, 10, 30))
-	_, err = env.Billing.RecordCashPayment(ctx, karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: wati.tenantID, Amount: 100_000})
+	_, err = env.Billing.RecordCashPayment(ctx, karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: wati.tenantID, Amount: 100_000,
+		PhotoUploadID: env.CashPhoto(t, w.org.ID, karyawan.UserID, wati.tenantID)})
 	require.NoError(t, err)
 	w.requireStatus(t, wati, promise.StatusKept, wib(time.November, 15, 10, 30))
 }

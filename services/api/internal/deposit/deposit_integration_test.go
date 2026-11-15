@@ -111,11 +111,17 @@ func (w *world) rent(t *testing.T, name string, collector authz.Principal) renta
 	return rental{tenantID: tn.ID, label: label}
 }
 
-// cash records amount of field cash from r taken by p, now.
+// cash records amount of field cash from r taken by p, now, with a fresh photo.
 func (w *world) cash(t *testing.T, p authz.Principal, r rental, amount int64) billing.CashResult {
 	t.Helper()
+	return w.cashWith(t, p, r, amount, w.env.CashPhoto(t, w.org.ID, p.UserID, r.tenantID))
+}
+
+// cashWith records amount of field cash from r taken by p, now, with photo (decision 50).
+func (w *world) cashWith(t *testing.T, p authz.Principal, r rental, amount int64, photo uuid.UUID) billing.CashResult {
+	t.Helper()
 	res, err := w.env.Billing.RecordCashPayment(context.Background(), p, billing.CashInput{
-		RequestID: uuid.New(), TenantID: r.tenantID, Amount: amount,
+		RequestID: uuid.New(), TenantID: r.tenantID, Amount: amount, PhotoUploadID: photo,
 	})
 	require.NoError(t, err)
 	return res
@@ -826,10 +832,8 @@ func TestDepositReads(t *testing.T) {
 	bambang := w.rent(t, "Bambang Wijaya", w.karyawan)
 	hadi := w.rent(t, "Hadi Saputra", w.dina)
 
-	p1 := w.cash(t, w.karyawan, wati, 300_000)
 	receipt := w.photos.completed(t, w.karyawan, upload.PurposeCashReceipt, wati.tenantID, cleanPhoto)
-	_, _, err := env.Billing.AttachReceiptPhoto(ctx, w.karyawan, p1.Payment.ID, receipt)
-	require.NoError(t, err)
+	p1 := w.cashWith(t, w.karyawan, wati, 300_000, receipt)
 	setNow(env, 2026, 11, 14, 9, 30)
 	p2 := w.cash(t, w.karyawan, bambang, 200_000)
 	kos := billing.FieldUnit{PropertyName: "Kos Melati", PropertyAddress: "Jl. Kenanga No. 12, Depok"}
@@ -842,7 +846,7 @@ func TestDepositReads(t *testing.T) {
 		{PaymentID: p1.Payment.ID, TenantID: wati.tenantID, TenantName: "Wati Susanti", Units: unitOf(wati), Amount: 300_000,
 			RecordedAt: p1.Payment.CreatedAt, Photo: billing.ReceiptPhoto{UploadID: receipt, Status: upload.StatusPending}},
 		{PaymentID: p2.Payment.ID, TenantID: bambang.tenantID, TenantName: "Bambang Wijaya", Units: unitOf(bambang), Amount: 200_000,
-			RecordedAt: p2.Payment.CreatedAt, Photo: billing.ReceiptPhoto{Status: billing.PhotoMissing}},
+			RecordedAt: p2.Payment.CreatedAt, Photo: p2.Photo},
 	}
 	// requireHeld compares held payments, times by instant.
 	requireHeld := func(t *testing.T, want, got []billing.HeldPayment) {

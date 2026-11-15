@@ -256,7 +256,8 @@ func (w *world) infectedReceipt(t *testing.T, p authz.Principal, tenantID uuid.U
 func (w *world) deposit(t *testing.T, p authz.Principal, tenantID uuid.UUID, cash, handed, received int64, note string) deposit.Deposit {
 	t.Helper()
 	ctx := context.Background()
-	_, err := w.env.Billing.RecordCashPayment(ctx, p, billing.CashInput{RequestID: uuid.New(), TenantID: tenantID, Amount: cash})
+	_, err := w.env.Billing.RecordCashPayment(ctx, p, billing.CashInput{RequestID: uuid.New(), TenantID: tenantID, Amount: cash,
+		PhotoUploadID: w.env.CashPhoto(t, w.org.ID, p.UserID, tenantID)})
 	require.NoError(t, err)
 	held, err := w.env.Billing.FieldCash(ctx, p)
 	require.NoError(t, err)
