@@ -225,8 +225,23 @@ test("matches a proof to a transfer payment", async ({ page }, testInfo) => {
   await expectTall(zoom, 44);
   await zoom.click();
   const large = page.getByRole("dialog", { name: ZOOM_TITLE });
-  await expectLoaded(large.getByRole("img"));
+  // An Escape the moment the large view opens, before it has taken focus, never closes the
+  // drawer behind it (it used to, under load). It may or may not close the large view yet;
+  // once focus is inside, Escape closes it.
   await page.keyboard.press("Escape");
+  // Exact: the large view's name, "Foto bukti transfer", holds the drawer's.
+  await expect(
+    page.getByRole("dialog", { name: "Bukti transfer", exact: true }),
+  ).toBeVisible();
+  if ((await large.count()) > 0) {
+    await expectLoaded(large.getByRole("img"));
+    await expect
+      .poll(() =>
+        large.evaluate((dialog) => dialog.contains(document.activeElement)),
+      )
+      .toBe(true);
+    await page.keyboard.press("Escape");
+  }
   await expect(large).toHaveCount(0);
   await expect(sheet).toBeVisible();
   await zoom.click();

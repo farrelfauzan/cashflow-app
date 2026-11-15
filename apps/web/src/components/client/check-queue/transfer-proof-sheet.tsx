@@ -126,6 +126,9 @@ export function TransferProofSheet({
 
   const rejecting = canAct && step === "reject";
   const pending = match.pending || reject.pending;
+  // Set by the press on "Perbesar foto", before the large view has registered as the top layer:
+  // an Escape in that moment would otherwise reach the drawer and close it instead.
+  const [zoomed, setZoomed] = useState(false);
   const photo = (
     <ProofPhoto
       photo={upload.photo}
@@ -137,6 +140,8 @@ export function TransferProofSheet({
       alt={proofPhotoAlt(tenant)}
       subtitle={subtitle}
       onReload={upload.reload}
+      zoomed={zoomed}
+      onZoomedChange={setZoomed}
     />
   );
   const pendingCallout = upload.photo.kind === "pending" && (
@@ -266,7 +271,7 @@ export function TransferProofSheet({
     <CheckSheetFrame
       open={open}
       onOpenChange={onOpenChange}
-      busy={pending}
+      busy={pending || zoomed}
       dirty={match.form.formState.isDirty || reject.form.formState.isDirty}
       title={rejecting ? PROOF_REJECT_TITLE : PROOF_TITLE}
       subtitle={subtitle}

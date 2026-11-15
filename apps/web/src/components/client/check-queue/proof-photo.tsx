@@ -25,6 +25,10 @@ type ProofPhotoProps = {
   subtitle: string;
   // Asks getUpload for a new link, after the image failed to load (most likely an expired link).
   onReload: () => void;
+  // "Perbesar foto" is open. Held by the drawer, which ignores every close while it is, so an
+  // Escape meant for the large view never closes the drawer behind it.
+  zoomed: boolean;
+  onZoomedChange: (zoomed: boolean) => void;
 };
 
 // The proof's photo beside when the tenant sent it and from which invoice's link, with "Perbesar
@@ -36,8 +40,9 @@ export function ProofPhoto({
   alt,
   subtitle,
   onReload,
+  zoomed,
+  onZoomedChange,
 }: ProofPhotoProps) {
-  const [zoomed, setZoomed] = useState(false);
   // How many times the image failed to load: the first asks for a new link, the second gives up.
   const [failures, setFailures] = useState(0);
   const url = photo.kind === "clean" && failures < 2 ? photo.url : null;
@@ -121,7 +126,7 @@ export function ProofPhoto({
           <Button
             type="button"
             variant="ghost"
-            onClick={() => setZoomed(true)}
+            onClick={() => onZoomedChange(true)}
             className="-ml-1 h-11 justify-start gap-1.5 self-start px-1 text-base font-semibold text-primary hover:bg-accent hover:text-primary has-[>svg]:px-1 md:text-[17px]"
           >
             <Maximize2 aria-hidden="true" className="size-[18px]" />
@@ -132,7 +137,7 @@ export function ProofPhoto({
       {url !== null && (
         <ProofPhotoDialog
           open={zoomed}
-          onOpenChange={setZoomed}
+          onOpenChange={onZoomedChange}
           url={url}
           alt={alt}
           subtitle={subtitle}
