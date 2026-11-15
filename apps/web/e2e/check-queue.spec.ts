@@ -212,34 +212,45 @@ test.describe("Admin of the whole organization", () => {
     await checkQueueLink(page).click();
     await expect(page).toHaveURL(/\/billing\/check-queue$/);
     await expectScreen(page, testInfo);
-    const queue = await call<CheckQueuePage>(
-      page.request,
-      "GET",
-      `/orgs/${orgId}/check-queue?pageSize=1`,
-      200,
-    );
 
-    // "Semua" is chosen and counts every waiting item.
+    // "Semua" is chosen and counts every waiting item, and each kind its own, as the API does.
+    // Other specs answer and add items in this organization in parallel (and the screen opened
+    // from the count the link cached), so reload until the screen and the API agree.
     const all = filters(page).getByRole("button", { name: /^Semua/ });
-    await expect(all).toHaveAttribute("aria-pressed", "true");
-    await expect(all).toHaveText(new RegExp(`^Semua\\s*${queue.waiting}$`));
-    await expectTall(all, 44);
-
     const gaps = filters(page).getByRole("button", {
       name: /^Selisih setoran/,
     });
-    await expect(gaps).toHaveText(
-      new RegExp(`^Selisih setoran\\s*${queue.counts.deposit_gap}$`),
-    );
+    await expect(async () => {
+      await page.reload();
+      const queue = await call<CheckQueuePage>(
+        page.request,
+        "GET",
+        `/orgs/${orgId}/check-queue?pageSize=1`,
+        200,
+      );
+      await expect(all).toHaveText(new RegExp(`^Semua\\s*${queue.waiting}$`), {
+        timeout: 2_000,
+      });
+      await expect(gaps).toHaveText(
+        new RegExp(`^Selisih setoran\\s*${queue.counts.deposit_gap}$`),
+        { timeout: 2_000 },
+      );
+    }).toPass({ timeout: 30_000 });
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await expectTall(all, 44);
+
     await gaps.click();
     await expect(page).toHaveURL(/\?kind=deposit_gap$/);
     await expect(gaps).toHaveAttribute("aria-pressed", "true");
     await expect(all).toHaveAttribute("aria-pressed", "false");
-    if (queue.counts.deposit_gap === 0) {
-      await expect(page.getByText(EMPTY_TEXT)).toBeVisible();
-    } else {
-      await expect(rows(page).first()).toContainText("Selisih setoran");
-      await expect(rows(page).filter({ hasText: "Nomor baru" })).toHaveCount(0);
+    // Only gaps are listed, or the empty line when none is waiting.
+    await expect(
+      rows(page).or(page.getByText(EMPTY_TEXT)).first(),
+    ).toBeVisible();
+    await expect(
+      rows(page).filter({ hasNotText: "Selisih setoran" }),
+    ).toHaveCount(0);
+    if ((await rows(page).count()) > 0) {
       await expectTall(rows(page).first(), 76);
     }
 
