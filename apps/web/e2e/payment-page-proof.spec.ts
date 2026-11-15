@@ -230,7 +230,7 @@ test("Kirim bukti transfer sends a shrunk photo through our API; it waits in the
   await expect(sheet).toHaveCount(0);
   // A screen reader hears it from a live region; the eye reads the banner above the list.
   await expect(
-    page.getByRole("status").filter({ hasText: SENT_TEXT }),
+    page.locator("[aria-live=polite]").filter({ hasText: SENT_TEXT }),
   ).toHaveCount(1);
   await expect(page.getByText(SENT_TEXT).last()).toBeVisible();
   const list = page.getByRole("region", { name: LIST_TITLE });
@@ -337,7 +337,7 @@ test("a file that is not a photo gets the API's message, and a dropped connectio
 
   await expect(sheet).toHaveCount(0);
   await expect(
-    page.getByRole("status").filter({ hasText: SENT_TEXT }),
+    page.locator("[aria-live=polite]").filter({ hasText: SENT_TEXT }),
   ).toHaveCount(1);
   await expect(
     page.getByRole("region", { name: LIST_TITLE }).getByRole("listitem"),

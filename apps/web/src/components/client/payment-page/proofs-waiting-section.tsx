@@ -24,8 +24,9 @@ export function ProofsWaitingSection({
   return (
     <>
       {/* Always on the page and out of the layout, so a screen reader hears the line when it
-          appears; the banner below is what the eye reads. */}
-      <p role="status" aria-live="polite" className="sr-only">
+          appears; the banner below is what the eye reads. A live region without the status role:
+          the QRIS view already has the page's status line. */}
+      <p aria-live="polite" className="sr-only">
         {sent ? PROOF_SENT_TEXT : ""}
       </p>
       {sent && (
