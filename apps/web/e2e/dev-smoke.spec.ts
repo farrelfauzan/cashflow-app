@@ -141,6 +141,8 @@ test("every staff screen loads with no Next.js error", async ({ page }) => {
     ["billing", "Penagihan"],
     ["members", "Anggota tim"],
     ["tenants/import", "Impor penyewa"],
+    // An admin may not deposit cash: the screen still renders, saying so.
+    ["field/deposit", "Setor tunai"],
   ];
   for (const [segment, heading] of screens) {
     await page.goto(`${home}/${segment}`);

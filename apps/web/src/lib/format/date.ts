@@ -81,6 +81,23 @@ const jakartaDayMonthParts = new Intl.DateTimeFormat("id-ID", {
   month: "short",
 });
 
+const jakartaWeekdayDayMonthParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: JAKARTA,
+  weekday: "long",
+  day: "numeric",
+  month: "short",
+});
+
+const jakartaWeekdayDayMonthTimeParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: JAKARTA,
+  weekday: "long",
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const jakartaDateParts = new Intl.DateTimeFormat("id-ID", {
   timeZone: JAKARTA,
   day: "numeric",
@@ -283,6 +300,36 @@ export function formatTimestampDayMonth(timestamp: string | Date): string {
     toInstant(timestamp, "formatTimestampDayMonth"),
   );
   return `${part(parts, "day")} ${part(parts, "month")}`;
+}
+
+/**
+ * Formats the Jakarta day of an API timestamp with its weekday, without the year, for a recent
+ * day: `"2026-11-12T08:00:00Z"` gives `"Kamis, 12 Nov"`.
+ *
+ * @throws RangeError when the value is not a valid timestamp with a zone.
+ */
+export function formatTimestampWeekdayDayMonth(
+  timestamp: string | Date,
+): string {
+  const parts = jakartaWeekdayDayMonthParts.formatToParts(
+    toInstant(timestamp, "formatTimestampWeekdayDayMonth"),
+  );
+  return `${part(parts, "weekday")}, ${part(parts, "day")} ${part(parts, "month")}`;
+}
+
+/**
+ * Formats an API timestamp in Jakarta with its weekday and time, without the year, for a recent
+ * moment: `"2026-11-13T03:15:00Z"` gives `"Jumat 13 Nov, 10.15"`.
+ *
+ * @throws RangeError when the value is not a valid timestamp with a zone.
+ */
+export function formatTimestampWeekdayDayMonthTime(
+  timestamp: string | Date,
+): string {
+  const parts = jakartaWeekdayDayMonthTimeParts.formatToParts(
+    toInstant(timestamp, "formatTimestampWeekdayDayMonthTime"),
+  );
+  return `${part(parts, "weekday")} ${part(parts, "day")} ${part(parts, "month")}, ${part(parts, "hour")}.${part(parts, "minute")}`;
 }
 
 function toInstant(timestamp: string | Date, caller: string): Date {

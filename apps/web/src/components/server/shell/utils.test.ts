@@ -27,11 +27,19 @@ describe("visibleOrgMenu", () => {
       "property:read": "allow",
       "tenant:read": "allow",
       "invoice:read": "allow",
+      "cash:deposit": "allow",
       "member:read": "allow",
     });
     expect(
       visibleOrgMenu(createAppAbility(all)).map((item) => item.key),
-    ).toEqual(["home", "properties", "tenants", "billing", "members"]);
+    ).toEqual([
+      "home",
+      "properties",
+      "tenants",
+      "billing",
+      "deposit",
+      "members",
+    ]);
   });
 
   it("shows an item allowed on some records", () => {
@@ -44,6 +52,28 @@ describe("visibleOrgMenu", () => {
     expect(
       visibleOrgMenu(createAppAbility(limited)).map((item) => item.key),
     ).toEqual(["home", "properties", "tenants", "billing"]);
+  });
+
+  it("shows Setor tunai to a member who may deposit their own cash", () => {
+    const karyawan = capabilities({
+      "tenant:read": "conditional",
+      "invoice:read": "conditional",
+      "cash:deposit": "conditional",
+      "member:read": "deny",
+    });
+    expect(
+      visibleOrgMenu(createAppAbility(karyawan)).map((item) => item.key),
+    ).toEqual(["home", "tenants", "billing", "deposit"]);
+  });
+
+  it("hides Setor tunai from a member denied cash:deposit", () => {
+    const admin = capabilities({
+      "invoice:read": "allow",
+      "cash:deposit": "deny",
+    });
+    expect(
+      visibleOrgMenu(createAppAbility(admin)).map((item) => item.key),
+    ).toEqual(["home", "billing"]);
   });
 
   it("shows only the home to a member with no matching action", () => {
@@ -86,7 +116,7 @@ describe("roleSummary", () => {
 });
 
 describe("phoneTabs and moreMenuSections", () => {
-  it("puts the whole menu in the tab bar's order, and Anggota tim in Lainnya", () => {
+  it("puts the whole menu in the tab bar's order, and Setor tunai and Anggota tim in Lainnya", () => {
     expect(phoneTabs(ORG_MENU).map((item) => item.label)).toEqual([
       "Beranda",
       "Penyewa",
@@ -94,6 +124,7 @@ describe("phoneTabs and moreMenuSections", () => {
       "Properti",
     ]);
     expect(moreMenuSections(ORG_MENU).map((item) => item.label)).toEqual([
+      "Setor tunai",
       "Anggota tim",
     ]);
   });

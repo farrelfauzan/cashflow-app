@@ -60,6 +60,16 @@ export const LESTARI: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "lestari.json"),
 };
 
+// Karyawan of the whole of Kos Bulanan Sejahtera who never collects in any spec, so he holds no
+// cash and has no deposit: the real empty state of "Setor tunai". Signed in by the setup project
+// only.
+export const UDIN: SeededStaff = {
+  phone: "0812-0009-0022",
+  name: "Mas Udin Saefudin",
+  organizations: ["Kos Bulanan Sejahtera"],
+  storageState: join(__dirname, "..", ".auth", "udin.json"),
+};
+
 // Every member the setup project signs in once per run.
 export const SETUP_STAFF: readonly SeededStaff[] = [
   HENDRA,
@@ -67,6 +77,7 @@ export const SETUP_STAFF: readonly SeededStaff[] = [
   RUDI,
   DIMAS,
   LESTARI,
+  UDIN,
 ];
 
 // A seeded member the login spec signs in through the UI. Each is used by one test in one

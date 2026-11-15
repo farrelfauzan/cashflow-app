@@ -1,5 +1,6 @@
 import {
   Building2,
+  HandCoins,
   House,
   ReceiptText,
   Users,
@@ -21,6 +22,7 @@ export const ORG_NAV_ICONS: Record<OrgNavItem["key"], LucideIcon> = {
   properties: Building2,
   tenants: Users,
   billing: ReceiptText,
+  deposit: HandCoins,
   members: UserCog,
 };
 
@@ -66,6 +68,14 @@ export const ORG_MENU: readonly OrgMenuItem[] = [
     permission: ["read", "invoice"],
   },
   {
+    // The karyawan's own cash, "Setor tunai": cash:deposit holds on their own records only, so
+    // it is "conditional" and shows the item.
+    key: "deposit",
+    label: "Setor tunai",
+    segment: "field/deposit",
+    permission: ["deposit", "cash"],
+  },
+  {
     key: "members",
     label: "Anggota tim",
     segment: "members",
@@ -91,7 +101,7 @@ export const SCREEN_LOADING_LABEL = "Memuat…";
 
 // The phone's tab bar (board HP-Tab, approved 2026-11-08): these sections in this order, each
 // only when the member may open it (the same visibleOrgMenu), then "Lainnya". The rest of the
-// side menu (Anggota tim) moves into "Lainnya". iPad and desktop keep the side menu.
+// side menu (Setor tunai, Anggota tim) moves into "Lainnya". iPad and desktop keep the side menu.
 export const PHONE_TAB_KEYS: readonly OrgMenuItem["key"][] = [
   "home",
   "tenants",
