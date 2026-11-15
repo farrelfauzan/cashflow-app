@@ -309,7 +309,7 @@ export async function expectTouchTarget(locator: Locator, min = 44) {
 // /api rewrite passes the header on; behind Caddy in production the API reads Caddy's.
 export function tenantClientAddress(
   testInfo: TestInfo,
-  spec: 18 | 19 | 20 | 21 | 22,
+  spec: 18 | 19 | 20 | 21 | 22 | 23,
 ): string {
   const key = `${runId()}|${testInfo.project.name}|${testInfo.titlePath.join("|")}|${testInfo.retry}`;
   let hash = 0;

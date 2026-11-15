@@ -5,6 +5,7 @@ import type { CheckQueueItem } from "@/lib/api/generated/model";
 import { DepositGapSheet } from "./deposit-gap-sheet";
 import { PhoneChangeSheet } from "./phone-change-sheet";
 import { QrisMismatchSheet } from "./qris-mismatch-sheet";
+import { TransferProofSheet } from "./transfer-proof-sheet";
 import { UploadInfectedSheet } from "./upload-infected-sheet";
 
 type CheckItemSheetProps = {
@@ -12,20 +13,32 @@ type CheckItemSheetProps = {
   item: CheckQueueItem;
   // Whether the member may answer items; otherwise every drawer is read-only.
   canAct: boolean;
+  // Whether the member may also record payments, which matching a transfer proof needs.
+  canMatch: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-// The drawer of the item's kind. A transfer proof has none yet (its rows do not open one), nor
-// does an item the API sent without its kind's object.
+// The drawer of the item's kind; none for an item the API sent without its kind's object.
 export function CheckItemSheet({
   orgId,
   item,
   canAct,
+  canMatch,
   open,
   onOpenChange,
 }: CheckItemSheetProps) {
   const shared = { orgId, itemId: item.id, canAct, open, onOpenChange };
+  if (item.transferProof !== undefined) {
+    return (
+      <TransferProofSheet
+        {...shared}
+        canMatch={canMatch}
+        createdAt={item.createdAt}
+        proof={item.transferProof}
+      />
+    );
+  }
   if (item.depositGap !== undefined) {
     return <DepositGapSheet {...shared} gap={item.depositGap} />;
   }

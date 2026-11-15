@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
 import type {
+  AccountInvoice,
   Capability,
   CheckDepositGap,
   CheckPhoneChanged,
@@ -9,12 +10,17 @@ import type {
   CheckQueueItem,
   CheckTenant,
   CheckUploadInfected,
+  MatchTransferProofResult,
+  PaymentPreviewItem,
+  TenantPaymentPreview,
+  Upload,
 } from "@/lib/api/generated/model";
 import { UploadPurpose } from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
 import {
   canCheckItems,
+  canMatchProofs,
   canReadCheckQueue,
   checkActionErrorKind,
   checkQueueLinkLabel,
@@ -32,6 +38,19 @@ import {
   NOTE_TOO_LONG_MESSAGE,
   phoneAppliedToast,
   phoneChangeSheetView,
+  PHOTO_ERROR_TEXT,
+  previewAmount,
+  PROOF_POLL_MS,
+  proofMatchDefaults,
+  proofMatchedToast,
+  proofMatchRequestBody,
+  proofMatchSchema,
+  proofPayerView,
+  proofPhotoAlt,
+  proofPhotoCaption,
+  proofPhotoState,
+  proofPreviewView,
+  proofReady,
   PURPOSE_LABEL,
   qrisDifferenceText,
   qrisMismatchSheetView,
@@ -41,6 +60,7 @@ import {
   shortName,
   tenantLine,
   uploadInfectedSheetView,
+  uploadRefetchMs,
   uploadTitle,
 } from "./utils";
 
@@ -140,6 +160,42 @@ describe("who may read and act", () => {
     ]);
     expect(canCheckItems(a)).toBe(false);
     expect(canReadCheckQueue(a)).toBe(true);
+  });
+
+  it("matches a proof only with payment:record as well", () => {
+    expect(
+      canMatchProofs(
+        ability([
+          { action: "payment:check", access: "allow" },
+          { action: "payment:record", access: "allow" },
+        ]),
+      ),
+    ).toBe(true);
+    // "conditional" shows it: the API decides per tenant.
+    expect(
+      canMatchProofs(
+        ability([
+          { action: "payment:check", access: "allow" },
+          { action: "payment:record", access: "conditional" },
+        ]),
+      ),
+    ).toBe(true);
+    expect(
+      canMatchProofs(
+        ability([
+          { action: "payment:check", access: "allow" },
+          { action: "payment:record", access: "deny" },
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      canMatchProofs(
+        ability([
+          { action: "cash:read", access: "allow" },
+          { action: "payment:record", access: "allow" },
+        ]),
+      ),
+    ).toBe(false);
   });
 
   it("gives an admin limited to some properties neither", () => {
@@ -248,7 +304,7 @@ describe("names and lines", () => {
 });
 
 describe("rows", () => {
-  it("shows a transfer proof, not openable, ready or still scanned", () => {
+  it("shows a transfer proof, openable, ready or still scanned", () => {
     const proof = {
       tenant: WATI,
       invoiceId: "inv-1",
@@ -264,7 +320,7 @@ describe("rows", () => {
       detail: "Foto bukti dari halaman pembayaran",
       chip: { label: "Siap dicek", tone: "active" },
       arrived: "Masuk Sab 14 Nov, 17.02",
-      opens: false,
+      opens: true,
       iconTone: "accent",
     });
     expect(
@@ -534,6 +590,8 @@ describe("action errors", () => {
   it.each([
     [409, "check_item_resolved", "resolved"],
     [409, "phone_taken", "phone_taken"],
+    [409, "upload_not_ready", "upload_not_ready"],
+    [409, "upload_refused", "upload_refused"],
     [409, "request_id_reused", "other"],
     [403, "forbidden", "other"],
     [400, "invalid_input", "other"],
@@ -545,5 +603,294 @@ describe("action errors", () => {
 
   it("treats a non-API error as other", () => {
     expect(checkActionErrorKind(new Error("x"))).toBe("other");
+  });
+});
+
+const TODAY = "2026-11-15";
+
+function uploaded(overrides: Partial<Upload> = {}): Upload {
+  return {
+    id: "u-9",
+    purpose: "transfer_proof",
+    status: "clean",
+    size: 120_000,
+    createdAt: CREATED,
+    downloadUrl:
+      "http://localhost:9100/cashflow-dev/files/u-9?X-Amz-Signature=x",
+    downloadExpiresAt: "2026-11-14T10:07:00Z",
+    ...overrides,
+  };
+}
+
+function previewItem(
+  overrides: Partial<PaymentPreviewItem> = {},
+): PaymentPreviewItem {
+  return {
+    invoiceId: "inv-oct",
+    kind: "regular",
+    unitLabel: "Kamar 11",
+    propertyName: "Kos Melati",
+    period: "2026-10-01",
+    periodEnd: "2026-10-31",
+    dueDate: "2026-10-01",
+    balance: 1_050_000,
+    applied: 1_050_000,
+    balanceAfter: 0,
+    paidInFull: true,
+    ...overrides,
+  };
+}
+
+function preview(
+  overrides: Partial<TenantPaymentPreview> = {},
+): TenantPaymentPreview {
+  return {
+    amount: 1_050_000,
+    outstandingBefore: 2_100_000,
+    outstandingAfter: 1_050_000,
+    items: [previewItem()],
+    creditAdded: 0,
+    ...overrides,
+  };
+}
+
+describe("transfer proof form", () => {
+  it("opens with no amount, today, no note", () => {
+    expect(proofMatchDefaults(TODAY)).toEqual({
+      amount: "",
+      receivedOn: TODAY,
+      note: "",
+    });
+  });
+
+  it("sends the integer amount for the proof's own tenant", () => {
+    const fields = proofMatchSchema(TODAY).parse({
+      amount: "1.050.000",
+      receivedOn: "2026-11-13",
+      note: "  masuk ke BCA usaha  ",
+    });
+    expect(proofMatchRequestBody(fields, "req-1")).toEqual({
+      requestId: "req-1",
+      amount: 1_050_000,
+      receivedOn: "2026-11-13",
+      note: "masuk ke BCA usaha",
+    });
+    const bare = proofMatchSchema(TODAY).parse({
+      amount: "50000",
+      receivedOn: TODAY,
+      note: " ",
+    });
+    const body = proofMatchRequestBody(bare, "req-2");
+    expect(body).toEqual({
+      requestId: "req-2",
+      amount: 50_000,
+      receivedOn: TODAY,
+    });
+    expect(body).not.toHaveProperty("tenantId");
+  });
+
+  it("asks for an amount above zero and a day not in the future", () => {
+    const schema = proofMatchSchema(TODAY);
+    expect(
+      schema.safeParse({ amount: "", receivedOn: TODAY, note: "" }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ amount: "0", receivedOn: TODAY, note: "" }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ amount: "1000", receivedOn: "2026-11-16", note: "" })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ amount: "1000", receivedOn: "", note: "" }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        amount: "1000",
+        receivedOn: TODAY,
+        note: "a".repeat(501),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("previews only an amount the API would take", () => {
+    expect(previewAmount("1.050.000")).toBe(1_050_000);
+    expect(previewAmount("")).toBeNull();
+    expect(previewAmount("0")).toBeNull();
+    expect(previewAmount("1.000.000.000.001")).toBeNull();
+  });
+});
+
+describe("transfer proof photo", () => {
+  it("shows the clean photo at its link once getUpload answers", () => {
+    expect(proofPhotoState(uploaded(), "clean", null)).toEqual({
+      kind: "clean",
+      url: "http://localhost:9100/cashflow-dev/files/u-9?X-Amz-Signature=x",
+    });
+    expect(proofPhotoState(undefined, "clean", null)).toEqual({
+      kind: "loading",
+    });
+    expect(
+      proofPhotoState(uploaded({ downloadUrl: undefined }), "clean", null),
+    ).toEqual({ kind: "error", message: PHOTO_ERROR_TEXT });
+  });
+
+  it("follows getUpload's status over the queue's", () => {
+    expect(proofPhotoState(undefined, "pending", null)).toEqual({
+      kind: "pending",
+    });
+    expect(
+      proofPhotoState(
+        uploaded({ status: "pending", downloadUrl: undefined }),
+        "clean",
+        null,
+      ),
+    ).toEqual({ kind: "pending" });
+    expect(
+      proofPhotoState(uploaded({ status: "infected" }), "pending", null),
+    ).toEqual({ kind: "refused" });
+    expect(
+      proofPhotoState(uploaded({ status: "rejected" }), "pending", null),
+    ).toEqual({ kind: "refused" });
+    expect(proofReady(undefined, "pending")).toBe(false);
+    expect(proofReady(uploaded(), "pending")).toBe(true);
+    expect(proofReady(undefined, "clean")).toBe(true);
+  });
+
+  it("shows the API's message when the photo cannot be read", () => {
+    expect(proofPhotoState(undefined, "clean", "Tidak boleh.")).toEqual({
+      kind: "error",
+      message: "Tidak boleh.",
+    });
+    // A failed refetch keeps the photo it had.
+    expect(proofPhotoState(uploaded(), "clean", "Tidak boleh.").kind).toBe(
+      "clean",
+    );
+  });
+
+  it("asks again while scanning and before the link expires", () => {
+    const now = Date.parse("2026-11-14T10:02:00Z");
+    expect(uploadRefetchMs(undefined, now)).toBe(false);
+    expect(
+      uploadRefetchMs(
+        uploaded({ status: "pending", downloadUrl: undefined }),
+        now,
+      ),
+    ).toBe(PROOF_POLL_MS);
+    // Five minutes left: 15 seconds before it ends.
+    expect(uploadRefetchMs(uploaded(), now)).toBe(5 * 60_000 - 15_000);
+    // Almost expired: no faster than the scan poll.
+    expect(
+      uploadRefetchMs(
+        uploaded({ downloadExpiresAt: "2026-11-14T10:02:05Z" }),
+        now,
+      ),
+    ).toBe(PROOF_POLL_MS);
+    expect(uploadRefetchMs(uploaded({ status: "infected" }), now)).toBe(false);
+    expect(
+      uploadRefetchMs(uploaded({ downloadExpiresAt: undefined }), now),
+    ).toBe(false);
+  });
+
+  it("says when it was sent and from which invoice's link", () => {
+    const invoice = {
+      id: "inv-nov",
+      kind: "regular",
+      period: "2026-11-01",
+    } as AccountInvoice;
+    expect(proofPhotoCaption(CREATED, "inv-nov", [invoice])).toEqual({
+      sentAt: "Sab 14 Nov, 17.02",
+      link: "November 2026",
+    });
+    expect(
+      proofPhotoCaption(CREATED, "inv-nov", [{ ...invoice, kind: "final" }])
+        .link,
+    ).toBe("Tagihan akhir November 2026");
+    // The account is not loaded, or does not list the invoice: no month.
+    expect(proofPhotoCaption(CREATED, "inv-nov", undefined).link).toBeNull();
+    expect(proofPhotoCaption(CREATED, "other", [invoice]).link).toBeNull();
+    expect(proofPhotoAlt(WATI)).toBe(
+      "Foto bukti transfer dari Bu Wati Handayani",
+    );
+  });
+});
+
+describe("transfer proof payer and preview", () => {
+  it("names the tenant, the unit and what they owe", () => {
+    expect(proofPayerView(WATI, 1_050_000)).toEqual({
+      name: "Bu Wati Handayani",
+      detail: "Kamar 11, Kos Melati · sisa Rp1.050.000",
+    });
+    expect(proofPayerView(WATI, undefined).detail).toBe("Kamar 11, Kos Melati");
+    expect(proofPayerView(NO_UNIT, 0).detail).toBe("sisa Rp0");
+    expect(proofPayerView(NO_UNIT, undefined).detail).toBeNull();
+  });
+
+  it("lists what the API says the amount pays", () => {
+    const view = proofPreviewView(
+      preview({
+        amount: 1_300_000,
+        items: [
+          previewItem(),
+          previewItem({
+            invoiceId: "inv-nov",
+            period: "2026-11-01",
+            balance: 1_050_000,
+            applied: 250_000,
+            balanceAfter: 800_000,
+            paidInFull: false,
+          }),
+        ],
+      }),
+    );
+    expect(view).toEqual({
+      amount: 1_300_000,
+      lines: [
+        { id: "inv-oct", lead: "Tagihan Oktober 2026 jadi", result: "Lunas" },
+        {
+          id: "inv-nov",
+          lead: "Tagihan November 2026:",
+          result: "Sebagian, sisa Rp800.000",
+        },
+      ],
+      credit: null,
+    });
+  });
+
+  it("names the credit, and the unit when the amount reaches several", () => {
+    const view = proofPreviewView(
+      preview({
+        amount: 2_200_000,
+        items: [
+          previewItem(),
+          previewItem({
+            invoiceId: "inv-b",
+            unitLabel: "Rumah B",
+            propertyName: "Kontrakan Mawar",
+          }),
+        ],
+        creditAdded: 100_000,
+      }),
+    );
+    expect(view.lines.map((line) => line.lead)).toEqual([
+      "Tagihan Oktober 2026 · Kamar 11 jadi",
+      "Tagihan Oktober 2026 · Rumah B jadi",
+    ]);
+    expect(view.credit).toBe("Kelebihan Rp100.000 jadi saldo");
+    // Nothing owed: everything goes to credit.
+    expect(
+      proofPreviewView(preview({ items: [], creditAdded: 50_000 })),
+    ).toMatchObject({ lines: [], credit: "Kelebihan Rp50.000 jadi saldo" });
+  });
+
+  it("toasts the amount the API recorded", () => {
+    const result = {
+      payment: { payment: { amount: 1_050_000 } },
+    } as MatchTransferProofResult;
+    expect(proofMatchedToast(result, "Bu Wati Handayani")).toEqual({
+      tone: "create",
+      title: "Pembayaran disimpan",
+      description: "Rp1.050.000 dari Bu Wati Handayani",
+    });
   });
 });

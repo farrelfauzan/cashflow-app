@@ -8,16 +8,23 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 
+import { invoiceName, invoiceTitle } from "@/components/client/billing/utils";
 import {
   isForbidden,
   receiptCountText,
 } from "@/components/client/deposit/utils";
 import type { DepositChip } from "@/components/client/deposit/type";
 import { readChoice } from "@/components/client/list/utils";
+import {
+  canRecordPayment,
+  PAYMENT_AMOUNT_MAX,
+  paymentFormSchema,
+} from "@/components/client/payment/utils";
 import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import {
   CheckQueueKind,
+  type AccountInvoice,
   type CheckDepositGap,
   type CheckPhoneChanged,
   type CheckQrisAmountMismatch,
@@ -27,12 +34,16 @@ import {
   type CheckTransferProof,
   type CheckUploadInfected,
   type DismissCheckItemRequest,
+  type MatchTransferProofRequest,
+  type MatchTransferProofResult,
+  type TenantPaymentPreview,
+  type Upload,
   type UploadPurpose,
 } from "@/lib/api/generated/model";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
 import { formatTimestampShortWeekdayDayMonthTime } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
-import { formatRupiah } from "@/lib/format/rupiah";
+import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 
 import type {
   CheckActionErrorKind,
@@ -43,13 +54,20 @@ import type {
   NoteFormOutput,
   NoteFormValues,
   PhoneChangeSheetView,
+  ProofMatchOutput,
+  ProofMatchValues,
+  ProofPayerView,
+  ProofPhotoCaption,
+  ProofPhotoState,
+  ProofPreviewView,
   QrisMismatchSheetView,
   UploadInfectedSheetView,
 } from "./type";
 
 // "Antrean cek": what the system could not settle on its own, oldest first. Every amount shown is
 // a field the API sent, only formatted; the differences shown ("Kurang Rp50.000", "Beda
-// Rp50.000") are display only. Closing an item records no money.
+// Rp50.000") are display only. Closing an item records no money; matching a transfer proof
+// records the amount the admin typed, and what it pays is the API's (its preview and answer).
 
 export { isForbidden };
 
@@ -141,11 +159,54 @@ export const PHONE_CALLOUT =
   "Setelah dipakai, pengingat dan tautan bayar berikutnya dikirim ke nomor baru. Nomor lama tidak dipakai lagi.";
 export const PHONE_APPLY = "Pakai nomor baru";
 export const PHONE_REJECT = "Jangan pakai";
-export const PHONE_BACK = "Kembali";
+export const BACK_LABEL = "Kembali";
+export const PHONE_BACK = BACK_LABEL;
 export const PHONE_REASON_LABEL = "Kenapa tidak dipakai? (wajib)";
 export const PHONE_REASON_PLACEHOLDER =
   "Misalnya: nomor tidak aktif saat ditelepon";
 export const PHONE_REJECT_SUBMIT = "Simpan, jangan pakai";
+
+export const PROOF_TITLE = "Bukti transfer";
+export const PROOF_SENT_LABEL = "Dikirim penyewa";
+export const PROOF_LINK_LABEL = "Dari tautan tagihan";
+export const ZOOM_LABEL = "Perbesar foto";
+export const ZOOM_TITLE = "Foto bukti transfer";
+export const PROOF_PENDING_TEXT = "Foto sedang diperiksa, tunggu sebentar.";
+export const PHOTO_LOADING_TEXT = "Memuat foto…";
+export const PHOTO_ERROR_TEXT = "Foto tidak bisa dimuat.";
+export const PROOF_CALLOUT =
+  "Cek mutasi rekening usaha dulu. Simpan hanya jika uangnya sudah masuk.";
+export const PAYER_LABEL = "Pembayaran dari";
+export const PROOF_AMOUNT_LABEL = "Jumlah yang masuk";
+export const PROOF_DATE_LABEL = "Tanggal masuk";
+export const PROOF_FIELDS_HINT =
+  "Isi sesuai mutasi rekening, bukan hanya dari foto. Kolom ini sengaja kosong saat dibuka.";
+export const PREVIEW_LEAD = "Setelah disimpan:";
+export const PREVIEW_LOADING_TEXT = "Menghitung…";
+export const NO_RECEIPT_TEXT = "Tidak ada kwitansi WA untuk transfer.";
+export const PROOF_NOTE_LABEL = "Catatan (opsional)";
+export const PROOF_NOTE_PLACEHOLDER =
+  "Misalnya: masuk ke BCA usaha, atas nama Wati H.";
+export const PROOF_SUBMIT = "Simpan pembayaran";
+export const PROOF_REJECT = "Bukan pembayaran";
+export const PROOF_REJECT_TITLE = "Bukan pembayaran";
+export const PROOF_REJECT_PLACEHOLDER =
+  "Misalnya: foto struk belanja, bukan transfer sewa";
+export const PROOF_REJECT_HINT =
+  "Tidak ada pembayaran yang dicatat. Item ini hilang dari antrean.";
+export const PROOF_REJECT_SUBMIT = "Simpan, bukan pembayaran";
+
+// While the photo is being scanned the drawer asks again this often, so it turns usable without
+// a reload. A clean photo's link is asked for again this long before it expires.
+export const PROOF_POLL_MS = 5_000;
+export const LINK_REFRESH_MARGIN_MS = 15_000;
+
+// How long typing pauses before the API previews the amount.
+export const PREVIEW_DEBOUNCE_MS = 400;
+
+// The fields an API error can name on "Simpan pembayaran"; any other (requestId) goes to the
+// alert.
+export const PROOF_MATCH_API_FIELDS = ["amount", "receivedOn", "note"] as const;
 
 // The API's limit (DismissCheckItemRequest.note).
 export const NOTE_MAX_LENGTH = 500;
@@ -165,6 +226,12 @@ const HONORIFICS = new Set(["Pak", "Bu", "Ibu", "Mas", "Mbak", "Kak"]);
 // name.
 export function canCheckItems(ability: AppAbility): boolean {
   return ability.can("check", everywhere("payment"));
+}
+
+// A transfer proof becomes a payment only for a member who may also record payments ("conditional"
+// shows it and the API decides per tenant). Never by role name.
+export function canMatchProofs(ability: AppAbility): boolean {
+  return canCheckItems(ability) && canRecordPayment(ability);
 }
 
 // The screen is for a member who may answer the items or read cash for the whole organization
@@ -319,8 +386,8 @@ function rowContent(item: CheckQueueItem): RowContent | null {
   }
 }
 
-// One item as a row; null when the API sent it without the object its kind names. A transfer
-// proof does not open a drawer yet (matching it comes with its own drawer).
+// One item as a row; null when the API sent it without the object its kind names. Every row
+// opens its kind's drawer.
 export function checkRowView(item: CheckQueueItem): CheckRowView | null {
   const content = rowContent(item);
   if (content === null) return null;
@@ -332,7 +399,7 @@ export function checkRowView(item: CheckQueueItem): CheckRowView | null {
     iconTone: KIND_ICON_TONE[item.kind],
     ...content,
     arrived: arrivedText(item.createdAt),
-    opens: item.kind !== "transfer_proof",
+    opens: true,
   };
 }
 
@@ -518,9 +585,18 @@ export function dismissRequestBody(
 
 export function checkActionErrorKind(error: unknown): CheckActionErrorKind {
   if (!(error instanceof ApiError) || error.status !== 409) return "other";
-  if (error.code === "check_item_resolved") return "resolved";
-  if (error.code === "phone_taken") return "phone_taken";
-  return "other";
+  switch (error.code) {
+    case "check_item_resolved":
+      return "resolved";
+    case "phone_taken":
+      return "phone_taken";
+    case "upload_not_ready":
+      return "upload_not_ready";
+    case "upload_refused":
+      return "upload_refused";
+    default:
+      return "other";
+  }
 }
 
 function done(title: string): ToastMessage {
@@ -563,4 +639,189 @@ export const COPY_FAILED_TOAST: ToastMessage = {
   tone: "caution",
   title: "Tidak bisa menyalin",
   description: "Salin ID transaksi secara manual.",
+};
+
+// "Bukti transfer": the friendly early checks of "Simpan pembayaran", the ones of "Catat
+// pembayaran" without the method (a proof is always a transfer). The Go API checks everything
+// again and its message wins. `today` is the Jakarta day.
+export function proofMatchSchema(today: string) {
+  return paymentFormSchema(today).omit({ method: true });
+}
+
+// The amount is empty when the drawer opens: the admin types what the bank statement shows, not
+// what the photo says. The day is today in Jakarta.
+export function proofMatchDefaults(today: string): ProofMatchValues {
+  return { amount: "", receivedOn: today, note: "" };
+}
+
+// The request body: the proof's own tenant (no tenantId), the integer amount, the day, and the
+// trimmed note only when there is one. One requestId per opening of the drawer, sent again
+// unchanged on a retry.
+export function proofMatchRequestBody(
+  fields: ProofMatchOutput,
+  requestId: string,
+): MatchTransferProofRequest {
+  const body: MatchTransferProofRequest = {
+    requestId,
+    amount: fields.amount,
+    receivedOn: fields.receivedOn,
+  };
+  if (fields.note !== "") body.note = fields.note;
+  return body;
+}
+
+// The amount to preview: the field's whole rupiah, or null while it holds none the API would take.
+export function previewAmount(text: string): number | null {
+  const amount = parseRupiahInput(text);
+  if (amount === null || amount <= 0 || amount > PAYMENT_AMOUNT_MAX) {
+    return null;
+  }
+  return amount;
+}
+
+// The photo's scan status: getUpload's once it has answered, else the queue's.
+function proofStatus(
+  upload: Upload | undefined,
+  queued: CheckTransferProof["uploadStatus"],
+): Upload["status"] {
+  return upload?.status ?? queued;
+}
+
+// Whether "Simpan pembayaran" may go: the scan found the photo clean.
+export function proofReady(
+  upload: Upload | undefined,
+  queued: CheckTransferProof["uploadStatus"],
+): boolean {
+  return proofStatus(upload, queued) === "clean";
+}
+
+// What the photo frame shows. `errorMessage` is getUpload's failure, already in Bahasa Indonesia.
+export function proofPhotoState(
+  upload: Upload | undefined,
+  queued: CheckTransferProof["uploadStatus"],
+  errorMessage: string | null,
+): ProofPhotoState {
+  if (upload === undefined && errorMessage !== null) {
+    return { kind: "error", message: errorMessage };
+  }
+  switch (proofStatus(upload, queued)) {
+    case "pending":
+      return { kind: "pending" };
+    case "rejected":
+    case "infected":
+      return { kind: "refused" };
+    case "clean":
+      if (upload === undefined) return { kind: "loading" };
+      return upload.downloadUrl === undefined
+        ? { kind: "error", message: PHOTO_ERROR_TEXT }
+        : { kind: "clean", url: upload.downloadUrl };
+  }
+}
+
+// When to ask getUpload again: every PROOF_POLL_MS while the photo is being scanned, shortly
+// before a clean photo's link expires, never once the scan refused it.
+export function uploadRefetchMs(
+  upload: Upload | undefined,
+  now: number,
+): number | false {
+  if (upload === undefined) return false;
+  if (upload.status === "pending") return PROOF_POLL_MS;
+  if (upload.status !== "clean" || upload.downloadExpiresAt === undefined) {
+    return false;
+  }
+  const expires = Date.parse(upload.downloadExpiresAt);
+  if (Number.isNaN(expires)) return false;
+  return Math.max(expires - now - LINK_REFRESH_MARGIN_MS, PROOF_POLL_MS);
+}
+
+// The photo's text alternative: "Foto bukti transfer dari Bu Wati Handayani".
+export function proofPhotoAlt(tenant: CheckTenant): string {
+  return `${ZOOM_TITLE} dari ${tenant.name}`;
+}
+
+// When the tenant sent the proof (the item's createdAt), and the month of the link's invoice when
+// the tenant's account lists it.
+export function proofPhotoCaption(
+  createdAt: string,
+  invoiceId: string,
+  invoices: readonly AccountInvoice[] | undefined,
+): ProofPhotoCaption {
+  const invoice = invoices?.find((each) => each.id === invoiceId);
+  return {
+    sentAt: formatTimestampShortWeekdayDayMonthTime(createdAt),
+    link: invoice === undefined ? null : invoiceTitle(invoice),
+  };
+}
+
+// "Pembayaran dari": the tenant, their unit and what they still owe over all their invoices
+// (getTenantAccount's outstanding), each left out while unknown.
+export function proofPayerView(
+  tenant: CheckTenant,
+  outstanding: number | undefined,
+): ProofPayerView {
+  const parts = [
+    unitPlace(tenant),
+    outstanding === undefined ? null : `sisa ${formatRupiah(outstanding)}`,
+  ].filter((part) => part !== null);
+  return {
+    name: tenant.name,
+    detail: parts.length === 0 ? null : parts.join(" · "),
+  };
+}
+
+// The API's preview as lines: which invoice becomes "Lunas", which is paid in part and what it
+// would still owe, and the credit the amount would add. The unit is named only when the amount
+// reaches invoices of more than one unit.
+export function proofPreviewView(
+  preview: TenantPaymentPreview,
+): ProofPreviewView {
+  const units = new Set(
+    preview.items.map((item) => `${item.propertyName}|${item.unitLabel}`),
+  );
+  return {
+    amount: preview.amount,
+    lines: preview.items.map((item) => {
+      const name =
+        units.size > 1
+          ? `${invoiceName(item)} · ${item.unitLabel}`
+          : invoiceName(item);
+      return item.paidInFull
+        ? { id: item.invoiceId, lead: `${name} jadi`, result: "Lunas" }
+        : {
+            id: item.invoiceId,
+            lead: `${name}:`,
+            result: `Sebagian, sisa ${formatRupiah(item.balanceAfter)}`,
+          };
+    }),
+    credit:
+      preview.creditAdded > 0
+        ? `Kelebihan ${formatRupiah(preview.creditAdded)} jadi saldo`
+        : null,
+  };
+}
+
+// The toast once the API recorded the payment: the amount it answered and the tenant's name.
+export function proofMatchedToast(
+  result: MatchTransferProofResult,
+  tenantName: string,
+): ToastMessage {
+  return {
+    tone: "create",
+    title: "Pembayaran disimpan",
+    description: `${formatRupiah(result.payment.payment.amount)} dari ${tenantName}`,
+  };
+}
+
+export const PROOF_DISMISSED_TOAST: ToastMessage = {
+  tone: "neutral",
+  title: "Ditandai bukan pembayaran",
+  description: null,
+};
+
+// The scan refused the photo while the drawer was open: it closes, and the proof is listed again
+// as "File ditolak".
+export const UPLOAD_REFUSED_TOAST: ToastMessage = {
+  tone: "caution",
+  title: "Foto bukti ditolak",
+  description: "Pemindai menolak foto ini. Lihat di File ditolak.",
 };
