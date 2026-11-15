@@ -33,7 +33,10 @@ type PreviewItem struct {
 type Preview struct {
 	Amount            int64
 	OutstandingBefore int64 // the sum of every positive balance given
-	OutstandingAfter  int64 // OutstandingBefore minus Amount
+	OutstandingAfter  int64 // OutstandingBefore minus what the amount pays
+	// CreditAdded is the part of the amount no invoice takes, which becomes credit; always zero
+	// from PreviewPayment.
+	CreditAdded int64
 	// Items are the invoices the amount reaches, in the order given; the last may be paid in part.
 	Items []PreviewItem
 }
@@ -47,16 +50,41 @@ func PreviewPayment(open []OpenBalance, amount int64) (Preview, error) {
 	if amount < 1 {
 		return Preview{}, ErrPreviewAmountInvalid
 	}
+	if amount > owed(open) {
+		return Preview{}, ErrAmountAboveOutstanding
+	}
+	return walkPayment(open, amount), nil
+}
+
+// PreviewRecordedPayment is PreviewPayment for a payment a member records (a transfer they
+// match, say): an amount above what is owed is allowed, and the rest is CreditAdded, as FIFO
+// allocation turns an overpayment into credit. An amount below 1 is ErrPreviewAmountInvalid.
+func PreviewRecordedPayment(open []OpenBalance, amount int64) (Preview, error) {
+	if amount < 1 {
+		return Preview{}, ErrPreviewAmountInvalid
+	}
+	return walkPayment(open, amount), nil
+}
+
+// owed is the sum of the positive balances.
+func owed(open []OpenBalance) int64 {
 	var before int64
 	for _, o := range open {
 		if o.Balance > 0 {
 			before += o.Balance
 		}
 	}
-	if amount > before {
-		return Preview{}, ErrAmountAboveOutstanding
+	return before
+}
+
+// walkPayment spends amount on each positive balance in turn; what is left is CreditAdded.
+func walkPayment(open []OpenBalance, amount int64) Preview {
+	before := owed(open)
+	paid := min(amount, before)
+	out := Preview{
+		Amount: amount, OutstandingBefore: before, OutstandingAfter: before - paid, CreditAdded: amount - paid,
+		Items: []PreviewItem{},
 	}
-	out := Preview{Amount: amount, OutstandingBefore: before, OutstandingAfter: before - amount, Items: []PreviewItem{}}
 	left := amount
 	for _, o := range open {
 		if left == 0 {
@@ -72,5 +100,5 @@ func PreviewPayment(open []OpenBalance, amount int64) (Preview, error) {
 			BalanceAfter: o.Balance - applied, PaidInFull: applied == o.Balance,
 		})
 	}
-	return out, nil
+	return out
 }

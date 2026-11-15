@@ -188,6 +188,7 @@ func New(d Deps) *Server {
 				r.Get("/tenants/{tenantID}", s.getTenant)
 				r.Put("/tenants/{tenantID}", s.updateTenant)
 				r.Get("/tenants/{tenantID}/account", s.getTenantAccount)
+				r.Get("/tenants/{tenantID}/payment-preview", s.previewTenantPayment)
 				r.Get("/tenants/{tenantID}/open-invoices", s.listTenantOpenInvoices)
 				r.Get("/tenants/{tenantID}/promises", s.listTenantPromises)
 				r.Post("/tenants/{tenantID}/promises", s.makeTenantPromise)
