@@ -23,6 +23,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { cashPhoto } from "./support/cash-photo";
 import { minBodyFontPx, projectDigit, projectName } from "./support/projects";
 import {
   isPhone,
@@ -178,6 +179,7 @@ test.describe("Karyawan", () => {
     const input: CashPaymentInput = {
       requestId: crypto.randomUUID(),
       amount,
+      photoUploadId: await cashPhoto(page, page.request, orgId, tenant.id),
     };
     const recorded = await call<CashPaymentResult>(
       page,
