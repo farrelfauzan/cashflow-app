@@ -345,6 +345,28 @@ func (s *Service) Update(ctx context.Context, p authz.Principal, id uuid.UUID, i
 	return out, err
 }
 
+// ChangePhoneTx sets the tenant's WhatsApp number to phone, already in E.164, inside tx scoped to
+// the principal's organization, and keeps its name and note: Antrean cek applying the new number
+// a karyawan brought back from a visit (S6-6). It needs tenant:manage as Update does. A missing
+// tenant is ErrNotFound; a number another tenant has is ErrPhoneTaken, after which tx can only be
+// rolled back.
+func (s *Service) ChangePhoneTx(ctx context.Context, tx pgx.Tx, p authz.Principal, id uuid.UUID, phone string) error {
+	q := dbgen.New(tx)
+	current, leases, err := load(ctx, q, p.OrganizationID, id, Today(s.clock))
+	if err != nil {
+		return err
+	}
+	if err := s.authorizeTenantChange(ctx, tx, p, id, leases); err != nil {
+		return err
+	}
+	if _, err := q.UpdateTenant(ctx, dbgen.UpdateTenantParams{
+		OrganizationID: p.OrganizationID, ID: id, Name: current.Name, Phone: phone, Note: current.Note,
+	}); err != nil {
+		return tenantWriteError(err)
+	}
+	return nil
+}
+
 // authorizeTenantChange allows tenant:manage through every active lease of the tenant. A tenant
 // with no active lease needs the check on the whole organization and, when it has ended
 // leases, through each of them too. It never stops at an organization-wide Allow on the bare

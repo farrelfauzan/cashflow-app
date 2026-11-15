@@ -53,12 +53,13 @@ FOR UPDATE;
 
 -- name: ListWaitingTransferProofs :many
 -- A tenant's newest transfer proofs still waiting for the admin, for the payment page: those whose
--- photo the scan has not refused (pending or clean). Until the check queue (S6-6) resolves
--- proofs, every such proof waits.
+-- photo the scan has not refused (pending or clean) and that Antrean cek has not answered (S6-6).
 SELECT tp.id, tp.created_at
 FROM transfer_proof tp
 JOIN upload u ON u.organization_id = tp.organization_id AND u.id = tp.upload_id
 WHERE tp.organization_id = @organization_id AND tp.tenant_id = @tenant_id
   AND u.status IN ('pending', 'clean')
+  AND NOT EXISTS (SELECT 1 FROM check_resolution r
+                  WHERE r.organization_id = tp.organization_id AND r.transfer_proof_id = tp.id)
 ORDER BY tp.created_at DESC, tp.id DESC
 LIMIT @max_rows;

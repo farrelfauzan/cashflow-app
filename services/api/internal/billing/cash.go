@@ -82,7 +82,8 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 			return row.TenantID == valid.TenantID && row.Amount == valid.Amount && row.Method == MethodCash &&
 				note == valid.Note && row.RecordedByStaffUserID.UUID == p.UserID
 		},
-		inTx: func(ctx context.Context, q *dbgen.Queries, row dbgen.Payment, created bool) error {
+		inTx: func(ctx context.Context, tx pgx.Tx, row dbgen.Payment, created bool) error {
+			q := dbgen.New(tx)
 			if created {
 				if err := q.InsertPaymentReceipt(ctx, dbgen.InsertPaymentReceiptParams{
 					PaymentID: row.ID, OrganizationID: org, TenantID: row.TenantID, CreatedAt: now,

@@ -246,6 +246,8 @@ FROM transfer_proof tp
 JOIN upload u ON u.organization_id = tp.organization_id AND u.id = tp.upload_id
 WHERE tp.organization_id = $1 AND tp.tenant_id = $2
   AND u.status IN ('pending', 'clean')
+  AND NOT EXISTS (SELECT 1 FROM check_resolution r
+                  WHERE r.organization_id = tp.organization_id AND r.transfer_proof_id = tp.id)
 ORDER BY tp.created_at DESC, tp.id DESC
 LIMIT $3
 `
@@ -262,8 +264,7 @@ type ListWaitingTransferProofsRow struct {
 }
 
 // A tenant's newest transfer proofs still waiting for the admin, for the payment page: those whose
-// photo the scan has not refused (pending or clean). Until the check queue (S6-6) resolves
-// proofs, every such proof waits.
+// photo the scan has not refused (pending or clean) and that Antrean cek has not answered (S6-6).
 func (q *Queries) ListWaitingTransferProofs(ctx context.Context, arg ListWaitingTransferProofsParams) ([]ListWaitingTransferProofsRow, error) {
 	rows, err := q.db.Query(ctx, listWaitingTransferProofs, arg.OrganizationID, arg.TenantID, arg.MaxRows)
 	if err != nil {

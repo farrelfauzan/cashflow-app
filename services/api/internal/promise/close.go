@@ -223,8 +223,17 @@ func (c *Closer) closeDueTenant(ctx context.Context, org, tenantID uuid.UUID, to
 // openVisitIfThreshold opens the tenant's broken_promises visit task when their broken promises
 // since their last resolved broken_promises task (all of them when none was resolved) reach the
 // organization's threshold. It returns the id of the task it opened, uuid.Nil when it opened none;
-// an open one already there is left as it is.
+// an open one already there is left as it is. A tenant with no active lease gets none (decision 48,
+// as for the H+7 visit): the visit list shows only tenants with an active lease a karyawan
+// collects (decision 47), so nobody could act on it.
 func openVisitIfThreshold(ctx context.Context, q *dbgen.Queries, org, tenantID uuid.UUID, now time.Time) (uuid.UUID, error) {
+	leases, err := q.ListTenantActiveLeaseScopes(ctx, dbgen.ListTenantActiveLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("promise: loading the active leases: %w", err)
+	}
+	if len(leases) == 0 {
+		return uuid.Nil, nil
+	}
 	broken, err := q.CountTenantBrokenPromisesSinceVisit(ctx, dbgen.CountTenantBrokenPromisesSinceVisitParams{OrganizationID: org, TenantID: tenantID})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("promise: counting broken promises: %w", err)

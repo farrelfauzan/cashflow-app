@@ -45,7 +45,8 @@ type Page struct {
 	TelegramLinked bool
 	// ProofsWaiting are the tenant's newest transfer proofs still waiting for the admin, from
 	// any of their links, newest first, at most MaxProofsWaiting ("Bukti transfer terkirim"). A
-	// proof the scan refused is not waiting. No photo or link to one is shown.
+	// proof the scan refused, or one Antrean cek answered (matched or dismissed), is not waiting.
+	// No photo or link to one is shown.
 	ProofsWaiting []PageProof
 }
 

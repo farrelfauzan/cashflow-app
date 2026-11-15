@@ -224,7 +224,7 @@ func (s *Service) list(ctx context.Context, org uuid.UUID, filter Query, page li
 			out.Items = append(out.Items, fromRow(r))
 		}
 		out.Total = total
-		return nil
+		return attachGapClosures(ctx, q, org, out.Items)
 	})
 	if err != nil {
 		return listing.Result[Deposit]{}, err
@@ -374,7 +374,38 @@ func getDeposit(ctx context.Context, q *dbgen.Queries, org, id uuid.UUID) (Depos
 	if err != nil {
 		return Deposit{}, fmt.Errorf("loading deposit %s: %w", id, err)
 	}
-	return fromRow(dbgen.ListCashDepositsRow(row)), nil
+	out := []Deposit{fromRow(dbgen.ListCashDepositsRow(row))}
+	if err := attachGapClosures(ctx, q, org, out); err != nil {
+		return Deposit{}, err
+	}
+	return out[0], nil
+}
+
+// attachGapClosures sets the GapClosure of the deposits whose gap was closed in Antrean cek.
+func attachGapClosures(ctx context.Context, q *dbgen.Queries, org uuid.UUID, deposits []Deposit) error {
+	if len(deposits) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, len(deposits))
+	for i, d := range deposits {
+		ids[i] = d.ID
+	}
+	rows, err := q.GetDepositGapClosures(ctx, dbgen.GetDepositGapClosuresParams{OrganizationID: org, DepositIds: ids})
+	if err != nil {
+		return fmt.Errorf("loading the deposits' gap closures: %w", err)
+	}
+	byID := make(map[uuid.UUID]*GapClosure, len(rows))
+	for _, r := range rows {
+		c := &GapClosure{ClosedAt: r.CreatedAt, ClosedBy: r.StaffUserID, ClosedByName: r.StaffName}
+		if r.Note != nil {
+			c.Note = *r.Note
+		}
+		byID[r.CashDepositID.UUID] = c
+	}
+	for i := range deposits {
+		deposits[i].GapClosure = byID[deposits[i].ID]
+	}
+	return nil
 }
 
 func nullUUID(id uuid.UUID) uuid.NullUUID {

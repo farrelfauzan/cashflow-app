@@ -249,6 +249,11 @@ func toAPIDeposit(d deposit.Deposit) apigen.CashDeposit {
 			ConfirmedBy: c.ConfirmedBy, ConfirmedByName: c.ConfirmedByName, ConfirmedAt: c.ConfirmedAt,
 		}
 	}
+	if g := d.GapClosure; g != nil {
+		out.GapClosure = &apigen.CashDepositGapClosure{
+			ClosedAt: g.ClosedAt, ClosedBy: apigen.CheckStaff{StaffUserId: g.ClosedBy, Name: g.ClosedByName}, Note: g.Note,
+		}
+	}
 	return out
 }
 
