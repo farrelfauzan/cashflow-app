@@ -332,6 +332,8 @@ func TestCheckQueueOverHTTP(t *testing.T) {
 		for i, it := range page.Items {
 			ids[i] = it.Id
 		}
-		require.Equal(t, []uuid.UUID{pending.ID, receipt.Upload.ID, attempt.ID, takenNumber.ID, other.ID}, ids)
+		// Some arrived at the same instant of the test clock, where the id breaks the tie, so this
+		// checks which items are left; the order is checked in the checkqueue package.
+		require.ElementsMatch(t, []uuid.UUID{pending.ID, receipt.Upload.ID, attempt.ID, takenNumber.ID, other.ID}, ids)
 	})
 }
