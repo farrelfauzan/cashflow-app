@@ -623,8 +623,10 @@ func TestProofSchema(t *testing.T) {
 			require.Contains(t, pgErr.Message, "append-only")
 		}
 		requireCode(t, asApp(a.org.ID, "TRUNCATE transfer_proof"), "42501")
-		pgErr := pgError(t, asOwner("TRUNCATE transfer_proof"), "42501")
-		require.Contains(t, pgErr.Message, "append-only")
+		// check_resolution references transfer_proof (S6-6), so even the owner's TRUNCATE is
+		// refused for the foreign key before the append-only trigger runs.
+		pgErr := pgError(t, asOwner("TRUNCATE transfer_proof"), "0A000")
+		require.Contains(t, pgErr.Message, "foreign key")
 		require.Equal(t, 2, a.count(t, "SELECT count(*) FROM transfer_proof"))
 	})
 
