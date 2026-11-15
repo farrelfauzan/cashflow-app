@@ -1358,10 +1358,10 @@ paths:
         A cash payment received now, recorded by the caller. It pays the tenant's open invoices
         oldest period first across all their leases (FIFO), what is left is credit, and a payment
         that keeps the tenant's active promise closes it as kept: exactly as recordPayment, whose
-        answer it repeats. Needs cash:record with the amount on the tenant through every lease the
-        tenant has or had, in the lease's property and assigned to its collector, so a karyawan
-        records cash only for tenants they collect from (403 otherwise, audited); a tenant with no
-        lease needs the organization-wide grant. Admins record payments with recordPayment.
+        answer it repeats. Needs cash:record with the amount on the tenant through each of its active
+        leases, in the lease's property and assigned to its collector (decision 47: ended leases do
+        not count), so a karyawan records cash only for tenants they collect from now (403
+        otherwise, audited); a tenant with no active lease needs the organization-wide grant. Admins record payments with recordPayment.
 
         The tenant's receipt (template payment_receipt, cash only) is recorded with the payment and
         sent once by the worker right after, through WhatsApp or, in a demo, the tenant's linked
@@ -1420,7 +1420,7 @@ paths:
         until then, decision 46.10): start an upload with purpose cash_receipt for the payment's
         tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the
         member who recorded the payment may attach its photo, with cash:record on the tenant and
-        the payment's amount through every lease the tenant has or had, as when recording it (403
+        the payment's amount through each of the tenant's active leases, as when recording it (403
         otherwise, audited).
 
         The upload is accepted while its scan is still pending; the answer, getUpload and the
@@ -1487,8 +1487,9 @@ paths:
         another member, is not on it.
 
         Needs invoice:read: a member with no access at all is 403 (audited). A tenant is listed
-        only when the caller may read invoices through every lease the tenant has or had (for a
-        karyawan, every lease is one they collect), since the amount owed spans them all; total
+        only when the caller may read invoices through each of the tenant's active leases (for a
+        karyawan, each is one they collect; decision 47: ended leases do not count, though the
+        amount owed spans them); total
         counts only those rows. It is the caller's own field list: an admin with the
         organization-wide grant also sees only the tenants they collect from.
       parameters:
@@ -1764,6 +1765,98 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /orgs/{orgId}/field/visits:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [field]
+      operationId: listFieldVisits
+      summary: Kunjungan hari ini, the caller's tenants to visit (needs visit:read)
+      description: >
+        Of the tenants the caller collects from on an active lease: those with an open visit (debt
+        a week past due, promises broken, a number WhatsApp cannot reach), the oldest visit first;
+        then those the caller recorded an outcome on today (status done), the latest first; the
+        tenant id breaks ties. A tenant is listed only when the caller may read visits through each
+        of its active leases (decision 47: ended leases do not count). One row per tenant, with
+        every open reason. lastOutcome is the caller's latest outcome today (a not_home row stays
+        open with it); unlinkedCashToday is the field cash the caller took from the tenant today
+        that no outcome names yet ("Sudah bayar hari ini" sends one as paymentId).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FieldVisitList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /orgs/{orgId}/field/tenants/{tenantId}/visit-outcomes:
+    parameters:
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      tags: [field]
+      operationId: recordVisitOutcome
+      summary: Record what happened at a visit, "Catat hasil kunjungan" (needs visit:record)
+      description: >
+        An outcome points at what the field app already recorded, so money and promises keep one
+        path: paid names a cash payment the caller recorded with recordCashPayment from this tenant
+        today; promise names the latest version of a promise the caller made with makeFieldPromise
+        for this tenant today; each backs one outcome. number_changed carries the tenant's new
+        WhatsApp number, which the admin applies later; not_home carries nothing.
+
+        It resolves the tenant's open visits it answers (decision 46.6): paid and promise the
+        overdue and broken_promises ones, number_changed the undeliverable one, not_home none (the
+        tenant stays on tomorrow's list). The tenant must have an open visit (409 visit_not_open).
+        Needs visit:record on the tenant through each of its active leases (decision 47); 403
+        otherwise, audited.
+
+        requestId makes a retry harmless: the same requestId with the same body from the same
+        member answers 200 with the outcome already recorded; with any other body it is 409
+        request_id_reused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VisitOutcomeInput" }
+      responses:
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VisitOutcome" }
+        "200":
+          description: Already recorded under this requestId; nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VisitOutcome" }
+        "400":
+          description: >
+            invalid_input (field requestId, outcome, paymentId, promiseVersionId, newPhone or note,
+            for a missing or extra one); invalid_phone (field newPhone); visit_payment_invalid
+            (field paymentId); visit_promise_invalid (field promiseVersionId). A body that is not
+            the documented JSON, or names an unknown field, is invalid_json.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: "No such tenant in the organization (code not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "visit_not_open: the tenant has no open visit. request_id_reused."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /orgs/{orgId}/field/tenants/{tenantId}/promises:
     parameters:
       - $ref: "#/components/parameters/OrgId"
@@ -1774,8 +1867,8 @@ paths:
       summary: Record a tenant's payment promise from the field, "Catat janji bayar" (needs promise:create; audited)
       description: >
         makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the
-        version's source is karyawan. Needs promise:create on the tenant through every lease the
-        tenant has or had (a karyawan's own are the leases they collect); 403 otherwise. Allowed
+        version's source is karyawan. Needs promise:create on the tenant through each of its active
+        leases (a karyawan's own are the leases they collect; decision 47); 403 otherwise. Allowed
         and denied checks are audited.
       requestBody:
         required: true
@@ -2055,8 +2148,8 @@ paths:
         file can be read, through getUpload's short-lived downloadUrl, always as a download.
 
         What the upload is for decides the permission: purpose cash_receipt (a receipt photo for
-        tenantId) needs cash:record on the tenant, through every lease the tenant has or had, so a
-        karyawan may upload only for tenants they collect from; purpose cash_deposit (a deposit
+        tenantId) needs cash:record on the tenant, through each of its active leases (decision 47),
+        so a karyawan may upload only for tenants they collect from now; purpose cash_deposit (a deposit
         photo, no tenantId) needs cash:deposit on the caller's own record.
 
         Errors: 400 upload_purpose_unknown (field purpose), upload_type_not_allowed (field
@@ -2130,7 +2223,7 @@ paths:
       operationId: getUpload
       summary: An upload's scan status and, once it is clean, a short-lived download link
       description: >
-        Allowed with payment:check or cash:read (through every lease of a receipt's tenant; for
+        Allowed with payment:check or cash:read (through each active lease of a receipt's tenant; for
         a deposit photo, for the whole organization), or with the action that started the upload on the
         same record (a karyawan reads the receipts of tenants they collect from and their own
         deposit photos). downloadUrl is present only when status is clean, lasts a few minutes
@@ -3994,6 +4087,102 @@ components:
       properties:
         receivedAmount: { type: integer, format: int64, minimum: 0, maximum: 1000000000000, description: "What the admin counted.", example: 1950000 }
         note: { type: string, maxLength: 500, description: "Optional, at most 500 letters after trimming." }
+
+    VisitReasonCode:
+      type: string
+      enum: [overdue, broken_promises, undeliverable]
+      description: >
+        overdue: debt a week past its due date ("Telat 7 hari", with daysOverdue);
+        broken_promises: promises broken since the last such visit ("Janji lewat 2×", with
+        brokenPromises); undeliverable: WhatsApp cannot reach the tenant's number ("WA gagal
+        terkirim"; from slice 5).
+
+    VisitReason:
+      type: object
+      required: [code]
+      properties:
+        code: { $ref: "#/components/schemas/VisitReasonCode" }
+        daysOverdue: { type: integer, minimum: 0, description: "overdue only: days the oldest unpaid invoice is past due now; 0 when nothing is overdue any more.", example: 7 }
+        brokenPromises: { type: integer, minimum: 0, description: "broken_promises only.", example: 2 }
+
+    VisitOutcomeKind:
+      type: string
+      enum: [paid, promise, not_home, number_changed]
+      description: >
+        paid ("Terima uang tunai"), promise ("Penyewa membuat janji baru"), not_home ("Tidak
+        bertemu"), number_changed ("Nomor WA penyewa berubah").
+
+    VisitOutcomeInput:
+      type: object
+      additionalProperties: false
+      required: [requestId, outcome]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Made by the client once per Catat hasil form, and sent again unchanged on a retry.
+        outcome: { $ref: "#/components/schemas/VisitOutcomeKind" }
+        paymentId: { type: string, format: uuid, description: "paid only: the caller's field cash from this tenant today." }
+        promiseVersionId: { type: string, format: uuid, description: "promise only: the latest version makeFieldPromise answered, made today." }
+        newPhone: { type: string, maxLength: 32, description: "number_changed only: the tenant's new WhatsApp number, as typed.", example: "0812-3456-7890" }
+        note: { type: string, maxLength: 500, description: "Optional, at most 500 letters after trimming." }
+
+    VisitOutcome:
+      type: object
+      required: [id, tenantId, outcome, recordedAt, resolved]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        outcome: { $ref: "#/components/schemas/VisitOutcomeKind" }
+        paymentId: { type: string, format: uuid }
+        promiseVersionId: { type: string, format: uuid }
+        newPhone: { type: string, description: "E.164.", example: "+6281234567890" }
+        note: { type: string }
+        recordedAt: { type: string, format: date-time }
+        resolved:
+          type: array
+          description: The reasons of the open visits it closed; empty for not_home.
+          items: { $ref: "#/components/schemas/VisitReasonCode" }
+
+    FieldVisitStatus:
+      type: string
+      enum: [open, done]
+      x-enum-varnames: [VisitOpen, VisitDone]
+      description: open (a visit is still open, even after not_home) or done (visited today, nothing left open).
+
+    FieldVisit:
+      type: object
+      required: [tenantId, tenantName, units, reasons, outstanding, overdue, status, unlinkedCashToday]
+      properties:
+        tenantId: { type: string, format: uuid }
+        tenantName: { type: string, example: Pak Darto }
+        units:
+          type: array
+          description: The units of the tenant's active leases the caller collects, with the address for "Arahkan".
+          items: { $ref: "#/components/schemas/FieldUnit" }
+        reasons:
+          type: array
+          description: The open visits, oldest first; empty when done.
+          items: { $ref: "#/components/schemas/VisitReason" }
+        outstanding: { type: integer, format: int64, description: "Everything the tenant owes now.", example: 2900000 }
+        overdue: { type: integer, format: int64, description: "The part of it past due.", example: 2200000 }
+        oldestUnpaidDueDate: { type: string, format: date, description: "Absent when the tenant owes nothing." }
+        status: { $ref: "#/components/schemas/FieldVisitStatus" }
+        lastOutcome: { $ref: "#/components/schemas/VisitOutcome" }
+        unlinkedCashToday:
+          type: array
+          description: The caller's field cash from this tenant today that no outcome names yet, oldest first.
+          items: { $ref: "#/components/schemas/FieldCashPayment" }
+
+    FieldVisitList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/FieldVisit" }
 
     CorrectionInput:
       type: object

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -658,6 +659,156 @@ func TestConfirmCashDeposit(t *testing.T) {
 }
 
 // ids are the deposits' ids, in order.
+// TestConcurrentDeposits releases two deposits of the same cash together, with different
+// requestIds (a phone retrying after a timeout while the first request is still committing): one
+// is recorded, the other covers nothing it did not see and records nothing, and every payment is
+// covered once. Several rounds, so both orders of commit are exercised.
+func TestConcurrentDeposits(t *testing.T) {
+	env := testenv.New(t)
+	setNow(env, 2026, 11, 14, 9, 0)
+	w := newWorld(t, env, "Griya Bersamaan", "0812876")
+	sinta := w.rent(t, "Sinta Maharani", w.karyawan)
+	yoga := w.rent(t, "Yoga Pratama", w.karyawan)
+
+	for round := range 5 {
+		w.cash(t, w.karyawan, sinta, 250_000)
+		w.cash(t, w.karyawan, yoga, 150_000)
+		before := w.rows(t)
+		h := w.held(t, w.karyawan)
+		require.Equal(t, billing.CashTotal{Amount: 400_000, Count: 2}, h)
+
+		type result struct {
+			created bool
+			err     error
+		}
+		results := make([]result, 2)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range results {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				_, created, err := w.deposits.Record(context.Background(), w.karyawan, deposit.Input{
+					RequestID: uuid.New(), ExpectedAmount: h.Amount, ExpectedCount: h.Count, Amount: h.Amount,
+				})
+				results[i] = result{created: created, err: err}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		created := 0
+		for _, r := range results {
+			if r.err == nil {
+				require.True(t, r.created, "round %d", round)
+				created++
+				continue
+			}
+			t.Logf("round %d: the other deposit answered %v", round, r.err)
+			require.Truef(t, errors.Is(r.err, deposit.ErrCashChanged) || errors.Is(r.err, deposit.ErrNothingToDeposit),
+				"round %d: the other deposit answers changed or nothing, not %v", round, r.err)
+		}
+		require.Equal(t, 1, created, "round %d: exactly one deposit is recorded", round)
+		after := w.rows(t)
+		require.Equal(t, before.deposits+1, after.deposits, "round %d: no deposit row commits with fewer payments", round)
+		require.Equal(t, before.payments+2, after.payments, "round %d: each payment covered once", round)
+		require.Equal(t, billing.CashTotal{}, w.held(t, w.karyawan), "round %d", round)
+	}
+}
+
+// TestDepositWaitsForAConcurrentCover holds another transaction that covers the same cash, open,
+// while Record runs: Record waits for it (seen in pg_locks), then answers ErrNothingToDeposit when
+// it commits, or covers everything itself when it rolls back. Never a deposit with fewer payments
+// than it claims.
+func TestDepositWaitsForAConcurrentCover(t *testing.T) {
+	env := testenv.New(t)
+	setNow(env, 2026, 11, 14, 9, 0)
+	w := newWorld(t, env, "Griya Antre", "0812877")
+	sinta := w.rent(t, "Sinta Maharani", w.karyawan)
+
+	for _, tc := range []struct {
+		name    string
+		commit  bool
+		wantErr error
+	}{
+		{name: "the other commits: nothing is left to deposit", commit: true, wantErr: deposit.ErrNothingToDeposit},
+		{name: "the other rolls back: this one covers everything", commit: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w.cash(t, w.karyawan, sinta, 300_000)
+			h := w.held(t, w.karyawan)
+			before := w.rows(t)
+
+			covered, release := make(chan struct{}), make(chan struct{})
+			holder := make(chan error, 1)
+			errRollback := errors.New("roll back")
+			go func() {
+				err := env.Store.WithOrgTx(context.Background(), w.org.ID, func(tx pgx.Tx) error {
+					ctx := context.Background()
+					q := dbgen.New(tx)
+					row, err := q.InsertCashDeposit(ctx, dbgen.InsertCashDepositParams{
+						ID: uuid.New(), OrganizationID: w.org.ID, StaffUserID: w.karyawan.UserID, RequestID: uuid.New(),
+						Amount: h.Amount, ExpectedAmount: h.Amount, PaymentCount: int32(h.Count), CreatedAt: env.Clock.Now(), //nolint:gosec // a test count
+					})
+					if err != nil {
+						return err
+					}
+					if _, err := q.CoverUndepositedCash(ctx, dbgen.CoverUndepositedCashParams{
+						OrganizationID: w.org.ID, DepositID: row.ID, StaffUserID: w.karyawan.UserID,
+					}); err != nil {
+						return err
+					}
+					close(covered)
+					<-release
+					if !tc.commit {
+						return errRollback
+					}
+					return nil
+				})
+				if errors.Is(err, errRollback) {
+					err = nil
+				}
+				holder <- err
+			}()
+			<-covered
+
+			type result struct {
+				created bool
+				err     error
+			}
+			done := make(chan result, 1)
+			go func() {
+				_, created, err := w.deposits.Record(context.Background(), w.karyawan, deposit.Input{
+					RequestID: uuid.New(), ExpectedAmount: h.Amount, ExpectedCount: h.Count, Amount: h.Amount,
+				})
+				done <- result{created: created, err: err}
+			}()
+			require.Eventually(t, func() bool {
+				var waiting int
+				w.mustTx(t, func(ctx context.Context, tx pgx.Tx, _ *dbgen.Queries) error {
+					return tx.QueryRow(ctx, "SELECT count(*) FROM pg_locks WHERE NOT granted").Scan(&waiting)
+				})
+				return waiting > 0
+			}, 10*time.Second, 10*time.Millisecond, "Record waits for the transaction that covers the same cash")
+			close(release)
+			require.NoError(t, <-holder)
+			got := <-done
+
+			after := w.rows(t)
+			require.Equal(t, before.deposits+1, after.deposits, "one deposit commits, whichever")
+			require.Equal(t, before.payments+h.Count, after.payments, "each payment covered once")
+			if tc.wantErr != nil {
+				require.ErrorIs(t, got.err, tc.wantErr)
+				return
+			}
+			require.NoError(t, got.err)
+			require.True(t, got.created)
+			require.Equal(t, billing.CashTotal{}, w.held(t, w.karyawan))
+		})
+	}
+}
+
 func ids(items []deposit.Deposit) []uuid.UUID {
 	out := make([]uuid.UUID, len(items))
 	for i, d := range items {

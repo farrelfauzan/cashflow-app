@@ -504,6 +504,11 @@ replay Bot API answers.
   once (`cash_deposit` and `cash_deposit_payment`, each payment once); an admin records the amount
   counted (`cash_deposit_confirmation`, never by the depositor), and a difference from the
   payments' total is the deposit's gap. All three tables are append-only.
+- `internal/visit`: the karyawan's visit list and "Catat hasil kunjungan" (S6-4). An outcome
+  (`visit_outcome`, append-only) points at the field cash or field promise already recorded, or
+  carries a new number for the admin, and resolves the open `visit_task` rows it answers
+  (`visit_outcome_task`). The field app acts on a tenant through its active leases only
+  (decision 47; `billing.AuthorizeTenantInField`).
 - `internal/upload`: staff photo uploads (S6-1): starting one with a presigned PUT, completing
   it, the scan that checks the real size and type and runs the malware scanner, quarantine, and
   the short-lived download link of a clean file. `uploadtask` runs `upload:scan` and the

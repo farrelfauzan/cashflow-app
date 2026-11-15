@@ -44,8 +44,8 @@ func photoRefused(status string) bool {
 
 // AttachReceiptPhoto attaches upload uploadID as the photo of cash payment paymentID ("foto
 // belum ada" until then, decision 46.10). Only the member who recorded the payment attaches its
-// photo, with cash:record on the payment's tenant and amount through every lease the tenant has
-// or had, as when they recorded it (audited); anyone else is denied, audited. The upload must be
+// photo, with cash:record on the payment's tenant and amount through each of its active leases
+// (decision 47), as when they recorded it (audited); anyone else is denied, audited. The upload must be
 // a completed cash_receipt upload for the payment's tenant made by the caller and not already
 // another payment's photo (ErrReceiptPhotoInvalid), and not refused by the scan
 // (ErrReceiptPhotoRefused); a pending one is accepted and its scan decides later.
@@ -67,7 +67,7 @@ func (s *Service) AttachReceiptPhoto(ctx context.Context, p authz.Principal, pay
 		if err != nil {
 			return fmt.Errorf("locking the cash payment: %w", err)
 		}
-		leases, err := tenantLeases(ctx, q, org, pay.TenantID, "")
+		leases, err := fieldLeases(ctx, q, org, pay.TenantID, "")
 		if err != nil {
 			return err
 		}
@@ -132,6 +132,12 @@ func (s *Service) AttachReceiptPhoto(ctx context.Context, p authz.Principal, pay
 		return ReceiptPhoto{}, false, err
 	}
 	return photo, changed, nil
+}
+
+// ReceiptPhotosTx returns the photo of each of the given payments inside tx scoped to org; a
+// payment with none is PhotoMissing. It checks no permission: the caller has.
+func ReceiptPhotosTx(ctx context.Context, tx pgx.Tx, org uuid.UUID, paymentIDs []uuid.UUID) (map[uuid.UUID]ReceiptPhoto, error) {
+	return currentReceiptPhotos(ctx, dbgen.New(tx), org, paymentIDs)
 }
 
 // currentReceiptPhotos returns the photo of each of the given payments; a payment with none is

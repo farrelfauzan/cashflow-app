@@ -513,6 +513,27 @@ type Upload struct {
 	ScannedAt             *time.Time
 }
 
+type VisitOutcome struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	StaffUserID      uuid.UUID
+	RequestID        uuid.UUID
+	Outcome          string
+	PaymentID        uuid.NullUUID
+	PromiseVersionID uuid.NullUUID
+	NewPhone         *string
+	Note             *string
+	CreatedAt        time.Time
+}
+
+type VisitOutcomeTask struct {
+	VisitTaskID    uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	OutcomeID      uuid.UUID
+}
+
 type VisitTask struct {
 	ID             uuid.UUID
 	OrganizationID uuid.UUID

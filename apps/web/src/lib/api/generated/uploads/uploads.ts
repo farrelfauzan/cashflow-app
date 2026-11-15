@@ -58,7 +58,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 /**
  * Answers a presigned PUT URL that is valid for a few minutes (putExpiresAt). The browser sends the file body to putUrl with method PUT and exactly the headers in putHeaders; the body must be exactly size bytes, since the size is signed into the URL (storage has no presigned POST, so this is the size limit). Then it calls completeUpload, and polls getUpload until status is no longer pending.
  * The upload starts pending. A queue job checks the stored file's real size and type (from its content, never its name or declared type), and scans it for malware: only a clean file can be read, through getUpload's short-lived downloadUrl, always as a download.
- * What the upload is for decides the permission: purpose cash_receipt (a receipt photo for tenantId) needs cash:record on the tenant, through every lease the tenant has or had, so a karyawan may upload only for tenants they collect from; purpose cash_deposit (a deposit photo, no tenantId) needs cash:deposit on the caller's own record.
+ * What the upload is for decides the permission: purpose cash_receipt (a receipt photo for tenantId) needs cash:record on the tenant, through each of its active leases (decision 47), so a karyawan may upload only for tenants they collect from now; purpose cash_deposit (a deposit photo, no tenantId) needs cash:deposit on the caller's own record.
  * Errors: 400 upload_purpose_unknown (field purpose), upload_type_not_allowed (field contentType: only image/jpeg, image/png and image/webp), upload_too_large (field size: at most 10 MB, 10485760 bytes), invalid_input (field size or tenantId); 404 not_found with field tenantId for a tenant not in the organization; 503 uploads_unavailable when this server has no file storage configured.
  * @summary Start a photo upload straight to storage (needs the action of the record it is for; audited)
  */
@@ -195,7 +195,7 @@ export const useCompleteUpload = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCompleteUploadMutationOptions(options), queryClient);
     }
     /**
- * Allowed with payment:check or cash:read (through every lease of a receipt's tenant; for a deposit photo, for the whole organization), or with the action that started the upload on the same record (a karyawan reads the receipts of tenants they collect from and their own deposit photos). downloadUrl is present only when status is clean, lasts a few minutes (downloadExpiresAt) and always downloads the file as an attachment; ask again for a new one. A pending, rejected or infected upload never has one.
+ * Allowed with payment:check or cash:read (through each active lease of a receipt's tenant; for a deposit photo, for the whole organization), or with the action that started the upload on the same record (a karyawan reads the receipts of tenants they collect from and their own deposit photos). downloadUrl is present only when status is clean, lasts a few minutes (downloadExpiresAt) and always downloads the file as an attachment; ask again for a new one. A pending, rejected or infected upload never has one.
  * @summary An upload's scan status and, once it is clean, a short-lived download link
  */
 export const getUpload = (

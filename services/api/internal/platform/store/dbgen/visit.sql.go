@@ -12,6 +12,368 @@ import (
 	"github.com/google/uuid"
 )
 
+const countFieldVisits = `-- name: CountFieldVisits :one
+WITH mine AS (
+    SELECT t.id AS tenant_id,
+           (SELECT min(v.created_at) FROM visit_task v
+            WHERE v.organization_id = t.organization_id AND v.tenant_id = t.id AND v.resolved_at IS NULL) AS oldest_open_at,
+           (SELECT max(o.created_at) FROM visit_outcome o
+            WHERE o.organization_id = t.organization_id AND o.tenant_id = t.id AND o.staff_user_id = $1::uuid
+              AND o.created_at >= $2 AND o.created_at < $3) AS visited_at
+    FROM tenant t
+    WHERE t.organization_id = $4
+      AND EXISTS (SELECT 1 FROM lease l
+                  WHERE l.organization_id = t.organization_id AND l.tenant_id = t.id
+                    AND l.status = 'active' AND l.collector_staff_user_id = $1::uuid)
+      AND NOT EXISTS (SELECT 1 FROM lease l
+                      WHERE l.organization_id = t.organization_id AND l.tenant_id = t.id
+                        AND l.status = 'active' AND NOT (l.id = ANY($5::uuid[])))
+)
+SELECT count(*) FROM mine WHERE oldest_open_at IS NOT NULL OR visited_at IS NOT NULL
+`
+
+type CountFieldVisitsParams struct {
+	CollectorID    uuid.UUID
+	DayStart       time.Time
+	DayEnd         time.Time
+	OrganizationID uuid.UUID
+	LeaseIds       []uuid.UUID
+}
+
+func (q *Queries) CountFieldVisits(ctx context.Context, arg CountFieldVisitsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countFieldVisits,
+		arg.CollectorID,
+		arg.DayStart,
+		arg.DayEnd,
+		arg.OrganizationID,
+		arg.LeaseIds,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getVisitOutcomeByRequestID = `-- name: GetVisitOutcomeByRequestID :one
+SELECT id, organization_id, tenant_id, staff_user_id, request_id, outcome, payment_id, promise_version_id, new_phone, note, created_at FROM visit_outcome
+WHERE organization_id = $1 AND request_id = $2
+`
+
+type GetVisitOutcomeByRequestIDParams struct {
+	OrganizationID uuid.UUID
+	RequestID      uuid.UUID
+}
+
+func (q *Queries) GetVisitOutcomeByRequestID(ctx context.Context, arg GetVisitOutcomeByRequestIDParams) (VisitOutcome, error) {
+	row := q.db.QueryRow(ctx, getVisitOutcomeByRequestID, arg.OrganizationID, arg.RequestID)
+	var i VisitOutcome
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.StaffUserID,
+		&i.RequestID,
+		&i.Outcome,
+		&i.PaymentID,
+		&i.PromiseVersionID,
+		&i.NewPhone,
+		&i.Note,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getVisitPayment = `-- name: GetVisitPayment :one
+SELECT p.tenant_id, p.recorded_by_staff_user_id, p.method, p.received_at,
+       EXISTS (SELECT 1 FROM payment_receipt r WHERE r.organization_id = p.organization_id AND r.payment_id = p.id)::boolean AS field_cash
+FROM payment p
+WHERE p.organization_id = $1 AND p.id = $2
+`
+
+type GetVisitPaymentParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetVisitPaymentRow struct {
+	TenantID              uuid.UUID
+	RecordedByStaffUserID uuid.NullUUID
+	Method                string
+	ReceivedAt            time.Time
+	FieldCash             bool
+}
+
+// A payment with what an outcome needs to know about it: its tenant, recorder, method, time and
+// whether it is field cash (has a receipt).
+func (q *Queries) GetVisitPayment(ctx context.Context, arg GetVisitPaymentParams) (GetVisitPaymentRow, error) {
+	row := q.db.QueryRow(ctx, getVisitPayment, arg.OrganizationID, arg.ID)
+	var i GetVisitPaymentRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.RecordedByStaffUserID,
+		&i.Method,
+		&i.ReceivedAt,
+		&i.FieldCash,
+	)
+	return i, err
+}
+
+const getVisitPromiseVersion = `-- name: GetVisitPromiseVersion :one
+SELECT tenant_id, source, created_by_staff_user_id, created_at
+FROM promise_version
+WHERE organization_id = $1 AND id = $2
+`
+
+type GetVisitPromiseVersionParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+type GetVisitPromiseVersionRow struct {
+	TenantID             uuid.UUID
+	Source               string
+	CreatedByStaffUserID uuid.NullUUID
+	CreatedAt            time.Time
+}
+
+// A promise version with what an outcome needs to know about it.
+func (q *Queries) GetVisitPromiseVersion(ctx context.Context, arg GetVisitPromiseVersionParams) (GetVisitPromiseVersionRow, error) {
+	row := q.db.QueryRow(ctx, getVisitPromiseVersion, arg.OrganizationID, arg.ID)
+	var i GetVisitPromiseVersionRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.Source,
+		&i.CreatedByStaffUserID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertVisitOutcome = `-- name: InsertVisitOutcome :one
+INSERT INTO visit_outcome (id, organization_id, tenant_id, staff_user_id, request_id, outcome, payment_id,
+                           promise_version_id, new_phone, note, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11)
+ON CONFLICT (organization_id, request_id) DO NOTHING
+RETURNING id, organization_id, tenant_id, staff_user_id, request_id, outcome, payment_id, promise_version_id, new_phone, note, created_at
+`
+
+type InsertVisitOutcomeParams struct {
+	ID               uuid.UUID
+	OrganizationID   uuid.UUID
+	TenantID         uuid.UUID
+	StaffUserID      uuid.UUID
+	RequestID        uuid.UUID
+	Outcome          string
+	PaymentID        uuid.NullUUID
+	PromiseVersionID uuid.NullUUID
+	NewPhone         *string
+	Note             *string
+	CreatedAt        time.Time
+}
+
+// Records an outcome under its requestId. One already recorded under it is left as it is (no row).
+func (q *Queries) InsertVisitOutcome(ctx context.Context, arg InsertVisitOutcomeParams) (VisitOutcome, error) {
+	row := q.db.QueryRow(ctx, insertVisitOutcome,
+		arg.ID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.StaffUserID,
+		arg.RequestID,
+		arg.Outcome,
+		arg.PaymentID,
+		arg.PromiseVersionID,
+		arg.NewPhone,
+		arg.Note,
+		arg.CreatedAt,
+	)
+	var i VisitOutcome
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.StaffUserID,
+		&i.RequestID,
+		&i.Outcome,
+		&i.PaymentID,
+		&i.PromiseVersionID,
+		&i.NewPhone,
+		&i.Note,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertVisitOutcomeTask = `-- name: InsertVisitOutcomeTask :exec
+INSERT INTO visit_outcome_task (visit_task_id, organization_id, tenant_id, outcome_id)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertVisitOutcomeTaskParams struct {
+	VisitTaskID    uuid.UUID
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	OutcomeID      uuid.UUID
+}
+
+func (q *Queries) InsertVisitOutcomeTask(ctx context.Context, arg InsertVisitOutcomeTaskParams) error {
+	_, err := q.db.Exec(ctx, insertVisitOutcomeTask,
+		arg.VisitTaskID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.OutcomeID,
+	)
+	return err
+}
+
+const listFieldVisits = `-- name: ListFieldVisits :many
+
+WITH mine AS (
+    SELECT t.id AS tenant_id, t.name AS tenant_name, coalesce(b.outstanding, 0)::bigint AS outstanding,
+           coalesce(b.oldest_unpaid_due_date, DATE '0001-01-01')::date AS oldest_unpaid_due_date,
+           (SELECT coalesce(sum(ib.outstanding), 0) FROM invoice_balance ib
+            WHERE ib.organization_id = t.organization_id AND ib.tenant_id = t.id
+              AND ib.outstanding > 0 AND ib.due_date < $3::date)::bigint AS overdue,
+           (SELECT min(v.created_at) FROM visit_task v
+            WHERE v.organization_id = t.organization_id AND v.tenant_id = t.id AND v.resolved_at IS NULL) AS oldest_open_at,
+           (SELECT max(o.created_at) FROM visit_outcome o
+            WHERE o.organization_id = t.organization_id AND o.tenant_id = t.id AND o.staff_user_id = $4::uuid
+              AND o.created_at >= $5 AND o.created_at < $6) AS visited_at
+    FROM tenant t
+    LEFT JOIN tenant_balance b ON b.organization_id = t.organization_id AND b.tenant_id = t.id
+    WHERE t.organization_id = $7
+      AND EXISTS (SELECT 1 FROM lease l
+                  WHERE l.organization_id = t.organization_id AND l.tenant_id = t.id
+                    AND l.status = 'active' AND l.collector_staff_user_id = $4::uuid)
+      AND NOT EXISTS (SELECT 1 FROM lease l
+                      WHERE l.organization_id = t.organization_id AND l.tenant_id = t.id
+                        AND l.status = 'active' AND NOT (l.id = ANY($8::uuid[])))
+)
+SELECT tenant_id, tenant_name, outstanding, oldest_unpaid_due_date, overdue,
+       (oldest_open_at IS NOT NULL)::boolean AS open
+FROM mine
+WHERE oldest_open_at IS NOT NULL OR visited_at IS NOT NULL
+ORDER BY (oldest_open_at IS NOT NULL) DESC, oldest_open_at, visited_at DESC, tenant_id
+LIMIT $2 OFFSET $1
+`
+
+type ListFieldVisitsParams struct {
+	PageOffset     int32
+	PageLimit      int32
+	Today          time.Time
+	CollectorID    uuid.UUID
+	DayStart       time.Time
+	DayEnd         time.Time
+	OrganizationID uuid.UUID
+	LeaseIds       []uuid.UUID
+}
+
+type ListFieldVisitsRow struct {
+	TenantID            uuid.UUID
+	TenantName          string
+	Outstanding         int64
+	OldestUnpaidDueDate time.Time
+	Overdue             int64
+	Open                bool
+}
+
+// The karyawan's visit list and outcomes (slice 6, S6-4). Who may see a lease is decided in Go
+// for every lease of the organization; the queries get the visible leases in lease_ids.
+// One page of "Kunjungan hari ini" for @collector_id: the tenants they collect from on an active
+// lease, all of whose active leases are visible (in lease_ids; decision 47), that have an open
+// visit task, or on whom @collector_id recorded an outcome in [@day_start, @day_end). Open first,
+// the oldest open task first; then those visited, the latest visit first; the tenant id breaks
+// ties. CountFieldVisits has the same CTE: change both together.
+func (q *Queries) ListFieldVisits(ctx context.Context, arg ListFieldVisitsParams) ([]ListFieldVisitsRow, error) {
+	rows, err := q.db.Query(ctx, listFieldVisits,
+		arg.PageOffset,
+		arg.PageLimit,
+		arg.Today,
+		arg.CollectorID,
+		arg.DayStart,
+		arg.DayEnd,
+		arg.OrganizationID,
+		arg.LeaseIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFieldVisitsRow
+	for rows.Next() {
+		var i ListFieldVisitsRow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.TenantName,
+			&i.Outstanding,
+			&i.OldestUnpaidDueDate,
+			&i.Overdue,
+			&i.Open,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestVisitOutcomes = `-- name: ListLatestVisitOutcomes :many
+SELECT DISTINCT ON (o.tenant_id) o.id, o.organization_id, o.tenant_id, o.staff_user_id, o.request_id, o.outcome, o.payment_id, o.promise_version_id, o.new_phone, o.note, o.created_at
+FROM visit_outcome o
+WHERE o.organization_id = $1 AND o.tenant_id = ANY($2::uuid[])
+  AND o.staff_user_id = $3 AND o.created_at >= $4 AND o.created_at < $5
+ORDER BY o.tenant_id, o.created_at DESC, o.id DESC
+`
+
+type ListLatestVisitOutcomesParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+	StaffUserID    uuid.UUID
+	DayStart       time.Time
+	DayEnd         time.Time
+}
+
+// The latest outcome @staff_user_id recorded on each of the given tenants in [@day_start, @day_end).
+func (q *Queries) ListLatestVisitOutcomes(ctx context.Context, arg ListLatestVisitOutcomesParams) ([]VisitOutcome, error) {
+	rows, err := q.db.Query(ctx, listLatestVisitOutcomes,
+		arg.OrganizationID,
+		arg.TenantIds,
+		arg.StaffUserID,
+		arg.DayStart,
+		arg.DayEnd,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VisitOutcome
+	for rows.Next() {
+		var i VisitOutcome
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.TenantID,
+			&i.StaffUserID,
+			&i.RequestID,
+			&i.Outcome,
+			&i.PaymentID,
+			&i.PromiseVersionID,
+			&i.NewPhone,
+			&i.Note,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenVisitTasks = `-- name: ListOpenVisitTasks :many
 SELECT id, tenant_id, reason, created_at
 FROM visit_task
@@ -52,6 +414,187 @@ func (q *Queries) ListOpenVisitTasks(ctx context.Context, organizationID uuid.UU
 	return items, nil
 }
 
+const listOpenVisitTasksOfTenants = `-- name: ListOpenVisitTasksOfTenants :many
+SELECT id, tenant_id, reason, created_at
+FROM visit_task
+WHERE organization_id = $1 AND tenant_id = ANY($2::uuid[]) AND resolved_at IS NULL
+ORDER BY tenant_id, created_at, id
+`
+
+type ListOpenVisitTasksOfTenantsParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+}
+
+type ListOpenVisitTasksOfTenantsRow struct {
+	ID        uuid.UUID
+	TenantID  uuid.UUID
+	Reason    string
+	CreatedAt time.Time
+}
+
+// The open visit tasks of the given tenants, oldest first.
+func (q *Queries) ListOpenVisitTasksOfTenants(ctx context.Context, arg ListOpenVisitTasksOfTenantsParams) ([]ListOpenVisitTasksOfTenantsRow, error) {
+	rows, err := q.db.Query(ctx, listOpenVisitTasksOfTenants, arg.OrganizationID, arg.TenantIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenVisitTasksOfTenantsRow
+	for rows.Next() {
+		var i ListOpenVisitTasksOfTenantsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnlinkedCashToday = `-- name: ListUnlinkedCashToday :many
+SELECT p.id, p.tenant_id, p.created_at,
+       (p.amount + (SELECT coalesce(sum(c.amount_delta), 0) FROM correction c
+                    WHERE c.organization_id = p.organization_id AND c.payment_id = p.id))::bigint AS net
+FROM payment p
+JOIN payment_receipt r ON r.organization_id = p.organization_id AND r.payment_id = p.id
+WHERE p.organization_id = $1 AND p.tenant_id = ANY($2::uuid[]) AND p.method = 'cash'
+  AND p.recorded_by_staff_user_id = $3::uuid
+  AND p.received_at >= $4 AND p.received_at < $5
+  AND NOT EXISTS (SELECT 1 FROM visit_outcome o WHERE o.payment_id = p.id)
+ORDER BY p.tenant_id, p.created_at, p.id
+`
+
+type ListUnlinkedCashTodayParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+	StaffUserID    uuid.UUID
+	DayStart       time.Time
+	DayEnd         time.Time
+}
+
+type ListUnlinkedCashTodayRow struct {
+	ID        uuid.UUID
+	TenantID  uuid.UUID
+	CreatedAt time.Time
+	Net       int64
+}
+
+// The field cash @staff_user_id took from the given tenants in [@day_start, @day_end) that no visit
+// outcome names yet, each net of its corrections, oldest first.
+func (q *Queries) ListUnlinkedCashToday(ctx context.Context, arg ListUnlinkedCashTodayParams) ([]ListUnlinkedCashTodayRow, error) {
+	rows, err := q.db.Query(ctx, listUnlinkedCashToday,
+		arg.OrganizationID,
+		arg.TenantIds,
+		arg.StaffUserID,
+		arg.DayStart,
+		arg.DayEnd,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnlinkedCashTodayRow
+	for rows.Next() {
+		var i ListUnlinkedCashTodayRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.CreatedAt,
+			&i.Net,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisitOutcomeTaskReasons = `-- name: ListVisitOutcomeTaskReasons :many
+SELECT v.reason
+FROM visit_outcome_task ot
+JOIN visit_task v ON v.organization_id = ot.organization_id AND v.id = ot.visit_task_id
+WHERE ot.organization_id = $1 AND ot.outcome_id = $2
+ORDER BY v.created_at, v.id
+`
+
+type ListVisitOutcomeTaskReasonsParams struct {
+	OrganizationID uuid.UUID
+	OutcomeID      uuid.UUID
+}
+
+// The reasons of the tasks an outcome resolved.
+func (q *Queries) ListVisitOutcomeTaskReasons(ctx context.Context, arg ListVisitOutcomeTaskReasonsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listVisitOutcomeTaskReasons, arg.OrganizationID, arg.OutcomeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var reason string
+		if err := rows.Scan(&reason); err != nil {
+			return nil, err
+		}
+		items = append(items, reason)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOpenVisitTasksOfTenant = `-- name: LockOpenVisitTasksOfTenant :many
+SELECT id, reason, created_at
+FROM visit_task
+WHERE organization_id = $1 AND tenant_id = $2 AND resolved_at IS NULL
+ORDER BY created_at, id
+FOR UPDATE
+`
+
+type LockOpenVisitTasksOfTenantParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+}
+
+type LockOpenVisitTasksOfTenantRow struct {
+	ID        uuid.UUID
+	Reason    string
+	CreatedAt time.Time
+}
+
+// The tenant's open visit tasks, locked until the transaction ends, so two outcomes for one tenant
+// take turns and the second sees what the first resolved.
+func (q *Queries) LockOpenVisitTasksOfTenant(ctx context.Context, arg LockOpenVisitTasksOfTenantParams) ([]LockOpenVisitTasksOfTenantRow, error) {
+	rows, err := q.db.Query(ctx, lockOpenVisitTasksOfTenant, arg.OrganizationID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockOpenVisitTasksOfTenantRow
+	for rows.Next() {
+		var i LockOpenVisitTasksOfTenantRow
+		if err := rows.Scan(&i.ID, &i.Reason, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const openVisitTask = `-- name: OpenVisitTask :execrows
 INSERT INTO visit_task (id, organization_id, tenant_id, reason, created_at)
 VALUES ($1, $2, $3, $4, $5)
@@ -75,6 +618,26 @@ func (q *Queries) OpenVisitTask(ctx context.Context, arg OpenVisitTaskParams) (i
 		arg.Reason,
 		arg.CreatedAt,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resolveVisitTask = `-- name: ResolveVisitTask :execrows
+UPDATE visit_task SET resolved_at = $1
+WHERE organization_id = $2 AND id = $3 AND resolved_at IS NULL
+`
+
+type ResolveVisitTaskParams struct {
+	ResolvedAt     *time.Time
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// Resolves an open visit task. One already resolved is left as it is (0 rows).
+func (q *Queries) ResolveVisitTask(ctx context.Context, arg ResolveVisitTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveVisitTask, arg.ResolvedAt, arg.OrganizationID, arg.ID)
 	if err != nil {
 		return 0, err
 	}

@@ -116,8 +116,9 @@ type FieldTenant struct {
 //
 // It needs invoice:read. The collection is authorized like the dashboard's (a member with no
 // access at all is denied and audited); then a tenant is listed only when p may read invoices
-// through every lease the tenant has or had, in the lease's property and assigned to its
-// collector, since the amount owed spans all of them. A member with the organization-wide grant
+// through each of the tenant's active leases, in the lease's property and assigned to its
+// collector (decision 47: ended leases, even another collector's, do not count, though the amount
+// owed spans them). A member with the organization-wide grant
 // (an admin) still sees only the tenants they collect from: this is the member's own field list.
 // Total counts only the rows p may see.
 func (s *Service) FieldToday(ctx context.Context, p authz.Principal, page listing.Page) (listing.Result[FieldTenant], error) {

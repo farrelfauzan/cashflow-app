@@ -30,6 +30,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/visit"
 )
 
 const (
@@ -67,6 +68,8 @@ type Deps struct {
 	Uploads *upload.Service
 	// Deposits records, lists and confirms cash deposits, "Setor tunai" (S6-3).
 	Deposits *deposit.Service
+	// Visits lists the karyawan's visits and records their outcomes (S6-4).
+	Visits *visit.Service
 	// Webhooks handles AutoGoPay's callbacks.
 	Webhooks *qris.Webhook
 	// TelegramCodes makes the payment page's one-time Telegram deep links (decision 42, demo
@@ -195,6 +198,8 @@ func New(d Deps) *Server {
 				r.Get("/cash-deposits/{depositID}/payments", s.listCashDepositPayments)
 				r.Post("/cash-deposits/{depositID}/confirmation", s.confirmCashDeposit)
 				r.Post("/field/tenants/{tenantID}/promises", s.makeFieldPromise)
+				r.Get("/field/visits", s.listFieldVisits)
+				r.Post("/field/tenants/{tenantID}/visit-outcomes", s.recordVisitOutcome)
 				r.Get("/dashboard", s.getDashboard)
 				r.Get("/invoices", s.listInvoices)
 				r.Post("/payments", s.recordPayment)
