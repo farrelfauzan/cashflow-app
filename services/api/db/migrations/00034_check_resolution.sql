@@ -70,8 +70,11 @@ CREATE TRIGGER check_resolution_no_truncate BEFORE TRUNCATE ON check_resolution
 --                         one is an upload_infected item instead)
 --   deposit_gap           a confirmed deposit whose counted cash differs from its payments
 --   upload_infected       any upload the scan found infected
---   qris_amount_mismatch  a QRIS attempt AutoGoPay reported at another amount, from its audit
---                         rows (decision 39.5), so also one whose payment was already recorded
+--   qris_amount_mismatch  a QRIS attempt AutoGoPay reported at another amount, from the audit
+--                         rows the platform writes for it (decision 39.5: payment:record, allowed,
+--                         no staff actor), so also one whose payment was already recorded; a
+--                         member's audited check on the same resource (answering the item) never
+--                         puts an attempt on the queue
 --   phone_changed         a new number a karyawan brought back from a visit (decision 46.6)
 CREATE VIEW check_queue_item WITH (security_invoker = true) AS
 SELECT 'transfer_proof'::text AS kind, tp.organization_id, tp.id AS item_id, tp.created_at
@@ -98,6 +101,7 @@ SELECT 'qris_amount_mismatch', a.organization_id, a.id, min(l.created_at)
 FROM qris_attempt a
 JOIN audit_log l ON l.organization_id = a.organization_id
                 AND l.resource = 'qris_amount_mismatch/' || a.id::text
+                AND l.action = 'payment:record' AND l.decision = 'allow' AND l.actor_staff_user_id IS NULL
 WHERE NOT EXISTS (SELECT 1 FROM check_resolution r
                   WHERE r.organization_id = a.organization_id AND r.qris_attempt_id = a.id)
 GROUP BY a.organization_id, a.id
