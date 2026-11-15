@@ -4,6 +4,7 @@ import {
   ApiError,
   GENERIC_ERROR_MESSAGE,
   INVALID_PATH_CODE,
+  NETWORK_ERROR_CODE,
 } from "@/lib/api/errors";
 import type {
   MakePaymentPromiseRequest,
@@ -11,6 +12,7 @@ import type {
   PaymentPageInvoice,
   PaymentPreview,
   PaymentPromise,
+  PaymentProof,
   QrisStatus,
 } from "@/lib/api/generated/model";
 import { PromiseKind } from "@/lib/api/generated/model";
@@ -20,9 +22,11 @@ import {
   formatDateTime,
   formatLongDate,
   formatMonthYear,
+  formatTimestampShortWeekdayDayMonthTime,
 } from "@/lib/format/date";
 import { formatRupiah, parseRupiahInput } from "@/lib/format/rupiah";
 import { groupRupiahDigits } from "@/lib/format/rupiah-input";
+import { isTooLarge } from "@/lib/photo";
 import { z } from "zod";
 
 import type {
@@ -56,6 +60,10 @@ import type {
   PaymentTab,
   PreviewErrorView,
   PreviewView,
+  ProofErrorView,
+  ProofRowView,
+  ProofSheetState,
+  ShownProofError,
   QrisCard,
   QrisDetailRow,
   QrisEvent,
@@ -266,6 +274,7 @@ function openView(page: PaymentPage): OpenPaymentPageView {
     promise: promiseOfferView(page),
     activePromise: activePromiseView(page.promise),
     telegram: telegramOfferView(page),
+    proofs: proofRows(page.proofsWaiting),
   };
 }
 
@@ -283,6 +292,7 @@ function paidView(page: PaymentPage): PaidPaymentPageView {
             amount: formatRupiah(page.invoice.amount),
           },
     credit: creditText(page),
+    proofs: proofRows(page.proofsWaiting),
   };
 }
 
@@ -1728,4 +1738,120 @@ export function telegramErrorView(error: unknown): TelegramErrorView {
     return { kind: "alert", message: error.message };
   }
   return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
+}
+
+// "Kirim bukti transfer" (board "Kirim bukti transfer", Bayar-Bukti). A tenant who paid by bank
+// transfer sends a photo of it through our own API (the page's own origin), so the link goes
+// nowhere else. Sending a proof records no payment: the admin matches it in Antrean cek, and the
+// page changes only when the payment is recorded. The list shows what the API says still waits,
+// never a photo.
+
+export const PROOF_BUTTON_TEXT = "Kirim bukti transfer";
+export const PROOF_SHEET_TITLE = "Kirim bukti transfer";
+export const PROOF_SHEET_TEXT =
+  "Pastikan jumlah, tanggal dan rekening tujuan terbaca.";
+export const PROOF_OTHER_PHOTO_TEXT = "Pilih foto lain";
+export const PROOF_SEND_TEXT = "Kirim foto";
+export const PROOF_SENDING_TEXT = "Mengirim…";
+export const PROOF_RETRY_TEXT = "Coba lagi";
+export const PROOF_CLOSE_LABEL = "Tutup";
+export const PROOF_PREPARING_TEXT = "Menyiapkan foto…";
+export const PROOF_PREVIEW_ALT = "Foto bukti transfer yang dipilih";
+export const PROOF_NO_PREVIEW_TEXT = "Foto ini tidak bisa ditampilkan di sini.";
+export const PROOF_SENT_TEXT = "Bukti terkirim. Admin akan mengeceknya.";
+export const PROOFS_TITLE = "Bukti transfer terkirim";
+export const PROOF_WAITING_TEXT = "Menunggu dicek admin";
+export const PROOFS_NOTE =
+  "Admin mencocokkan dengan mutasi rekening, lalu mencatat pembayarannya. Tagihan berubah setelah dicatat.";
+export const PROOF_NETWORK_TEXT = "Gagal terkirim.";
+export const PROOF_RATE_LIMITED_TEXT =
+  "Terlalu banyak kiriman. Coba lagi nanti.";
+export const PROOF_UNAVAILABLE_TEXT =
+  "Bukti transfer belum bisa dikirim sekarang. Coba lagi nanti.";
+// The API's own words for upload_too_large, for the same refusal made before sending.
+export const PROOF_TOO_LARGE_TEXT = "Ukuran foto paling besar 10 MB.";
+// No `capture`: the phone offers the camera and the gallery.
+export const PROOF_ACCEPT = "image/*";
+// The API lists at most this many (PaymentPage.proofsWaiting).
+export const PROOFS_MAX = 5;
+
+const PROOF_FILE_FIELD = "file";
+const UPLOADS_UNAVAILABLE_CODE = "uploads_unavailable";
+
+// "Dikirim Sen 16 Nov, 09.12" in Jakarta; just "Dikirim" for a time the formatter cannot read.
+export function proofSentLine(createdAt: string): string {
+  try {
+    return `Dikirim ${formatTimestampShortWeekdayDayMonthTime(createdAt)}`;
+  } catch {
+    return "Dikirim";
+  }
+}
+
+// The rows of "Bukti transfer terkirim" in the API's order (newest first).
+export function proofRows(proofs: readonly PaymentProof[]): ProofRowView[] {
+  return proofs.slice(0, PROOFS_MAX).map((proof) => ({
+    id: proof.id,
+    sentLine: proofSentLine(proof.createdAt),
+  }));
+}
+
+// What a failed sendPaymentProof shows. A link that stopped working replaces the page; the API's
+// refusal of the photo goes under it; a dropped connection offers "Coba lagi" with the same photo;
+// the rest is a message in the sheet.
+export function proofErrorView(error: unknown): ProofErrorView {
+  if (isLinkError(error)) return { kind: "link-gone" };
+  if (!(error instanceof ApiError)) {
+    return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
+  }
+  if (error.code === NETWORK_ERROR_CODE || error.status === 0) {
+    return { kind: "retry", message: PROOF_NETWORK_TEXT };
+  }
+  if (error.status === 400 && error.field === PROOF_FILE_FIELD) {
+    return { kind: "file", message: error.message };
+  }
+  if (error.status === 429 || error.code === "rate_limited") {
+    return { kind: "alert", message: PROOF_RATE_LIMITED_TEXT };
+  }
+  if (error.code === UPLOADS_UNAVAILABLE_CODE || error.status === 503) {
+    return { kind: "alert", message: PROOF_UNAVAILABLE_TEXT };
+  }
+  return { kind: "alert", message: GENERIC_ERROR_MESSAGE };
+}
+
+// The page's own check of a photo made ready to send: too large is refused before it is sent.
+export function proofPhotoError(file: Blob): ShownProofError | null {
+  return isTooLarge(file.size)
+    ? { kind: "file", message: PROOF_TOO_LARGE_TEXT }
+    : null;
+}
+
+// The upload's whole percent from the browser's progress event; null while its size is unknown.
+export function uploadPercent(
+  loaded: number,
+  total: number | undefined,
+): number | null {
+  if (total === undefined || !(total > 0)) return null;
+  return Math.min(100, Math.max(0, Math.round((loaded / total) * 100)));
+}
+
+// "Mengirim… 62%" under the bar, or "Mengirim…" before the size is known.
+export function proofSendingLine(percent: number | null): string {
+  return percent === null
+    ? PROOF_SENDING_TEXT
+    : `${PROOF_SENDING_TEXT} ${percent}%`;
+}
+
+// The sheet's primary: "Mengirim…" while sending, "Coba lagi" after a dropped connection,
+// otherwise "Kirim foto".
+export function proofPrimaryLabel(state: ProofSheetState): string {
+  if (state.kind === "sending") return PROOF_SENDING_TEXT;
+  if (state.kind === "ready" && state.error?.kind === "retry") {
+    return PROOF_RETRY_TEXT;
+  }
+  return PROOF_SEND_TEXT;
+}
+
+// Whether "Kirim foto" sends: a photo is ready and was not itself refused.
+export function canSendProof(state: ProofSheetState): boolean {
+  return state.kind === "ready" && state.error?.kind !== "file";
 }

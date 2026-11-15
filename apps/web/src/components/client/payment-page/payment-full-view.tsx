@@ -6,6 +6,7 @@ import { BackButton } from "./back-button";
 import { PaymentPageFooter } from "./payment-page-footer";
 import { PaymentPageHeader } from "./payment-page-header";
 import { PaymentSummaryCard } from "./payment-summary-card";
+import { ProofsWaitingSection } from "./proofs-waiting-section";
 import type { OpenPaymentPageView } from "./type";
 import { ALLOCATION_NOTE } from "./utils";
 
@@ -15,6 +16,8 @@ type PaymentFullViewProps = {
   methods: ReactNode;
   // "Kembali" to the choice; null where there is none, or while a QR is being made, live or checked.
   onBack: (() => void) | null;
+  // A transfer proof was sent in this visit.
+  proofSent: boolean;
 };
 
 // Everything the tenant owes, after "Bayar semua" (boards "Bayar · Transfer" and the QRIS boards):
@@ -23,6 +26,7 @@ export function PaymentFullView({
   view,
   methods,
   onBack,
+  proofSent,
 }: PaymentFullViewProps) {
   return (
     <>
@@ -37,6 +41,7 @@ export function PaymentFullView({
         total={view.total}
         credit={view.credit}
       />
+      <ProofsWaitingSection rows={view.proofs} sent={proofSent} />
       <p className="text-sm leading-normal md:text-base">{ALLOCATION_NOTE}</p>
       {methods}
       {onBack !== null && <BackButton onClick={onBack} />}

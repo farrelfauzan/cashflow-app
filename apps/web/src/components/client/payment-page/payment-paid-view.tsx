@@ -3,6 +3,7 @@
 import { CircleCheck } from "lucide-react";
 
 import { PaymentPageHeader } from "./payment-page-header";
+import { ProofsWaitingSection } from "./proofs-waiting-section";
 import type { PaidPaymentPageView } from "./type";
 import {
   CREDIT_LABEL,
@@ -18,6 +19,7 @@ type PaymentPaidViewProps = {
 
 // The tenant owes nothing (board "Bayar · Lunas"): the link's invoice and any credit, under
 // "Rincian" when there is either. The API gives no method, time or receipt, so none is shown.
+// Transfer proofs the admin has yet to check are still listed under it.
 export function PaymentPaidView({ view }: PaymentPaidViewProps) {
   return (
     <>
@@ -62,6 +64,7 @@ export function PaymentPaidView({ view }: PaymentPaidViewProps) {
           )}
         </section>
       )}
+      <ProofsWaitingSection rows={view.proofs} sent={false} />
     </>
   );
 }

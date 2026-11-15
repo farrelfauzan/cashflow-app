@@ -107,7 +107,8 @@ jobs:
       STORAGE_PATH_STYLE: "true"
       # The worker's scanner without ClamAV (development only, never set with CLAMAV_ADDR): a file
       # holding the EICAR test string is infected, any other is clean. ClamAV needs about 1 GB and
-      # minutes to load its signatures. The API reads the same setting, so it is set for both.
+      # minutes to load its signatures. Only the worker reads it; it sits with the job's other
+      # settings, which the API ignores.
       UPLOAD_SCANNER: fake
       # 127.0.0.1, not localhost: Node may resolve localhost to ::1 first.
       API_DEV_ORIGIN: http://127.0.0.1:8080

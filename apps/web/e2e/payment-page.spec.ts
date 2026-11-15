@@ -206,9 +206,13 @@ test("shows what the tenant owes, oldest first, and how to transfer", async ({
   ).toBeVisible();
   await expect(page.getByText("Cara bayar belum diatur")).toHaveCount(0);
 
-  // The one primary action, and "Kembali".
+  // The one primary action, "Kirim bukti transfer" (a plain button, payment-page-proof.spec.ts)
+  // and "Kembali".
   const copy = page.getByRole("button", { name: "Salin nomor rekening" });
-  await expect(page.getByRole("button")).toHaveCount(2);
+  await expect(
+    transfer.getByRole("button", { name: "Kirim bukti transfer" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(3);
   await expectTouchTarget(copy);
   await copy.click();
   await expect(transfer.getByRole("status")).toHaveText(

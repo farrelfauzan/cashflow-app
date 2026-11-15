@@ -57,7 +57,8 @@ export function uniqueName(testInfo: TestInfo, base: string): string {
 // A tenant number no other run, project, test or retry uses. Each spec has its own prefix
 // ("0814-8": payment-page.spec.ts, "0815-1": payment-page-qris.spec.ts,
 // "0815-2": payment-page-partial.spec.ts, "0815-5": payment-page-telegram.spec.ts,
-// "0815-4": date-picker.spec.ts, "0815-6": form-sheet-dialogs.spec.ts), used by no other spec.
+// "0815-4": date-picker.spec.ts, "0815-6": form-sheet-dialogs.spec.ts,
+// "0815-7": payment-page-proof.spec.ts), used by no other spec.
 export function tenantNumber(
   testInfo: TestInfo,
   prefix: string,
@@ -249,8 +250,9 @@ export async function readPage(page: Page, path: string): Promise<PaymentPage> {
 
 // Every request the page makes that carries the token where it does not belong. It belongs only
 // in the paths of the page document and of the page's own API calls: the page read, the QR
-// status, making a QR, the QR image, "Saya sudah bayar", the "Bayar sebagian" preview and
-// "Simpan janji". Never in a query string, a referer or a body. Paths are logged with the token
+// status, making a QR, the QR image, "Saya sudah bayar", the "Bayar sebagian" preview,
+// "Simpan janji", "Hubungkan Telegram" and "Kirim bukti transfer". Never in a query string, a
+// referer or a body. Paths are logged with the token
 // masked.
 export function trackTokenLeaks(
   page: Page,
@@ -267,6 +269,7 @@ export function trackTokenLeaks(
     `GET ${api}/preview`,
     `POST ${api}/promise`,
     `POST ${api}/telegram`,
+    `POST ${api}/proof`,
   ]);
   const leaks: string[] = [];
   page.on("request", (request) => {
@@ -309,7 +312,7 @@ export async function expectTouchTarget(locator: Locator, min = 44) {
 // /api rewrite passes the header on; behind Caddy in production the API reads Caddy's.
 export function tenantClientAddress(
   testInfo: TestInfo,
-  spec: 18 | 19 | 20 | 21 | 22 | 23,
+  spec: 18 | 19 | 20 | 21 | 22 | 23 | 24,
 ): string {
   const key = `${runId()}|${testInfo.project.name}|${testInfo.titlePath.join("|")}|${testInfo.retry}`;
   let hash = 0;

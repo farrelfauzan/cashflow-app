@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError, GENERIC_ERROR_MESSAGE } from "@/lib/api/errors";
+import {
+  ApiError,
+  GENERIC_ERROR_MESSAGE,
+  networkError,
+} from "@/lib/api/errors";
 import type {
   PaymentPage,
   PaymentPageInvoice,
@@ -106,6 +110,21 @@ import {
   telegramLinkExpiresAt,
   telegramErrorView,
   telegramOfferView,
+  PROOF_NETWORK_TEXT,
+  PROOF_RATE_LIMITED_TEXT,
+  PROOF_RETRY_TEXT,
+  PROOF_SEND_TEXT,
+  PROOF_SENDING_TEXT,
+  PROOF_TOO_LARGE_TEXT,
+  PROOF_UNAVAILABLE_TEXT,
+  canSendProof,
+  proofErrorView,
+  proofPhotoError,
+  proofPrimaryLabel,
+  proofRows,
+  proofSendingLine,
+  proofSentLine,
+  uploadPercent,
 } from "./utils";
 
 const TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
@@ -409,6 +428,7 @@ describe("paymentPageView, open", () => {
       },
       activePromise: null,
       telegram: null,
+      proofs: [],
     });
   });
 
@@ -524,6 +544,7 @@ describe("paymentPageView, paid", () => {
       },
       invoice: { name: "Tagihan November 2026", amount: "Rp1.500.000" },
       credit: null,
+      proofs: [],
     });
   });
 
@@ -3010,5 +3031,232 @@ describe("Telegram on Bayar-Pilih", () => {
       kind: "alert",
       message: GENERIC_ERROR_MESSAGE,
     });
+  });
+});
+
+describe("proofSentLine", () => {
+  it("says when the proof was sent, in Jakarta, with a short weekday", () => {
+    // 02.12 UTC is 09.12 in Jakarta, a Monday.
+    expect(proofSentLine("2026-11-16T02:12:00Z")).toBe(
+      "Dikirim Sen 16 Nov, 09.12",
+    );
+  });
+
+  it("crosses midnight in Jakarta, not in UTC", () => {
+    expect(proofSentLine("2026-11-12T13:15:00Z")).toBe(
+      "Dikirim Kam 12 Nov, 20.15",
+    );
+    expect(proofSentLine("2026-11-15T17:30:00Z")).toBe(
+      "Dikirim Sen 16 Nov, 00.30",
+    );
+  });
+
+  it("never throws on a time it cannot read", () => {
+    expect(proofSentLine("kemarin")).toBe("Dikirim");
+  });
+});
+
+describe("proofRows", () => {
+  it("keeps the API's order, newest first, without a photo", () => {
+    expect(
+      proofRows([
+        { id: "p2", createdAt: "2026-11-16T02:12:00Z" },
+        { id: "p1", createdAt: "2026-11-12T13:15:00Z" },
+      ]),
+    ).toEqual([
+      { id: "p2", sentLine: "Dikirim Sen 16 Nov, 09.12" },
+      { id: "p1", sentLine: "Dikirim Kam 12 Nov, 20.15" },
+    ]);
+  });
+
+  it("shows at most 5", () => {
+    const proofs = Array.from({ length: 7 }, (_, i) => ({
+      id: `p${i}`,
+      createdAt: "2026-11-16T02:12:00Z",
+    }));
+    expect(proofRows(proofs).map((row) => row.id)).toEqual([
+      "p0",
+      "p1",
+      "p2",
+      "p3",
+      "p4",
+    ]);
+  });
+
+  it("is on the open and the paid page alike", () => {
+    const proofsWaiting = [{ id: "p1", createdAt: "2026-11-16T02:12:00Z" }];
+    const rows = [{ id: "p1", sentLine: "Dikirim Sen 16 Nov, 09.12" }];
+    expect(paymentPageView(page({ proofsWaiting })).proofs).toEqual(rows);
+    expect(
+      paymentPageView(
+        page({ proofsWaiting, paid: true, openInvoices: [], outstanding: 0 }),
+      ).proofs,
+    ).toEqual(rows);
+  });
+});
+
+describe("proofErrorView", () => {
+  function fileError(code: string, message: string): ApiError {
+    return new ApiError({ status: 400, code, message, field: "file" });
+  }
+
+  it.each([
+    {
+      name: "an unknown or revoked link",
+      error: apiError(404, "payment_link_not_found"),
+    },
+    { name: "an expired link", error: apiError(410, "payment_link_expired") },
+    { name: "a bare 404 from a proxy", error: apiError(404, "unknown") },
+  ])("$name replaces the page", ({ error }) => {
+    expect(proofErrorView(error)).toEqual({ kind: "link-gone" });
+  });
+
+  it.each([
+    {
+      code: "upload_type_not_allowed",
+      message: "Hanya foto JPEG, PNG atau WebP yang bisa dikirim.",
+    },
+    { code: "upload_too_large", message: "Ukuran foto paling besar 10 MB." },
+    { code: "invalid_input", message: "File kosong." },
+  ])("$code puts the API's message under the photo", ({ code, message }) => {
+    expect(proofErrorView(fileError(code, message))).toEqual({
+      kind: "file",
+      message,
+    });
+  });
+
+  it("a 400 about another field is not about the photo", () => {
+    expect(
+      proofErrorView(
+        new ApiError({ status: 400, code: "invalid_input", message: "x" }),
+      ),
+    ).toEqual({ kind: "alert", message: GENERIC_ERROR_MESSAGE });
+  });
+
+  it("a dropped connection offers to send the same photo again", () => {
+    expect(proofErrorView(networkError())).toEqual({
+      kind: "retry",
+      message: PROOF_NETWORK_TEXT,
+    });
+  });
+
+  it("too many proofs says so in the board's words", () => {
+    expect(proofErrorView(apiError(429, "rate_limited"))).toEqual({
+      kind: "alert",
+      message: PROOF_RATE_LIMITED_TEXT,
+    });
+  });
+
+  it("no storage on this server is a plain message", () => {
+    expect(proofErrorView(apiError(503, "uploads_unavailable"))).toEqual({
+      kind: "alert",
+      message: PROOF_UNAVAILABLE_TEXT,
+    });
+  });
+
+  it.each([
+    { name: "a server error", error: apiError(500, "internal") },
+    { name: "something that is not an ApiError", error: new Error("boom") },
+  ])("$name shows the generic message", ({ error }) => {
+    expect(proofErrorView(error)).toEqual({
+      kind: "alert",
+      message: GENERIC_ERROR_MESSAGE,
+    });
+  });
+});
+
+describe("proofPhotoError", () => {
+  it("refuses a photo above 10 MiB before it is sent", () => {
+    const big = { size: 10 * 1024 * 1024 + 1 } as Blob;
+    expect(proofPhotoError(big)).toEqual({
+      kind: "file",
+      message: PROOF_TOO_LARGE_TEXT,
+    });
+  });
+
+  it("lets a photo of exactly 10 MiB through to the API", () => {
+    expect(proofPhotoError({ size: 10 * 1024 * 1024 } as Blob)).toBeNull();
+  });
+});
+
+describe("uploadPercent", () => {
+  it.each([
+    { loaded: 0, total: 1000, want: 0 },
+    { loaded: 620, total: 1000, want: 62 },
+    { loaded: 1, total: 3, want: 33 },
+    { loaded: 1000, total: 1000, want: 100 },
+    { loaded: 1200, total: 1000, want: 100 },
+    { loaded: 10, total: undefined, want: null },
+    { loaded: 10, total: 0, want: null },
+  ])("$loaded of $total is $want", ({ loaded, total, want }) => {
+    expect(uploadPercent(loaded, total)).toBe(want);
+  });
+});
+
+describe("proofSendingLine", () => {
+  it("shows the percent once it is known", () => {
+    expect(proofSendingLine(62)).toBe("Mengirim… 62%");
+    expect(proofSendingLine(null)).toBe("Mengirim…");
+  });
+});
+
+describe("the proof sheet's primary", () => {
+  const photo = {
+    file: new File(["x"], "bukti.jpg", { type: "image/jpeg" }),
+    previewUrl: "blob:http://localhost/1",
+  };
+
+  it.each([
+    {
+      name: "a photo ready to send",
+      state: { kind: "ready", photo, error: null } as const,
+      label: PROOF_SEND_TEXT,
+      enabled: true,
+    },
+    {
+      name: "while sending",
+      state: { kind: "sending", photo, percent: 40 } as const,
+      label: PROOF_SENDING_TEXT,
+      enabled: false,
+    },
+    {
+      name: "after a dropped connection",
+      state: {
+        kind: "ready",
+        photo,
+        error: { kind: "retry", message: PROOF_NETWORK_TEXT },
+      } as const,
+      label: PROOF_RETRY_TEXT,
+      enabled: true,
+    },
+    {
+      name: "after the API refused the photo",
+      state: {
+        kind: "ready",
+        photo,
+        error: { kind: "file", message: "Bukan foto." },
+      } as const,
+      label: PROOF_SEND_TEXT,
+      enabled: false,
+    },
+    {
+      name: "after a rate limit (tried again later)",
+      state: {
+        kind: "ready",
+        photo,
+        error: { kind: "alert", message: PROOF_RATE_LIMITED_TEXT },
+      } as const,
+      label: PROOF_SEND_TEXT,
+      enabled: true,
+    },
+    {
+      name: "while the photo is made ready",
+      state: { kind: "preparing" } as const,
+      label: PROOF_SEND_TEXT,
+      enabled: false,
+    },
+  ])("$name", ({ state, label, enabled }) => {
+    expect(proofPrimaryLabel(state)).toBe(label);
+    expect(canSendProof(state)).toBe(enabled);
   });
 });
