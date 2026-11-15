@@ -1283,3 +1283,34 @@ func TestCheckResolutionSchema(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestQrisMismatchesUseTheAuditIndex: the queue's QRIS branch reads the platform's mismatch rows
+// through their partial index, not the organization's whole audit log, which only grows.
+func TestQrisMismatchesUseTheAuditIndex(t *testing.T) {
+	env := testenv.New(t)
+	ctx := context.Background()
+	env.Clock.Set(wib(2026, 11, 14, 9, 0))
+	w := newWorld(t, env, "Griya Indeks", "0812781")
+	var plan strings.Builder
+	require.NoError(t, env.Store.WithOrgTx(ctx, w.org.ID, func(tx pgx.Tx) error {
+		// The test database is tiny, so a sequential scan would win on cost; turning it off asks
+		// whether the index can serve the join at all.
+		if _, err := tx.Exec(ctx, "SET LOCAL enable_seqscan = off"); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, "EXPLAIN SELECT item_id FROM check_queue_item WHERE organization_id = $1 AND kind = 'qris_amount_mismatch'", w.org.ID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				return err
+			}
+			plan.WriteString(line + "\n")
+		}
+		return rows.Err()
+	}))
+	require.Contains(t, plan.String(), "audit_log_platform_payment_record", plan.String())
+}

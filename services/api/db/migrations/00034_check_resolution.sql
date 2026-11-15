@@ -112,6 +112,10 @@ WHERE o.outcome = 'number_changed'
   AND NOT EXISTS (SELECT 1 FROM check_resolution r
                   WHERE r.organization_id = o.organization_id AND r.visit_outcome_id = o.id);
 GRANT SELECT ON check_queue_item TO cashflow_app;
+-- The QRIS branch finds the platform's own mismatch rows by resource; audit_log only grows, so
+-- this partial index keeps the join to the platform's few payment:record rows.
+CREATE INDEX audit_log_platform_payment_record ON audit_log (organization_id, resource)
+    WHERE action = 'payment:record' AND decision = 'allow' AND actor_staff_user_id IS NULL;
 
 ALTER TABLE check_resolution ENABLE ROW LEVEL SECURITY;
 ALTER TABLE check_resolution FORCE ROW LEVEL SECURITY;
@@ -120,6 +124,7 @@ CREATE POLICY check_resolution_org ON check_resolution
     WITH CHECK (organization_id = app_org_id());
 
 -- +goose Down
+DROP INDEX audit_log_platform_payment_record;
 DROP VIEW check_queue_item;
 DROP TABLE check_resolution;
 ALTER TABLE visit_outcome DROP CONSTRAINT visit_outcome_id_org;
