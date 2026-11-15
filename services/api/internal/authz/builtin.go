@@ -59,7 +59,7 @@ var builtinRoles = map[string]Role{
 					Action: []string{
 						"organization:read", "settings:*", "member:*", "role:read",
 						"property:*", "unit:*", "tenant:*", "lease:*", "charge:*", "invoice:*",
-						"payment:read", "payment:record", "payment:check",
+						"payment:read", "payment:record", "payment:check", "payment:proof",
 						"correction:*", "promise:*", "visit:read", "cash:read",
 						"payroll:read", "payroll:check", "payroll:record", "payslip:read",
 						"expense:read", "expense:create",
@@ -89,7 +89,7 @@ var builtinRoles = map[string]Role{
 					Action: []string{
 						"tenant:read", "invoice:read", "visit:read", "visit:record",
 						"cash:record", "promise:create", "charge:read", "charge:record",
-						"invoice:share",
+						"invoice:share", "payment:proof",
 					},
 					Condition: &Condition{Self: ptr(true)},
 				},

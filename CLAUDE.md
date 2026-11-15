@@ -252,11 +252,12 @@ of the same organization can do. Both must pass.
 - **Intent of the built-in roles** (initial, confirm against the screens):
   - Supervisor: read everything, plus `payroll:approve` and `expense:approve`. No other writes.
   - Admin: manage property, unit (its terms and prices included), tenant and lease (extra
-    charges included); `charge:record`, `payment:record`, `payment:check`, `correction:create`,
-    `payroll:check`, `payroll:record`, `expense:create`, members. Cannot approve. May grant the
-    Admin and Karyawan roles (`role:assign` on `role/admin` and `role/karyawan`), never
-    Supervisor. Supervisors are set when the organization is created.
-  - Karyawan: `visit:*`, `cash:record` and `charge:record` (meter amounts) on assigned
+    charges included); `charge:record`, `payment:record`, `payment:check`, `payment:proof`,
+    `correction:create`, `payroll:check`, `payroll:record`, `expense:create`, members. Cannot
+    approve. May grant the Admin and Karyawan roles (`role:assign` on `role/admin` and
+    `role/karyawan`), never Supervisor. Supervisors are set when the organization is created.
+  - Karyawan: `visit:*`, `cash:record`, `charge:record` (meter amounts) and `payment:proof`
+    (sending a tenant's transfer photo for the admin to check, decision 49) on assigned
     tenants, and read their own payslip and commission.
 - **Separation of duties** (guardrail): whoever checked a payroll run or created an expense
   cannot approve it (`"actor": true` denies). Nobody confirms their own cash deposit (decision
@@ -266,8 +267,9 @@ of the same organization can do. Both must pass.
   added or removed.
 - **Not RBAC principals**: penyewa and pemegang porsi have no accounts. A penyewa link token
   grants only `invoice:read`, `payment:attempt`, `promise:create` and `payment:proof` (sending a
-  photo of a bank transfer, which the admin checks; slice 6) on that one invoice or lease, and,
-  in demo environments only (decision 42), `telegram:link`: linking a Telegram chat to that
+  photo of a bank transfer, which the admin checks; slice 6; staff send one for a tenant through
+  RBAC with the same action, decision 49) on that one invoice or lease, and, in demo
+  environments only (decision 42), `telegram:link`: linking a Telegram chat to that
   tenant, which replaces the tenant's earlier link and tells the earlier chat. Pemegang porsi
   only receive the WA report.
 - **Enforcement**: the service layer calls `authz.Service.Authorize(ctx, tx, principal, request)`

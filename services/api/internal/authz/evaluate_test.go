@@ -191,7 +191,7 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 			"property:read", "property:manage", "unit:read", "unit:manage",
 			"tenant:read", "tenant:manage", "lease:read", "lease:manage",
 			"charge:read", "charge:record", "invoice:read", "invoice:create", "invoice:send-reminder", "invoice:share",
-			"payment:read", "payment:record", "payment:check",
+			"payment:read", "payment:record", "payment:check", "payment:proof",
 			"correction:read", "correction:create", "promise:read", "promise:create",
 			"visit:read", "cash:read", "payroll:read", "payroll:check", "payroll:record",
 			"payslip:read", "expense:read", "expense:create",
@@ -200,7 +200,7 @@ func TestBuiltinRoleMatrix(t *testing.T) {
 		RoleKaryawan: withConditional(allow("organization:read"),
 			"tenant:read", "invoice:read", "visit:read", "visit:record",
 			"cash:record", "promise:create", "payslip:read", "cash:deposit",
-			"charge:read", "charge:record", "invoice:share",
+			"charge:read", "charge:record", "invoice:share", "payment:proof",
 		),
 	}
 
