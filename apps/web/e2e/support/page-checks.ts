@@ -1,11 +1,13 @@
 import type { Locator, Page, TestInfo } from "@playwright/test";
 
 // Collects every request the page makes to a host other than localhost. The app self-hosts its
-// font and talks only to its own /api, so the list must stay empty.
+// font and talks only to its own /api, so the list must stay empty. blob: and data: URLs never
+// leave the browser (a chosen photo's preview), so they are not requests to anyone.
 export function trackOutsideRequests(page: Page): string[] {
   const outside: string[] = [];
   page.on("request", (request) => {
-    const { hostname } = new URL(request.url());
+    const { hostname, protocol } = new URL(request.url());
+    if (protocol === "blob:" || protocol === "data:") return;
     if (hostname !== "localhost") outside.push(request.url());
   });
   return outside;

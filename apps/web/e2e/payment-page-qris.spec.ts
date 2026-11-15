@@ -429,7 +429,10 @@ test("when QRIS fails, the page switches to bank transfer with a warning", async
     page.getByRole("button", { name: "Salin nomor rekening" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Kembali" })).toBeVisible();
-  await expect(page.getByRole("button")).toHaveCount(2);
+  await expect(
+    transfer.getByRole("button", { name: "Kirim bukti transfer" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(3);
   expect(await qrsFor(fixture)).toEqual([]);
   await attachViewportScreenshot(page, testInfo, "payment-qris-unavailable");
 
