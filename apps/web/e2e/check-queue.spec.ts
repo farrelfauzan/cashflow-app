@@ -190,6 +190,10 @@ async function expectScreen(page: Page, testInfo: TestInfo) {
   ).toBeVisible();
 }
 
+function checkQueueLink(page: Page) {
+  return page.getByRole("main").getByRole("link", { name: /^Antrean cek/ });
+}
+
 test.describe("Admin of the whole organization", () => {
   test.use({ storageState: DIMAS.storageState });
 
@@ -199,7 +203,14 @@ test.describe("Admin of the whole organization", () => {
     const orgId = orgIdOf(page);
     expect(await access(page, orgId, "payment:check")).toBe("allow");
 
-    await page.goto(`/o/${orgId}/billing/check-queue`);
+    // Penagihan links to the queue with the number waiting (other specs may change it).
+    await page.goto(`/o/${orgId}/billing`);
+    await expect(checkQueueLink(page)).toHaveAccessibleName(
+      /^Antrean cek(, \d+ menunggu)?$/,
+    );
+    await expectTall(checkQueueLink(page), 44);
+    await checkQueueLink(page).click();
+    await expect(page).toHaveURL(/\/billing\/check-queue$/);
     await expectScreen(page, testInfo);
     const queue = await call<CheckQueuePage>(
       page.request,
@@ -570,7 +581,9 @@ test.describe("Supervisor", () => {
     expect(await access(page, orgId, "cash:read")).toBe("allow");
     expect(await access(page, orgId, "payment:check")).not.toBe("allow");
 
-    await page.goto(`/o/${orgId}/billing/check-queue`);
+    await page.goto(`/o/${orgId}/billing`);
+    await checkQueueLink(page).click();
+    await expect(page).toHaveURL(/\/billing\/check-queue$/);
     await expectScreen(page, testInfo);
     await expect(page.getByText(FORBIDDEN_TEXT)).toHaveCount(0);
     await expect(
@@ -604,6 +617,13 @@ test.describe("Admin limited to one property", () => {
     const orgId = orgIdOf(page);
     expect(await access(page, orgId, "payment:check")).not.toBe("allow");
     expect(await access(page, orgId, "cash:read")).not.toBe("allow");
+
+    // Penagihan offers no link.
+    await page.goto(`/o/${orgId}/billing`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Penagihan" }),
+    ).toBeVisible();
+    await expect(checkQueueLink(page)).toHaveCount(0);
 
     // A typed address: the screen says so and offers nothing; the API agrees.
     await page.goto(`/o/${orgId}/billing/check-queue`);

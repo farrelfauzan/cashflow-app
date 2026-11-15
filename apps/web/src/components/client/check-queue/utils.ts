@@ -30,7 +30,7 @@ import {
   type UploadPurpose,
 } from "@/lib/api/generated/model";
 import { everywhere, type AppAbility } from "@/lib/capabilities";
-import { formatTimestampWeekdayDayMonthTime } from "@/lib/format/date";
+import { formatTimestampShortWeekdayDayMonthTime } from "@/lib/format/date";
 import { formatPhone } from "@/lib/format/phone";
 import { formatRupiah } from "@/lib/format/rupiah";
 
@@ -173,6 +173,11 @@ export function canReadCheckQueue(ability: AppAbility): boolean {
   return canCheckItems(ability) || ability.can("read", everywhere("cash"));
 }
 
+// Penagihan's link to the queue, with the number of items waiting.
+export function checkQueueLinkLabel(waiting: number): string {
+  return waiting > 0 ? `${TITLE}, ${waiting} menunggu` : TITLE;
+}
+
 // The kind in the URL, or undefined (every kind) for none or an unknown one, so a hand-edited
 // URL never makes the API answer 400.
 export function readCheckKind(
@@ -230,7 +235,7 @@ export function qrisDifferenceText(
 }
 
 export function arrivedText(createdAt: string): string {
-  return `Masuk ${formatTimestampWeekdayDayMonthTime(createdAt)}`;
+  return `Masuk ${formatTimestampShortWeekdayDayMonthTime(createdAt)}`;
 }
 
 // "Foto kwitansi Bu Siti Aminah", or the purpose alone without a tenant.
@@ -342,7 +347,7 @@ export function checkRowViews(
 
 export function depositGapSheetView(gap: CheckDepositGap): DepositGapSheetView {
   return {
-    subtitle: `${gap.depositor.name} · dihitung ${gap.confirmedBy.name}, ${formatTimestampWeekdayDayMonthTime(gap.confirmedAt)}`,
+    subtitle: `${gap.depositor.name} · dihitung ${gap.confirmedBy.name}, ${formatTimestampShortWeekdayDayMonthTime(gap.confirmedAt)}`,
     tiles: [
       {
         label: "Total kwitansi",
@@ -394,7 +399,7 @@ export function uploadInfectedSheetView(
     scannedLine:
       upload.scannedAt === undefined
         ? "Sudah diamankan"
-        : `Diperiksa ${formatTimestampWeekdayDayMonthTime(upload.scannedAt)} · sudah diamankan`,
+        : `Diperiksa ${formatTimestampShortWeekdayDayMonthTime(upload.scannedAt)} · sudah diamankan`,
     todo: uploadTodo(upload),
   };
 }
@@ -478,7 +483,7 @@ export function phoneChangeSheetView(
     noteCaption:
       note === ""
         ? null
-        : `Catatan ${recordedBy} · ${formatTimestampWeekdayDayMonthTime(createdAt)}`,
+        : `Catatan ${recordedBy} · ${formatTimestampShortWeekdayDayMonthTime(createdAt)}`,
     note: note === "" ? null : `“${note}”`,
     keepLine: `Nomor ${change.tenant.name} tetap ${current}. Item ini hilang dari antrean.`,
     applyToast: `Nomor ${change.tenant.name} diganti`,

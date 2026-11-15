@@ -47,6 +47,7 @@ import {
   summaryTiles,
 } from "./utils";
 
+import { BillingCheckQueueLink } from "./billing-check-queue-link";
 import { BillingDepositLink } from "./billing-deposit-link";
 import { InvoiceFilters } from "./invoice-filters";
 import { InvoiceList } from "./invoice-list";
@@ -158,7 +159,12 @@ export function InvoicesView({ orgId }: InvoicesViewProps) {
             [PERIOD_PARAM]: periodParam(nextMonth(period), thisMonth),
           })
         }
-        links={<BillingDepositLink orgId={orgId} />}
+        links={
+          <>
+            <BillingDepositLink orgId={orgId} />
+            <BillingCheckQueueLink orgId={orgId} />
+          </>
+        }
       />
 
       {meterView ? (

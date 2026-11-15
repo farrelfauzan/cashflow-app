@@ -17,6 +17,7 @@ import {
   canCheckItems,
   canReadCheckQueue,
   checkActionErrorKind,
+  checkQueueLinkLabel,
   checkRowView,
   checkRowViews,
   depositGapSheetView,
@@ -158,6 +159,11 @@ describe("who may read and act", () => {
     ).toBe(true);
     expect(isForbidden(new Error("x"))).toBe(false);
   });
+
+  it("names Penagihan's link with the number waiting", () => {
+    expect(checkQueueLinkLabel(6)).toBe("Antrean cek, 6 menunggu");
+    expect(checkQueueLinkLabel(0)).toBe("Antrean cek");
+  });
 });
 
 describe("filters", () => {
@@ -257,7 +263,7 @@ describe("rows", () => {
       title: "Bu Wati Handayani · Kamar 11, Kos Melati",
       detail: "Foto bukti dari halaman pembayaran",
       chip: { label: "Siap dicek", tone: "active" },
-      arrived: "Masuk Sabtu 14 Nov, 17.02",
+      arrived: "Masuk Sab 14 Nov, 17.02",
       opens: false,
       iconTone: "accent",
     });
@@ -372,7 +378,7 @@ describe("drawers", () => {
   it("builds Selisih setoran", () => {
     const view = depositGapSheetView(gap());
     expect(view.subtitle).toBe(
-      "Mas Dimas Saputra · dihitung Pak Budi Hartono, Sabtu 14 Nov, 17.02",
+      "Mas Dimas Saputra · dihitung Pak Budi Hartono, Sab 14 Nov, 17.02",
     );
     expect(view.tiles).toEqual([
       {
@@ -408,7 +414,7 @@ describe("drawers", () => {
       "Foto kwitansi Bu Siti Aminah · diunggah Mas Dimas Saputra",
     );
     expect(receipt.scannedLine).toBe(
-      "Diperiksa Sabtu 14 Nov, 11.07 · sudah diamankan",
+      "Diperiksa Sab 14 Nov, 11.07 · sudah diamankan",
     );
     expect(receipt.todo).toBe(
       "Minta Mas Dimas memotret kwitansi Bu Siti Aminah lagi. Di HP-nya kwitansi ini sudah tampil “Foto ditolak, ambil ulang”.",
@@ -481,7 +487,7 @@ describe("drawers", () => {
       },
     ]);
     expect(view.noteCaption).toBe(
-      "Catatan Mas Dimas Saputra · Sabtu 14 Nov, 17.02",
+      "Catatan Mas Dimas Saputra · Sab 14 Nov, 17.02",
     );
     expect(view.note).toBe("“Nomor lama hilang”");
     expect(view.keepLine).toBe(
