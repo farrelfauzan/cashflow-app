@@ -10,6 +10,8 @@ import {
   formatMonthYear,
   formatTimestampDate,
   formatTimestampDayMonth,
+  formatTimestampWeekdayDayMonth,
+  formatTimestampWeekdayDayMonthTime,
   formatWeekdayDayMonth,
   jakartaHour,
   jakartaToday,
@@ -203,6 +205,59 @@ describe("formatTimestampDayMonth", () => {
     { name: "a calendar date", input: "2026-10-27" },
   ])("throws on $name", ({ input }) => {
     expect(() => formatTimestampDayMonth(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatTimestampWeekdayDayMonth", () => {
+  it.each([
+    {
+      name: "a morning in Jakarta",
+      input: "2026-11-12T01:00:00Z",
+      want: "Kamis, 12 Nov",
+    },
+    {
+      name: "an evening in UTC that is the next day in Jakarta",
+      input: "2026-11-12T18:30:00Z",
+      want: "Jumat, 13 Nov",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampWeekdayDayMonth(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "a timestamp without a zone", input: "2026-11-12T07:00:00" },
+    { name: "a calendar date", input: "2026-11-12" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatTimestampWeekdayDayMonth(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatTimestampWeekdayDayMonthTime", () => {
+  it.each([
+    {
+      name: "a morning in Jakarta",
+      input: "2026-11-13T03:15:00Z",
+      want: "Jumat 13 Nov, 10.15",
+    },
+    {
+      name: "an evening in UTC that is the next morning in Jakarta",
+      input: "2026-11-13T17:40:00Z",
+      want: "Sabtu 14 Nov, 00.40",
+    },
+    {
+      name: "a timestamp with an offset",
+      input: "2026-11-14T16:20:00+07:00",
+      want: "Sabtu 14 Nov, 16.20",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampWeekdayDayMonthTime(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "a timestamp without a zone", input: "2026-11-13T07:00:00" },
+    { name: "a calendar date", input: "2026-11-13" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatTimestampWeekdayDayMonthTime(input)).toThrow(RangeError);
   });
 });
 

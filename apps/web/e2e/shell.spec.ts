@@ -342,6 +342,10 @@ test.describe("Karyawan", () => {
       await expect(
         sheet.getByRole("link", { name: "Anggota tim" }),
       ).toHaveCount(0);
+      // His own cash: "Setor tunai" is not a tab, so it is here.
+      await expect(
+        sheet.getByRole("link", { name: "Setor tunai" }),
+      ).toBeVisible();
       // One organization: no "Ganti usaha".
       await expect(
         sheet.getByRole("link", { name: "Ganti usaha" }),
@@ -350,11 +354,12 @@ test.describe("Karyawan", () => {
     } else {
       await expect(menu.getByText("Karyawan", { exact: true })).toBeVisible();
     }
-    await expect(menuSections(menu)).toHaveText([
-      "Beranda",
-      "Penyewa",
-      "Penagihan",
-    ]);
+    // The tab bar on the phone; the side menu also lists "Setor tunai" (cash:deposit).
+    await expect(menuSections(menu)).toHaveText(
+      isPhone(testInfo)
+        ? ["Beranda", "Penyewa", "Penagihan"]
+        : ["Beranda", "Penyewa", "Penagihan", "Setor tunai"],
+    );
     await attachFullPageScreenshot(page, testInfo, "shell-karyawan");
   });
 });
