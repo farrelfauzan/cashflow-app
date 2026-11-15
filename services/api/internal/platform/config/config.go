@@ -375,9 +375,20 @@ type Worker struct {
 	// only) the worker registers no upload jobs.
 	Storage Storage `env:", prefix=STORAGE_"`
 	// ClamAVAddr is CLAMAV_ADDR, clamd's host:port on the internal network, which scans uploads.
-	// Required with Storage.
+	// Required with Storage and UploadScanner clamd.
 	ClamAVAddr string `env:"CLAMAV_ADDR"`
+	// UploadScanner is UPLOAD_SCANNER, what scans uploads: clamd (the default, through
+	// ClamAVAddr), or fake, which reports only the EICAR test file and passes everything else
+	// (internal/scan/devscan). fake is for the web app's end-to-end tests and runs in development
+	// only; it is never a default.
+	UploadScanner string `env:"UPLOAD_SCANNER, default=clamd"`
 }
+
+// Upload scanners (UPLOAD_SCANNER).
+const (
+	ScannerClamd = "clamd"
+	ScannerFake  = "fake"
+)
 
 // WhatsApp returns the worker's WhatsApp settings.
 func (c Worker) WhatsApp() WhatsApp {
@@ -412,7 +423,30 @@ func (c Worker) validate() error {
 	if err := c.Storage.validate(c.Env); err != nil {
 		return err
 	}
-	return validClamAV(c.ClamAVAddr, c.Storage.Enabled())
+	return validScanner(c.Env, c.UploadScanner, c.ClamAVAddr, c.Storage.Enabled())
+}
+
+// validScanner checks UPLOAD_SCANNER and CLAMAV_ADDR together. The fake scanner is no malware
+// scan, so it runs only in development, only with uploads on, and never next to a clamd address
+// that would suggest a real scan.
+func validScanner(env, scanner, addr string, uploads bool) error {
+	switch scanner {
+	case ScannerClamd:
+		return validClamAV(addr, uploads)
+	case ScannerFake:
+		if env != "development" {
+			return fmt.Errorf("UPLOAD_SCANNER=fake scans for nothing but the EICAR test file and only runs in development, not in %s; unset it to scan with clamd", env)
+		}
+		if !uploads {
+			return errors.New("UPLOAD_SCANNER=fake needs the STORAGE_* settings: without a bucket the worker scans nothing")
+		}
+		if addr != "" {
+			return errors.New("CLAMAV_ADDR is not used with UPLOAD_SCANNER=fake; unset one of them")
+		}
+		return nil
+	default:
+		return fmt.Errorf("UPLOAD_SCANNER must be clamd or fake, got %q", scanner)
+	}
 }
 
 // validClamAV checks CLAMAV_ADDR: required (as host:port) when uploads are on, since the scan

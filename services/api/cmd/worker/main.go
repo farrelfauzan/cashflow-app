@@ -35,6 +35,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder/remindertask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/scan/clamd"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/scan/devscan"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/staffnotice/noticetask"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/storage/s3store"
@@ -51,7 +52,7 @@ func main() {
 }
 
 // registerUploads adds the upload scan and its reconcile (S6-1) when the worker has a bucket and
-// clamd. Without STORAGE_* settings, which config.LoadWorker allows only in development, it
+// a scanner. Without STORAGE_* settings, which config.LoadWorker allows only in development, it
 // registers nothing.
 func registerUploads(ctx context.Context, cfg config.Worker, st *store.Store, az *authz.Service, client *asynq.Client,
 	clk clock.Clock, log *slog.Logger, mux *asynq.ServeMux, sched *asynq.Scheduler) error {
@@ -67,18 +68,10 @@ func registerUploads(ctx context.Context, cfg config.Worker, st *store.Store, az
 	if err != nil {
 		return err
 	}
-	scanner, err := clamd.New(cfg.ClamAVAddr)
+	scanner, err := uploadScanner(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
-	// clamd loads its signatures for a minute or two after it starts, so a failed ping only
-	// warns: scans fail and are retried until it answers.
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := scanner.Ping(pingCtx); err != nil {
-		log.Warn("clamd does not answer yet; upload scans wait for it", "clamav", cfg.ClamAVAddr, "error", err)
-	}
-	log.Info("upload scans on", "storage", cfg.Storage, "clamav", cfg.ClamAVAddr)
 	return uploadtask.Worker{
 		Checker: upload.NewChecker(upload.CheckerDeps{
 			Store: st, Objects: bucket, Scanner: scanner, Audit: az, Clock: clk, Log: log,
@@ -88,6 +81,34 @@ func registerUploads(ctx context.Context, cfg config.Worker, st *store.Store, az
 		Clock:    clk,
 		Log:      log,
 	}.Register(mux, sched)
+}
+
+// uploadScanner returns the scanner UPLOAD_SCANNER names: clamd, or in development only the fake
+// that reports nothing but the EICAR test file (config.LoadWorker refuses it elsewhere).
+func uploadScanner(ctx context.Context, cfg config.Worker, log *slog.Logger) (upload.Scanner, error) {
+	if cfg.UploadScanner == config.ScannerFake {
+		// config.LoadWorker already refuses this; checked again so no other path to a Worker
+		// can run the fake outside development.
+		if cfg.Env != "development" {
+			return nil, fmt.Errorf("UPLOAD_SCANNER=fake only runs in development, not in %s", cfg.Env)
+		}
+		log.Warn("upload scans on with the development fake scanner: only the EICAR test file is reported, nothing is scanned for malware",
+			"storage", cfg.Storage)
+		return devscan.Scanner{}, nil
+	}
+	scanner, err := clamd.New(cfg.ClamAVAddr)
+	if err != nil {
+		return nil, err
+	}
+	// clamd loads its signatures for a minute or two after it starts, so a failed ping only
+	// warns: scans fail and are retried until it answers.
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := scanner.Ping(pingCtx); err != nil {
+		log.Warn("clamd does not answer yet; upload scans wait for it", "clamav", cfg.ClamAVAddr, "error", err)
+	}
+	log.Info("upload scans on", "storage", cfg.Storage, "clamav", cfg.ClamAVAddr)
+	return scanner, nil
 }
 
 func run() error {

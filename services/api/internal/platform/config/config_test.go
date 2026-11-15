@@ -370,6 +370,7 @@ func TestLoadWorker(t *testing.T) {
 				DatabaseMaxConns: 20,
 				PublicWebOrigin:  "http://localhost:3000",
 				WhatsAppProvider: "devlog",
+				UploadScanner:    ScannerClamd,
 			},
 		},
 		{
@@ -388,6 +389,7 @@ func TestLoadWorker(t *testing.T) {
 				PublicWebOrigin:  "https://app.example.id",
 				WhatsAppProvider: "twilio",
 				Twilio:           Twilio{AccountSID: sid, AuthToken: token, WhatsAppFrom: "+14155238886"},
+				UploadScanner:    ScannerClamd,
 			},
 		},
 		{
@@ -957,6 +959,22 @@ func TestWorkerUploadSettings(t *testing.T) {
 		{name: "clamd alone is ignored", env: env(map[string]string{"CLAMAV_ADDR": "localhost:3310"}), want: func(t *testing.T, w Worker) {
 			require.False(t, w.Storage.Enabled())
 		}},
+		{name: "clamd is the default scanner", env: env(rustfs, map[string]string{"CLAMAV_ADDR": "localhost:3310"}), want: func(t *testing.T, w Worker) {
+			require.Equal(t, ScannerClamd, w.UploadScanner)
+		}},
+		{name: "clamd named", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "clamd", "CLAMAV_ADDR": "localhost:3310"}), want: func(t *testing.T, w Worker) {
+			require.Equal(t, ScannerClamd, w.UploadScanner)
+		}},
+		{name: "clamd named still needs its address", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "clamd"}), wantErr: "CLAMAV_ADDR"},
+		{name: "the fake scanner in development", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "fake"}), want: func(t *testing.T, w Worker) {
+			require.Equal(t, ScannerFake, w.UploadScanner)
+			require.Empty(t, w.ClamAVAddr)
+		}},
+		{name: "the fake scanner without a bucket", env: env(map[string]string{"UPLOAD_SCANNER": "fake"}), wantErr: "UPLOAD_SCANNER=fake needs the STORAGE_* settings"},
+		{name: "the fake scanner next to clamd", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "fake", "CLAMAV_ADDR": "localhost:3310"}), wantErr: "CLAMAV_ADDR is not used with UPLOAD_SCANNER=fake"},
+		{name: "an unknown scanner", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "none", "CLAMAV_ADDR": "localhost:3310"}), wantErr: `UPLOAD_SCANNER must be clamd or fake, got "none"`},
+		{name: "a blank scanner", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "", "CLAMAV_ADDR": "localhost:3310"}), wantErr: `UPLOAD_SCANNER must be clamd or fake, got ""`},
+		{name: "the fake scanner's name in another case", env: env(rustfs, map[string]string{"UPLOAD_SCANNER": "FAKE"}), wantErr: "UPLOAD_SCANNER must be clamd or fake"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -968,6 +986,33 @@ func TestWorkerUploadSettings(t *testing.T) {
 			}
 			require.NoError(t, err)
 			tc.want(t, got)
+		})
+	}
+}
+
+// TestFakeScannerOnlyInDevelopment checks the fake scanner is refused outside development, with
+// every other upload setting valid, so nothing but the environment decides.
+func TestFakeScannerOnlyInDevelopment(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		env     string
+		wantErr string
+	}{
+		{env: "development"},
+		{env: "staging", wantErr: "UPLOAD_SCANNER=fake scans for nothing but the EICAR test file and only runs in development, not in staging"},
+		{env: "production", wantErr: "only runs in development, not in production"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.env, func(t *testing.T) {
+			t.Parallel()
+			err := validScanner(tc.env, ScannerFake, "", true)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+			// clamd stays valid there.
+			require.NoError(t, validScanner(tc.env, ScannerClamd, "clamav:3310", true))
 		})
 	}
 }
