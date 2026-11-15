@@ -8,7 +8,7 @@ import type { UploadPurpose } from './uploadPurpose';
 
 export interface UploadInput {
   purpose: UploadPurpose;
-  /** Required for cash_receipt; must be left out for cash_deposit. */
+  /** Required for cash_receipt and transfer_proof; must be left out for cash_deposit. */
   tenantId?: string;
   /** The file's type as the browser reports it; image/jpeg, image/png or image/webp. */
   contentType: string;

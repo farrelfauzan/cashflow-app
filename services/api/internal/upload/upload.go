@@ -42,7 +42,8 @@ const (
 	PurposeCashReceipt = "cash_receipt"
 	PurposeCashDeposit = "cash_deposit"
 	// PurposeTransferProof is a tenant's photo of a bank transfer, sent from the payment page
-	// (Proofs.Send). It has no staff uploader, and staff cannot start one.
+	// (Proofs.Send, no staff uploader) or by a member who got it from the tenant (Service.Create
+	// and Complete with payment:proof, decision 49).
 	PurposeTransferProof = "transfer_proof"
 )
 
@@ -101,6 +102,7 @@ const (
 	actionCashRecord   = "cash:record"
 	actionCashDeposit  = "cash:deposit"
 	actionPaymentCheck = "payment:check"
+	actionPaymentProof = "payment:proof"
 	actionCashRead     = "cash:read"
 	// auditScanAction names the scan's audit rows for a rejected or infected file, a platform
 	// action with no actor (authz.Service.RecordSystemAction).
@@ -108,7 +110,8 @@ const (
 )
 
 var (
-	// ErrPurposeUnknown is a purpose other than PurposeCashReceipt and PurposeCashDeposit.
+	// ErrPurposeUnknown is a purpose other than PurposeCashReceipt, PurposeCashDeposit and
+	// PurposeTransferProof.
 	ErrPurposeUnknown = errors.New("upload: unknown purpose")
 	// ErrTypeNotAllowed is a declared content type that is not an accepted image type.
 	ErrTypeNotAllowed = errors.New("upload: content type not allowed")
@@ -189,7 +192,7 @@ type Upload struct {
 	// ContentType is the type the scan found in the content, empty while pending.
 	ContentType string
 	Size        int64
-	UploadedBy  uuid.UUID // staff user id; uuid.Nil for a transfer proof
+	UploadedBy  uuid.UUID // staff user id; uuid.Nil for a transfer proof the tenant sent from a link
 	CreatedAt   time.Time
 	CompletedAt *time.Time
 	ScannedAt   *time.Time
@@ -220,7 +223,7 @@ func downloadName(id uuid.UUID, contentType string) string {
 // CreateInput starts an upload.
 type CreateInput struct {
 	Purpose     string
-	TenantID    uuid.UUID // required for PurposeCashReceipt, uuid.Nil for PurposeCashDeposit
+	TenantID    uuid.UUID // required for PurposeCashReceipt and PurposeTransferProof, uuid.Nil for PurposeCashDeposit
 	ContentType string
 	Size        int64
 }
@@ -228,7 +231,7 @@ type CreateInput struct {
 // validCreate checks in and normalizes its content type (lower case, no spaces).
 func validCreate(in CreateInput) (CreateInput, error) {
 	switch in.Purpose {
-	case PurposeCashReceipt:
+	case PurposeCashReceipt, PurposeTransferProof:
 		if in.TenantID == uuid.Nil {
 			return in, &InputError{Field: "tenantId", Message: "Pilih penyewa untuk foto bukti ini."}
 		}

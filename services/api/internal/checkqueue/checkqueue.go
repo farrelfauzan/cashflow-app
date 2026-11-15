@@ -126,11 +126,14 @@ type StaffRef struct {
 	Name string
 }
 
-// TransferProof is a tenant's photo of a bank transfer (S6-5).
+// TransferProof is a tenant's photo of a bank transfer, sent from a payment link (S6-5) or by a
+// member who got it from the tenant (decision 49).
 type TransferProof struct {
 	Tenant TenantRef
-	// InvoiceID is the invoice of the link it was sent from.
-	InvoiceID    uuid.UUID
+	// InvoiceID is the invoice of the link it was sent from; uuid.Nil when a member sent it.
+	InvoiceID uuid.UUID
+	// SentBy is the member who sent it; nil when the tenant sent it from a link.
+	SentBy       *StaffRef
 	UploadID     uuid.UUID
 	UploadStatus string // pending (being scanned) or clean
 }

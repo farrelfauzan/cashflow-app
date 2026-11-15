@@ -58,8 +58,9 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 /**
  * Answers a presigned PUT URL that is valid for a few minutes (putExpiresAt). The browser sends the file body to putUrl with method PUT and exactly the headers in putHeaders; the body must be exactly size bytes, since the size is signed into the URL (storage has no presigned POST, so this is the size limit). Then it calls completeUpload, and polls getUpload until status is no longer pending.
  * The upload starts pending. A queue job checks the stored file's real size and type (from its content, never its name or declared type), and scans it for malware: only a clean file can be read, through getUpload's short-lived downloadUrl, always as a download.
- * What the upload is for decides the permission: purpose cash_receipt (a receipt photo for tenantId) needs cash:record on the tenant, through each of its active leases (decision 47), so a karyawan may upload only for tenants they collect from now; purpose cash_deposit (a deposit photo, no tenantId) needs cash:deposit on the caller's own record.
- * Errors: 400 upload_purpose_unknown (field purpose), upload_type_not_allowed (field contentType: only image/jpeg, image/png and image/webp), upload_too_large (field size: at most 10 MB, 10485760 bytes), invalid_input (field size or tenantId); 404 not_found with field tenantId for a tenant not in the organization; 503 uploads_unavailable when this server has no file storage configured.
+ * What the upload is for decides the permission: purpose cash_receipt (a receipt photo for tenantId) needs cash:record on the tenant, through each of its active leases (decision 47), so a karyawan may upload only for tenants they collect from now; purpose cash_deposit (a deposit photo, no tenantId) needs cash:deposit on the caller's own record; purpose transfer_proof (a tenant's photo of a bank transfer that the tenant gave a member, decision 49) needs payment:proof on tenantId, through each of its active leases, so a karyawan sends one only for tenants they collect from now and an admin for any tenant.
+ * A transfer_proof becomes a proof for the admin when completeUpload is called: it is listed in Antrean cek (listCheckQueue) with the member who sent it (sentBy), and on the tenant's payment page among the proofs waiting ("bukti sedang dicek"), exactly like one the tenant sends from the page (sendPaymentProof). A photo the scan refuses leaves those lists; an infected one is listed as upload_infected. The member never records the payment: the admin checks the bank and matches it.
+ * Errors: 400 upload_purpose_unknown (field purpose: none of the three), upload_type_not_allowed (field contentType: only image/jpeg, image/png and image/webp), upload_too_large (field size: at most 10 MB, 10485760 bytes), invalid_input (field size or tenantId); 404 not_found with field tenantId for a tenant not in the organization; 503 uploads_unavailable when this server has no file storage configured.
  * @summary Start a photo upload straight to storage (needs the action of the record it is for; audited)
  */
 export const createUpload = (
@@ -128,7 +129,7 @@ export const useCreateUpload = <TError = ErrorType<ErrorResponse | Error>,
       return useMutation(getCreateUploadMutationOptions(options), queryClient);
     }
     /**
- * Queues the scan. Calling it again is harmless and answers the upload as it is now. Only the member who started the upload may complete it, and they must still have the permission createUpload needed. A file that never arrived stays pending for a while and is then rejected.
+ * Queues the scan; for a transfer_proof it also records the proof for the admin (Antrean cek and the tenant's page). Calling it again is harmless and answers the upload as it is now. Only the member who started the upload may complete it, and they must still have the permission createUpload needed. A file that never arrived stays pending for a while and is then rejected.
  * @summary Say the PUT finished, so the scan starts (only the member who started the upload; audited)
  */
 export const completeUpload = (

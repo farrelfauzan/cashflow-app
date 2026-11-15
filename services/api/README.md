@@ -235,9 +235,10 @@ Config refuses `DEVLOG_FILE` outside development or with any other provider.
 
 ### Uploads: photos in RustFS, scanned by ClamAV (development)
 
-Staff photos (cash receipt and deposit photos, S6-1) go from the phone straight to an
-S3-compatible bucket through a presigned PUT; a tenant's transfer proof (S6-5) is posted to the
-API (`sendPaymentProof`, multipart, 10 MB) and the API puts it in the same bucket. Both stay
+Staff photos (cash receipt and deposit photos, S6-1, and a tenant's transfer proof a member sends
+for them, decision 49) go from the phone straight to an S3-compatible bucket through a presigned
+PUT; a tenant's own transfer proof (S6-5) is posted to the API (`sendPaymentProof`, multipart,
+10 MB) and the API puts it in the same bucket. Both stay
 `pending` until the worker's scan job has
 checked their real size and type and scanned them with ClamAV; only a clean file can be
 downloaded, through a short-lived link, always as an attachment. Production uses Cloudflare R2;
@@ -533,7 +534,8 @@ replay Bot API answers.
   (decision 47; `billing.AuthorizeTenantInField`).
 - `internal/upload`: staff photo uploads (S6-1): starting one with a presigned PUT, completing
   it, the tenant's transfer proof from the payment page (S6-5, `Proofs`, table `transfer_proof`,
-  append-only), the scan that checks the real size and type and runs the malware scanner, quarantine, and
+  append-only) or sent for them by a member (decision 49: `createUpload` with purpose
+  `transfer_proof` and `payment:proof`, the proof recorded on `completeUpload` with its sender), the scan that checks the real size and type and runs the malware scanner, quarantine, and
   the short-lived download link of a clean file. `uploadtask` runs `upload:scan` and the
   10-minute `upload:reconcile`; `uploadtest` has the fakes. The adapters are
   `internal/storage/s3store` (R2 and RustFS, AWS SDK for Go v2) and `internal/scan/clamd` (clamd's

@@ -4,13 +4,16 @@
  * Cashflow API
  * OpenAPI spec version: 0.1.0
  */
+import type { CheckStaff } from './checkStaff';
 import type { CheckTenant } from './checkTenant';
 import type { CheckTransferProofUploadStatus } from './checkTransferProofUploadStatus';
 
 export interface CheckTransferProof {
   tenant: CheckTenant;
-  /** The invoice of the link it was sent from. */
-  invoiceId: string;
+  /** The invoice of the link the tenant sent it from; absent when a member sent it. */
+  invoiceId?: string;
+  /** The member who sent it for the tenant ("Dikirim oleh Dimas", decision 49); absent when the tenant sent it from the payment page. */
+  sentBy?: CheckStaff;
   /** The photo; read it with getUpload once clean. */
   uploadId: string;
   /** pending while the photo is being scanned ("sedang diperiksa"); it cannot be matched yet. */

@@ -162,8 +162,15 @@ func toAPICheckItem(it checkqueue.Item) apigen.CheckQueueItem {
 	case it.TransferProof != nil:
 		v := it.TransferProof
 		out.TransferProof = &apigen.CheckTransferProof{
-			Tenant: toAPICheckTenant(v.Tenant), InvoiceId: v.InvoiceID, UploadId: v.UploadID,
+			Tenant: toAPICheckTenant(v.Tenant), UploadId: v.UploadID,
 			UploadStatus: apigen.CheckTransferProofUploadStatus(v.UploadStatus),
+		}
+		if v.InvoiceID != uuid.Nil {
+			out.TransferProof.InvoiceId = &v.InvoiceID
+		}
+		if v.SentBy != nil {
+			sentBy := toAPICheckStaff(*v.SentBy)
+			out.TransferProof.SentBy = &sentBy
 		}
 	case it.DepositGap != nil:
 		v := it.DepositGap

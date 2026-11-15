@@ -71,10 +71,42 @@ func (q *Queries) GetUpload(ctx context.Context, arg GetUploadParams) (Upload, e
 	return i, err
 }
 
+const insertStaffTransferProof = `-- name: InsertStaffTransferProof :execrows
+INSERT INTO transfer_proof (id, organization_id, tenant_id, upload_id, sent_by_staff_user_id, created_at)
+VALUES ($1, $2, $3, $4, $5::uuid, $6)
+ON CONFLICT (upload_id) DO NOTHING
+`
+
+type InsertStaffTransferProofParams struct {
+	ID                uuid.UUID
+	OrganizationID    uuid.UUID
+	TenantID          uuid.UUID
+	UploadID          uuid.UUID
+	SentByStaffUserID uuid.UUID
+	CreatedAt         time.Time
+}
+
+// A proof a member sent for the tenant (decision 49): no link or invoice. An upload already
+// behind a proof is left as it is (0 rows), so completing the upload again changes nothing.
+func (q *Queries) InsertStaffTransferProof(ctx context.Context, arg InsertStaffTransferProofParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertStaffTransferProof,
+		arg.ID,
+		arg.OrganizationID,
+		arg.TenantID,
+		arg.UploadID,
+		arg.SentByStaffUserID,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertTransferProof = `-- name: InsertTransferProof :one
 INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at
+VALUES ($1, $2, $3, $4::uuid, $5::uuid, $6, $7)
+RETURNING id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at, sent_by_staff_user_id
 `
 
 type InsertTransferProofParams struct {
@@ -87,6 +119,7 @@ type InsertTransferProofParams struct {
 	CreatedAt      time.Time
 }
 
+// A proof the tenant sent from a payment link (S6-5).
 func (q *Queries) InsertTransferProof(ctx context.Context, arg InsertTransferProofParams) (TransferProof, error) {
 	row := q.db.QueryRow(ctx, insertTransferProof,
 		arg.ID,
@@ -107,6 +140,7 @@ func (q *Queries) InsertTransferProof(ctx context.Context, arg InsertTransferPro
 		&i.UploadID,
 		&i.UploadPurpose,
 		&i.CreatedAt,
+		&i.SentByStaffUserID,
 	)
 	return i, err
 }

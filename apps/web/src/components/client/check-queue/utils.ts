@@ -739,14 +739,17 @@ export function proofPhotoAlt(tenant: CheckTenant): string {
   return `${ZOOM_TITLE} dari ${tenant.name}`;
 }
 
-// When the tenant sent the proof (the item's createdAt), and the month of the link's invoice when
-// the tenant's account lists it.
+// When the proof was sent (the item's createdAt), and the month of the link's invoice when the
+// tenant's account lists it. A proof a member sent names no invoice (decision 49).
 export function proofPhotoCaption(
   createdAt: string,
-  invoiceId: string,
+  invoiceId: string | undefined,
   invoices: readonly AccountInvoice[] | undefined,
 ): ProofPhotoCaption {
-  const invoice = invoices?.find((each) => each.id === invoiceId);
+  const invoice =
+    invoiceId === undefined
+      ? undefined
+      : invoices?.find((each) => each.id === invoiceId);
   return {
     sentAt: formatTimestampShortWeekdayDayMonthTime(createdAt),
     link: invoice === undefined ? null : invoiceTitle(invoice),

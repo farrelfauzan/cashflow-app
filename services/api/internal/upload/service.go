@@ -66,9 +66,10 @@ type Read struct {
 
 // Create starts an upload: it records it pending and answers a presigned PUT for exactly
 // in.Size bytes of in.ContentType. The permission is the action of the record it is for, in
-// the same transaction: cash:record on the tenant for a cash_receipt, through each of its active
+// the same transaction (see writeRequests): cash:record on the tenant for a cash_receipt and
+// payment:proof for a transfer_proof (decision 49), each through each of the tenant's active
 // leases (in the lease's property, owned by its collector, so a karyawan's "self" applies;
-// decision 47), and cash:deposit on the caller's own upload for a cash_deposit. Both are audited.
+// decision 47), and cash:deposit on the caller's own upload for a cash_deposit. All are audited.
 func (s *Service) Create(ctx context.Context, p authz.Principal, in CreateInput) (Created, error) {
 	in, err := validCreate(in)
 	if err != nil {
@@ -86,7 +87,7 @@ func (s *Service) Create(ctx context.Context, p authz.Principal, in CreateInput)
 				return fmt.Errorf("loading tenant: %w", err)
 			}
 		}
-		reqs, err := recordRequests(ctx, q, org, in.Purpose, in.TenantID, id, p.UserID)
+		reqs, err := writeRequests(ctx, q, org, in.Purpose, in.TenantID, id, p.UserID)
 		if err != nil {
 			return err
 		}
@@ -116,9 +117,11 @@ func (s *Service) Create(ctx context.Context, p authz.Principal, in CreateInput)
 
 // Complete records that the client's PUT finished and queues the scan. Only the member who
 // started the upload may complete it, and only while they still have the permission Create
-// checked (checked again, and audited, in the same transaction). A second call changes nothing
-// and queues the scan again while the upload is pending, which is harmless. The scan is queued
-// after the commit; the reconcile covers a lost enqueue.
+// checked (checked again, and audited, in the same transaction). A transfer_proof also becomes a
+// proof sent by the member (decision 49) in that transaction, for Antrean cek and the tenant's
+// payment page. A second call changes nothing and queues the scan again while the upload is
+// pending, which is harmless. The scan is queued after the commit; the reconcile covers a lost
+// enqueue.
 func (s *Service) Complete(ctx context.Context, p authz.Principal, id uuid.UUID) (Upload, error) {
 	org := p.OrganizationID
 	var row dbgen.Upload
@@ -128,21 +131,31 @@ func (s *Service) Complete(ctx context.Context, p authz.Principal, id uuid.UUID)
 		if row, err = getUpload(ctx, q, org, id); err != nil {
 			return err
 		}
-		reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID.UUID)
+		reqs, err := writeRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID.UUID)
 		if err != nil {
 			return err
 		}
-		// A transfer proof has no staff uploader, so no member completes it.
+		// A tenant's transfer proof has no staff uploader, so no member completes it.
 		if !row.UploadedByStaffUserID.Valid || row.UploadedByStaffUserID.UUID != p.UserID {
 			return s.authz.Deny(ctx, p, reqs[0])
 		}
 		if err := s.authorizeAll(ctx, tx, p, reqs); err != nil {
 			return err
 		}
+		now := s.clock.Now()
 		if _, err := q.MarkUploadCompleted(ctx, dbgen.MarkUploadCompletedParams{
-			OrganizationID: org, ID: id, CompletedAt: s.clock.Now(),
+			OrganizationID: org, ID: id, CompletedAt: now,
 		}); err != nil {
 			return fmt.Errorf("completing upload: %w", err)
+		}
+		if row.Purpose == PurposeTransferProof {
+			// Once per upload: completing it again inserts nothing.
+			if _, err := q.InsertStaffTransferProof(ctx, dbgen.InsertStaffTransferProofParams{
+				ID: uuid.New(), OrganizationID: org, TenantID: row.TenantID.UUID, UploadID: row.ID,
+				SentByStaffUserID: p.UserID, CreatedAt: now,
+			}); err != nil {
+				return fmt.Errorf("recording the transfer proof: %w", err)
+			}
 		}
 		row, err = getUpload(ctx, q, org, id)
 		return err
@@ -174,8 +187,9 @@ func enqueueScan(ctx context.Context, queue ScanQueue, log *slog.Logger, org, id
 // upload's record (see Create): through each active lease of a receipt's tenant, and for a deposit
 // photo on the upload itself (payment:check and cash:read then need the whole organization). A
 // tenant's transfer proof is read with payment:check (or cash:read) through each lease of its
-// tenant, current or ended, as admin paths check (decision 47). It is a read, so only a denial is
-// audited.
+// tenant, current or ended, as admin paths check (decision 47), and by the member who sent it
+// while they still have payment:proof on the tenant (decision 49). It is a read, so only a denial
+// is audited.
 func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Read, error) {
 	org := p.OrganizationID
 	var row dbgen.Upload
@@ -192,6 +206,15 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Rea
 		if allAllowed(p, withAction(reqs, actionPaymentCheck)) || allAllowed(p, withAction(reqs, actionCashRead)) ||
 			allAllowed(p, reqs) {
 			return nil
+		}
+		if row.Purpose == PurposeTransferProof && row.UploadedByStaffUserID.Valid && row.UploadedByStaffUserID.UUID == p.UserID {
+			sent, err := writeRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, p.UserID)
+			if err != nil {
+				return err
+			}
+			if allAllowed(p, sent) {
+				return nil
+			}
 		}
 		return s.authz.Deny(ctx, p, reqs[0])
 	})
@@ -259,6 +282,32 @@ func recordRequests(ctx context.Context, q *dbgen.Queries, org uuid.UUID, purpos
 		}}}, nil
 	}
 	return nil, fmt.Errorf("upload %s has unknown purpose %q", uploadID, purpose)
+}
+
+// writeRequests returns the permission checks for starting and completing an upload, one per way
+// a member reaches its record, all of which must pass: those of recordRequests, except for a
+// transfer_proof, which a member sends with payment:proof on its tenant through each of its
+// active leases (decision 49; the field app acts through active leases only, decision 47), and
+// with no active lease only by an organization-wide grant.
+func writeRequests(ctx context.Context, q *dbgen.Queries, org uuid.UUID, purpose string, tenantID, uploadID, uploader uuid.UUID) ([]authz.Request, error) {
+	if purpose != PurposeTransferProof {
+		return recordRequests(ctx, q, org, purpose, tenantID, uploadID, uploader)
+	}
+	base := authz.Request{Action: actionPaymentProof, Resource: authz.Resource{Type: "tenant", ID: tenantID.String()}}
+	leases, err := q.ListTenantActiveLeaseScopes(ctx, dbgen.ListTenantActiveLeaseScopesParams{OrganizationID: org, TenantID: tenantID})
+	if err != nil {
+		return nil, fmt.Errorf("loading the tenant's active leases: %w", err)
+	}
+	if len(leases) == 0 {
+		return []authz.Request{base}, nil
+	}
+	out := make([]authz.Request, len(leases))
+	for i, l := range leases {
+		out[i] = base
+		out[i].Resource.PropertyID = l.PropertyID
+		out[i].Resource.OwnerID = l.CollectorStaffUserID.UUID
+	}
+	return out, nil
 }
 
 // authorizeAll allows every one of reqs, auditing as authz.Service.Authorize does.

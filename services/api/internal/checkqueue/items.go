@@ -63,7 +63,11 @@ func (d *details) load(ctx context.Context, q *dbgen.Queries, org uuid.UUID, ids
 		}
 		for _, r := range rows {
 			proofTenants[r.ID] = d.tenant(r.TenantID, r.TenantName)
-			d.proofs[r.ID] = &TransferProof{InvoiceID: r.InvoiceID, UploadID: r.UploadID, UploadStatus: r.UploadStatus}
+			proof := &TransferProof{InvoiceID: r.InvoiceID.UUID, UploadID: r.UploadID, UploadStatus: r.UploadStatus}
+			if r.SentByStaffUserID.Valid && r.SentByName != nil {
+				proof.SentBy = &StaffRef{ID: r.SentByStaffUserID.UUID, Name: *r.SentByName}
+			}
+			d.proofs[r.ID] = proof
 		}
 	}
 	if len(ids[KindDepositGap]) > 0 {

@@ -2324,9 +2324,19 @@ paths:
         What the upload is for decides the permission: purpose cash_receipt (a receipt photo for
         tenantId) needs cash:record on the tenant, through each of its active leases (decision 47),
         so a karyawan may upload only for tenants they collect from now; purpose cash_deposit (a deposit
-        photo, no tenantId) needs cash:deposit on the caller's own record.
+        photo, no tenantId) needs cash:deposit on the caller's own record; purpose transfer_proof (a
+        tenant's photo of a bank transfer that the tenant gave a member, decision 49) needs
+        payment:proof on tenantId, through each of its active leases, so a karyawan sends one only
+        for tenants they collect from now and an admin for any tenant.
 
-        Errors: 400 upload_purpose_unknown (field purpose), upload_type_not_allowed (field
+        A transfer_proof becomes a proof for the admin when completeUpload is called: it is listed
+        in Antrean cek (listCheckQueue) with the member who sent it (sentBy), and on the tenant's
+        payment page among the proofs waiting ("bukti sedang dicek"), exactly like one the tenant
+        sends from the page (sendPaymentProof). A photo the scan refuses leaves those lists; an
+        infected one is listed as upload_infected. The member never records the payment: the admin
+        checks the bank and matches it.
+
+        Errors: 400 upload_purpose_unknown (field purpose: none of the three), upload_type_not_allowed (field
         contentType: only image/jpeg, image/png and image/webp), upload_too_large (field size:
         at most 10 MB, 10485760 bytes), invalid_input (field size or tenantId); 404 not_found
         with field tenantId for a tenant not in the organization; 503 uploads_unavailable when
@@ -2365,9 +2375,10 @@ paths:
       operationId: completeUpload
       summary: Say the PUT finished, so the scan starts (only the member who started the upload; audited)
       description: >
-        Queues the scan. Calling it again is harmless and answers the upload as it is now. Only the
-        member who started the upload may complete it, and they must still have the permission
-        createUpload needed. A file that never arrived stays pending for a while and is then
+        Queues the scan; for a transfer_proof it also records the proof for the admin (Antrean cek
+        and the tenant's page). Calling it again is harmless and answers the upload as it is now.
+        Only the member who started the upload may complete it, and they must still have the
+        permission createUpload needed. A file that never arrived stays pending for a while and is then
         rejected.
       responses:
         "200":
@@ -4383,10 +4394,19 @@ components:
 
     CheckTransferProof:
       type: object
-      required: [tenant, invoiceId, uploadId, uploadStatus]
+      required: [tenant, uploadId, uploadStatus]
       properties:
         tenant: { $ref: "#/components/schemas/CheckTenant" }
-        invoiceId: { type: string, format: uuid, description: The invoice of the link it was sent from. }
+        invoiceId:
+          type: string
+          format: uuid
+          description: The invoice of the link the tenant sent it from; absent when a member sent it.
+        sentBy:
+          allOf:
+            - $ref: "#/components/schemas/CheckStaff"
+          description: >
+            The member who sent it for the tenant ("Dikirim oleh Dimas", decision 49); absent when
+            the tenant sent it from the payment page.
         uploadId: { type: string, format: uuid, description: The photo; read it with getUpload once clean. }
         uploadStatus:
           type: string
@@ -4905,8 +4925,8 @@ components:
       description: >
         What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment;
         cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of
-        a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only
-        cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+        a bank transfer, sent from the payment page (sendPaymentProof) or by a member who got it
+        from the tenant (createUpload, decision 49).
 
     UploadStatus:
       type: string
@@ -4925,7 +4945,7 @@ components:
         tenantId:
           type: string
           format: uuid
-          description: Required for cash_receipt; must be left out for cash_deposit.
+          description: Required for cash_receipt and transfer_proof; must be left out for cash_deposit.
         contentType:
           type: string
           description: The file's type as the browser reports it; image/jpeg, image/png or image/webp.
