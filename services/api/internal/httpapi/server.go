@@ -210,6 +210,7 @@ func New(d Deps) *Server {
 				r.Post("/check-queue/transfer_proof/{itemID}/match", s.matchTransferProof)
 				r.Post("/check-queue/phone_changed/{itemID}/apply", s.applyPhoneChange)
 				r.Post("/check-queue/{kind}/{itemID}/dismiss", s.dismissCheckItem)
+				r.Get("/field/tenants/{tenantID}/promises", s.getFieldPromiseOffer)
 				r.Post("/field/tenants/{tenantID}/promises", s.makeFieldPromise)
 				r.Get("/field/visits", s.listFieldVisits)
 				r.Post("/field/tenants/{tenantID}/visit-outcomes", s.recordVisitOutcome)

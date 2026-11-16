@@ -130,6 +130,29 @@ func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.
 	return out, err
 }
 
+// FieldPromiseOffer is what "Catat janji bayar" in the field app needs about a tenant's promise:
+// the active one, if any (saving replaces it with a new version), the days a promise made now may
+// name, and the due date a with_next_invoice promise would take, the same values as Account's
+// Promises and the payment page. It needs invoice:read on the tenant through each of its active
+// leases (decision 47), as Tagihan hari ini does; a read, so only a denial is audited. A missing
+// tenant is a *NotFoundError.
+func (s *Service) FieldPromiseOffer(ctx context.Context, p authz.Principal, tenantID uuid.UUID) (TenantPromises, error) {
+	var out TenantPromises
+	err := s.store.WithOrgSnapshot(ctx, p.OrganizationID, func(tx pgx.Tx) error {
+		if err := s.AuthorizeTenantInField(ctx, tx, p, tenantID, authz.ActionInvoiceRead); err != nil {
+			return err
+		}
+		today := tenant.Today(s.clock)
+		acct, err := loadAccount(ctx, dbgen.New(tx), p.OrganizationID, tenantID, today)
+		if err != nil {
+			return err
+		}
+		out, err = s.promises.TenantPromisesTx(ctx, tx, p.OrganizationID, tenantID, acct.Outstanding, today)
+		return err
+	})
+	return out, err
+}
+
 // LoadAccountTx reads a tenant's money account inside tx, which must be scoped to org (WithOrgTx
 // or, for figures that must agree, WithOrgSnapshot); today is the current day in Asia/Jakarta
 // (tenant.Today), which decides what is overdue. It checks no permission: the caller has already

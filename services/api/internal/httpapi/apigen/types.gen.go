@@ -1557,6 +1557,18 @@ type FieldCashToday struct {
 // FieldDueReason Why the tenant is on Tagihan hari ini. From the oldest invoice they still owe on: overdue (past its due date, with daysOverdue: "Telat 7 hari"), due_today ("Jatuh tempo hari ini"), or due_in_days (with daysUntilDue 1 or 2: "Jatuh tempo besok"); a tenant with such an invoice keeps that reason even after paying part of it in cash today. paid_today: nothing is due in the window any more, but the caller recorded cash from them today, so they stay on the list for the rest of the day ("Tunai diterima"); no days field.
 type FieldDueReason string
 
+// FieldPromiseOffer What a promise made now from the field may say (getFieldPromiseOffer).
+type FieldPromiseOffer struct {
+	// ActivePromise The newest version of the tenant's active payment promise, or null when there is none. Saving with makeFieldPromise makes the next version of it.
+	ActivePromise *ActivePromise `json:"activePromise"`
+
+	// NextInvoiceDueDate The due date a with_next_invoice promise made now would take, as on TenantAccount. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest (or promiseDates is null); the choice is then hidden.
+	NextInvoiceDueDate *openapi_types.Date `json:"nextInvoiceDueDate"`
+
+	// PromiseDates The days a promise made now may name, as on TenantAccount: for an edit of the active promise, no later than 60 days from its first version. Null when no promise can be made now: the tenant owes nothing, or the active promise has reached that bound.
+	PromiseDates *PromiseDates `json:"promiseDates"`
+}
+
 // FieldTodayItem defines model for FieldTodayItem.
 type FieldTodayItem struct {
 	// CashToday The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
