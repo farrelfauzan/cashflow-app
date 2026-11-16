@@ -258,3 +258,82 @@ func TestCleanupWaitsForALink(t *testing.T) {
 	require.Zero(t, w.deletions(t, photo))
 	require.True(t, w.storedFile(t, photo))
 }
+
+// The other order of TestCleanupWaitsForALink: the job holds the photo while it deletes the file,
+// so a karyawan recording cash with that photo waits for it, and then sees the deletion the job
+// committed meanwhile and records nothing. This holds only because linkReceiptPhoto checks the
+// deletion in a statement of its own after taking the lock.
+func TestALinkWaitsForTheCleanup(t *testing.T) {
+	env := testenv.New(t)
+	ctx := context.Background()
+	w := newWorld(t, env, "Griya Tunggu", "0812889")
+	_, err := env.Billing.GenerateOrg(ctx, w.org.ID)
+	require.NoError(t, err)
+	jpeg := uploadtest.Image("image/jpeg", 4_000)
+	photo := w.uploadAndScan(t, jpeg, len(jpeg))
+	env.Clock.Advance(upload.UnusedAfter + time.Hour)
+
+	reached, release := make(chan struct{}), make(chan struct{})
+	w.storage.BeforeDelete = func(string) {
+		close(reached)
+		<-release
+	}
+	type cleaned struct {
+		n   int
+		err error
+	}
+	jobDone := make(chan cleaned, 1)
+	go func() {
+		n, err := w.newCleaner().Clean(ctx, w.org.ID)
+		jobDone <- cleaned{n, err}
+	}()
+	select {
+	case <-reached: // the job holds the photo's row lock and has recorded the deletion
+	case <-time.After(30 * time.Second):
+		t.Fatal("the job never reached the delete")
+	}
+
+	linkDone := make(chan error, 1)
+	go func() {
+		_, err := env.Billing.RecordCashPayment(ctx, w.dimas, billing.CashInput{
+			RequestID: uuid.New(), TenantID: w.rina, Amount: 50_000, PhotoUploadID: photo,
+		})
+		linkDone <- err
+	}()
+	err = env.Store.WithOrgTx(ctx, w.org.ID, func(tx pgx.Tx) error {
+		testenv.WaitUntilSomeoneWaits(ctx, t, tx)
+		return nil
+	})
+	require.NoError(t, err)
+	select {
+	case err := <-linkDone:
+		t.Fatalf("recording cash finished while the job held the photo: %v", err)
+	default:
+	}
+	close(release)
+
+	select {
+	case r := <-jobDone:
+		require.NoError(t, r.err)
+		require.Equal(t, 1, r.n)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the job never finished")
+	}
+	select {
+	case err := <-linkDone:
+		require.ErrorIs(t, err, billing.ErrReceiptPhotoInvalid)
+		var field *billing.FieldError
+		require.ErrorAs(t, err, &field)
+		require.Equal(t, "photoUploadId", field.Field)
+	case <-time.After(30 * time.Second):
+		t.Fatal("recording cash never finished")
+	}
+	require.Equal(t, 1, w.deletions(t, photo))
+	require.False(t, w.storedFile(t, photo))
+	var links int
+	err = env.Store.WithOrgTx(ctx, w.org.ID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM payment_receipt_photo WHERE upload_id = $1`, photo).Scan(&links)
+	})
+	require.NoError(t, err)
+	require.Zero(t, links, "no payment links a photo whose file is gone")
+}

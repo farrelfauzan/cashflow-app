@@ -271,6 +271,27 @@ func WaitUntilBlockedOn(ctx context.Context, t *testing.T, tx pgx.Tx) {
 	}
 }
 
+// WaitUntilSomeoneWaits polls pg_locks from tx until another session of this database waits on a
+// transaction's lock, for a race whose holding transaction the test cannot reach (it runs inside
+// the code under test). Only for tests that run alone (not t.Parallel), so the waiter is theirs.
+func WaitUntilSomeoneWaits(ctx context.Context, t *testing.T, tx pgx.Tx) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var waiting bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+			WHERE l.locktype = 'transactionid' AND NOT l.granted
+			  AND a.datname = current_database() AND l.pid <> pg_backend_pid())`).Scan(&waiting)
+		require.NoError(t, err)
+		if waiting {
+			return
+		}
+		require.True(t, time.Now().Before(deadline), "no session ever waited on a locked row")
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // Monthly is a unit's terms when it is let by the month only, at price.
 func Monthly(price int64) []property.TermInput {
 	return []property.TermInput{{Months: 1, Price: &price}}
