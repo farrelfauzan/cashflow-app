@@ -6,6 +6,7 @@ import type {
   CashPaymentResult,
   FieldTodayItem,
   UploadInput,
+  UploadPurpose,
   UploadTicket,
 } from "@/lib/api/generated/model";
 import type { PutToStorageOptions } from "@/lib/api/storage-upload";
@@ -68,7 +69,27 @@ export type ReceiptPhotoState =
   // 4, "Foto terkirim": completeUpload answered; its id goes with the payment.
   | { kind: "sent"; photo: ChosenPhoto; uploadId: string };
 
-// What a failed step of the upload shows.
+// The purposes of an upload made for one tenant (createUpload with tenantId).
+export type TenantUploadPurpose = Extract<
+  UploadPurpose,
+  "cash_receipt" | "transfer_proof"
+>;
+
+// What went wrong in a failed step of an upload (classifyUploadFailure), before any screen words
+// it.
+export type UploadFailureClass =
+  // The caller cancelled it: nothing to show.
+  | { kind: "cancelled" }
+  // No answer: the signal dropped.
+  | { kind: "network" }
+  // The API refused the file itself (its type or size).
+  | { kind: "refused"; message: string }
+  // The API refused the member (403) or found no such tenant (404).
+  | { kind: "denied"; message: string }
+  // Anything else: the API's message, or the page's own.
+  | { kind: "other"; message: string };
+
+// What a failed step of the receipt photo's upload shows.
 export type UploadFailureView =
   // The caller cancelled it (Batal, another photo): nothing to show.
   | { kind: "cancelled" }
@@ -157,9 +178,9 @@ export type ReceiveCash = {
   finish: () => void;
 };
 
-// The three calls of a receipt photo's upload, injected so the order and the retry rules are
-// tested without a network: createUpload, the PUT to storage, completeUpload.
-export type ReceiptUploadSteps = {
+// The three calls of a photo's upload, injected so the order and the retry rules are tested
+// without a network: createUpload, the PUT to storage, completeUpload.
+export type PhotoUploadSteps = {
   create: (input: UploadInput) => Promise<UploadTicket>;
   put: (
     ticket: UploadTicket,
@@ -171,7 +192,7 @@ export type ReceiptUploadSteps = {
 
 // How one attempt ended: sent with its upload id, failed (with where "Coba lagi" starts), or
 // cancelled by its signal, when nothing it answered may be shown.
-export type ReceiptUploadOutcome =
+export type PhotoUploadOutcome =
   | { kind: "sent"; uploadId: string }
   | { kind: "failed"; error: unknown; resume: PhotoResume }
   | { kind: "cancelled" };

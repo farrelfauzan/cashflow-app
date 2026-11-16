@@ -26,7 +26,8 @@ export type FieldTodayRowView = {
   cash: FieldCashLineView | null;
   // The API's row, for the sheets it opens ("Terima tunai", "Catat janji bayar").
   item: FieldTodayItem;
-  // Still owes something: the row offers "Terima tunai" and "Catat janji bayar". A tenant who paid everything today
+  // Still owes something: the row offers "Terima tunai", "Catat janji bayar" and "Penyewa sudah
+  // transfer? Kirim bukti". A tenant who paid everything today
   // ("Lunas") shows no action (board HP-Tagihan).
   canCollect: boolean;
 };

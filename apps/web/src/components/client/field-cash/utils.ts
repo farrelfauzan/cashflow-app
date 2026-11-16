@@ -33,11 +33,13 @@ import type {
   CashRecordedView,
   CashTotalLineView,
   PhotoResume,
+  PhotoUploadOutcome,
+  PhotoUploadSteps,
   ReceiptPhotoState,
-  ReceiptUploadOutcome,
-  ReceiptUploadSteps,
   ReceiveCashTenant,
   RecordErrorView,
+  TenantUploadPurpose,
+  UploadFailureClass,
   UploadFailureView,
 } from "./type";
 
@@ -187,45 +189,55 @@ export function owedLine(tenant: ReceiveCashTenant): string | null {
   }
 }
 
-// createUpload's body for a receipt photo of this tenant: the file's type as the browser reports
-// it and its exact size (signed into the PUT URL). The API judges the type.
-export function receiptUploadInput(tenantId: string, file: Blob): UploadInput {
+// createUpload's body for a photo of this tenant (a cash receipt, or a transfer proof the tenant
+// showed): the file's type as the browser reports it and its exact size (signed into the PUT
+// URL). The API judges the type.
+export function tenantUploadInput(
+  purpose: TenantUploadPurpose,
+  tenantId: string,
+  file: Blob,
+): UploadInput {
   return {
-    purpose: "cash_receipt",
+    purpose,
     tenantId,
     contentType: file.type,
     size: file.size,
   };
 }
 
-// One attempt to send a receipt photo: createUpload (a cash_receipt for the tenant), the PUT to
-// storage with its progress, then completeUpload; or, resuming, only completeUpload for a file
-// already in storage. The signal cancels the attempt: the PUT is aborted, and an answer that
-// arrives after it is dropped (an upload left pending is rejected by the API later). A failure
-// says where "Coba lagi" starts: completeUpload again once the file is stored, otherwise a new
-// upload, since the PUT URL may have expired.
-export async function uploadReceiptPhoto(
-  steps: ReceiptUploadSteps,
+// One attempt to send a photo of a tenant: createUpload (for its purpose), the PUT to storage
+// with its progress, then completeUpload; or, resuming, only completeUpload for a file already in
+// storage. The signal cancels the attempt: the PUT is aborted, and an answer that arrives after
+// it is dropped (an upload left pending is rejected by the API later). A failure says where "Coba
+// lagi" starts: completeUpload again once the file is stored (harmless to repeat), otherwise a
+// new upload, since the PUT URL may have expired. Used by "Terima tunai" (cash_receipt) and
+// "Bukti transfer dari penyewa" (transfer_proof, which completeUpload records for the admin).
+export async function uploadTenantPhoto(
+  steps: PhotoUploadSteps,
   {
+    purpose,
     tenantId,
     file,
     resume,
     signal,
     onProgress,
   }: {
+    purpose: TenantUploadPurpose;
     tenantId: string;
     file: Blob;
     resume: PhotoResume;
     signal: AbortSignal;
     onProgress: (progress: StorageUploadProgress) => void;
   },
-): Promise<ReceiptUploadOutcome> {
+): Promise<PhotoUploadOutcome> {
   let uploadId: string;
   if (resume.step === "complete") {
     uploadId = resume.uploadId;
   } else {
     try {
-      const ticket = await steps.create(receiptUploadInput(tenantId, file));
+      const ticket = await steps.create(
+        tenantUploadInput(purpose, tenantId, file),
+      );
       if (signal.aborted) return { kind: "cancelled" };
       await steps.put(ticket, file, { signal, onProgress });
       uploadId = ticket.upload.id;
@@ -309,30 +321,22 @@ export function notRecordedLine(message: string): string {
   return `${sentence(message)} ${PHOTO_NOT_RECORDED_TEXT}`;
 }
 
-// What a failed step of the upload (createUpload, the PUT, completeUpload) shows. A dropped
-// connection is "Sinyal hilang"; the API refusing the file itself (its type or size) puts its
-// message under the photo with only "Pilih foto lain"; anything else keeps "Coba lagi".
-export function uploadFailureView(error: unknown): UploadFailureView {
+// What went wrong in a failed step of a photo's upload (createUpload, the PUT, completeUpload),
+// before any screen words it: the caller's own abort; no answer ("Sinyal hilang"); the API
+// refusing the file itself (its type or size), with its message; the API refusing the member
+// (403) or not finding the tenant (404), with its message; anything else, with the API's message
+// or the page's own.
+export function classifyUploadFailure(error: unknown): UploadFailureClass {
   if (isStorageUploadError(error)) {
     if (error.kind === "aborted") return { kind: "cancelled" };
-    if (error.kind === "network") {
-      return { kind: "failed", reason: "network", message: PHOTO_NETWORK_TEXT };
-    }
-    return {
-      kind: "failed",
-      reason: "other",
-      message: notRecordedLine(PHOTO_STORAGE_REFUSED_TEXT),
-    };
+    if (error.kind === "network") return { kind: "network" };
+    return { kind: "other", message: PHOTO_STORAGE_REFUSED_TEXT };
   }
   if (!(error instanceof ApiError)) {
-    return {
-      kind: "failed",
-      reason: "other",
-      message: notRecordedLine(GENERIC_ERROR_MESSAGE),
-    };
+    return { kind: "other", message: GENERIC_ERROR_MESSAGE };
   }
   if (error.code === NETWORK_ERROR_CODE || error.status === 0) {
-    return { kind: "failed", reason: "network", message: PHOTO_NETWORK_TEXT };
+    return { kind: "network" };
   }
   if (
     error.status === 400 &&
@@ -341,11 +345,32 @@ export function uploadFailureView(error: unknown): UploadFailureView {
   ) {
     return { kind: "refused", message: error.message };
   }
-  return {
-    kind: "failed",
-    reason: "other",
-    message: notRecordedLine(error.message),
-  };
+  if (error.status === 403 || error.status === 404) {
+    return { kind: "denied", message: error.message };
+  }
+  return { kind: "other", message: error.message };
+}
+
+// What a failed step of the receipt photo's upload shows. A dropped connection is "Sinyal
+// hilang"; the API refusing the file itself (its type or size) puts its message under the photo
+// with only "Pilih foto lain"; anything else keeps "Coba lagi".
+export function uploadFailureView(error: unknown): UploadFailureView {
+  const failure = classifyUploadFailure(error);
+  switch (failure.kind) {
+    case "cancelled":
+      return failure;
+    case "network":
+      return { kind: "failed", reason: "network", message: PHOTO_NETWORK_TEXT };
+    case "refused":
+      return { kind: "refused", message: failure.message };
+    case "denied":
+    case "other":
+      return {
+        kind: "failed",
+        reason: "other",
+        message: notRecordedLine(failure.message),
+      };
+  }
 }
 
 // What a failed recordCashPayment shows. No answer or a server failure may have recorded the

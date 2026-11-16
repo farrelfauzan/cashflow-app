@@ -16,7 +16,7 @@ import { createAppAbility } from "@/lib/capabilities";
 import type {
   ChosenPhoto,
   ReceiptPhotoState,
-  ReceiptUploadSteps,
+  PhotoUploadSteps,
   ReceiveCashTenant,
 } from "./type";
 import {
@@ -31,6 +31,7 @@ import {
   canRecordCash,
   canSave,
   cashFormSchema,
+  classifyUploadFailure,
   cashPaymentBody,
   cashRecordedView,
   notRecordedLine,
@@ -38,13 +39,13 @@ import {
   photoAnnouncement,
   photoLine,
   receiptLine,
-  receiptUploadInput,
+  tenantUploadInput,
   recordErrorView,
   saveLabel,
   sheetSubtitle,
   uploadFailureView,
   uploadingLine,
-  uploadReceiptPhoto,
+  uploadTenantPhoto,
 } from "./utils";
 
 const PHOTO: ChosenPhoto = {
@@ -178,12 +179,23 @@ describe("owedLine", () => {
 
 describe("request bodies", () => {
   it("starts a cash_receipt upload for the tenant with the file's type and exact size", () => {
-    expect(receiptUploadInput("tenant-1", PHOTO.file)).toEqual({
+    expect(tenantUploadInput("cash_receipt", "tenant-1", PHOTO.file)).toEqual({
       purpose: "cash_receipt",
       tenantId: "tenant-1",
       contentType: "image/jpeg",
       size: 10,
     });
+  });
+
+  it("starts a transfer_proof upload for the tenant the same way", () => {
+    expect(tenantUploadInput("transfer_proof", "tenant-1", PHOTO.file)).toEqual(
+      {
+        purpose: "transfer_proof",
+        tenantId: "tenant-1",
+        contentType: "image/jpeg",
+        size: 10,
+      },
+    );
   });
 
   it("records the integer amount with the opening's requestId and the photo", () => {
@@ -344,6 +356,50 @@ describe("uploadFailureView", () => {
   });
 });
 
+describe("classifyUploadFailure", () => {
+  it.each([
+    [new StorageUploadError("aborted"), { kind: "cancelled" }],
+    [new StorageUploadError("network"), { kind: "network" }],
+    [
+      apiError(0, NETWORK_ERROR_CODE, "Tidak dapat terhubung"),
+      { kind: "network" },
+    ],
+    [
+      new StorageUploadError("refused", 403),
+      { kind: "other", message: "Penyimpanan foto menolak kiriman." },
+    ],
+    [
+      apiError(400, "upload_too_large", "Ukuran foto paling besar 10 MB."),
+      { kind: "refused", message: "Ukuran foto paling besar 10 MB." },
+    ],
+    [
+      apiError(403, "forbidden", "Anda tidak punya akses."),
+      { kind: "denied", message: "Anda tidak punya akses." },
+    ],
+    [
+      apiError(404, "not_found", "Penyewa tidak ditemukan.", "tenantId"),
+      { kind: "denied", message: "Penyewa tidak ditemukan." },
+    ],
+    [
+      apiError(503, "uploads_unavailable", "Unggah foto belum tersedia."),
+      { kind: "other", message: "Unggah foto belum tersedia." },
+    ],
+    [new TypeError("boom"), { kind: "other", message: GENERIC_ERROR_MESSAGE }],
+  ])("classifies %s", (error, want) => {
+    expect(classifyUploadFailure(error)).toEqual(want);
+  });
+
+  it("keeps Coba lagi on Terima tunai when the API refuses the member", () => {
+    expect(
+      uploadFailureView(apiError(403, "forbidden", "Anda tidak punya akses.")),
+    ).toEqual({
+      kind: "failed",
+      reason: "other",
+      message: "Anda tidak punya akses. Uang belum tercatat.",
+    });
+  });
+});
+
 describe("recordErrorView", () => {
   it.each([
     apiError(0, NETWORK_ERROR_CODE, "Tidak dapat terhubung"),
@@ -497,7 +553,7 @@ describe("Tersimpan", () => {
   });
 });
 
-describe("uploadReceiptPhoto", () => {
+describe("uploadTenantPhoto", () => {
   const UPLOAD_ID = "3c9d0e1f-2a4b-4c6d-8e0f-1a2b3c4d5e6f";
   const TICKET: UploadTicket = {
     upload: {
@@ -512,9 +568,9 @@ describe("uploadReceiptPhoto", () => {
     putExpiresAt: "2026-11-16T03:15:00Z",
   };
 
-  function fakeSteps(overrides: Partial<ReceiptUploadSteps> = {}) {
+  function fakeSteps(overrides: Partial<PhotoUploadSteps> = {}) {
     const calls: string[] = [];
-    const steps: ReceiptUploadSteps = {
+    const steps: PhotoUploadSteps = {
       create: vi.fn(async (input) => {
         calls.push(`create ${input.purpose} ${input.size}`);
         return TICKET;
@@ -533,13 +589,14 @@ describe("uploadReceiptPhoto", () => {
   }
 
   function run(
-    steps: ReceiptUploadSteps,
-    resume: Parameters<typeof uploadReceiptPhoto>[1]["resume"] = {
+    steps: PhotoUploadSteps,
+    resume: Parameters<typeof uploadTenantPhoto>[1]["resume"] = {
       step: "create",
     },
     signal = new AbortController().signal,
   ) {
-    return uploadReceiptPhoto(steps, {
+    return uploadTenantPhoto(steps, {
+      purpose: "cash_receipt",
       tenantId: "tenant-1",
       file: PHOTO.file,
       resume,
@@ -561,11 +618,29 @@ describe("uploadReceiptPhoto", () => {
     ]);
   });
 
+  it("creates the upload for the purpose it is given", async () => {
+    const { steps, calls } = fakeSteps();
+    await uploadTenantPhoto(steps, {
+      purpose: "transfer_proof",
+      tenantId: "tenant-1",
+      file: PHOTO.file,
+      resume: { step: "create" },
+      signal: new AbortController().signal,
+      onProgress: () => undefined,
+    });
+    expect(calls).toEqual([
+      "create transfer_proof 10",
+      "put",
+      `complete ${UPLOAD_ID}`,
+    ]);
+  });
+
   it("passes the PUT the ticket, the file, the signal and the progress", async () => {
     const { steps } = fakeSteps();
     const controller = new AbortController();
     const onProgress = vi.fn();
-    await uploadReceiptPhoto(steps, {
+    await uploadTenantPhoto(steps, {
+      purpose: "cash_receipt",
       tenantId: "tenant-1",
       file: PHOTO.file,
       resume: { step: "create" },

@@ -129,6 +129,12 @@ func toAPIFieldVisit(row visit.Row) apigen.FieldVisit {
 		o := toAPIVisitOutcome(*row.LastOutcome)
 		out.LastOutcome = &o
 	}
+	if v := row.UnlinkedPromiseToday; v != nil {
+		out.UnlinkedPromiseToday = &apigen.FieldPromiseVersion{
+			PromiseVersionId: v.VersionID, PromiseId: v.PromiseID, Version: v.Version, Kind: apigen.PromiseKind(v.Kind),
+			PromisedDate: date(v.PromisedDate), PromisedAmount: v.PromisedAmount, CreatedAt: v.CreatedAt,
+		}
+	}
 	return out
 }
 

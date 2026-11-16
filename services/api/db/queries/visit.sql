@@ -97,6 +97,23 @@ WHERE p.organization_id = @organization_id AND p.tenant_id = ANY(@tenant_ids::uu
   AND NOT EXISTS (SELECT 1 FROM visit_outcome o WHERE o.payment_id = p.id)
 ORDER BY p.tenant_id, p.created_at, p.id;
 
+-- name: ListUnlinkedPromisesToday :many
+-- For each of the given tenants, the newest promise version @staff_user_id made from the field in
+-- [@day_start, @day_end), when no visit outcome names it yet. An older version of the day is never
+-- returned, even when the newest one is named.
+SELECT v.id, v.promise_id, v.tenant_id, v.version, v.kind, v.promised_date, v.promised_amount, v.created_at
+FROM promise_version v
+WHERE v.organization_id = @organization_id AND v.tenant_id = ANY(@tenant_ids::uuid[]) AND v.source = 'karyawan'
+  AND v.created_by_staff_user_id = @staff_user_id::uuid
+  AND v.created_at >= @day_start AND v.created_at < @day_end
+  AND NOT EXISTS (SELECT 1 FROM promise_version n
+                  WHERE n.organization_id = v.organization_id AND n.tenant_id = v.tenant_id AND n.source = 'karyawan'
+                    AND n.created_by_staff_user_id = v.created_by_staff_user_id
+                    AND n.created_at >= @day_start AND n.created_at < @day_end
+                    AND (n.created_at, n.id) > (v.created_at, v.id))
+  AND NOT EXISTS (SELECT 1 FROM visit_outcome o WHERE o.organization_id = v.organization_id AND o.promise_version_id = v.id)
+ORDER BY v.tenant_id;
+
 -- name: LockOpenVisitTasksOfTenant :many
 -- The tenant's open visit tasks, locked until the transaction ends, so two outcomes for one tenant
 -- take turns and the second sees what the first resolved.
