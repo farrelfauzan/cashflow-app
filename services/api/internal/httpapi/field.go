@@ -28,7 +28,7 @@ func (s *Server) recordCashPayment(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	in := billing.CashInput{RequestID: body.RequestId, TenantID: id, Amount: body.Amount}
+	in := billing.CashInput{RequestID: body.RequestId, TenantID: id, Amount: body.Amount, PhotoUploadID: body.PhotoUploadId}
 	if body.Note != nil {
 		in.Note = *body.Note
 	}

@@ -119,7 +119,8 @@ func TestCheckQueueOverHTTP(t *testing.T) {
 	storage.Put(upload.IncomingKey(key), append([]byte("%PDF-1.7\n"), make([]byte, 3_000-9)...))
 	scan(t, rejected.UploadID, upload.StatusRejected)
 	tick()
-	_, err := env.Billing.RecordCashPayment(ctx, a.karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: budiID, Amount: 700_000})
+	_, err := env.Billing.RecordCashPayment(ctx, a.karyawan, billing.CashInput{RequestID: uuid.New(), TenantID: budiID, Amount: 700_000,
+		PhotoUploadID: env.CashPhoto(t, a.o.ID, a.o.Karyawan.UserID, budiID)})
 	require.NoError(t, err)
 	gap, _, err := deposits.Record(ctx, a.karyawan, deposit.Input{RequestID: uuid.New(), ExpectedAmount: 700_000, ExpectedCount: 1, Amount: 650_000})
 	require.NoError(t, err)

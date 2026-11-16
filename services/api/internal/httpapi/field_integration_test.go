@@ -55,7 +55,8 @@ func TestFieldOverHTTP(t *testing.T) {
 	cashPath := func(tenantID uuid.UUID) string { return orgA + "/tenants/" + tenantID.String() + "/cash-payments" }
 
 	t.Run("recordCashPayment answers the payment, what it paid and the receipt queued", func(t *testing.T) {
-		in := apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 300_000, Note: ptrTo("Dititip ke anaknya")}
+		in := apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 300_000, Note: ptrTo("Dititip ke anaknya"),
+			PhotoUploadId: env.CashPhoto(t, a.o.ID, a.o.Karyawan.UserID, wati)}
 		resp, body := karyawan.do(http.MethodPost, cashPath(wati), in)
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		res := decode[apigen.CashPaymentResult](t, body)
@@ -77,26 +78,32 @@ func TestFieldOverHTTP(t *testing.T) {
 		resp, body = karyawan.do(http.MethodPost, cashPath(wati), in)
 		require.Equal(t, http.StatusConflict, resp.StatusCode, string(body))
 		requireError(t, body, "request_id_reused", "requestId")
+
+		in.Amount = 300_000
+		in.PhotoUploadId = env.CashPhoto(t, a.o.ID, a.o.Karyawan.UserID, wati)
+		resp, body = karyawan.do(http.MethodPost, cashPath(wati), in)
+		require.Equal(t, http.StatusConflict, resp.StatusCode, "the same cash with another photo: %s", body)
+		requireError(t, body, "request_id_reused", "requestId")
 	})
 
 	t.Run("recordCashPayment refuses what the karyawan may not do or did not mean", func(t *testing.T) {
-		resp, body := karyawan.do(http.MethodPost, cashPath(bambang), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1})
+		resp, body := karyawan.do(http.MethodPost, cashPath(bambang), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusForbidden, resp.StatusCode, "not their tenant: %s", body)
-		resp, body = admin.do(http.MethodPost, cashPath(wati), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1})
+		resp, body = admin.do(http.MethodPost, cashPath(wati), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusForbidden, resp.StatusCode, "admins use recordPayment: %s", body)
-		resp, body = karyawan.do(http.MethodPost, cashPath(dewi), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1})
+		resp, body = karyawan.do(http.MethodPost, cashPath(dewi), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusNotFound, resp.StatusCode, "another organization's tenant: %s", body)
-		resp, body = karyawan.do(http.MethodPost, cashPath(uuid.New()), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1})
+		resp, body = karyawan.do(http.MethodPost, cashPath(uuid.New()), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusNotFound, resp.StatusCode, string(body))
-		resp, body = karyawan.do(http.MethodPost, orgA+"/tenants/nope/cash-payments", apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1})
+		resp, body = karyawan.do(http.MethodPost, orgA+"/tenants/nope/cash-payments", apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusNotFound, resp.StatusCode, string(body))
-		resp, body = karyawan.do(http.MethodPost, cashPath(wati), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 0})
+		resp, body = karyawan.do(http.MethodPost, cashPath(wati), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 0, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode, string(body))
 		requireError(t, body, "invalid_input", "amount")
 		resp, body = karyawan.do(http.MethodPost, cashPath(wati), map[string]any{"requestId": uuid.New(), "amount": 1, "method": "cash"})
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "an unknown field: %s", body)
 		requireError(t, body, "invalid_json", "")
-		resp, body = karyawanB.do(http.MethodPost, cashPath(wati), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1})
+		resp, body = karyawanB.do(http.MethodPost, cashPath(wati), apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()})
 		require.Equal(t, http.StatusNotFound, resp.StatusCode, "not a member of a, which is not shown to exist: %s", body)
 	})
 
@@ -203,9 +210,10 @@ func TestFieldOverHTTP(t *testing.T) {
 	})
 }
 
-// TestAttachCashPaymentPhotoOverHTTP covers attachCashPaymentPhoto: the karyawan attaches the
-// photo of cash they recorded, once, and the answer is the photo's status.
-func TestAttachCashPaymentPhotoOverHTTP(t *testing.T) {
+// TestCashPhotoOverHTTP covers the photo of field cash (decision 50): recordCashPayment takes it
+// as photoUploadId and refuses cash without a usable one, and attachCashPaymentPhoto retakes a
+// photo the scan refused.
+func TestCashPhotoOverHTTP(t *testing.T) {
 	env := testenv.New(t)
 	env.Clock.Set(time.Date(2026, 11, 14, 9, 0, 0, 0, clock.Jakarta))
 	srv := newLinkServer(t, env, &lockedBuffer{})
@@ -216,9 +224,13 @@ func TestAttachCashPaymentPhotoOverHTTP(t *testing.T) {
 	uploads := upload.NewService(upload.ServiceDeps{
 		Store: env.Store, Authz: env.Authz, Clock: env.Clock, Presigner: storage, Queue: &uploadtest.Queue{}, Log: env.Log,
 	})
-	receipt := func(t *testing.T) uuid.UUID {
+	checker := upload.NewChecker(upload.CheckerDeps{
+		Store: env.Store, Objects: storage, Scanner: &uploadtest.Scanner{}, Audit: env.Authz, Clock: env.Clock, Log: env.Log,
+	})
+	clean := uploadtest.Image("image/jpeg", 1_024)
+	infected := append(uploadtest.Image("image/jpeg", 1_024), uploadtest.EICAR...)
+	receipt := func(t *testing.T, body []byte) uuid.UUID {
 		t.Helper()
-		body := uploadtest.Image("image/jpeg", 1_024)
 		c, err := uploads.Create(t.Context(), a.karyawan, upload.CreateInput{
 			Purpose: upload.PurposeCashReceipt, TenantID: wati, ContentType: "image/jpeg", Size: int64(len(body)),
 		})
@@ -230,24 +242,27 @@ func TestAttachCashPaymentPhotoOverHTTP(t *testing.T) {
 		require.NoError(t, err)
 		return c.Upload.ID
 	}
+	scan := func(t *testing.T, id uuid.UUID, status string) {
+		t.Helper()
+		res, err := checker.Scan(t.Context(), a.o.ID, id)
+		require.NoError(t, err)
+		require.Equal(t, status, res.Status)
+	}
 
 	karyawan := newClient(t, srv.URL)
 	karyawan.signIn(env, a.o.Karyawan.Phone)
 	orgA := "/api/orgs/" + a.o.ID.String()
-	resp, body := karyawan.do(http.MethodPost, orgA+"/tenants/"+wati.String()+"/cash-payments", apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 300_000})
+	cashPath := orgA + "/tenants/" + wati.String() + "/cash-payments"
+	photoPath := func(paymentID string) string { return orgA + "/cash-payments/" + paymentID + "/photo" }
+
+	first := receipt(t, clean)
+	resp, body := karyawan.do(http.MethodPost, cashPath, apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 300_000, PhotoUploadId: first})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 	recorded := decode[apigen.CashPaymentResult](t, body)
-	require.Equal(t, apigen.ReceiptPhoto{Status: apigen.PhotoMissing}, recorded.Photo, "foto belum ada")
-	photoPath := func(paymentID string) string { return orgA + "/cash-payments/" + paymentID + "/photo" }
-	first := receipt(t)
+	require.Equal(t, apigen.ReceiptPending, recorded.Receipt.Status, "the receipt does not wait for the scan")
+	require.Equal(t, apigen.ReceiptPhoto{UploadId: &first, Status: apigen.PhotoPending}, recorded.Photo)
 
-	t.Run("attaching answers the photo, and again changes nothing", func(t *testing.T) {
-		for _, name := range []string{"first", "again"} {
-			resp, body := karyawan.do(http.MethodPut, photoPath(recorded.Payment.Id.String()), apigen.AttachCashPaymentPhotoInput{UploadId: first})
-			require.Equal(t, http.StatusOK, resp.StatusCode, "%s: %s", name, body)
-			require.Equal(t, apigen.ReceiptPhoto{UploadId: &first, Status: apigen.PhotoPending}, decode[apigen.ReceiptPhoto](t, body), name)
-		}
-
+	t.Run("the field list shows the photo recorded with the cash", func(t *testing.T) {
 		resp, body := karyawan.do(http.MethodGet, orgA+"/field/today", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		payments := decode[apigen.FieldTodayList](t, body).Items[0].CashToday.Payments
@@ -255,7 +270,61 @@ func TestAttachCashPaymentPhotoOverHTTP(t *testing.T) {
 		require.Equal(t, apigen.ReceiptPhoto{UploadId: &first, Status: apigen.PhotoPending}, payments[0].Photo)
 	})
 
-	t.Run("refusals answer their code", func(t *testing.T) {
+	t.Run("cash without a usable photo is refused on photoUploadId", func(t *testing.T) {
+		rejected := receipt(t, []byte("not a photo"))
+		scan(t, rejected, upload.StatusRejected)
+		for _, tc := range []struct {
+			name   string
+			body   any
+			status int
+			code   string
+		}{
+			{name: "no photo", body: map[string]any{"requestId": uuid.New(), "amount": 1},
+				status: http.StatusBadRequest, code: "invalid_input"},
+			{name: "an unknown upload", body: apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: uuid.New()},
+				status: http.StatusNotFound, code: "not_found"},
+			{name: "another payment's photo", body: apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: first},
+				status: http.StatusBadRequest, code: "receipt_photo_upload_invalid"},
+			{name: "a photo the scan refused", body: apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 1, PhotoUploadId: rejected},
+				status: http.StatusConflict, code: "receipt_photo_upload_refused"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				resp, body := karyawan.do(http.MethodPost, cashPath, tc.body)
+				require.Equal(t, tc.status, resp.StatusCode, string(body))
+				requireError(t, body, tc.code, "photoUploadId")
+			})
+		}
+		resp, body := karyawan.do(http.MethodPost, cashPath, map[string]any{"requestId": uuid.New(), "amount": 1, "photoUploadId": "nope"})
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, string(body))
+		requireError(t, body, "invalid_json", "")
+
+		resp, body = karyawan.do(http.MethodGet, orgA+"/field/today", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		require.Len(t, decode[apigen.FieldTodayList](t, body).Items[0].CashToday.Payments, 1, "nothing was recorded")
+	})
+
+	t.Run("a photo the scan did not refuse is not retaken", func(t *testing.T) {
+		resp, body := karyawan.do(http.MethodPut, photoPath(recorded.Payment.Id.String()), apigen.AttachCashPaymentPhotoInput{UploadId: receipt(t, clean)})
+		require.Equal(t, http.StatusConflict, resp.StatusCode, string(body))
+		requireError(t, body, "receipt_photo_attached", "")
+	})
+
+	t.Run("a photo the scan refused is retaken, and again changes nothing", func(t *testing.T) {
+		bad := receipt(t, infected)
+		resp, body := karyawan.do(http.MethodPost, cashPath, apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 100_000, PhotoUploadId: bad})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		paid := decode[apigen.CashPaymentResult](t, body)
+		scan(t, bad, upload.StatusInfected)
+
+		retake := receipt(t, clean)
+		for _, name := range []string{"first", "again"} {
+			resp, body := karyawan.do(http.MethodPut, photoPath(paid.Payment.Id.String()), apigen.AttachCashPaymentPhotoInput{UploadId: retake})
+			require.Equal(t, http.StatusOK, resp.StatusCode, "%s: %s", name, body)
+			require.Equal(t, apigen.ReceiptPhoto{UploadId: &retake, Status: apigen.PhotoPending}, decode[apigen.ReceiptPhoto](t, body), name)
+		}
+	})
+
+	t.Run("attach refusals answer their code", func(t *testing.T) {
 		for _, tc := range []struct {
 			name   string
 			path   string
@@ -264,8 +333,6 @@ func TestAttachCashPaymentPhotoOverHTTP(t *testing.T) {
 			code   string
 			field  string
 		}{
-			{name: "a second photo", path: photoPath(recorded.Payment.Id.String()), body: apigen.AttachCashPaymentPhotoInput{UploadId: receipt(t)},
-				status: http.StatusConflict, code: "receipt_photo_attached"},
 			{name: "an unknown payment", path: photoPath(uuid.NewString()), body: apigen.AttachCashPaymentPhotoInput{UploadId: first},
 				status: http.StatusNotFound, code: "not_found"},
 			{name: "a payment id that is not a uuid", path: photoPath("nope"), body: apigen.AttachCashPaymentPhotoInput{UploadId: first},

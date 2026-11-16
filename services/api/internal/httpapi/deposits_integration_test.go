@@ -45,7 +45,7 @@ func TestCashDepositsOverHTTP(t *testing.T) {
 		amount int64
 	}{{wati, 300_000}, {bambang, 200_000}} {
 		resp, body := karyawan.do(http.MethodPost, orgA+"/tenants/"+c.tenant.String()+"/cash-payments",
-			apigen.CashPaymentInput{RequestId: uuid.New(), Amount: c.amount})
+			apigen.CashPaymentInput{RequestId: uuid.New(), Amount: c.amount, PhotoUploadId: env.CashPhoto(t, a.o.ID, a.o.Karyawan.UserID, c.tenant)})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		env.Clock.Set(env.Clock.Now().Add(30 * time.Minute))
 	}
@@ -60,7 +60,7 @@ func TestCashDepositsOverHTTP(t *testing.T) {
 		require.Equal(t, wati, list.Items[0].TenantId)
 		require.EqualValues(t, 300_000, list.Items[0].Amount)
 		require.Equal(t, []apigen.FieldUnit{{UnitLabel: "Kamar 1", PropertyName: "Kos Griya Setoran"}}, list.Items[0].Units)
-		require.Equal(t, apigen.ReceiptPhoto{Status: apigen.PhotoMissing}, list.Items[0].Photo)
+		require.Equal(t, apigen.PhotoPending, list.Items[0].Photo.Status, "the photo recorded with the cash")
 
 		resp, body = admin.do(http.MethodGet, orgA+"/field/cash/payments", nil)
 		require.Equal(t, http.StatusForbidden, resp.StatusCode, string(body))
@@ -99,7 +99,7 @@ func TestCashDepositsOverHTTP(t *testing.T) {
 
 	t.Run("recordCashDeposit refuses stale or reused requests with their codes", func(t *testing.T) {
 		resp, body := karyawan.do(http.MethodPost, orgA+"/tenants/"+wati.String()+"/cash-payments",
-			apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 150_000})
+			apigen.CashPaymentInput{RequestId: uuid.New(), Amount: 150_000, PhotoUploadId: env.CashPhoto(t, a.o.ID, a.o.Karyawan.UserID, wati)})
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		for _, tc := range []struct {
 			name   string

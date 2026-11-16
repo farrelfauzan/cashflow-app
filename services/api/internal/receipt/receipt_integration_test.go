@@ -125,6 +125,7 @@ func (w *world) cash(t *testing.T, amount int64) billing.CashResult {
 	t.Helper()
 	res, err := w.billing.RecordCashPayment(context.Background(), w.karyawan, billing.CashInput{
 		RequestID: uuid.New(), TenantID: w.tenantID, Amount: amount,
+		PhotoUploadID: w.env.CashPhoto(t, w.org.ID, w.karyawan.UserID, w.tenantID),
 	})
 	require.NoError(t, err)
 	return res

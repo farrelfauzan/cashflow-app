@@ -1397,14 +1397,22 @@ paths:
         not count), so a karyawan records cash only for tenants they collect from now (403
         otherwise, audited); a tenant with no active lease needs the organization-wide grant. Admins record payments with recordPayment.
 
+        Cash is never recorded without its photo, and the photo never comes after (decision 50):
+        the app uploads it first (createUpload with purpose cash_receipt and this tenant, PUT,
+        completeUpload) and sends its id as photoUploadId. The photo is linked in the payment's
+        transaction; if it cannot be used, nothing is recorded. A photo the scan refuses later is
+        retaken with attachCashPaymentPhoto, and shows in Antrean cek when infected.
+
         The tenant's receipt (template payment_receipt, cash only) is recorded with the payment and
         sent once by the worker right after, through WhatsApp or, in a demo, the tenant's linked
-        Telegram chat: receipt.status is pending in the answer ("Kwitansi sedang dikirim").
+        Telegram chat: receipt.status is pending in the answer ("Kwitansi sedang dikirim"). It does
+        not wait for the photo's scan.
 
         requestId makes a retry or a double submit harmless: the same requestId with the same body
-        from the same member answers 200 with the payment already recorded and the receipt's status
-        now, nothing is recorded twice; the same requestId with any other body, or one that recorded
-        a payment through recordPayment, is 409 request_id_reused.
+        (photoUploadId included) from the same member answers 200 with the payment already recorded
+        and the receipt's and photo's status now, nothing is recorded twice; the same requestId with
+        any other body, or one that recorded a payment through recordPayment, is 409
+        request_id_reused.
       requestBody:
         required: true
         content:
@@ -1423,20 +1431,29 @@ paths:
               schema: { $ref: "#/components/schemas/CashPaymentResult" }
         "400":
           description: >
-            invalid_input (field requestId, amount or note). A body that is not the documented JSON,
-            or names an unknown field, is invalid_json.
+            invalid_input (field requestId, amount, note, or photoUploadId when it is missing:
+            "Foto uang tunai wajib diunggah sebelum menyimpan."); receipt_photo_upload_invalid
+            (field photoUploadId) when the upload is not a cash_receipt upload for this tenant made
+            by the caller, was never completed, or is already another payment's photo. A body that
+            is not the documented JSON (a malformed photoUploadId included), or names an unknown
+            field, is invalid_json.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404":
-          description: "No such tenant in the organization (code not_found)"
+          description: >
+            No such tenant in the organization (code not_found, no field), or no such upload in the
+            organization (code not_found, field photoUploadId)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: "The requestId was used for a different payment (code request_id_reused)"
+          description: >
+            request_id_reused (field requestId): the requestId was used for a different payment.
+            receipt_photo_upload_refused (field photoUploadId): the scan refused this photo; take
+            another one.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1450,9 +1467,11 @@ paths:
       operationId: attachCashPaymentPhoto
       summary: Attach the photo of collected cash to its payment (needs cash:record; audited)
       description: >
-        The karyawan saves "Terima tunai" first and attaches the photo after it ("foto belum ada"
-        until then, decision 46.10): start an upload with purpose cash_receipt for the payment's
-        tenant (createUpload), PUT the file, completeUpload, then send its uploadId here. Only the
+        Retakes the photo of a cash payment whose photo the scan refused (rejected or infected,
+        decision 46.10). Since decision 50 the photo is sent with recordCashPayment, so this is
+        only for a retake, and for payments recorded before that which have none ("foto belum
+        ada"). Start an upload with purpose cash_receipt for the payment's tenant (createUpload),
+        PUT the file, completeUpload, then send its uploadId here. Only the
         member who recorded the payment may attach its photo, with cash:record on the tenant and
         the payment's amount through each of the tenant's active leases, as when recording it (403
         otherwise, audited).
@@ -4061,7 +4080,7 @@ components:
 
     CashPaymentInput:
       type: object
-      required: [requestId, amount]
+      required: [requestId, amount, photoUploadId]
       properties:
         requestId:
           type: string
@@ -4071,6 +4090,15 @@ components:
             retry. Errors use field requestId.
         amount: { type: integer, format: int64, minimum: 1, maximum: 1000000000000, example: 700000 }
         note: { type: string, maxLength: 500, description: "Optional, at most 500 letters after trimming." }
+        photoUploadId:
+          type: string
+          format: uuid
+          description: >
+            The photo of the cash, uploaded before saving (decision 50): a cash_receipt upload for
+            this tenant that the caller started (createUpload), PUT and completed (completeUpload),
+            not yet another payment's photo and not refused by the scan. It may still be pending;
+            the payment and the tenant's receipt do not wait for the scan. Errors use field
+            photoUploadId.
 
     PaymentReceiptStatus:
       type: string
@@ -4100,8 +4128,9 @@ components:
               allOf:
                 - $ref: "#/components/schemas/ReceiptPhoto"
               description: >
-                status missing right after recording ("foto belum ada"); a repeated request
-                answers the photo now. attachCashPaymentPhoto attaches it.
+                The photo recorded with the payment (pending while it is scanned); a repeated
+                request answers the photo now. missing only for payments recorded before photos
+                were required (decision 50).
 
     ReceiptPhotoStatus:
       type: string
@@ -4109,9 +4138,10 @@ components:
       # Explicit Go names, so these do not collide with UploadStatus.
       x-enum-varnames: [PhotoMissing, PhotoPending, PhotoClean, PhotoRejected, PhotoInfected]
       description: >
-        The photo of a cash payment. missing: none attached yet ("foto belum ada"); otherwise its
-        upload's status: pending while it is scanned, clean, or rejected or infected, when the
-        karyawan takes another photo and attaches it.
+        The photo of a cash payment. missing: none ("foto belum ada"), only on payments recorded
+        before photos were required (decision 50); otherwise its upload's status: pending while it
+        is scanned, clean, or rejected or infected, when the karyawan takes another photo and
+        attaches it (attachCashPaymentPhoto).
 
     ReceiptPhoto:
       type: object

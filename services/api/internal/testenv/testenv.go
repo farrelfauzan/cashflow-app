@@ -37,6 +37,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/secret"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenantimport"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/upload"
 )
 
 // LoginURL is the web login page linked from member invitations in tests.
@@ -207,6 +208,29 @@ func (e *Env) AuditLog(t *testing.T, orgID uuid.UUID) []dbgen.AuditLog {
 	})
 	require.NoError(t, err)
 	return rows
+}
+
+// CashPhoto writes a completed, not yet scanned cash_receipt upload of tenantID made by uploader
+// straight to the database and returns its id: the photo recordCashPayment requires (decision 50),
+// for tests that are not about uploads and run without a bucket.
+func (e *Env) CashPhoto(t *testing.T, orgID, uploader, tenantID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx, id, now := context.Background(), uuid.New(), e.Clock.Now()
+	err := e.Store.WithOrgTx(ctx, orgID, func(tx pgx.Tx) error {
+		q := dbgen.New(tx)
+		if _, err := q.InsertUpload(ctx, dbgen.InsertUploadParams{
+			ID: id, OrganizationID: orgID, Purpose: upload.PurposeCashReceipt,
+			TenantID:     uuid.NullUUID{UUID: tenantID, Valid: true},
+			ObjectKey:    "uploads/" + orgID.String() + "/" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+			DeclaredSize: 2_048, UploadedByStaffUserID: uploader, CreatedAt: now,
+		}); err != nil {
+			return err
+		}
+		_, err := q.MarkUploadCompleted(ctx, dbgen.MarkUploadCompletedParams{CompletedAt: now, OrganizationID: orgID, ID: id})
+		return err
+	})
+	require.NoError(t, err)
+	return id
 }
 
 // GrantCustomRole stores a custom role with the given policy document and gives it to a

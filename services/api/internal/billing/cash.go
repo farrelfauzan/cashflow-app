@@ -34,6 +34,10 @@ type CashInput struct {
 	TenantID  uuid.UUID
 	Amount    int64
 	Note      string
+	// PhotoUploadID is the photo of the cash (decision 50): a completed cash_receipt upload for
+	// the tenant made by the caller, not used by another payment and not refused by the scan. It is
+	// required: field cash is never recorded without its photo.
+	PhotoUploadID uuid.UUID
 }
 
 // CashResult is a recorded cash payment with the status of the tenant's receipt.
@@ -42,8 +46,9 @@ type CashResult struct {
 	// ReceiptStatus is ReceiptPending right after recording; a repeated request answers the
 	// receipt's status now.
 	ReceiptStatus string
-	// Photo is PhotoMissing right after recording ("foto belum ada"); a repeated request answers
-	// the payment's photo now. AttachReceiptPhoto attaches it.
+	// Photo is the photo recorded with the payment, its upload's status then (pending while it
+	// is scanned); a repeated request answers the payment's photo now, which AttachReceiptPhoto
+	// replaces only once the scan refused it.
 	Photo ReceiptPhoto
 }
 
@@ -55,12 +60,18 @@ type CashResult struct {
 // collected their ended leases. A tenant with no active lease needs the organization-wide grant.
 // A missing tenant is a *NotFoundError with no field.
 //
+// The photo comes with the payment, never after it (decision 50): in.PhotoUploadID is required (an
+// *InputError on photoUploadId) and is linked in the payment's transaction, checked as
+// AttachReceiptPhoto checks an upload (a *NotFoundError, or ErrReceiptPhotoInvalid or
+// ErrReceiptPhotoRefused in a *FieldError, on photoUploadId); any of them records nothing. A
+// pending photo is accepted: neither the payment nor the receipt waits for the scan.
+//
 // In the same transaction it records the tenant's receipt (payment_receipt, pending) and, once
 // that commits, enqueues its receipt:send task; a lost enqueue is caught by the sweep.
 //
-// The same requestId with the same tenant, amount and note, recorded by the same member through
-// this method, records nothing and answers the payment with Created false and the receipt's
-// status now; anything else under that requestId is ErrRequestIDReused.
+// The same requestId with the same tenant, amount, note and photo, recorded by the same member
+// through this method, records nothing and answers the payment with Created false and the
+// receipt's and photo's status now; anything else under that requestId is ErrRequestIDReused.
 func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in CashInput) (CashResult, error) {
 	today := tenant.Today(s.clock)
 	valid, err := ValidPayment(PaymentInput{
@@ -69,9 +80,13 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 	if err != nil {
 		return CashResult{}, err
 	}
+	if in.PhotoUploadID == uuid.Nil {
+		return CashResult{}, &InputError{Field: "photoUploadId", Message: "Foto uang tunai wajib diunggah sebelum menyimpan."}
+	}
 	org := p.OrganizationID
 	now := s.clock.Now()
-	status, photo := ReceiptPending, ReceiptPhoto{Status: PhotoMissing}
+	status := ReceiptPending
+	var photo ReceiptPhoto
 	res, err := s.recordManual(ctx, p, valid, manualPayment{
 		action: authz.ActionCashRecord, field: true, receivedAt: now,
 		same: func(row dbgen.Payment) bool {
@@ -90,7 +105,11 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 				}); err != nil {
 					return fmt.Errorf("recording the cash payment's receipt: %w", err)
 				}
-				return nil
+				// The photo's link names the receipt, so it follows it; an unusable photo rolls both
+				// back with the payment.
+				var err error
+				photo, err = linkReceiptPhoto(ctx, q, org, p.UserID, row.ID, row.TenantID, in.PhotoUploadID, "photoUploadId", now)
+				return err
 			}
 			st, err := q.GetPaymentReceiptStatus(ctx, dbgen.GetPaymentReceiptStatusParams{OrganizationID: org, PaymentID: row.ID})
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -101,6 +120,15 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 				return fmt.Errorf("loading the cash payment's receipt: %w", err)
 			}
 			status = st
+			// The same payment only with the photo it was recorded with: its first link. A payment
+			// recorded before photos were required (decision 50) has none, so any photo repeats it.
+			links, err := q.ListPaymentReceiptPhotoLinks(ctx, dbgen.ListPaymentReceiptPhotoLinksParams{OrganizationID: org, PaymentID: row.ID})
+			if err != nil {
+				return fmt.Errorf("listing the cash payment's photos: %w", err)
+			}
+			if first, ok := firstLink(links); ok && first != in.PhotoUploadID {
+				return ErrRequestIDReused
+			}
 			photos, err := currentReceiptPhotos(ctx, q, org, []uuid.UUID{row.ID})
 			if err != nil {
 				return err
@@ -116,6 +144,14 @@ func (s *Service) RecordCashPayment(ctx context.Context, p authz.Principal, in C
 		s.enqueueReceipt(ctx, org, res.Payment.ID)
 	}
 	return CashResult{PaymentResult: res, ReceiptStatus: status, Photo: photo}, nil
+}
+
+// firstLink returns the upload of a payment's first photo link; links are latest first.
+func firstLink(links []dbgen.ListPaymentReceiptPhotoLinksRow) (uuid.UUID, bool) {
+	if len(links) == 0 {
+		return uuid.Nil, false
+	}
+	return links[len(links)-1].UploadID, true
 }
 
 // enqueueReceipt enqueues the receipt of a committed cash payment. A failure is logged, not

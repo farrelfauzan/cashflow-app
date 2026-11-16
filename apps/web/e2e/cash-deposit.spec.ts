@@ -23,6 +23,7 @@ import {
   attachFullPageScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { cashPhoto } from "./support/cash-photo";
 import { minBodyFontPx, projectDigit, projectName } from "./support/projects";
 import {
   isPhone,
@@ -178,6 +179,7 @@ test.describe("Karyawan", () => {
     const input: CashPaymentInput = {
       requestId: crypto.randomUUID(),
       amount,
+      photoUploadId: await cashPhoto(page, page.request, orgId, tenant.id),
     };
     const recorded = await call<CashPaymentResult>(
       page,
@@ -216,8 +218,9 @@ test.describe("Karyawan", () => {
       .filter({ hasText: COLLECTED_TENANT })
       .filter({ hasText: formatRupiah(amount) });
     await expect(row).toHaveCount(1);
-    // Recorded just now, with no photo yet.
-    await expect(row).toContainText("Foto belum ada");
+    // Recorded just now with its photo (decision 50): still being scanned, or already clean.
+    await expect(row).toContainText(/Foto (sedang diperiksa|tersimpan)/);
+    await expect(row).not.toContainText("Foto belum ada");
 
     // The amount starts at the total, and the button names it.
     await expect(page.getByLabel(AMOUNT_LABEL)).toHaveValue(

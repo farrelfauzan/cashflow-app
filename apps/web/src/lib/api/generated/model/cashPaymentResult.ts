@@ -10,6 +10,6 @@ import type { ReceiptPhoto } from './receiptPhoto';
 
 export type CashPaymentResult = PaymentResult & {
   receipt: PaymentReceipt;
-  /** status missing right after recording ("foto belum ada"); a repeated request answers the photo now. attachCashPaymentPhoto attaches it. */
+  /** The photo recorded with the payment (pending while it is scanned); a repeated request answers the photo now. missing only for payments recorded before photos were required (decision 50). */
   photo: ReceiptPhoto;
 };

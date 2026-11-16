@@ -18,4 +18,6 @@ export interface CashPaymentInput {
      * @maxLength 500
      */
   note?: string;
+  /** The photo of the cash, uploaded before saving (decision 50): a cash_receipt upload for this tenant that the caller started (createUpload), PUT and completed (completeUpload), not yet another payment's photo and not refused by the scan. It may still be pending; the payment and the tenant's receipt do not wait for the scan. Errors use field photoUploadId. */
+  photoUploadId: string;
 }

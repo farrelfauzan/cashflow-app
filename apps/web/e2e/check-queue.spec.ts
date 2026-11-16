@@ -48,6 +48,7 @@ import {
   attachViewportScreenshot,
   trackOutsideRequests,
 } from "./support/page-checks";
+import { cashPhoto } from "./support/cash-photo";
 import { minBodyFontPx, projectName } from "./support/projects";
 import { ORG_HOME_URL } from "./support/shell";
 import { DIMAS, HENDRA, KURNIA, SARI, type SeededStaff } from "./support/staff";
@@ -288,6 +289,7 @@ test.describe("Admin of the whole organization", () => {
       const payment: CashPaymentInput = {
         requestId: crypto.randomUUID(),
         amount: Number(`2${runId()}10`),
+        photoUploadId: await cashPhoto(page, karyawan, orgId, tenant.id),
       };
       await call<CashPaymentResult>(
         karyawan,

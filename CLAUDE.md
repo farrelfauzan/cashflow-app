@@ -441,8 +441,9 @@ at once, where QRIS takes at most Rp10 juta per QR.
 - **A**: partial payment, promise by date, rollover to next month, broken promise, overpayment → credit.
 - **B**: QR expired → "Buat QR baru", invoice unchanged. Paid but status stuck → "sedang dicek",
   reconcile resolves it. Double payment → credit. Transfer without code or wrong amount →
-  admin queue. Karyawan cash short → tenant gets a WA receipt the moment cash is recorded,
-  so the gap shows in the admin queue. AutoGoPay down → fall back to bank transfer.
+  admin queue. Karyawan cash short → tenant gets a WA receipt the moment cash is recorded
+  (always with its photo, decision 50), so the gap shows in the admin queue. AutoGoPay down →
+  fall back to bank transfer.
 - **C**: WA undeliverable → dashboard flag + karyawan visit task to get a new number.
   Forwarded pay link → per-invoice link shows name + unit. Disputed amount → correction
   with reason. Move-out with arrears → org setting (deduct deposit first, or keep billing).
