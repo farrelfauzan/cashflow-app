@@ -263,6 +263,35 @@ describe("formatTimestampWeekdayDayMonthTime", () => {
   });
 });
 
+describe("formatTimestampTime", () => {
+  it.each([
+    {
+      name: "a morning in Jakarta",
+      input: "2026-11-16T03:42:00Z",
+      want: "10.42",
+    },
+    {
+      name: "an evening in UTC that is the next morning in Jakarta",
+      input: "2026-11-15T17:05:00Z",
+      want: "00.05",
+    },
+    {
+      name: "a timestamp with an offset",
+      input: "2026-11-16T09:15:00+07:00",
+      want: "09.15",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampTime(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "a timestamp without a zone", input: "2026-11-16T07:00:00" },
+    { name: "a calendar date", input: "2026-11-16" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatTimestampTime(input)).toThrow(RangeError);
+  });
+});
+
 describe("formatTimestampShortWeekdayDayMonthTime", () => {
   it.each([
     {
@@ -411,28 +440,5 @@ describe("jakartaHour", () => {
 
   it("rejects an invalid date", () => {
     expect(() => jakartaHour(new Date("nope"))).toThrow(RangeError);
-  });
-});
-
-describe("formatTimestampTime", () => {
-  it.each([
-    {
-      name: "a morning in Jakarta",
-      input: "2026-11-16T03:42:00Z",
-      want: "10.42",
-    },
-    {
-      name: "an evening in UTC that is past midnight in Jakarta",
-      input: "2026-11-13T17:05:00Z",
-      want: "00.05",
-    },
-  ])("formats $name", ({ input, want }) => {
-    expect(formatTimestampTime(input)).toBe(want);
-  });
-
-  it("throws on a timestamp without a zone", () => {
-    expect(() => formatTimestampTime("2026-11-16T10:42:00")).toThrow(
-      RangeError,
-    );
   });
 });

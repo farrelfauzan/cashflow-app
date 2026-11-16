@@ -13,6 +13,12 @@ export type SeededStaff = {
   storageState: string;
 };
 
+// Kos Kunjungan Asri, the organization seed-demo makes only for the karyawan field specs: one
+// property, Kos Asri Kaliurang (Rp800.000 a month), every tenant overdue once "admin run-day" has
+// run for it. Its staff are members of it only (no picker), and each spec has its own karyawans,
+// one per size project, so no two specs record on the same tenants.
+export const VISIT_ORG = "Kos Kunjungan Asri";
+
 // Admin in Griya Sejahtera and Supervisor in Kost Putri Anggrek: one login shows both
 // organizations. Only one phone is signed in per run, shared by every project, because the API
 // allows 3 login code requests per phone per 15 minutes.
@@ -114,22 +120,9 @@ export const LINA: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "lina.json"),
 };
 
-// Desktop: collector of Farhan Maulana (Kamar 6), Hadi Susanto (Kamar 8) and Irfan Hakim
-// (Rumah 4). Farhan's transfer proofs belong to check-queue-proofs.spec.ts; field-cash.spec.ts
-// takes cash only from the other two.
-export const FITRI: SeededStaff = {
-  phone: "0812-0009-0009",
-  name: "Mbak Fitri Handayani",
-  organizations: ["Kos Bulanan Sejahtera"],
-  storageState: join(__dirname, "..", ".auth", "fitri.json"),
-};
-
-// The organization seed-demo makes for field visits: Kos Asri Kaliurang (Rp800.000 a month),
-// every tenant overdue and nothing paid when seeded. Its karyawans, one per size project, are
-// members of it only, so they land on Tagihan hari ini without the organization picker. Only
-// e2e/field-receipt-retake.spec.ts records their cash, so the totals the Kos Bulanan Sejahtera
-// field specs check exactly are never touched by it.
-export const VISIT_ORG = "Kos Kunjungan Asri";
+// "Ambil ulang" (e2e/field-receipt-retake.spec.ts): Kos Kunjungan Asri karyawans whose cash only
+// that spec records, so the totals the Kos Bulanan Sejahtera field specs check exactly are never
+// touched by it. Signed in by the setup project only.
 
 // iPad: collector of Nico Pranata (Kamar 13) and Satria Nugraha (Kamar 14).
 export const NURUL: SeededStaff = {
@@ -155,6 +148,16 @@ export const MIRA: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "mira.json"),
 };
 
+// Desktop: collector of Farhan Maulana (Kamar 6), Hadi Susanto (Kamar 8) and Irfan Hakim
+// (Rumah 4). Farhan's transfer proofs belong to check-queue-proofs.spec.ts; field-cash.spec.ts
+// takes cash only from the other two.
+export const FITRI: SeededStaff = {
+  phone: "0812-0009-0009",
+  name: "Mbak Fitri Handayani",
+  organizations: ["Kos Bulanan Sejahtera"],
+  storageState: join(__dirname, "..", ".auth", "fitri.json"),
+};
+
 // Every member the setup project signs in once per run.
 export const SETUP_STAFF: readonly SeededStaff[] = [
   HENDRA,
@@ -165,12 +168,12 @@ export const SETUP_STAFF: readonly SeededStaff[] = [
   UDIN,
   JUWITA,
   KURNIA,
-  GALIH,
-  LINA,
-  FITRI,
   NURUL,
   BAGUS,
   MIRA,
+  GALIH,
+  LINA,
+  FITRI,
 ];
 
 // A seeded member the login spec signs in through the UI. Each is used by one test in one
