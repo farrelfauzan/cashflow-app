@@ -3204,6 +3204,7 @@ describe("the proof sheet's primary", () => {
   const photo = {
     file: new File(["x"], "bukti.jpg", { type: "image/jpeg" }),
     previewUrl: "blob:http://localhost/1",
+    requestId: "5f0c2a9e-3b1d-4c6e-9a7f-1e2d3c4b5a69",
   };
 
   it.each([

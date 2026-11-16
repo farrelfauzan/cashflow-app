@@ -486,6 +486,9 @@ export type ShownProofError = Exclude<ProofErrorView, { kind: "link-gone" }>;
 export type ProofPhoto = {
   file: File;
   previewUrl: string;
+  // sendPaymentProof's requestId: one per chosen photo, sent again unchanged on "Coba lagi", so a
+  // send whose answer was lost is not stored twice (the API answers 200 for it).
+  requestId: string;
 };
 
 export type ProofSheetState =
