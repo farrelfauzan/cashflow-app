@@ -110,6 +110,8 @@ export function fieldTodayRow(item: FieldTodayItem): FieldTodayRowView {
     owed: owedText(item),
     reason: reasonChip(item),
     cash: cashLine(item.cashToday),
+    item,
+    canCollect: item.outstanding > 0,
   };
 }
 

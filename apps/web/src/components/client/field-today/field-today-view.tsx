@@ -83,6 +83,7 @@ export function FieldTodayView({ orgId }: FieldTodayViewProps) {
         <FieldTodaySkeleton />
       ) : (
         <FieldTodayList
+          orgId={orgId}
           views={list.data.items.map(fieldTodayRow)}
           moreText={moreRowsText(list.data.total, list.data.items.length)}
         />
