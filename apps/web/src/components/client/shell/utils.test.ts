@@ -12,6 +12,8 @@ import {
   SIDEBAR_CHOICE_SCRIPT,
   sidebarCookie,
   sidebarToggleLabel,
+  visitsBadgeText,
+  visitsTabAccessibleName,
 } from "./utils";
 
 const SERVER: Capability[] = [{ action: "member:read", access: "allow" }];
@@ -112,5 +114,25 @@ describe("the side menu's collapsed choice", () => {
   it("words the toggle by what it does", () => {
     expect(sidebarToggleLabel(false)).toBe("Ciutkan menu");
     expect(sidebarToggleLabel(true)).toBe("Lebarkan menu");
+  });
+});
+
+describe("the Kunjungan tab's count", () => {
+  it("shows the count as it is up to 99 and 99+ above", () => {
+    expect(visitsBadgeText(1)).toBe("1");
+    expect(visitsBadgeText(3)).toBe("3");
+    expect(visitsBadgeText(99)).toBe("99");
+    expect(visitsBadgeText(100)).toBe("99+");
+    expect(visitsBadgeText(1250)).toBe("99+");
+  });
+
+  it("puts the real count in the accessible name, and nothing when none are open", () => {
+    expect(visitsTabAccessibleName("Kunjungan", 3)).toBe(
+      "Kunjungan, 3 belum dicatat",
+    );
+    expect(visitsTabAccessibleName("Kunjungan", 120)).toBe(
+      "Kunjungan, 120 belum dicatat",
+    );
+    expect(visitsTabAccessibleName("Kunjungan", 0)).toBe("Kunjungan");
   });
 });
