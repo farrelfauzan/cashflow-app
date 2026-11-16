@@ -38,32 +38,45 @@ import {
   type ProjectName,
 } from "./support/projects";
 import { FIELD_TODAY_URL } from "./support/shell";
-import { FITRI, GALIH, LINA, type SeededStaff } from "./support/staff";
+import { BAGUS, MIRA, NURUL, type SeededStaff } from "./support/staff";
 import { expectToast } from "./support/toast";
 
 // "Ambil ulang" (decision 46.10, board HP-Foto, "Setelah disimpan"): the karyawan retakes the
 // receipt photo of a cash payment whose photo the scan refused after it was saved. Against the
 // real API with object storage (RustFS) and the fake upload scanner (UPLOAD_SCANNER=fake), which
-// marks any file holding the EICAR test string infected: each test records cash through the API
-// with an infected copy of a real JPEG, waits until listFieldToday reports that payment's photo
+// marks any file holding the EICAR test string infected: a test records cash through the API with
+// an infected copy of a real JPEG, waits until listFieldToday reports that payment's photo
 // infected, then retakes it in the UI with a clean photo.
 //
-// Each size project signs in as its own karyawan (e2e/support/staff.ts) and uses the tenant
-// field-promise.spec.ts and field-proof.spec.ts use, never the ones field-cash.spec.ts pays. The
-// amounts are small and carry a slot (4 to 7) field-cash.spec.ts never uses, so its payments are
-// told apart. The cash each karyawan holds is one total per member, so this spec changes the
-// total field-cash.spec.ts checks exactly: the two must not run at the same time as the same
-// karyawan (CI runs one worker). The tests of one project run in order.
+// Each size project signs in as its own karyawan of Kos Kunjungan Asri (e2e/support/staff.ts),
+// whose cash no other spec records, so nothing here moves the totals the Kos Bulanan Sejahtera
+// field specs check. A refused photo is retaken on the karyawan's first tenant; the clean photo is
+// recorded on the second. The tests of one project run in order.
 
 type Collector = {
   staff: SeededStaff;
-  tenant: string;
+  // Gets the payments whose photo is refused and retaken.
+  refusedTenant: string;
+  // Gets the payment with a clean photo.
+  cleanTenant: string;
 };
 
 const COLLECTORS: Record<ProjectName, Collector> = {
-  ipad: { staff: GALIH, tenant: "Kurniawan Adi" },
-  phone: { staff: LINA, tenant: "Sinta Maharani" },
-  desktop: { staff: FITRI, tenant: "Irfan Hakim" },
+  ipad: {
+    staff: NURUL,
+    refusedTenant: "Nico Pranata",
+    cleanTenant: "Satria Nugraha",
+  },
+  phone: {
+    staff: BAGUS,
+    refusedTenant: "Galuh Kartiko",
+    cleanTenant: "Zaskia Ardiningsih",
+  },
+  desktop: {
+    staff: MIRA,
+    refusedTenant: "Ilham Sasongko",
+    cleanTenant: "Tiara Anindita",
+  },
 };
 
 const MIN_TOUCH_PX = 44;
@@ -73,6 +86,8 @@ const UPLOAD_COMPLETE_PATH =
   /^\/api\/orgs\/[0-9a-f-]{36}\/uploads\/[0-9a-f-]{36}\/complete$/;
 const STORAGE_HINT =
   "The e2e job must start RustFS and give the API and the worker STORAGE_* and UPLOAD_SCANNER=fake (.github/workflows/web.yml).";
+const SEED_HINT =
+  "seed-demo must include Kos Kunjungan Asri (Kos Asri Kaliurang, Rp800.000 a month, every tenant overdue). Cash recorded here accumulates across runs on one database, so a tenant is paid off after many runs: seed the database again.";
 
 function collectorOf(testInfo: TestInfo): Collector {
   return COLLECTORS[projectName(testInfo)];
@@ -86,8 +101,10 @@ function runId(): string {
   return run;
 }
 
-// Rp40.000 to Rp79.999: one slot per test, so each payment of a run is told apart by its amount.
-function amountOf(slot: 4 | 5 | 6 | 7): number {
+// Rp1.000 to Rp49.999, one slot per test (1 to 4) and unique per run: the seeded tenants owe
+// months of rent, so many runs fit before one is paid off, and every payment of a run is told
+// apart by its amount.
+function amountOf(slot: 1 | 2 | 3 | 4): number {
   return Number(`${slot}${runId()}`);
 }
 
@@ -122,7 +139,9 @@ async function fieldItem(
     200,
   );
   const item = today.items.find((row) => row.tenantName === tenantName);
-  if (item === undefined) throw new Error(`${tenantName} is not on the list`);
+  if (item === undefined) {
+    throw new Error(`${tenantName} is not on the list. ${SEED_HINT}`);
+  }
   return item;
 }
 
@@ -193,7 +212,7 @@ async function refusedPayment(
   amount: number,
 ): Promise<CashPaymentResult> {
   const item = await fieldItem(page, orgId, tenantName);
-  expect(amount, `${tenantName} must owe more than one run takes`).toBeLessThan(
+  expect(amount, `${tenantName} owes too little. ${SEED_HINT}`).toBeLessThan(
     item.outstanding,
   );
   const photo = infectedPhoto(await transferPhoto(page, formatRupiah(amount)));
@@ -295,9 +314,9 @@ test.describe("Karyawan", () => {
     page,
   }, testInfo) => {
     const outsideRequests = trackOutsideRequests(page);
-    const { tenant } = collectorOf(testInfo);
+    const { refusedTenant: tenant } = collectorOf(testInfo);
     const orgId = await openFieldToday(page);
-    const amount = amountOf(4);
+    const amount = amountOf(1);
     const recorded = await refusedPayment(page, orgId, tenant, amount);
     await page.reload();
 
@@ -354,9 +373,9 @@ test.describe("Karyawan", () => {
   test("offers no Ambil ulang on a pending or clean photo", async ({
     page,
   }, testInfo) => {
-    const { tenant } = collectorOf(testInfo);
+    const { cleanTenant: tenant } = collectorOf(testInfo);
     const orgId = await openFieldToday(page);
-    const amount = amountOf(5);
+    const amount = amountOf(2);
     const item = await fieldItem(page, orgId, tenant);
     const result = await recordCash(
       page,
@@ -390,9 +409,9 @@ test.describe("Karyawan", () => {
   test("attaches one photo when the answer to Simpan foto is lost", async ({
     page,
   }, testInfo) => {
-    const { tenant } = collectorOf(testInfo);
+    const { refusedTenant: tenant } = collectorOf(testInfo);
     const orgId = await openFieldToday(page);
-    const amount = amountOf(6);
+    const amount = amountOf(3);
     const recorded = await refusedPayment(page, orgId, tenant, amount);
     await page.reload();
 
@@ -452,11 +471,11 @@ test.describe("Karyawan", () => {
   test("retakes a refused photo from Setor tunai", async ({
     page,
   }, testInfo) => {
-    // The karyawan's own device; the flow is the same sheet at every size.
+    // Mas Bagus on the karyawan's own device; the flow is the same sheet at every size.
     test.skip(projectName(testInfo) !== "phone", "Setor tunai on the phone");
-    const { tenant } = collectorOf(testInfo);
+    const { refusedTenant: tenant } = collectorOf(testInfo);
     const orgId = await openFieldToday(page);
-    const amount = amountOf(7);
+    const amount = amountOf(4);
     const recorded = await refusedPayment(page, orgId, tenant, amount);
 
     await page.goto(`/o/${orgId}/field/deposit`);

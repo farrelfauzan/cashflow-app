@@ -124,6 +124,37 @@ export const FITRI: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "fitri.json"),
 };
 
+// The organization seed-demo makes for field visits: Kos Asri Kaliurang (Rp800.000 a month),
+// every tenant overdue and nothing paid when seeded. Its karyawans, one per size project, are
+// members of it only, so they land on Tagihan hari ini without the organization picker. Only
+// e2e/field-receipt-retake.spec.ts records their cash, so the totals the Kos Bulanan Sejahtera
+// field specs check exactly are never touched by it.
+export const VISIT_ORG = "Kos Kunjungan Asri";
+
+// iPad: collector of Nico Pranata (Kamar 13) and Satria Nugraha (Kamar 14).
+export const NURUL: SeededStaff = {
+  phone: "0812-0010-0021",
+  name: "Mbak Nurul Hidayah",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "nurul.json"),
+};
+
+// Phone: collector of Galuh Kartiko (Kamar 15) and Zaskia Ardiningsih (Kamar 16).
+export const BAGUS: SeededStaff = {
+  phone: "0812-0010-0022",
+  name: "Mas Bagus Wicaksono",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "bagus.json"),
+};
+
+// Desktop: collector of Ilham Sasongko (Kamar 17) and Tiara Anindita (Kamar 18).
+export const MIRA: SeededStaff = {
+  phone: "0812-0010-0023",
+  name: "Mbak Mira Widyastuti",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "mira.json"),
+};
+
 // Every member the setup project signs in once per run.
 export const SETUP_STAFF: readonly SeededStaff[] = [
   HENDRA,
@@ -137,6 +168,9 @@ export const SETUP_STAFF: readonly SeededStaff[] = [
   GALIH,
   LINA,
   FITRI,
+  NURUL,
+  BAGUS,
+  MIRA,
 ];
 
 // A seeded member the login spec signs in through the UI. Each is used by one test in one
