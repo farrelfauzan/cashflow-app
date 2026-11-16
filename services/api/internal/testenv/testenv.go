@@ -278,8 +278,13 @@ func WaitUntilSomeoneWaits(ctx context.Context, t *testing.T, tx pgx.Tx) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
+		// Postgres reads pg_stat_activity once per transaction and keeps that snapshot until the
+		// transaction ends, so without clearing it a waiter whose session started after the first
+		// poll is never seen. pg_locks is read afresh on every query.
+		_, err := tx.Exec(ctx, `SELECT pg_stat_clear_snapshot()`)
+		require.NoError(t, err)
 		var waiting bool
-		err := tx.QueryRow(ctx, `SELECT EXISTS (
+		err = tx.QueryRow(ctx, `SELECT EXISTS (
 			SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
 			WHERE l.locktype = 'transactionid' AND NOT l.granted
 			  AND a.datname = current_database() AND l.pid <> pg_backend_pid())`).Scan(&waiting)

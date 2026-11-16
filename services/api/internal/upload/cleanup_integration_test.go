@@ -6,6 +6,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -274,6 +275,11 @@ func TestALinkWaitsForTheCleanup(t *testing.T) {
 	env.Clock.Advance(upload.UnusedAfter + time.Hour)
 
 	reached, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	letTheJobGo := func() { releaseOnce.Do(func() { close(release) }) }
+	// A failing assertion below must still end the job's transaction, or closing the pool in the
+	// environment's cleanup waits for it forever.
+	t.Cleanup(letTheJobGo)
 	w.storage.BeforeDelete = func(string) {
 		close(reached)
 		<-release
@@ -310,7 +316,7 @@ func TestALinkWaitsForTheCleanup(t *testing.T) {
 		t.Fatalf("recording cash finished while the job held the photo: %v", err)
 	default:
 	}
-	close(release)
+	letTheJobGo()
 
 	select {
 	case r := <-jobDone:
