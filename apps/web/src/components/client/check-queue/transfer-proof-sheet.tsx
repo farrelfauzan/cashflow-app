@@ -138,6 +138,7 @@ export function TransferProofSheet({
         createdAt,
         proof.invoiceId,
         account.data?.invoices,
+        proof.sentBy,
       )}
       alt={proofPhotoAlt(tenant)}
       subtitle={subtitle}

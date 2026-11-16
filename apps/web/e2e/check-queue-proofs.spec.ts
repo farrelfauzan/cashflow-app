@@ -25,12 +25,17 @@ import {
   ZOOM_TITLE,
 } from "../src/components/client/check-queue/utils";
 import type {
+  CheckQueueItem,
+  CheckQueuePage,
   CheckResolution,
   MatchTransferProofResult,
   Tenant,
   TenantAccount,
   TenantList,
   TenantPaymentPreview,
+  Upload,
+  UploadInput,
+  UploadTicket,
 } from "../src/lib/api/generated/model";
 import { formatMonthYear, jakartaToday } from "../src/lib/format/date";
 import { formatRupiah } from "../src/lib/format/rupiah";
@@ -127,6 +132,62 @@ async function sentProof(
   const invoice = owed.invoices.find((each) => each.id === link.invoiceId);
   if (invoice === undefined) throw new Error("no invoice");
   return { proof, item, invoice };
+}
+
+// A proof a member sends for the tenant: the photo goes to storage like the karyawan's app sends
+// it, and completeUpload puts it on the queue with the member as its sender. Waits until the scan
+// found it clean.
+async function sentByMember(
+  page: Page,
+  orgId: string,
+  tenantId: string,
+): Promise<CheckQueueItem> {
+  const photo = await transferPhoto(page, formatRupiah(Number(`2${runId()}0`)));
+  const input: UploadInput = {
+    purpose: "transfer_proof",
+    tenantId,
+    contentType: "image/jpeg",
+    size: photo.length,
+  };
+  const ticket = await call<UploadTicket>(
+    page.request,
+    "POST",
+    `/orgs/${orgId}/uploads`,
+    201,
+    input,
+  );
+  const put = await page.request.fetch(ticket.putUrl, {
+    method: "PUT",
+    headers: ticket.putHeaders,
+    data: photo,
+  });
+  expect(put.status(), "PUT to storage").toBe(200);
+  await call<Upload>(
+    page.request,
+    "POST",
+    `/orgs/${orgId}/uploads/${ticket.upload.id}/complete`,
+    200,
+  );
+  let found: CheckQueueItem | undefined;
+  await expect
+    .poll(
+      async () => {
+        const queue = await call<CheckQueuePage>(
+          page.request,
+          "GET",
+          `/orgs/${orgId}/check-queue?kind=transfer_proof&pageSize=100`,
+          200,
+        );
+        found = queue.items.find(
+          (item) => item.transferProof?.uploadId === ticket.upload.id,
+        );
+        return found?.transferProof?.uploadStatus;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe("clean");
+  if (found === undefined) throw new Error("the member's proof is not queued");
+  return found;
 }
 
 function rows(page: Page): Locator {
@@ -338,7 +399,9 @@ test("matches a proof to a transfer payment", async ({ page }, testInfo) => {
   expect(outsideRequests).toEqual([]);
 });
 
-test("marks a proof not a payment, with a note", async ({ page }, testInfo) => {
+test("marks a proof not a payment, with a note, and names the member who sent one", async ({
+  page,
+}, testInfo) => {
   const outsideRequests = trackOutsideRequests(page);
   const orgId = await openBulanan(page);
   const name = tenantFor(NOT_PAYMENT_TENANTS, testInfo);
@@ -409,6 +472,29 @@ test("marks a proof not a payment, with a note", async ({ page }, testInfo) => {
   await expectToast(page, "Ditandai bukan pembayaran", "neutral");
   await expect(reject).toHaveCount(0);
   await expect(row).toHaveCount(0);
+
+  // A proof a member sent for the tenant (decision 49, board Admin-Cek-Bukti-Staf): the row and
+  // the drawer say who sent it, and name no invoice link. Pak Dimas sends it through the API, as
+  // the karyawan's app does (createUpload transfer_proof, the PUT, completeUpload).
+  const staffProof = await sentByMember(page, orgId, tenant.id);
+  expect(staffProof.transferProof?.sentBy?.name).toBe(DIMAS.name);
+  await openRow(page, orgId, "transfer_proof", name, [
+    `Dikirim oleh ${DIMAS.name}`,
+  ]);
+  const staffSheet = page.getByRole("dialog", { name: PROOF_TITLE });
+  await expect(staffSheet).toBeVisible();
+  await expectLoaded(
+    staffSheet.getByRole("img", { name: `${ZOOM_TITLE} dari ${name}` }),
+  );
+  await expect(
+    staffSheet.getByText("Dikirim oleh", { exact: true }),
+  ).toBeVisible();
+  await expect(staffSheet.getByText(DIMAS.name, { exact: true })).toBeVisible();
+  await expect(staffSheet.getByText("Masuk", { exact: true })).toBeVisible();
+  await expect(staffSheet.getByText("Dikirim penyewa")).toHaveCount(0);
+  await expect(staffSheet.getByText("Dari tautan tagihan")).toHaveCount(0);
+  await attachViewportScreenshot(page, testInfo, "check-queue-proof-sent-by");
+  await clearTenantProofs(page.request, orgId, tenant.id);
   expect(outsideRequests).toEqual([]);
 });
 
