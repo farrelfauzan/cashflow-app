@@ -16,6 +16,7 @@ import {
   FIELD_PROOF_SEND_TEXT,
   canSendFieldProof,
   canSendFieldProofs,
+  fieldProofUnsure,
   fieldProofFailureView,
   fieldProofPhoto,
   fieldProofPrimaryLabel,
@@ -189,5 +190,39 @@ describe("fieldProofSentToast", () => {
       title: "Bukti terkirim",
       description: "Admin akan mengeceknya.",
     });
+  });
+});
+
+describe("fieldProofUnsure", () => {
+  const photo = { file: new File(["x"], "bukti.jpg"), previewUrl: "blob:x" };
+
+  it("is unsure only when completeUpload's answer was lost", () => {
+    expect(
+      fieldProofUnsure({
+        kind: "failed",
+        photo,
+        message: "Sinyal hilang.",
+        resume: { step: "complete", uploadId: "u1" },
+      }),
+    ).toBe(true);
+  });
+
+  it("is sure when the upload failed before completeUpload", () => {
+    expect(
+      fieldProofUnsure({
+        kind: "failed",
+        photo,
+        message: "Sinyal hilang.",
+        resume: { step: "create" },
+      }),
+    ).toBe(false);
+  });
+
+  it("is sure in every other state", () => {
+    expect(fieldProofUnsure({ kind: "empty" })).toBe(false);
+    expect(fieldProofUnsure({ kind: "ready", photo, error: null })).toBe(false);
+    expect(fieldProofUnsure({ kind: "sending", photo, percent: 40 })).toBe(
+      false,
+    );
   });
 });

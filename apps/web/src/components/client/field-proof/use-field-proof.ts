@@ -21,7 +21,11 @@ import { putToStorage } from "@/lib/api/storage-upload";
 import { isTooLarge, preparePhoto } from "@/lib/photo";
 
 import type { FieldProofSend, FieldProofState } from "./type";
-import { fieldProofFailureView, fieldProofSentToast } from "./utils";
+import {
+  fieldProofFailureView,
+  fieldProofSentToast,
+  fieldProofUnsure,
+} from "./utils";
 
 type FieldProofOptions = {
   orgId: string;
@@ -127,13 +131,16 @@ export function useFieldProof({
     });
   }
 
+  // A lost answer to completeUpload: the photo stays as it is until "Coba lagi".
+  const unsure = fieldProofUnsure(state);
+
   function pickPhoto() {
-    if (sendingRef.current) return;
+    if (sendingRef.current || unsure) return;
     inputRef.current?.click();
   }
 
   function choose(file: File) {
-    if (sendingRef.current) return;
+    if (sendingRef.current || unsure) return;
     const signal = nextAttempt();
     setState({ kind: "preparing" });
     void preparePhoto(file).then((prepared) => {
@@ -162,5 +169,5 @@ export function useFieldProof({
     void run(state.photo, state.resume);
   }
 
-  return { state, inputRef, pickPhoto, choose, send, retry };
+  return { state, unsure, inputRef, pickPhoto, choose, send, retry };
 }

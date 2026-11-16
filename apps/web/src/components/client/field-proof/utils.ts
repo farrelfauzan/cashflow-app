@@ -76,6 +76,13 @@ export function canSendFieldProof(state: FieldProofState): boolean {
   return state.kind === "ready" && state.error === null;
 }
 
+// completeUpload may have recorded the proof without the answer arriving: only "Coba lagi" (the
+// same upload, which the API completes once) may follow. Another photo or a fresh send would make
+// a second proof, so the photo is locked and the sheet is kept for the next opening.
+export function fieldProofUnsure(state: FieldProofState): boolean {
+  return state.kind === "failed" && state.resume.step === "complete";
+}
+
 // The primary's label: "Mengirim…" while the photo is sent, otherwise "Kirim bukti".
 export function fieldProofPrimaryLabel(state: FieldProofState): string {
   return state.kind === "sending" ? PROOF_SENDING_TEXT : FIELD_PROOF_SEND_TEXT;

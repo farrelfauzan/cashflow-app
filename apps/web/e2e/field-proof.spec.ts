@@ -461,7 +461,7 @@ test.describe("Karyawan", () => {
     const uploads = trackUploads(page);
 
     const sheet = await openSheet(page, tenant);
-    const { send, retry } = parts(sheet);
+    const { send } = parts(sheet);
     await choosePhoto(page, sheet, "Rp750.000");
 
     // completeUpload reaches the API, which records the proof; its answer never arrives.
@@ -477,12 +477,22 @@ test.describe("Karyawan", () => {
     expect(firstStatus).toBe(200);
     await page.unroute(matches);
 
+    // Unsure: another photo would make a second proof, so it cannot be chosen. Closing and opening
+    // again brings back this same attempt, not a fresh sheet.
+    const { other, close } = parts(sheet);
+    await expect(other).toBeDisabled();
+    await close.click();
+    await expect(sheet).toHaveCount(0);
+    const reopened = await openSheet(page, tenant);
+    await expect(reopened.getByText(FIELD_PROOF_FAILED_TITLE)).toBeVisible();
+    await expect(parts(reopened).other).toBeDisabled();
+
     const completed = page.waitForResponse((response) =>
       isPost(response.request(), COMPLETE_UPLOAD_PATH),
     );
-    await retry.click();
+    await parts(reopened).retry.click();
     expect((await completed).status()).toBe(200);
-    await expect(sheet).toHaveCount(0);
+    await expect(reopened).toHaveCount(0);
     await expectToast(
       page,
       FIELD_PROOF_SENT_TITLE,

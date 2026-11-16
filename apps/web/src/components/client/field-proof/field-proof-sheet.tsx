@@ -1,7 +1,7 @@
 "use client";
 
 import { XIcon } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId } from "react";
 
 import {
   CANCEL_TEXT,
@@ -47,6 +47,10 @@ type FieldProofSheetProps = {
   placeLabel: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Whether this opening may have sent the proof without the app knowing (completeUpload's answer
+  // was lost): the caller then reopens this same sheet instead of a fresh one, so "Coba lagi"
+  // completes the same upload and the admin gets one proof.
+  onUnsureChange: (unsure: boolean) => void;
 };
 
 // "Bukti transfer dari penyewa" (board HP-Bukti-Karyawan, columns 2 to 4): a bottom sheet on the
@@ -61,12 +65,17 @@ export function FieldProofSheet({
   placeLabel,
   open,
   onOpenChange,
+  onUnsureChange,
 }: FieldProofSheetProps) {
-  const { state, inputRef, pickPhoto, choose, send, retry } = useFieldProof({
-    orgId,
-    tenantId: tenant.tenantId,
-    onSent: () => onOpenChange(false),
-  });
+  const { state, unsure, inputRef, pickPhoto, choose, send, retry } =
+    useFieldProof({
+      orgId,
+      tenantId: tenant.tenantId,
+      onSent: () => onOpenChange(false),
+    });
+  useEffect(() => {
+    onUnsureChange(unsure);
+  }, [unsure, onUnsureChange]);
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
@@ -134,7 +143,7 @@ export function FieldProofSheet({
             accept={PHOTO_ACCEPT}
             aria-label={FIELD_PROOF_PICK_TEXT}
             tabIndex={-1}
-            disabled={sending}
+            disabled={sending || unsure}
             className="sr-only"
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -162,7 +171,7 @@ export function FieldProofSheet({
             <Button
               type="button"
               variant="outline"
-              disabled={sending}
+              disabled={sending || unsure}
               onClick={pickPhoto}
               className="h-12 flex-1 rounded-xl border-[1.5px] bg-card px-3 text-base font-semibold md:h-13 md:text-[17px]"
             >

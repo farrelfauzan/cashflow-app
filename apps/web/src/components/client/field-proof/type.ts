@@ -47,6 +47,8 @@ export type FieldProofFailureView =
 // useFieldProof: one opening of the sheet.
 export type FieldProofSend = {
   state: FieldProofState;
+  // completeUpload's answer was lost: no other photo, and the sheet is kept for the next opening.
+  unsure: boolean;
   // The hidden file input (camera or gallery).
   inputRef: RefObject<HTMLInputElement | null>;
   // Opens the camera or gallery; nothing while a photo is sent.

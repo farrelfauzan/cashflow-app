@@ -22,8 +22,10 @@ type SendFieldProofButtonProps = {
 
 // "Penyewa sudah transfer? Kirim bukti" under a Tagihan hari ini row's buttons (board
 // HP-Bukti-Karyawan, 1): a text button, not a primary, shown only to a member with payment:proof
-// (conditional counts; the API decides per tenant). Each press mounts the sheet afresh. The sheet
-// stays mounted after it closes, so it can animate out; the next opening replaces it.
+// (conditional counts; the API decides per tenant). Each press mounts the sheet afresh, except
+// after a lost answer to completeUpload: then the same sheet comes back, photo and upload kept, so
+// "Coba lagi" completes that upload and the admin gets one proof. The sheet stays mounted after it
+// closes, so it can animate out; the next opening replaces it.
 export function SendFieldProofButton({
   orgId,
   tenant,
@@ -32,6 +34,7 @@ export function SendFieldProofButton({
   const ability = useAbility<AppAbility>();
   const [opening, setOpening] = useState(0);
   const [open, setOpen] = useState(false);
+  const [unsure, setUnsure] = useState(false);
 
   return (
     <>
@@ -41,7 +44,7 @@ export function SendFieldProofButton({
             type="button"
             variant="ghost"
             onClick={() => {
-              setOpening((previous) => previous + 1);
+              if (!unsure) setOpening((previous) => previous + 1);
               setOpen(true);
             }}
             className="h-11 w-full gap-2 rounded-xl px-3 text-[15px] font-semibold text-primary hover:text-primary md:text-base"
@@ -60,6 +63,7 @@ export function SendFieldProofButton({
           placeLabel={placeLabel}
           open={open}
           onOpenChange={setOpen}
+          onUnsureChange={setUnsure}
         />
       )}
     </>
