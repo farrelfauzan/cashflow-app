@@ -181,8 +181,8 @@ func enqueueScan(ctx context.Context, queue ScanQueue, log *slog.Logger, org, id
 	}
 }
 
-// Get returns an upload and, only when it is clean, a download link valid for GetURLTTL that
-// downloads the file as an attachment. It is allowed with payment:check (the admin checking it),
+// Get returns an upload and, only when it is clean and upload:cleanup has not deleted its file, a
+// download link valid for GetURLTTL that downloads the file as an attachment. It is allowed with payment:check (the admin checking it),
 // cash:read (the Supervisor, who reads everything) or the action that started the upload, on the
 // upload's record (see Create): through each active lease of a receipt's tenant, and for a deposit
 // photo on the upload itself (payment:check and cash:read then need the whole organization). A
@@ -223,6 +223,17 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Rea
 	}
 	out := Read{Upload: fromRow(row)}
 	if row.Status != StatusClean || row.ContentType == nil {
+		return out, nil
+	}
+	var deleted bool
+	if err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		var err error
+		deleted, err = dbgen.New(tx).UploadDeleted(ctx, dbgen.UploadDeletedParams{OrganizationID: org, UploadID: id})
+		return err
+	}); err != nil {
+		return Read{}, fmt.Errorf("checking upload %s's file: %w", id, err)
+	}
+	if deleted {
 		return out, nil
 	}
 	now := s.clock.Now()

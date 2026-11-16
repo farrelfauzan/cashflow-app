@@ -67,7 +67,7 @@ func (s *Storage) Keys() []string {
 }
 
 // Calls returns the bucket operations made so far ("head <key>", "open <key>",
-// "move <src> <dst>", "put <key> <content type>"), oldest first.
+// "move <src> <dst>", "put <key> <content type>", "delete <key>"), oldest first.
 func (s *Storage) Calls() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,6 +145,18 @@ func (s *Storage) Move(_ context.Context, src, dst string) error {
 	}
 	s.objects[dst] = b
 	delete(s.objects, src)
+	return nil
+}
+
+// Delete implements upload.ObjectDeleter. A missing key is not an error.
+func (s *Storage) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, "delete "+key)
+	if s.Err != nil {
+		return s.Err
+	}
+	delete(s.objects, key)
 	return nil
 }
 

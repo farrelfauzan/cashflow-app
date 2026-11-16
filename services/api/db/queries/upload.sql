@@ -14,10 +14,15 @@ VALUES (@id, @organization_id, 'transfer_proof', @tenant_id::uuid, @object_key, 
 RETURNING *;
 
 -- name: InsertTransferProof :one
--- A proof the tenant sent from a payment link (S6-5).
-INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
-VALUES (@id, @organization_id, @tenant_id, @payment_link_id::uuid, @invoice_id::uuid, @upload_id, @created_at)
+-- A proof the tenant sent from a payment link (S6-5), with the page's requestId when it sent one.
+INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at, request_id)
+VALUES (@id, @organization_id, @tenant_id, @payment_link_id::uuid, @invoice_id::uuid, @upload_id, @created_at, sqlc.narg(request_id))
 RETURNING *;
+
+-- name: GetTransferProofByRequest :one
+-- The proof a tenant's sendPaymentProof already stored under a requestId.
+SELECT * FROM transfer_proof
+WHERE organization_id = @organization_id AND request_id = @request_id::uuid;
 
 -- name: InsertStaffTransferProof :execrows
 -- A proof a member sent for the tenant (decision 49): no link or invoice. An upload already
@@ -71,3 +76,40 @@ WHERE tp.organization_id = @organization_id AND tp.tenant_id = @tenant_id
                   WHERE r.organization_id = tp.organization_id AND r.transfer_proof_id = tp.id)
 ORDER BY tp.created_at DESC, tp.id DESC
 LIMIT @max_rows;
+
+-- name: LockUploadShared :one
+-- An upload, locked against upload:cleanup until the transaction ends: linking it as a payment's
+-- photo takes this lock first, then checks UploadDeleted in a statement of its own, so it sees a
+-- deletion the job committed while it waited.
+SELECT * FROM upload
+WHERE organization_id = @organization_id AND id = @id
+FOR SHARE;
+
+-- name: UploadDeleted :one
+-- Whether upload:cleanup deleted the upload's file.
+SELECT EXISTS (SELECT 1 FROM upload_deletion
+               WHERE organization_id = @organization_id AND upload_id = @upload_id) AS deleted;
+
+-- name: ListUnusedCashReceipts :many
+-- Clean receipt photos made before @before that back no payment and whose file is still stored,
+-- oldest first: the photos of cash that was never recorded (decision 50), for upload:cleanup.
+SELECT u.id, u.object_key
+FROM upload u
+WHERE u.organization_id = @organization_id AND u.purpose = 'cash_receipt' AND u.status = 'clean'
+  AND u.created_at < @before::timestamptz
+  AND NOT EXISTS (SELECT 1 FROM payment_receipt_photo p
+                  WHERE p.organization_id = u.organization_id AND p.upload_id = u.id)
+  AND NOT EXISTS (SELECT 1 FROM upload_deletion d
+                  WHERE d.organization_id = u.organization_id AND d.upload_id = u.id)
+ORDER BY u.created_at, u.id
+LIMIT @row_limit;
+
+-- name: InsertUploadDeletion :execrows
+-- Records that upload:cleanup deletes the upload's file, unless a payment links it as its photo
+-- (0 rows then, or when it was already recorded). Run after LockUpload, as a statement of its
+-- own, so it sees a link committed while the job waited for the lock.
+INSERT INTO upload_deletion (upload_id, organization_id, deleted_at)
+SELECT sqlc.arg(upload_id)::uuid, sqlc.arg(organization_id)::uuid, sqlc.arg(deleted_at)::timestamptz
+WHERE NOT EXISTS (SELECT 1 FROM payment_receipt_photo p
+                  WHERE p.organization_id = sqlc.arg(organization_id)::uuid AND p.upload_id = sqlc.arg(upload_id)::uuid)
+ON CONFLICT (upload_id) DO NOTHING;

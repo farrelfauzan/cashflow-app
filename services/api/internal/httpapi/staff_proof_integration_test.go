@@ -62,7 +62,7 @@ func TestStaffProofOverHTTP(t *testing.T) {
 	budiID, _ := a.rent(t, "Budi Santoso", dina.ID)
 	_, rinaToken := a.mintLink(t, rinaInvoice)
 	photo := uploadtest.Image("image/jpeg", 3_000)
-	linkProof, err := proofs.Send(ctx, rinaToken, func() (io.Reader, error) { return bytes.NewReader(photo), nil })
+	linkProof, err := proofs.Send(ctx, rinaToken, uuid.Nil, func() (io.Reader, error) { return bytes.NewReader(photo), nil })
 	require.NoError(t, err)
 	env.Clock.Advance(time.Minute)
 

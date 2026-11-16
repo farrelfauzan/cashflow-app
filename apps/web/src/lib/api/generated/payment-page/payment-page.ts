@@ -37,6 +37,7 @@ import type {
   PaymentProof,
   QrisStatus,
   SendPaymentProofBody,
+  SendPaymentProofParams,
   TelegramDeepLink
 } from '../model';
 
@@ -778,12 +779,13 @@ export const useMakePaymentPromise = <TError = ErrorType<Error | ErrorResponse>,
       return useMutation(getMakePaymentPromiseMutationOptions(options), queryClient);
     }
     /**
- * No session: the token grants it (payment:proof), and link errors answer as for getPaymentPage, checked before the file is read. The body is multipart/form-data with one part, file: a JPEG, PNG or WebP photo of at most 10 MB, judged by its content, not its name or declared type. The photo goes through our API into object storage, so the page makes no request to another origin; it stays pending until the malware scan finds it clean, and the admin sees it in Antrean cek (S6-6), where it is matched to a payment. Sending a proof records no payment and changes nothing the tenant owes. Each call sends a new proof. Limited per token and per client address together with getPaymentPage, and to 10 proofs per link per hour (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer. 503 uploads_unavailable when this server has no file storage (development without STORAGE_* settings).
+ * No session: the token grants it (payment:proof), and link errors answer as for getPaymentPage, checked before the file is read. The body is multipart/form-data with one part, file: a JPEG, PNG or WebP photo of at most 10 MB, judged by its content, not its name or declared type. The photo goes through our API into object storage, so the page makes no request to another origin; it stays pending until the malware scan finds it clean, and the admin sees it in Antrean cek (S6-6), where it is matched to a payment. Sending a proof records no payment and changes nothing the tenant owes. Each call sends a new proof, unless it carries a requestId: the page makes one per photo it sends and repeats it unchanged on a retry, and a call whose requestId already sent a proof from this link stores nothing and answers that proof with 200, without reading the file. Limited per token and per client address together with getPaymentPage, and to 10 proofs per link per hour (429 rate_limited). Responses carry Cache-Control: no-store and Referrer-Policy: no-referrer. 503 uploads_unavailable when this server has no file storage (development without STORAGE_* settings).
  * @summary The tenant sends a photo of their bank transfer (public; "Kirim bukti transfer")
  */
 export const sendPaymentProof = (
     token: string,
     sendPaymentProofBody: BodyType<SendPaymentProofBody>,
+    params?: SendPaymentProofParams,
  options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
 ) => {
 
@@ -793,7 +795,8 @@ formData.append(`file`, sendPaymentProofBody.file);
       return apiRequest<PaymentProof>(
       {url: `/t/${token}/proof`, method: 'POST',
       headers: {'Content-Type': 'multipart/form-data', },
-       data: formData, signal
+       data: formData,
+        params, signal
     },
       options);
     }
@@ -818,9 +821,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendPaymentProof>>, SendPaymentProofMutationVariables> = (props) => {
-          const {token,data} = props ?? {};
+          const {token,data,params} = props ?? {};
 
-          return  sendPaymentProof(token,data,requestOptions)
+          return  sendPaymentProof(token,data,params,requestOptions)
         }
 
 
@@ -833,7 +836,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SendPaymentProofMutationResult = NonNullable<Awaited<ReturnType<typeof sendPaymentProof>>>
     export type SendPaymentProofMutationBody = BodyType<SendPaymentProofBody>
     export type SendPaymentProofMutationError = ErrorType<Error | ErrorResponse>
-    export type SendPaymentProofMutationVariables = {token: string;data: BodyType<SendPaymentProofBody>}
+    export type SendPaymentProofMutationVariables = {token: string;data: BodyType<SendPaymentProofBody>;params?: SendPaymentProofParams}
 
     /**
  * @summary The tenant sends a photo of their bank transfer (public; "Kirim bukti transfer")

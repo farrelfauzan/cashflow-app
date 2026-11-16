@@ -191,7 +191,7 @@ func (w *world) linkID(t *testing.T, tenantID uuid.UUID) uuid.UUID {
 // sendProof sends body as a transfer proof from the tenant's link; its photo is still pending.
 func (w *world) sendProof(t *testing.T, tenantID uuid.UUID, body []byte) upload.Proof {
 	t.Helper()
-	proof, err := w.proofs.Send(context.Background(), w.token(t, tenantID), func() (io.Reader, error) { return bytes.NewReader(body), nil })
+	proof, err := w.proofs.Send(context.Background(), w.token(t, tenantID), uuid.Nil, func() (io.Reader, error) { return bytes.NewReader(body), nil })
 	require.NoError(t, err)
 	return proof
 }

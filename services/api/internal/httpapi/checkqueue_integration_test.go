@@ -78,7 +78,7 @@ func TestCheckQueueOverHTTP(t *testing.T) {
 	}
 	send := func(t *testing.T, body []byte) upload.Proof {
 		t.Helper()
-		p, err := proofs.Send(ctx, rinaToken, func() (io.Reader, error) { return bytes.NewReader(body), nil })
+		p, err := proofs.Send(ctx, rinaToken, uuid.Nil, func() (io.Reader, error) { return bytes.NewReader(body), nil })
 		require.NoError(t, err)
 		return p
 	}

@@ -1434,7 +1434,8 @@ paths:
             invalid_input (field requestId, amount, note, or photoUploadId when it is missing:
             "Foto uang tunai wajib diunggah sebelum menyimpan."); receipt_photo_upload_invalid
             (field photoUploadId) when the upload is not a cash_receipt upload for this tenant made
-            by the caller, was never completed, or is already another payment's photo. A body that
+            by the caller, was never completed, is already another payment's photo, or its file was
+            deleted because no payment used it for 30 days (upload:cleanup). A body that
             is not the documented JSON (a malformed photoUploadId included), or names an unknown
             field, is invalid_json.
           content:
@@ -1497,8 +1498,9 @@ paths:
           description: >
             invalid_input (field uploadId) for a missing or malformed uploadId;
             receipt_photo_upload_invalid (field uploadId) when the upload is not a cash_receipt
-            upload for the payment's tenant made by the caller, was never completed, or is already
-            another payment's photo. A body that is not the documented JSON, or names an unknown
+            upload for the payment's tenant made by the caller, was never completed, is already
+            another payment's photo, or its file was deleted because no payment used it for 30 days
+            (upload:cleanup). A body that is not the documented JSON, or names an unknown
             field, is invalid_json.
           content:
             application/json:
@@ -2435,7 +2437,9 @@ paths:
         completeUpload refuses it (403), since the API stored it itself. downloadUrl is present
         only when status is clean, lasts a few minutes
         (downloadExpiresAt) and always downloads the file as an attachment; ask again for a new
-        one. A pending, rejected or infected upload never has one.
+        one. A pending, rejected or infected upload never has one, nor a cash_receipt upload whose
+        file the daily upload:cleanup deleted: a clean receipt photo that backed no payment 30 days
+        after it was made.
       responses:
         "200":
           description: The upload
@@ -2854,6 +2858,14 @@ paths:
       tags: [payment-page]
       operationId: sendPaymentProof
       summary: The tenant sends a photo of their bank transfer (public; "Kirim bukti transfer")
+      parameters:
+        - name: requestId
+          in: query
+          required: false
+          description: >
+            Optional idempotency key, a UUID the page makes once per photo and sends again unchanged
+            on a retry. A requestId already used from another link is 409 request_id_reused.
+          schema: { type: string, format: uuid }
       description: >
         No session: the token grants it (payment:proof), and link errors answer as for
         getPaymentPage, checked before the file is read. The body is multipart/form-data with one
@@ -2861,8 +2873,10 @@ paths:
         or declared type. The photo goes through our API into object storage, so the page makes no
         request to another origin; it stays pending until the malware scan finds it clean, and
         the admin sees it in Antrean cek (S6-6), where it is matched to a payment. Sending a proof
-        records no payment and changes nothing the tenant owes. Each call sends a new proof.
-        Limited per token and per client address together with getPaymentPage, and to 10 proofs
+        records no payment and changes nothing the tenant owes. Each call sends a new proof, unless
+        it carries a requestId: the page makes one per photo it sends and repeats it unchanged on a
+        retry, and a call whose requestId already sent a proof from this link stores nothing and
+        answers that proof with 200, without reading the file. Limited per token and per client address together with getPaymentPage, and to 10 proofs
         per link per hour (429 rate_limited). Responses carry Cache-Control: no-store and
         Referrer-Policy: no-referrer. 503 uploads_unavailable when this server has no file storage
         (development without STORAGE_* settings).
@@ -2880,6 +2894,11 @@ paths:
                   format: binary
                   description: The photo, at most 10 MB; image/jpeg, image/png or image/webp.
       responses:
+        "200":
+          description: The requestId already sent this proof from this link; nothing was stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentProof" }
         "201":
           description: The proof was received; it waits for the scan and the admin's check
           content:
@@ -2887,14 +2906,19 @@ paths:
               schema: { $ref: "#/components/schemas/PaymentProof" }
         "400":
           description: >
-            invalid_input (field file): the body is not multipart/form-data, its first part is not
-            file, or the file is empty. upload_type_not_allowed (field file): not a JPEG, PNG or
+            invalid_input (field requestId): requestId is not a UUID. invalid_input (field file):
+            the body is not multipart/form-data, its first part is not file, or the file is empty. upload_type_not_allowed (field file): not a JPEG, PNG or
             WebP image. upload_too_large (field file): larger than 10 MB.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "404":
           description: "No working link with this token (code payment_link_not_found)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "The requestId already sent a proof from another link (code request_id_reused, field requestId)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -5007,8 +5031,8 @@ components:
         downloadUrl:
           type: string
           description: >
-            Only when status is clean (getUpload only): a short-lived link that downloads the file
-            as an attachment. Do not store it; ask getUpload again for a new one.
+            Only when status is clean and the file was not deleted as an unused receipt photo
+            (getUpload only): a short-lived link that downloads the file as an attachment. Do not store it; ask getUpload again for a new one.
         downloadExpiresAt: { type: string, format: date-time }
 
     UploadTicket:

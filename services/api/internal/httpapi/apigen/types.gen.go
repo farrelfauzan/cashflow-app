@@ -3072,7 +3072,7 @@ type Upload struct {
 	CreatedAt         time.Time  `json:"createdAt"`
 	DownloadExpiresAt *time.Time `json:"downloadExpiresAt,omitempty"`
 
-	// DownloadUrl Only when status is clean (getUpload only): a short-lived link that downloads the file as an attachment. Do not store it; ask getUpload again for a new one.
+	// DownloadUrl Only when status is clean and the file was not deleted as an unused receipt photo (getUpload only): a short-lived link that downloads the file as an attachment. Do not store it; ask getUpload again for a new one.
 	DownloadUrl *string            `json:"downloadUrl,omitempty"`
 	Id          openapi_types.UUID `json:"id"`
 
@@ -3469,6 +3469,12 @@ type GetPaymentPreviewParams struct {
 type SendPaymentProofMultipartBody struct {
 	// File The photo, at most 10 MB; image/jpeg, image/png or image/webp.
 	File openapi_types.File `json:"file"`
+}
+
+// SendPaymentProofParams defines parameters for SendPaymentProof.
+type SendPaymentProofParams struct {
+	// RequestId Optional idempotency key, a UUID the page makes once per photo and sends again unchanged on a retry. A requestId already used from another link is 409 request_id_reused.
+	RequestId *openapi_types.UUID `form:"requestId,omitempty" json:"requestId,omitempty"`
 }
 
 // RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.

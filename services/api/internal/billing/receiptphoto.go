@@ -24,7 +24,8 @@ var (
 	ErrReceiptPhotoAttached = errors.New("billing: the cash payment already has a photo")
 	// ErrReceiptPhotoInvalid means the upload cannot be the payment's photo: it is not a receipt
 	// photo for the payment's tenant made by the caller, it was never completed, or it is
-	// already another payment's photo.
+	// already another payment's photo, or its file was deleted because no payment used it for
+	// upload.UnusedAfter.
 	ErrReceiptPhotoInvalid = errors.New("billing: the upload cannot be this payment's photo")
 	// ErrReceiptPhotoRefused means the scan refused the upload (rejected or infected): take
 	// another photo.
@@ -116,11 +117,15 @@ func (s *Service) AttachReceiptPhoto(ctx context.Context, p authz.Principal, pay
 // linkReceiptPhoto links upload uploadID as a photo of cash payment paymentID from tenantID,
 // attached by member by, and answers the photo. The upload must be in org (a *NotFoundError on
 // field otherwise), a completed cash_receipt upload for the tenant made by that member and not
-// already another payment's photo (ErrReceiptPhotoInvalid), and not refused by the scan
-// (ErrReceiptPhotoRefused); a pending one is accepted and its scan decides later. Both errors carry
-// field as a *FieldError. It checks no permission: the caller has.
+// already another payment's photo nor deleted by upload:cleanup (ErrReceiptPhotoInvalid), and not
+// refused by the scan (ErrReceiptPhotoRefused); a pending one is accepted and its scan decides
+// later. Both errors carry field as a *FieldError. It checks no permission: the caller has.
+//
+// The upload's row is locked first, against upload:cleanup, which takes the same lock; the
+// deletion is checked in a statement of its own after that, so it sees one the job committed
+// while this waited.
 func linkReceiptPhoto(ctx context.Context, q *dbgen.Queries, org, by, paymentID, tenantID, uploadID uuid.UUID, field string, now time.Time) (ReceiptPhoto, error) {
-	up, err := q.GetUpload(ctx, dbgen.GetUploadParams{OrganizationID: org, ID: uploadID})
+	up, err := q.LockUploadShared(ctx, dbgen.LockUploadSharedParams{OrganizationID: org, ID: uploadID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ReceiptPhoto{}, &NotFoundError{Field: field}
 	}
@@ -129,6 +134,13 @@ func linkReceiptPhoto(ctx context.Context, q *dbgen.Queries, org, by, paymentID,
 	}
 	if up.Purpose != upload.PurposeCashReceipt || up.TenantID.UUID != tenantID ||
 		up.UploadedByStaffUserID.UUID != by || up.CompletedAt == nil {
+		return ReceiptPhoto{}, &FieldError{Field: field, Err: ErrReceiptPhotoInvalid}
+	}
+	deleted, err := q.UploadDeleted(ctx, dbgen.UploadDeletedParams{OrganizationID: org, UploadID: uploadID})
+	if err != nil {
+		return ReceiptPhoto{}, fmt.Errorf("checking the upload's file: %w", err)
+	}
+	if deleted {
 		return ReceiptPhoto{}, &FieldError{Field: field, Err: ErrReceiptPhotoInvalid}
 	}
 	if photoRefused(up.Status) {

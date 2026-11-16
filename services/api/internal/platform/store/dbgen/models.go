@@ -509,6 +509,7 @@ type TransferProof struct {
 	UploadPurpose     string
 	CreatedAt         time.Time
 	SentByStaffUserID uuid.NullUUID
+	RequestID         uuid.NullUUID
 }
 
 type Unit struct {
@@ -546,6 +547,12 @@ type Upload struct {
 	CreatedAt             time.Time
 	CompletedAt           *time.Time
 	ScannedAt             *time.Time
+}
+
+type UploadDeletion struct {
+	UploadID       uuid.UUID
+	OrganizationID uuid.UUID
+	DeletedAt      time.Time
 }
 
 type VisitOutcome struct {
