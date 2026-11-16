@@ -65,6 +65,7 @@ func TestVisitsOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		list := decode[apigen.FieldVisitList](t, body)
 		require.Equal(t, 2, list.Total)
+		require.Equal(t, 2, list.OpenTotal, "of every page, not just this one")
 		require.Equal(t, 1, list.Page)
 		require.Equal(t, 1, list.PageSize)
 		require.Len(t, list.Items, 1)
@@ -128,6 +129,7 @@ func TestVisitsOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
 		list := decode[apigen.FieldVisitList](t, body)
 		require.Equal(t, 2, list.Total)
+		require.Equal(t, 1, list.OpenTotal, "Wati's visit is done")
 		done := list.Items[1]
 		require.Equal(t, wati, done.TenantId)
 		require.Equal(t, apigen.VisitDone, done.Status)
