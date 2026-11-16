@@ -4,6 +4,7 @@ import type {
   PromiseOfferView,
 } from "@/components/client/payment-page/type";
 import type { ChipTone } from "@/components/client/tenant/type";
+import type { TenantAccount } from "@/lib/api/generated/model";
 
 // The tenant's money on the Detail penyewa page (board "iPad · Detail penyewa"). Every value is
 // ready to show; every amount in it is a field the API sent, only formatted.
@@ -142,10 +143,22 @@ export type StaffPromiseValues = PromiseDraft & {
   note: string;
 };
 
-// The "Catat janji" dialog, made from the account when it opens.
+// What "Catat janji" is made from: the tenant's account (Detail penyewa) or the field app's
+// offer with the row's outstanding (Tagihan hari ini). A whole TenantAccount fits.
+export type StaffPromiseSource = Pick<
+  TenantAccount,
+  "outstanding" | "promiseDates" | "nextInvoiceDueDate" | "activePromise"
+>;
+
+// The "Catat janji" dialog, made from the account when it opens (or "Catat janji bayar", the
+// field app's sheet, from its offer).
 export type PromiseDialogView = {
-  // The tenant's name.
+  // "Catat janji" (Detail penyewa) or "Catat janji bayar" (Tagihan hari ini).
+  title: string;
+  // The tenant's name, or on Tagihan hari ini "Mbak Sinta Dewi · Kos Melati 15".
   subtitle: string;
+  // A line above the choice ("Tanpa denda. Admin dan penyewa diberi tahu."); null for none.
+  intro: string | null;
   // "Janji aktif Sab, 12 Des, Rp1.250.000 akan diganti." while the tenant has an active promise;
   // null otherwise.
   replacesLine: string | null;
@@ -153,15 +166,27 @@ export type PromiseDialogView = {
   offer: PromiseOfferView;
   // "Bareng tagihan berikutnya" (when offered) and "Pilih tanggal sendiri".
   kindOptions: ChoiceOptionView[];
-  // The date input's bounds (YYYY-MM-DD).
+  // The date input's label and bounds (YYYY-MM-DD).
+  dateLabel: string;
   dateMin: string;
   dateMax: string;
+  // "Nominal janji (boleh dikosongkan)" or "Jumlah janji (boleh kosong)".
+  amountLabel: string;
   // "Kosongkan untuk semua sisa, Rp1.250.000."
   amountHint: string;
   // "Simpan perubahan" over an active promise, else "Simpan janji".
   primaryLabel: string;
+  // "Catatan (tidak wajib)"; the field app's sheet has none (board HP-Tagihan).
+  showNote: boolean;
   // The fields as the dialog opens: the active promise's, or empty.
   defaults: StaffPromiseValues;
+};
+
+// The classes of the promise form's header, fields and buttons for one layout.
+export type PromiseSheetClasses = {
+  header: string;
+  body: string;
+  footer: string;
 };
 
 // The "Catat janji" dialog on the page: its view, frozen when it opened, whether it shows, and

@@ -12,6 +12,8 @@ import {
 import { PROMISE_AMOUNT_LABEL } from "./utils";
 
 type PromiseAmountFieldProps = {
+  // "Nominal janji (boleh dikosongkan)" unless a staff form names it otherwise.
+  label?: string;
   inputRef: Ref<HTMLInputElement>;
   // Digits grouped with dots; empty promises everything left.
   text: string;
@@ -23,6 +25,7 @@ type PromiseAmountFieldProps = {
 
 // "Nominal janji (boleh dikosongkan)": digits only, sent as integer rupiah.
 export function PromiseAmountField({
+  label = PROMISE_AMOUNT_LABEL,
   inputRef,
   text,
   hint,
@@ -36,7 +39,7 @@ export function PromiseAmountField({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <label htmlFor={`${id}-amount`} className={FIELD_LABEL_CLASS}>
-        {PROMISE_AMOUNT_LABEL}
+        {label}
       </label>
       <RupiahInput
         inputRef={inputRef}

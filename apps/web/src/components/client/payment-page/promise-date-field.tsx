@@ -7,6 +7,8 @@ import { DateField } from "@/components/client/form/date-field";
 import { PROMISE_DATE_LABEL } from "./utils";
 
 type PromiseDateFieldProps = {
+  // "Tanggal pelunasan" unless a staff form names it otherwise ("Tanggal janji").
+  label?: string;
   inputRef: RefCallback<HTMLElement>;
   // YYYY-MM-DD, "" for none.
   value: string;
@@ -20,6 +22,7 @@ type PromiseDateFieldProps = {
 // "Tanggal pelunasan", limited to the days a promise may name. On a phone it is the device's own
 // date picker and the page loads no calendar code; on iPad and desktop, the calendar popover.
 export function PromiseDateField({
+  label = PROMISE_DATE_LABEL,
   inputRef,
   value,
   min,
@@ -30,7 +33,7 @@ export function PromiseDateField({
   return (
     <DateField
       inputRef={inputRef}
-      label={PROMISE_DATE_LABEL}
+      label={label}
       name="promisedDate"
       value={value}
       min={min}

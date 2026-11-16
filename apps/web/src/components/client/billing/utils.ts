@@ -9,8 +9,11 @@ import {
   promiseAmountText,
   promiseDraftShape,
   PROMISE_ALL_REST_TEXT,
+  PROMISE_AMOUNT_LABEL,
+  PROMISE_DATE_LABEL,
   promiseFormView,
 } from "@/components/client/payment-page/utils";
+import type { FormSheetWideLayout } from "@/components/client/form-sheet/type";
 import type { PromiseOfferView } from "@/components/client/payment-page/type";
 import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
@@ -60,7 +63,9 @@ import type {
   PaymentRowView,
   PromiseDialogView,
   PromiseHistoryRowView,
+  PromiseSheetClasses,
   PromiseStatusView,
+  StaffPromiseSource,
 } from "./type";
 
 // The tenant's money on Detail penyewa. Every amount shown is a field the API sent, only
@@ -712,10 +717,11 @@ export const PROMISE_NOTE_MAX_LENGTH = 500;
 export const PROMISE_NOTE_TOO_LONG_MESSAGE =
   "Catatan paling banyak 500 karakter.";
 
-// What a promise recorded now may name, from the account as the API sent it; null when none can
-// be made (nothing is owed, or the active promise reached its last day).
+// What a promise recorded now may name, from the account (or the field app's offer) as the API
+// sent it; null when none can be made (nothing is owed, or the active promise reached its last
+// day).
 export function staffPromiseOffer(
-  account: TenantAccount,
+  account: StaffPromiseSource,
 ): PromiseOfferView | null {
   if (account.promiseDates === null) return null;
   return {
@@ -740,7 +746,7 @@ export function activePromiseReplacesLine(promise: ActivePromise): string {
 // promise (its note is not carried over: each version has its own). Null when no promise can be
 // made now.
 export function promiseDialogView(
-  account: TenantAccount,
+  account: StaffPromiseSource,
   tenantName: string,
 ): PromiseDialogView | null {
   const offer = staffPromiseOffer(account);
@@ -752,14 +758,19 @@ export function promiseDialogView(
       ? defaultPromiseDraft(offer)
       : prefilledPromiseDraft(active, offer);
   return {
+    title: RECORD_PROMISE_TEXT,
     subtitle: tenantName,
+    intro: null,
     replacesLine: active === null ? null : activePromiseReplacesLine(active),
     offer,
     kindOptions: form.kindOptions,
+    dateLabel: PROMISE_DATE_LABEL,
     dateMin: form.dateMin,
     dateMax: form.dateMax,
+    amountLabel: PROMISE_AMOUNT_LABEL,
     amountHint: form.amountHint,
     primaryLabel: form.primaryLabel,
+    showNote: true,
     defaults: { ...draft, note: "" },
   };
 }
@@ -866,3 +877,23 @@ export const BILLING_DIALOG_BODY_CLASS =
   "flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-5 py-5 md:flex-none md:overflow-visible md:px-6 md:pb-0";
 export const BILLING_DIALOG_FOOTER_CLASS =
   "flex gap-2.5 border-t px-5 py-4 md:border-t-0 md:px-6 md:pt-[22px] md:pb-6";
+
+// The promise form's parts by where it opens from md up: the centred dialog (Detail penyewa) or
+// the right-hand drawer (Tagihan hari ini, like "Terima tunai"), where the fields scroll between a
+// fixed header and fixed buttons at every size.
+export const PROMISE_SHEET_CLASSES: Record<
+  FormSheetWideLayout,
+  PromiseSheetClasses
+> = {
+  dialog: {
+    header: BILLING_DIALOG_HEADER_CLASS,
+    body: BILLING_DIALOG_BODY_CLASS,
+    footer: BILLING_DIALOG_FOOTER_CLASS,
+  },
+  drawer: {
+    header:
+      "flex-row items-start gap-3 border-b px-5 pt-5 pb-3 md:px-6 md:pt-6 md:pb-4",
+    body: "flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-5 py-5 md:px-6",
+    footer: "flex gap-2.5 border-t px-5 py-4 md:px-6",
+  },
+};

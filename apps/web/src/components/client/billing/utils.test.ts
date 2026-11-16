@@ -1366,8 +1366,13 @@ describe("promiseDialogView", () => {
       "Yulia Kartika",
     );
     expect(view).toMatchObject({
+      title: "Catat janji",
       subtitle: "Yulia Kartika",
+      intro: null,
       replacesLine: null,
+      dateLabel: "Tanggal pelunasan",
+      amountLabel: "Nominal janji (boleh dikosongkan)",
+      showNote: true,
       dateMin: "2026-11-03",
       dateMax: "2027-01-01",
       amountHint: "Kosongkan untuk semua sisa, Rp1.250.000.",
