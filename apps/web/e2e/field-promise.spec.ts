@@ -285,7 +285,12 @@ test.describe("Karyawan", () => {
       expect(await height(control)).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
     }
     expect(
-      await fontSize(sheet.getByText(FIELD_OWN_DATE_LABEL, { exact: true })),
+      // In the choices: the empty date field's placeholder says "Pilih tanggal" too.
+      await fontSize(
+        sheet
+          .getByRole("radiogroup")
+          .getByText(FIELD_OWN_DATE_LABEL, { exact: true }),
+      ),
     ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
     await attachViewportScreenshot(page, testInfo, "field-promise-sheet");
 
