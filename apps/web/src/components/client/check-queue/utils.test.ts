@@ -64,6 +64,7 @@ import {
   readCheckKind,
   REASON_EMPTY_MESSAGE,
   rejectFormSchema,
+  sameUrlPlaceholder,
   saveOutcomeUnknown,
   senderPayee,
   shortName,
@@ -1123,5 +1124,39 @@ describe("another tenant's payment (Ganti)", () => {
     expect(saveOutcomeUnknown(refusal(400, "invalid"))).toBe(false);
     expect(saveOutcomeUnknown(refusal(403, "forbidden"))).toBe(false);
     expect(saveOutcomeUnknown(refusal(409, "request_id_reused"))).toBe(false);
+  });
+});
+
+describe("sameUrlPlaceholder", () => {
+  const url = "/orgs/o1/tenants/t2/payment-preview";
+  const placeholder = sameUrlPlaceholder<{ amount: number }>(url);
+
+  it("keeps the previous answer of the same tenant while a new amount loads", () => {
+    expect(
+      placeholder(
+        { amount: 500000 },
+        { queryKey: ["org", "o1", url, { amount: 500000 }] },
+      ),
+    ).toEqual({ amount: 500000 });
+  });
+
+  it("never shows another tenant's answer after Ganti", () => {
+    expect(
+      placeholder(
+        { amount: 500000 },
+        {
+          queryKey: [
+            "org",
+            "o1",
+            "/orgs/o1/tenants/t1/payment-preview",
+            { amount: 500000 },
+          ],
+        },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("has nothing before the first answer", () => {
+    expect(placeholder(undefined, undefined)).toBeUndefined();
   });
 });

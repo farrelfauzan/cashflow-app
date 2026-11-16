@@ -229,6 +229,19 @@ export const LINK_REFRESH_MARGIN_MS = 15_000;
 // How long typing pauses before the API previews the amount.
 export const PREVIEW_DEBOUNCE_MS = 400;
 
+// The preview's placeholder while a newer amount loads: the previous answer, but only one read from
+// the same URL, so the same tenant. After "Ganti" the previous tenant's lines would otherwise show
+// as the new payee's until the first answer arrives. Query keys are ["org", orgId, url, params].
+export function sameUrlPlaceholder<T>(
+  url: string,
+): (
+  previous: T | undefined,
+  previousQuery: { queryKey: readonly unknown[] } | undefined,
+) => T | undefined {
+  return (previous, previousQuery) =>
+    previousQuery?.queryKey[2] === url ? previous : undefined;
+}
+
 // The fields an API error can name on "Simpan pembayaran"; any other (requestId) goes to the
 // alert.
 export const PROOF_MATCH_API_FIELDS = ["amount", "receivedOn", "note"] as const;

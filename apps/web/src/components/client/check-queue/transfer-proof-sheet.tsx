@@ -191,13 +191,19 @@ export function TransferProofSheet({
         initialSearch={payee.id === sender.id ? "" : payee.name}
       />
     );
+    // Its own key: "Pakai penyewa ini" must not be the same button that becomes "Simpan
+    // pembayaran" (a submit) when the step changes during the click, or the browser would then
+    // submit the payment with that very click.
     footer = (
       <CheckSheetFooter
+        key="payee"
         readOnly={false}
         secondaryLabel={BACK_LABEL}
         onSecondary={() => setStep("review")}
         primaryLabel={PAYEE_USE}
         onPrimary={() => {
+          // An alert from a save for the previous payee does not hold for this one.
+          if (draft.id !== payee.id) match.form.clearErrors("root");
           setPayee(draft);
           setStep("review");
         }}

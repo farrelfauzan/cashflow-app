@@ -1,13 +1,18 @@
 "use client";
 
-import { keepPreviousData } from "@tanstack/react-query";
-
 import { useDebouncedValue } from "@/components/client/form/use-debounced-value";
 import { toFormError } from "@/lib/api/form-error";
-import { usePreviewTenantPayment } from "@/lib/api/generated/money/money";
+import {
+  getPreviewTenantPaymentQueryKey,
+  usePreviewTenantPayment,
+} from "@/lib/api/generated/money/money";
 
 import type { ProofPreviewView } from "./type";
-import { PREVIEW_DEBOUNCE_MS, proofPreviewView } from "./utils";
+import {
+  PREVIEW_DEBOUNCE_MS,
+  proofPreviewView,
+  sameUrlPlaceholder,
+} from "./utils";
 
 type ProofPreviewOptions = {
   orgId: string;
@@ -47,7 +52,10 @@ export function useProofPreview({
         gcTime: 0,
         retry: false,
         refetchOnWindowFocus: false,
-        placeholderData: keepPreviousData,
+        // The previous answer while a newer amount loads, never another tenant's (after "Ganti").
+        placeholderData: sameUrlPlaceholder(
+          getPreviewTenantPaymentQueryKey(orgId, tenantId)[2] as string,
+        ),
       },
     },
   );

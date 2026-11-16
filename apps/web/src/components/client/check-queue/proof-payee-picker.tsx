@@ -115,7 +115,12 @@ export function ProofPayeePicker({
             maxLength={MAX_SEARCH_LENGTH}
             aria-describedby={hintId}
             value={text}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              // A new search may not list the tenant chosen so far; the choice goes back to the
+              // sender, so "Pakai penyewa ini" never applies a tenant who is not on screen.
+              if (selected.id !== sender.id) onSelect(sender);
+            }}
             className="h-13 rounded-xl border-[1.5px] bg-card pr-3.5 pl-[46px] text-base md:text-[17px]"
           />
         </div>

@@ -657,6 +657,18 @@ test("records a proof as another tenant's payment", async ({
       expect((await previewAnswer).status()).toBe(200);
   }
 
+  // Choosing a payee only chooses: no payment goes out until "Simpan pembayaran".
+  const matchPosts: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname.endsWith(
+        `/check-queue/transfer_proof/${proof.id}/match`,
+      )
+    )
+      matchPosts.push(request.url());
+  });
+
   await choose(payeeName, true);
   await expect(payer).toContainText(payeeName);
   const noticeLine = sheet.getByText(notice);
@@ -684,6 +696,8 @@ test("records a proof as another tenant's payment", async ({
   await expect(sheet.getByText(notice)).toHaveCount(0);
   await choose(payeeName, false);
   await expect(sheet.getByText(notice)).toBeVisible();
+
+  expect(matchPosts).toEqual([]);
 
   // "Simpan pembayaran" records the transfer for the payee, once.
   const answer = page.waitForResponse(
