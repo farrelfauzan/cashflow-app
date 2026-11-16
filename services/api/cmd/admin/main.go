@@ -291,8 +291,14 @@ func generateInvoices(ctx context.Context, args []string, e env) error {
 
 	c := clock.System()
 	az := authz.NewService(st, c, log)
+	money := billing.NewService(st, az, c, log, promise.NewCloser(st, c, log))
 	sums, err := demoseed.GenerateInvoices(ctx, demoseed.GenerateDeps{
-		Store: st, Authz: az, Orgs: org.NewService(st, az), Billing: billing.NewService(st, az, c, log, promise.NewCloser(st, c, log)),
+		Store: st, Authz: az, Orgs: org.NewService(st, az), Billing: money,
+		// The broken promises are made and closed on clocks days in the past, so each gets its
+		// own promise service and closer.
+		Promises: func(pc clock.Clock) (*promise.Service, *promise.Closer) {
+			return promise.NewService(promise.Deps{Store: st, Tenants: money, Clock: pc, Log: log}), promise.NewCloser(st, pc, log)
+		},
 	}, c)
 	if err != nil {
 		return err
@@ -301,6 +307,9 @@ func generateInvoices(ctx context.Context, args []string, e env) error {
 		fmt.Fprintf(e.stdout, "%s: %d invoices created, %d payments recorded (%d leases", s.Organization, s.Invoices, s.Payments, s.Leases)
 		if s.Skipped > 0 {
 			fmt.Fprintf(e.stdout, ", %d without a price", s.Skipped)
+		}
+		if s.Promises > 0 {
+			fmt.Fprintf(e.stdout, ", %d tenants given two broken promises", s.Promises)
 		}
 		fmt.Fprintln(e.stdout, ")")
 	}

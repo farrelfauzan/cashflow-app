@@ -28,6 +28,9 @@ const (
 	OrgAnggrek = "Kost Putri Anggrek"
 	// OrgBulanan is the big one: enough rows to fill several pages of every list.
 	OrgBulanan = "Kos Bulanan Sejahtera"
+	// OrgKunjungan is the field one: three karyawan with four tenants each, all overdue, for the
+	// visit list.
+	OrgKunjungan = "Kos Kunjungan Asri"
 )
 
 // staffSpec is one staff member. Grants with an empty Property hold for the whole organization.
@@ -123,8 +126,14 @@ type orgSpec struct {
 	ChargeTypes []chargeTypeSpec
 	Tenants     []tenantSpec
 	// Payers are the three tenants whose money GenerateInvoices records: one pays in full, one
-	// pays part of the oldest invoice, one pays nothing and so stays overdue.
+	// pays part of the oldest invoice, one pays nothing and so stays overdue. An empty name
+	// records no such payment, so an organization with no payers (Payers left zero) stays unpaid.
 	Payers payerSpec
+	// BrokenPromises names tenants (by name, unique within the organization, each with a running
+	// lease that owes) who get two broken payment promises from GenerateInvoices, so they have an
+	// open broken_promises visit task at the organization's default threshold of 2. A tenant who
+	// already has any promise is left as it is.
+	BrokenPromises []string
 	// BankAccount is shown on the tenant payment page for a manual transfer (decision 38); nil
 	// leaves the organization without one, so the page's other state can be shown too.
 	BankAccount *paylink.BankAccount
@@ -317,5 +326,6 @@ func demoOrgs(c clock.Clock) []orgSpec {
 			},
 		},
 		bulananOrg(),
+		kunjunganOrg(),
 	}
 }
