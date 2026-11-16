@@ -31,7 +31,7 @@ import {
   openAccountMenu,
   openMenu,
   openSection,
-  ORG_HOME_URL,
+  ORG_LANDING_URL,
 } from "./support/shell";
 import { HENDRA, RUDI, UDIN, type SeededStaff } from "./support/staff";
 import { expectToast } from "./support/toast";
@@ -74,7 +74,7 @@ async function openOrganization(page: Page, staff: SeededStaff, name: string) {
       .getByRole("link", { name })
       .click();
   }
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(page).toHaveURL(ORG_LANDING_URL);
 }
 
 // Setup through the API, as the signed-in member (the page's cookies).
@@ -108,7 +108,7 @@ async function fontSize(page: Page, text: string): Promise<number> {
     .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
 }
 
-// The screen opened from the menu: on iPad and desktop the side menu, on the phone "Lainnya".
+// The screen opened from the menu: on iPad and desktop the side menu, on the phone its "Setor" tab.
 async function openDeposit(page: Page, testInfo: TestInfo) {
   await openSection(page, testInfo, SECTION);
   await expect(page).toHaveURL(DEPOSIT_URL);
@@ -128,14 +128,15 @@ test.describe("Karyawan", () => {
     expect(await access(page, orgId, "cash:deposit")).toBe("conditional");
 
     if (isPhone(testInfo)) {
-      // Not a tab: it lives in "Lainnya".
+      // A tab under its short name, field work first (board HP-Tab-Karyawan), so not in
+      // "Lainnya".
       await expect(
         menuSections(await openMenu(page, testInfo)).filter({
-          hasText: SECTION,
+          hasText: /^Setor$/,
         }),
-      ).toHaveCount(0);
+      ).toHaveCount(1);
       const sheet = await openAccountMenu(page, testInfo);
-      await expect(sheet.getByRole("link", { name: SECTION })).toBeVisible();
+      await expect(sheet.getByRole("link", { name: SECTION })).toHaveCount(0);
       await page.keyboard.press("Escape");
     } else {
       await expect(
@@ -175,7 +176,9 @@ test.describe("Karyawan", () => {
     );
     const tenant = tenants.items.find((t) => t.name === COLLECTED_TENANT);
     if (tenant === undefined) throw new Error(`${COLLECTED_TENANT} not seeded`);
-    const amount = Number(`1${runId()}${projectDigit(testInfo)}0`);
+    // About Rp100.000 a run, so Ayu Lestari still owes past her due date after many runs on one
+    // stack (field-today.spec.ts expects her overdue).
+    const amount = Number(`1${runId()}${projectDigit(testInfo)}`);
     const input: CashPaymentInput = {
       requestId: crypto.randomUUID(),
       amount,
@@ -205,6 +208,9 @@ test.describe("Karyawan", () => {
     );
     expect(held.items.map((item) => item.paymentId)).toContain(paymentId);
 
+    // He landed on Tagihan hari ini, which read his cash before this payment was recorded behind
+    // the app's back (through the API); reload, as opening the app again would.
+    await page.reload();
     await openDeposit(page, testInfo);
     await expect(
       page.getByText(`${cash.count} kwitansi`).first(),

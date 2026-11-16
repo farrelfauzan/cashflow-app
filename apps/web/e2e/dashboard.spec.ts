@@ -25,7 +25,12 @@ import {
 } from "./support/page-checks";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
-import { HOME_HEADING, ORG_HOME_URL } from "./support/shell";
+import {
+  FIELD_TODAY_URL,
+  HOME_HEADING,
+  ORG_HOME_URL,
+  orgHomeOf,
+} from "./support/shell";
 import { HENDRA, RUDI, type SeededStaff } from "./support/staff";
 
 // Beranda, the organization's home, against the real API and its worker. The admin test makes
@@ -352,21 +357,25 @@ test.describe("Supervisor", () => {
 test.describe("Karyawan", () => {
   test.use({ storageState: RUDI.storageState });
 
-  test("is greeted without the money, and nothing asks for it", async ({
+  test("never gets Beranda, and nothing asks for the money", async ({
     page,
   }) => {
     const asked: string[] = [];
     page.on("request", (request) => {
       if (/\/dashboard(\?|$)/.test(request.url())) asked.push(request.url());
     });
+    // Without report:read the organization opens on his first section, Tagihan hari ini (board
+    // HP-Tab-Karyawan), even from a typed address of the home.
     await page.goto("/organizations");
-    await expect(page).toHaveURL(ORG_HOME_URL);
+    await expect(page).toHaveURL(FIELD_TODAY_URL);
+    await page.goto(orgHomeOf(page.url()));
+    await expect(page).toHaveURL(FIELD_TODAY_URL);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Tagihan hari ini" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("heading", { level: 1, name: HOME_HEADING }),
-    ).toBeVisible();
-    await expect(
-      page.getByText("Pilih menu untuk mulai bekerja."),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(page.getByRole("region", { name: REGION })).toHaveCount(0);
     expect(asked).toEqual([]);
   });

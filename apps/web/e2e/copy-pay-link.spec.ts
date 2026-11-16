@@ -23,7 +23,7 @@ import {
 } from "./support/page-checks";
 import { projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
-import { ORG_HOME_URL } from "./support/shell";
+import { FIELD_TODAY_URL, ORG_HOME_URL } from "./support/shell";
 import { expectToast, toast } from "./support/toast";
 import { HENDRA, RUDI } from "./support/staff";
 
@@ -505,10 +505,11 @@ async function seededTenant(
   }
 }
 
-// Mas Rudi has one organization, so the picker goes straight in. Returns its id.
+// Mas Rudi has one organization, so the picker goes straight in, to Tagihan hari ini (he may not
+// read reports). Returns its id.
 async function openOnlyOrganization(page: Page): Promise<string> {
   await page.goto("/organizations");
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(page).toHaveURL(FIELD_TODAY_URL);
   const orgId = /\/o\/([0-9a-f-]{36})/.exec(page.url())?.[1];
   if (orgId === undefined) throw new Error("not on an organization's page");
   return orgId;

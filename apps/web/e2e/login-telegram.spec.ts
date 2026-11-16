@@ -19,7 +19,7 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import type { SeededMember } from "./support/staff";
-import { HOME_HEADING, ORG_HOME_URL } from "./support/shell";
+import { FIELD_TODAY_URL } from "./support/shell";
 
 // The login code step in a demo environment that can send login codes over Telegram (decision
 // 42): the e2e API has a fake bot with TELEGRAM_MESSAGES=linked (web.yml). Codes are read from the
@@ -139,9 +139,10 @@ test("offers Kirim lewat WhatsApp when Telegram is available, then signs in", as
   const code = await waitForLoginCode(devlogFilePath(), offset, staff.phone);
   await codeField.fill(code);
   await button(page, "Masuk").click();
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  // A karyawan without reports: the organization opens on Tagihan hari ini.
+  await expect(page).toHaveURL(FIELD_TODAY_URL);
   await expect(
-    page.getByRole("heading", { level: 1, name: HOME_HEADING }),
+    page.getByRole("heading", { level: 1, name: "Tagihan hari ini" }),
   ).toBeVisible();
   expect(outsideRequests).toEqual([]);
 });

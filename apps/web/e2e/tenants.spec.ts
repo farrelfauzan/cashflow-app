@@ -13,7 +13,7 @@ import {
   trackOutsideRequests,
 } from "./support/page-checks";
 import { minBodyFontPx } from "./support/projects";
-import { ORG_HOME_URL } from "./support/shell";
+import { ORG_LANDING_URL, orgHomeOf } from "./support/shell";
 import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 
 // "Penyewa" and "Penyewa dan sewanya": the list with its search and filters, and one tenant's
@@ -39,8 +39,8 @@ async function openTenants(page: Page, staff: SeededStaff, name: string) {
       .getByRole("link", { name })
       .click();
   }
-  await expect(page).toHaveURL(ORG_HOME_URL);
-  await page.goto(`${page.url()}/tenants`);
+  await expect(page).toHaveURL(ORG_LANDING_URL);
+  await page.goto(`${orgHomeOf(page.url())}/tenants`);
   await expect(
     page.getByRole("heading", { level: 1, name: "Penyewa" }),
   ).toBeVisible();

@@ -4,6 +4,7 @@ import { PhoneTabLink } from "@/components/client/shell/phone-tab-link";
 import { OrgMoreMenu } from "./org-more-menu";
 import type { OrgNavItem } from "./type";
 import {
+  isExactSection,
   MORE_MENU_LABEL,
   moreMenuSections,
   ORG_NAV_ICONS,
@@ -18,10 +19,10 @@ type PhoneTabBarProps = {
   canSwitch: boolean;
 };
 
-// The phone's navigation (board HP-Tab, approved 2026-11-08): a bar fixed to the bottom with
-// Beranda, Penyewa, Penagihan and Properti (each only for a member who may open it) and
-// "Lainnya" for the rest. Above the home indicator; hidden from the iPad width up, where the
-// side menu stays. On iOS it floats as a rounded glass panel 12px from the sides (board
+// The phone's navigation (boards HP-Tab, approved 2026-11-08, and HP-Tab-Karyawan): a bar fixed
+// to the bottom with up to four sections the member may open (phoneTabs: field work first, then
+// Beranda, Penyewa, Penagihan and Properti), under their short names, and "Lainnya" for the
+// rest. Above the home indicator; hidden from the iPad width up, where the side menu stays. On iOS it floats as a rounded glass panel 12px from the sides (board
 // iOS-HP-Tab, T-097e): solid with Increase Contrast; Android keeps the bar along the edge.
 export function PhoneTabBar({
   items,
@@ -43,8 +44,8 @@ export function PhoneTabBar({
             <li key={item.key} className="flex min-w-0 flex-1">
               <PhoneTabLink
                 href={item.href}
-                exact={item.key === "home"}
-                label={item.label}
+                exact={isExactSection(item.key)}
+                label={item.tabLabel}
                 icon={<Icon aria-hidden="true" />}
               />
             </li>

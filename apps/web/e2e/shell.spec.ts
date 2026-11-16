@@ -19,7 +19,8 @@ import {
   HOME_HEADING,
   isPhone,
   menuSections,
-  ORG_HOME_URL,
+  FIELD_TODAY_URL,
+  ORG_LANDING_URL,
   openAccountMenu,
   openMenu,
   openSection,
@@ -42,7 +43,8 @@ const SIDE_MENU_ADMIN = [
   "Anggota tim",
 ];
 
-// Opens the member's organization: straight in for one organization, by name for several.
+// Opens the member's organization: straight in for one organization, by name for several. It
+// lands on Beranda, or on Tagihan hari ini for a member who may not read reports.
 async function openOrganization(page: Page, staff: SeededStaff, name: string) {
   await page.goto("/organizations");
   if (staff.organizations.length > 1) {
@@ -51,7 +53,7 @@ async function openOrganization(page: Page, staff: SeededStaff, name: string) {
       .getByRole("link", { name })
       .click();
   }
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(page).toHaveURL(ORG_LANDING_URL);
 }
 
 function lainnyaButton(page: Page): Locator {
@@ -326,26 +328,36 @@ test.describe("Admin of a long list", () => {
 test.describe("Karyawan", () => {
   test.use({ storageState: RUDI.storageState });
 
-  test("sees only the sections his capabilities allow", async ({
+  test("sees only the sections his capabilities allow, field work first", async ({
     page,
   }, testInfo) => {
     await openOrganization(page, RUDI, "Kost Putri Anggrek");
+    // No report:read: no Beranda, and the organization opens on Tagihan hari ini (board
+    // HP-Tab-Karyawan).
+    await expect(page).toHaveURL(FIELD_TODAY_URL);
     const menu = await openMenu(page, testInfo);
     if (isPhone(testInfo)) {
-      // Three tabs and "Lainnya": no Properti tab, and no Anggota tim in the sheet.
-      await expectTabBar(page, testInfo, ["Beranda", "Penyewa", "Penagihan"]);
+      // Four tabs and "Lainnya", under their short names; Tagihan is current.
+      const bar = await expectTabBar(page, testInfo, [
+        "Tagihan",
+        "Setor",
+        "Penyewa",
+        "Penagihan",
+      ]);
+      expect(await currentTabs(bar)).toEqual(["Tagihan"]);
       const sheet = await openAccountMenu(page, testInfo);
       await expect(sheet.getByText(RUDI.name)).toBeVisible();
       await expect(
         sheet.getByText("Karyawan di Kost Putri Anggrek", { exact: true }),
       ).toBeVisible();
+      // Every section he may open is a tab: none in the sheet, no Anggota tim, no Beranda.
       await expect(
         sheet.getByRole("link", { name: "Anggota tim" }),
       ).toHaveCount(0);
-      // His own cash: "Setor tunai" is not a tab, so it is here.
+      await expect(sheet.getByRole("link", { name: "Beranda" })).toHaveCount(0);
       await expect(
         sheet.getByRole("link", { name: "Setor tunai" }),
-      ).toBeVisible();
+      ).toHaveCount(0);
       // One organization: no "Ganti usaha".
       await expect(
         sheet.getByRole("link", { name: "Ganti usaha" }),
@@ -353,14 +365,33 @@ test.describe("Karyawan", () => {
       await page.keyboard.press("Escape");
     } else {
       await expect(menu.getByText("Karyawan", { exact: true })).toBeVisible();
+      await expect(menuSections(menu)).toHaveText([
+        "Tagihan hari ini",
+        "Setor tunai",
+        "Penyewa",
+        "Penagihan",
+      ]);
+      await expect(
+        menuSections(menu).filter({ hasText: "Tagihan hari ini" }),
+      ).toHaveAttribute("aria-current", "page");
     }
-    // The tab bar on the phone; the side menu also lists "Setor tunai" (cash:deposit).
-    await expect(menuSections(menu)).toHaveText(
-      isPhone(testInfo)
-        ? ["Beranda", "Penyewa", "Penagihan"]
-        : ["Beranda", "Penyewa", "Penagihan", "Setor tunai"],
-    );
     await attachFullPageScreenshot(page, testInfo, "shell-karyawan");
+
+    // Setor tunai's path starts with Tagihan hari ini's: only Setor is current there.
+    await openSection(page, testInfo, "Setor tunai");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Setor tunai" }),
+    ).toBeVisible();
+    const current = (await openMenu(page, testInfo)).locator(
+      'a[aria-current="page"]',
+    );
+    await expect(current).toHaveText([
+      isPhone(testInfo) ? "Setor" : "Setor tunai",
+    ]);
+
+    // A typed address of the home goes to Tagihan hari ini too.
+    await page.goto(page.url().replace(/\/field\/deposit$/, ""));
+    await expect(page).toHaveURL(FIELD_TODAY_URL);
   });
 });
 

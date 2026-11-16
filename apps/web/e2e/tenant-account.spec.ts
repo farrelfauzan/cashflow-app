@@ -27,7 +27,7 @@ import {
 } from "./support/page-checks";
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
-import { ORG_HOME_URL } from "./support/shell";
+import { ORG_LANDING_URL, orgHomeOf } from "./support/shell";
 import { HENDRA, RUDI, SARI, type SeededStaff } from "./support/staff";
 
 // The money section of Detail penyewa ("Uang penyewa"), read-only, against the real API and its
@@ -91,8 +91,8 @@ async function openTenants(page: Page, staff: SeededStaff, name: string) {
       .getByRole("link", { name })
       .click();
   }
-  await expect(page).toHaveURL(ORG_HOME_URL);
-  await page.goto(`${page.url()}/tenants`);
+  await expect(page).toHaveURL(ORG_LANDING_URL);
+  await page.goto(`${orgHomeOf(page.url())}/tenants`);
   await expect(
     page.getByRole("heading", { level: 1, name: "Penyewa" }),
   ).toBeVisible();
