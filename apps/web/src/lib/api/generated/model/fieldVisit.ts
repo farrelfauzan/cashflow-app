@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { FieldCashPayment } from './fieldCashPayment';
+import type { FieldPromiseVersion } from './fieldPromiseVersion';
 import type { FieldUnit } from './fieldUnit';
 import type { FieldVisitStatus } from './fieldVisitStatus';
 import type { VisitOutcome } from './visitOutcome';
@@ -27,4 +28,6 @@ export interface FieldVisit {
   lastOutcome?: VisitOutcome;
   /** The caller's field cash from this tenant today that no outcome names yet, oldest first. */
   unlinkedCashToday: FieldCashPayment[];
+  /** The newest promise version the caller made for this tenant today (Asia/Jakarta) with makeFieldPromise, when no outcome names it yet; null otherwise, also when an outcome names that newest version (an older one of the day is never offered). */
+  unlinkedPromiseToday: FieldPromiseVersion | null;
 }

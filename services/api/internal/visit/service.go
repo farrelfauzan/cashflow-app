@@ -157,11 +157,21 @@ func (s *Service) rows(ctx context.Context, tx pgx.Tx, p authz.Principal, page [
 			PaymentID: c.ID, Amount: c.Net, RecordedAt: c.CreatedAt, Photo: photos[c.ID],
 		})
 	}
+	promiseRows, err := q.ListUnlinkedPromisesToday(ctx, dbgen.ListUnlinkedPromisesTodayParams{
+		OrganizationID: org, TenantIds: ids, StaffUserID: p.UserID, DayStart: start, DayEnd: end,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing today's unlinked promises: %w", err)
+	}
+	promises := map[uuid.UUID]*TodayPromise{}
+	for _, v := range promiseRows {
+		promises[v.TenantID] = todayPromise(v)
+	}
 	for _, r := range page {
 		row := Row{
 			TenantID: r.TenantID, TenantName: r.TenantName, Units: units[r.TenantID], Reasons: []Reason{},
 			Outstanding: r.Outstanding, Overdue: r.Overdue, Status: StatusDone, LastOutcome: latest[r.TenantID],
-			UnlinkedCashToday: cash[r.TenantID],
+			UnlinkedCashToday: cash[r.TenantID], UnlinkedPromiseToday: promises[r.TenantID],
 		}
 		if row.Units == nil {
 			row.Units = []billing.FieldUnit{}
@@ -370,6 +380,14 @@ func checkRefs(ctx context.Context, q *dbgen.Queries, p authz.Principal, tenantI
 		}
 	}
 	return nil
+}
+
+// todayPromise is a promise version the visit list offers for "Janji baru".
+func todayPromise(v dbgen.ListUnlinkedPromisesTodayRow) *TodayPromise {
+	return &TodayPromise{
+		VersionID: v.ID, PromiseID: v.PromiseID, Version: int(v.Version), Kind: v.Kind,
+		PromisedDate: v.PromisedDate, PromisedAmount: v.PromisedAmount, CreatedAt: v.CreatedAt,
+	}
 }
 
 // withResolved is an outcome row with the reasons of the tasks it resolved.

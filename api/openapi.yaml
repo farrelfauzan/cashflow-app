@@ -1975,7 +1975,9 @@ paths:
         of its active leases (decision 47: ended leases do not count). One row per tenant, with
         every open reason. lastOutcome is the caller's latest outcome today (a not_home row stays
         open with it); unlinkedCashToday is the field cash the caller took from the tenant today
-        that no outcome names yet ("Sudah bayar hari ini" sends one as paymentId).
+        that no outcome names yet ("Sudah bayar hari ini" sends one as paymentId);
+        unlinkedPromiseToday is the newest promise the caller made for the tenant today with
+        makeFieldPromise that no outcome names yet ("Janji baru" sends it as promiseVersionId).
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -4706,7 +4708,7 @@ components:
 
     FieldVisit:
       type: object
-      required: [tenantId, tenantName, units, reasons, outstanding, overdue, status, unlinkedCashToday]
+      required: [tenantId, tenantName, units, reasons, outstanding, overdue, status, unlinkedCashToday, unlinkedPromiseToday]
       properties:
         tenantId: { type: string, format: uuid }
         tenantName: { type: string, example: Pak Darto }
@@ -4727,6 +4729,31 @@ components:
           type: array
           description: The caller's field cash from this tenant today that no outcome names yet, oldest first.
           items: { $ref: "#/components/schemas/FieldCashPayment" }
+        unlinkedPromiseToday:
+          description: >
+            The newest promise version the caller made for this tenant today (Asia/Jakarta) with
+            makeFieldPromise, when no outcome names it yet; null otherwise, also when an outcome names
+            that newest version (an older one of the day is never offered).
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/FieldPromiseVersion"
+
+    FieldPromiseVersion:
+      type: object
+      required: [promiseVersionId, promiseId, version, kind, promisedDate, promisedAmount, createdAt]
+      description: A promise version the caller made from the field, to name in recordVisitOutcome.
+      properties:
+        promiseVersionId: { type: string, format: uuid, description: "What recordVisitOutcome takes as promiseVersionId." }
+        promiseId: { type: string, format: uuid }
+        version: { type: integer, description: "The version's number, from 1." }
+        kind: { $ref: "#/components/schemas/PromiseKind" }
+        promisedDate: { type: string, format: date }
+        promisedAmount:
+          type: integer
+          format: int64
+          nullable: true
+          description: Rupiah promised by the date; null means everything owed.
+        createdAt: { type: string, format: date-time }
 
     FieldVisitList:
       allOf:
