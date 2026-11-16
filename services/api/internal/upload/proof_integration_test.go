@@ -81,7 +81,7 @@ func (w *proofWorld) mint(t *testing.T, invoiceID uuid.UUID) (uuid.UUID, string)
 // send sends body as a transfer proof through token and requires it to succeed.
 func (w *proofWorld) send(t *testing.T, token string, body []byte) upload.Proof {
 	t.Helper()
-	proof, err := w.proofs.Send(context.Background(), token, opener(bytes.NewReader(body)))
+	proof, err := w.proofs.Send(context.Background(), token, uuid.Nil, opener(bytes.NewReader(body)))
 	require.NoError(t, err)
 	return proof
 }
@@ -319,7 +319,7 @@ func TestProofRefusals(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				before := w.counts(t)
 				file := &untouchedReader{}
-				_, err := w.proofs.Send(ctx, tc.token, opener(file))
+				_, err := w.proofs.Send(ctx, tc.token, uuid.Nil, opener(file))
 				require.ErrorIs(t, err, paylink.ErrLinkNotFound)
 				require.False(t, file.wasRead(), "the file was read")
 				require.Equal(t, before, w.counts(t), "nothing stored or recorded")
@@ -343,7 +343,7 @@ func TestProofRefusals(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				before := w.counts(t)
-				_, err := w.proofs.Send(ctx, rinaToken, opener(bytes.NewReader(tc.body)))
+				_, err := w.proofs.Send(ctx, rinaToken, uuid.Nil, opener(bytes.NewReader(tc.body)))
 				if tc.input {
 					var input *upload.InputError
 					require.ErrorAs(t, err, &input)
@@ -371,7 +371,7 @@ func TestProofRefusals(t *testing.T) {
 	t.Run("a storage failure records nothing", func(t *testing.T) {
 		before := w.counts(t)
 		w.storage.Err = uploadtest.ErrDown
-		_, err := w.proofs.Send(ctx, rinaToken, opener(bytes.NewReader(uploadtest.Image("image/jpeg", 1000))))
+		_, err := w.proofs.Send(ctx, rinaToken, uuid.Nil, opener(bytes.NewReader(uploadtest.Image("image/jpeg", 1000))))
 		w.storage.Err = nil
 		require.ErrorIs(t, err, uploadtest.ErrDown)
 		after := w.counts(t)
@@ -395,7 +395,7 @@ func TestProofRefusals(t *testing.T) {
 
 		before := w.counts(t)
 		file := &untouchedReader{}
-		_, err = w.proofs.Send(ctx, token, opener(file))
+		_, err = w.proofs.Send(ctx, token, uuid.Nil, opener(file))
 		require.ErrorIs(t, err, paylink.ErrLinkExpired)
 		require.False(t, file.wasRead())
 		require.Equal(t, before, w.counts(t))
@@ -419,7 +419,7 @@ func TestProofSlots(t *testing.T) {
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(gate.release) }) }
 	go func() {
-		p, err := proofs.Send(ctx, token, opener(gate))
+		p, err := proofs.Send(ctx, token, uuid.Nil, opener(gate))
 		done <- sent{p, err}
 	}()
 	// Whatever happens below, let the first Send finish so no goroutine outlives the test.
@@ -437,7 +437,7 @@ func TestProofSlots(t *testing.T) {
 	short, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	second := &untouchedReader{}
-	_, err := proofs.Send(short, token, opener(second))
+	_, err := proofs.Send(short, token, uuid.Nil, opener(second))
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.False(t, second.wasRead(), "it waited for a slot without reading")
 	require.Equal(t, before, w.counts(t), "the second stored nothing")
@@ -456,7 +456,7 @@ func TestProofSlots(t *testing.T) {
 	require.Equal(t, body, stored)
 
 	// The slot is free again.
-	_, err = proofs.Send(ctx, token, opener(bytes.NewReader(body)))
+	_, err = proofs.Send(ctx, token, uuid.Nil, opener(bytes.NewReader(body)))
 	require.NoError(t, err)
 }
 
@@ -721,4 +721,148 @@ func TestProofSchema(t *testing.T) {
 // opener hands Send a file that is already open.
 func opener(r io.Reader) func() (io.Reader, error) {
 	return func() (io.Reader, error) { return r, nil }
+}
+
+// countingOpener counts how often Send opens the file.
+type countingOpener struct {
+	mu    sync.Mutex
+	calls int
+	body  []byte
+}
+
+func (o *countingOpener) open() (io.Reader, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.calls++
+	return bytes.NewReader(o.body), nil
+}
+
+func (o *countingOpener) opened() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.calls
+}
+
+// TestProofRequestID: a requestId makes the tenant's retry store one proof.
+func TestProofRequestID(t *testing.T) {
+	env := testenv.New(t)
+	w := newProofWorld(t, env, "Griya Ulang", "0812877")
+	ctx := context.Background()
+	rinaLink, rinaToken := w.mint(t, w.invoice(t, w.rina))
+	_, budiToken := w.mint(t, w.invoice(t, w.budi))
+	body := uploadtest.Image("image/jpeg", 3_000)
+	proofsOf := func(t *testing.T, requestID uuid.UUID) int {
+		t.Helper()
+		return w.count(t, "SELECT count(*) FROM transfer_proof WHERE request_id = $1", requestID)
+	}
+
+	t.Run("the same requestId twice from one link stores one proof and answers it again", func(t *testing.T) {
+		requestID := uuid.New()
+		before := w.counts(t)
+		firstOpen := &countingOpener{body: body}
+		first, err := w.proofs.Send(ctx, rinaToken, requestID, firstOpen.open)
+		require.NoError(t, err)
+		require.True(t, first.Created)
+		require.Equal(t, 1, firstOpen.opened())
+
+		env.Clock.Advance(time.Minute)
+		againOpen := &countingOpener{body: body}
+		again, err := w.proofs.Send(ctx, rinaToken, requestID, againOpen.open)
+		require.NoError(t, err)
+		require.False(t, again.Created)
+		require.Zero(t, againOpen.opened(), "the repeat never opens its file")
+		require.Equal(t, first.ID, again.ID)
+		require.Equal(t, first.UploadID, again.UploadID)
+		require.Equal(t, first.TenantID, again.TenantID)
+		require.Equal(t, first.InvoiceID, again.InvoiceID)
+		require.True(t, again.CreatedAt.Equal(first.CreatedAt), "the first proof's time")
+
+		require.Equal(t, 1, proofsOf(t, requestID))
+		require.Equal(t, 1, w.count(t, "SELECT count(*) FROM transfer_proof WHERE id = $1 AND payment_link_id = $2", first.ID, rinaLink))
+		require.Equal(t, proofCounts{proofs: before.proofs + 1, uploads: before.uploads + 1, puts: before.puts + 1}, w.counts(t),
+			"one proof, one upload, one file")
+	})
+
+	t.Run("a requestId sent from another link is refused and stores nothing", func(t *testing.T) {
+		requestID := uuid.New()
+		_, err := w.proofs.Send(ctx, rinaToken, requestID, opener(bytes.NewReader(body)))
+		require.NoError(t, err)
+		before := w.counts(t)
+		file := &untouchedReader{}
+		_, err = w.proofs.Send(ctx, budiToken, requestID, opener(file))
+		require.ErrorIs(t, err, upload.ErrRequestIDReused)
+		require.False(t, file.wasRead())
+		require.Equal(t, before, w.counts(t))
+	})
+
+	t.Run("no requestId stores every proof", func(t *testing.T) {
+		before := w.counts(t)
+		a, err := w.proofs.Send(ctx, rinaToken, uuid.Nil, opener(bytes.NewReader(body)))
+		require.NoError(t, err)
+		b, err := w.proofs.Send(ctx, rinaToken, uuid.Nil, opener(bytes.NewReader(body)))
+		require.NoError(t, err)
+		require.True(t, a.Created)
+		require.True(t, b.Created)
+		require.NotEqual(t, a.ID, b.ID)
+		require.Equal(t, before.proofs+2, w.counts(t).proofs)
+		require.Zero(t, w.count(t, "SELECT count(*) FROM transfer_proof WHERE id IN ($1, $2) AND request_id IS NOT NULL", a.ID, b.ID))
+	})
+
+	t.Run("two sends racing with one requestId store one proof and both answer it", func(t *testing.T) {
+		requestID := uuid.New()
+		before := w.counts(t)
+		type sent struct {
+			proof upload.Proof
+			err   error
+		}
+		gates := []*gateReader{
+			{entered: make(chan struct{}), release: make(chan struct{}), r: bytes.NewReader(body)},
+			{entered: make(chan struct{}), release: make(chan struct{}), r: bytes.NewReader(body)},
+		}
+		done := make(chan sent, len(gates))
+		var releaseOnce sync.Once
+		release := func() {
+			releaseOnce.Do(func() {
+				for _, g := range gates {
+					close(g.release)
+				}
+			})
+		}
+		t.Cleanup(release)
+		for _, g := range gates {
+			go func() {
+				p, err := w.proofs.Send(ctx, rinaToken, requestID, opener(g))
+				done <- sent{p, err}
+			}()
+		}
+		// Both passed the check for an earlier proof and are reading their files.
+		for _, g := range gates {
+			select {
+			case <-g.entered:
+			case <-time.After(30 * time.Second):
+				t.Fatal("a Send never read its file")
+			}
+		}
+		release()
+		var got []sent
+		for range gates {
+			select {
+			case s := <-done:
+				got = append(got, s)
+			case <-time.After(30 * time.Second):
+				t.Fatal("a Send never returned")
+			}
+		}
+		for _, s := range got {
+			require.NoError(t, s.err)
+		}
+		require.Equal(t, got[0].proof.ID, got[1].proof.ID)
+		require.ElementsMatch(t, []bool{true, false}, []bool{got[0].proof.Created, got[1].proof.Created},
+			"one stored it, the other answers it")
+		require.Equal(t, 1, proofsOf(t, requestID))
+		after := w.counts(t)
+		require.Equal(t, before.proofs+1, after.proofs)
+		require.Equal(t, before.uploads+1, after.uploads, "the loser's upload rolled back")
+		require.Equal(t, before.puts+2, after.puts, "both files were stored; the loser's stays in incoming/")
+	})
 }

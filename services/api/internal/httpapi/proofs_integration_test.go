@@ -43,7 +43,18 @@ func proofForm(t *testing.T, field string, file []byte) (contentType string, bod
 // address, with origin when it is not empty.
 func postProof(t *testing.T, c *qrisCaller, token, origin, contentType string, body []byte) (result, []byte) {
 	t.Helper()
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, c.base+"/api/t/"+token+"/proof", bytes.NewReader(body))
+	return postProofQuery(t, c, token, "", origin, contentType, body)
+}
+
+// postProofQuery is postProof with query (such as "requestId=...") added to the URL when it is
+// not empty.
+func postProofQuery(t *testing.T, c *qrisCaller, token, query, origin, contentType string, body []byte) (result, []byte) {
+	t.Helper()
+	target := c.base + "/api/t/" + token + "/proof"
+	if query != "" {
+		target += "?" + query
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, target, bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Forwarded-For", c.freshIP())
@@ -234,6 +245,55 @@ func TestPaymentProofsOverHTTP(t *testing.T) {
 		resp, body := sendProofFile(t, &qrisCaller{base: off.URL, sent: 5000}, r.token, photo)
 		requirePublicHeaders(t, resp)
 		requireAPIError(t, resp, body, http.StatusServiceUnavailable, "uploads_unavailable", "")
+	})
+
+	t.Run("a requestId makes a retry answer the proof it already stored", func(t *testing.T) {
+		rina := a.rentWithLink(t, "Indah Permata")
+		budi := a.rentWithLink(t, "Agus Setiawan")
+		ct, form := proofForm(t, "file", photo)
+		requestID := uuid.NewString()
+		send := func(token, query string) (result, []byte) {
+			return postProofQuery(t, caller, token, query, origin, ct, form)
+		}
+
+		t.Run("a requestId that is not a UUID is 400 invalid_input on requestId", func(t *testing.T) {
+			for _, bad := range []string{"requestId=nope", "requestId=" + uuid.Nil.String()} {
+				before := len(storage.Keys())
+				resp, body := send(rina.token, bad)
+				requirePublicHeaders(t, resp)
+				requireAPIError(t, resp, body, http.StatusBadRequest, "invalid_input", "requestId")
+				require.Len(t, storage.Keys(), before, "nothing stored")
+			}
+		})
+
+		resp, body := send(rina.token, "requestId="+requestID)
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		first := decode[apigen.PaymentProof](t, body)
+		stored, queued := len(storage.Keys()), len(queue.Enqueued())
+
+		t.Run("a repeat is 200 with the same proof and stores nothing", func(t *testing.T) {
+			resp, body := send(rina.token, "requestId="+requestID)
+			require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+			requirePublicHeaders(t, resp)
+			again := decode[apigen.PaymentProof](t, body)
+			require.Equal(t, first.Id, again.Id)
+			require.True(t, again.CreatedAt.Equal(first.CreatedAt))
+			require.Len(t, storage.Keys(), stored)
+			require.Len(t, queue.Enqueued(), queued, "no second scan")
+		})
+
+		t.Run("the same requestId from another link is 409 request_id_reused on requestId", func(t *testing.T) {
+			resp, body := send(budi.token, "requestId="+requestID)
+			requirePublicHeaders(t, resp)
+			requireAPIError(t, resp, body, http.StatusConflict, "request_id_reused", "requestId")
+			require.Len(t, storage.Keys(), stored)
+		})
+
+		t.Run("a new requestId is a new proof", func(t *testing.T) {
+			resp, body := send(rina.token, "requestId="+uuid.NewString())
+			require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+			require.NotEqual(t, first.Id, decode[apigen.PaymentProof](t, body).Id)
+		})
 	})
 
 	// Last: it moves the clock 30 days ahead.

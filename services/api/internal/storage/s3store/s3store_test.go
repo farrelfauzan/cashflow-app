@@ -75,6 +75,7 @@ func TestKeysAreChecked(t *testing.T) {
 		_, err = s.Head(ctx, bad)
 		require.Error(t, err, bad)
 		require.Error(t, s.Move(ctx, bad, "files/a"), bad)
+		require.ErrorContains(t, s.Delete(ctx, bad), "refusing key", bad)
 	}
 }
 
@@ -124,4 +125,48 @@ func TestNotFound(t *testing.T) {
 	defer mu.Unlock()
 	require.Contains(t, seen, "HEAD /cashflow-test/files/missing")
 	require.Contains(t, seen, "PUT /cashflow-test/files/missing", "a copy is a PUT to the destination")
+}
+
+// TestDelete: Delete sends one DELETE for the key; the bucket's success (204, also for a missing
+// key) is nil and any other answer an error that carries no secret.
+func TestDelete(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{name: "a deleted or missing object", status: http.StatusNoContent},
+		{name: "a bucket failure", status: http.StatusInternalServerError, wantErr: true},
+		{name: "access denied", status: http.StatusForbidden, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var mu sync.Mutex
+			var seen []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				seen = append(seen, r.Method+" "+r.URL.Path)
+				mu.Unlock()
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(srv.Close)
+			s := newStore(t, srv.URL, "")
+			err := s.Delete(context.Background(), "files/uploads/7b0e0b2a-6f7c-4f43-9a52-3c6c1f0b9b11/00112233445566778899aabbccddeeff")
+			if tc.wantErr {
+				require.Error(t, err)
+				require.NotErrorIs(t, err, upload.ErrObjectNotFound)
+				require.NotContains(t, err.Error(), "test-secret-key")
+			} else {
+				require.NoError(t, err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			require.NotEmpty(t, seen)
+			for _, req := range seen {
+				require.Equal(t, "DELETE /cashflow-test/files/uploads/7b0e0b2a-6f7c-4f43-9a52-3c6c1f0b9b11/00112233445566778899aabbccddeeff", req)
+			}
+		})
+	}
 }
