@@ -93,10 +93,12 @@ export type PhoneChangeSheetView = {
   applyToast: string;
 };
 
-// The two states of the "Nomor baru" and "Bukti transfer" drawers: deciding, and saying why the
-// item is not used.
+// The two states of the "Nomor baru" drawer: deciding, and saying why the new number is not used.
 export type PhoneSheetStep = "review" | "reject";
-export type ProofSheetStep = PhoneSheetStep;
+
+// The states of the "Bukti transfer" drawer: deciding, saying why the proof is not a payment, and
+// choosing whose payment it is ("Pembayaran untuk siapa?", board Admin-Cek-Bukti-Ganti).
+export type ProofSheetStep = "review" | "reject" | "payee";
 
 // How a drawer answers a refused action: someone answered the item first (close, reload), the
 // new number belongs to another tenant (under the number), the proof's photo is still being
@@ -130,6 +132,23 @@ export type ProofPhotoCaption = {
   // The member who sent it for the tenant ("Dikirim oleh Mas Dimas Saputra", decision 49); null
   // when the tenant sent it from the payment page.
   sentBy: string | null;
+};
+
+// A tenant the proof can become a payment for: the proof's sender, or one found by "Cari penyewa".
+export type ProofPayee = {
+  id: string;
+  name: string;
+  // "Kamar 11, Kos Melati"; null when the tenant has no unit.
+  place: string | null;
+  // Every lease ended ("Sewa selesai"); such a tenant may still owe, so they can be chosen.
+  ended: boolean;
+};
+
+// "Cari penyewa"'s answer: the tenants found, without the proof's sender (always shown first, on
+// their own), and "3 penyewa cocok".
+export type ProofPayeeSearchView = {
+  payees: ProofPayee[];
+  heading: string;
 };
 
 // "Pembayaran dari": the tenant and "Kamar 11, Kos Melati · sisa Rp1.050.000" (the unit or the

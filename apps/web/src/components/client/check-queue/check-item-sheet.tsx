@@ -15,6 +15,8 @@ type CheckItemSheetProps = {
   canAct: boolean;
   // Whether the member may also record payments, which matching a transfer proof needs.
   canMatch: boolean;
+  // Whether the member may also search tenants, which recording a proof for another tenant needs.
+  canChangePayer: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -25,6 +27,7 @@ export function CheckItemSheet({
   item,
   canAct,
   canMatch,
+  canChangePayer,
   open,
   onOpenChange,
 }: CheckItemSheetProps) {
@@ -34,6 +37,7 @@ export function CheckItemSheet({
       <TransferProofSheet
         {...shared}
         canMatch={canMatch}
+        canChangePayer={canChangePayer}
         createdAt={item.createdAt}
         proof={item.transferProof}
       />
