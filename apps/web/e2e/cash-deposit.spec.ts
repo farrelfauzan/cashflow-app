@@ -206,6 +206,9 @@ test.describe("Karyawan", () => {
     );
     expect(held.items.map((item) => item.paymentId)).toContain(paymentId);
 
+    // He landed on Tagihan hari ini, which read his cash before this payment was recorded behind
+    // the app's back (through the API); reload, as opening the app again would.
+    await page.reload();
     await openDeposit(page, testInfo);
     await expect(
       page.getByText(`${cash.count} kwitansi`).first(),

@@ -88,6 +88,9 @@ export async function openSection(
     await menuSections(menu).filter({ hasText: section }).click();
     return;
   }
+  // The tab bar's links come with the member's capabilities; while the shell still streams in,
+  // its placeholder has none. Wait for them before deciding between a tab and "Lainnya".
+  await expect(menuSections(menu).first()).toBeVisible();
   const tab = menuSections(menu).filter({
     hasText: new RegExp(`^${tabLabel(section)}$`),
   });
