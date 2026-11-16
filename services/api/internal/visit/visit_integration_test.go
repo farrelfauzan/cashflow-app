@@ -848,6 +848,50 @@ func TestListFieldVisits(t *testing.T) {
 		require.Equal(t, noCash, rows[0].UnlinkedCashToday)
 		require.Nil(t, rows[1].LastOutcome, "yesterday's not home is not today's")
 	})
+
+	// Last, since it records outcomes the subtests above do not expect.
+	t.Run("the newest field promise of today that no outcome names is offered for Janji baru", func(t *testing.T) {
+		promiseOf := func(name string) *visit.TodayPromise {
+			t.Helper()
+			return byName(all(t, w.karyawan), name).UnlinkedPromiseToday
+		}
+		require.Nil(t, promiseOf("Agus Setiawan"), "no promise yet")
+		require.Nil(t, promiseOf("Joko Widodo"), "named by his promise outcome")
+
+		setNow(env, 2026, 11, 14, 10, 30)
+		first := w.fieldPromise(t, w.karyawan, agus, day(2026, 11, 20))
+		got := promiseOf("Agus Setiawan")
+		require.NotNil(t, got)
+		require.Equal(t, first, got.VersionID)
+		require.Equal(t, 1, got.Version)
+		require.Equal(t, promise.KindSpecificDate, got.Kind)
+		require.Equal(t, day(2026, 11, 20), got.PromisedDate)
+		require.Nil(t, got.PromisedAmount, "everything owed")
+		require.True(t, got.CreatedAt.Equal(wib(2026, 11, 14, 10, 30)), got.CreatedAt)
+		promiseID := got.PromiseID
+
+		setNow(env, 2026, 11, 14, 10, 35)
+		second := w.fieldPromise(t, w.karyawan, agus, day(2026, 11, 22))
+		got = promiseOf("Agus Setiawan")
+		require.Equal(t, second, got.VersionID, "the edit is the newest")
+		require.Equal(t, 2, got.Version)
+		require.Equal(t, promiseID, got.PromiseID, "the same promise")
+
+		setNow(env, 2026, 11, 14, 10, 40)
+		adminDay := day(2026, 11, 23)
+		_, err := w.promises.MakeForTenant(ctx, w.admin, agus.tenantID, promise.Input{Kind: promise.KindSpecificDate, PromisedDate: &adminDay})
+		require.NoError(t, err)
+		require.Equal(t, second, promiseOf("Agus Setiawan").VersionID, "the admin's version is not the member's field promise")
+
+		_, _, err = w.visits.Record(ctx, w.karyawan, agus.tenantID, promised(second))
+		require.NoError(t, err)
+		require.Nil(t, promiseOf("Agus Setiawan"), "once the newest is named, the older one of the day is not offered")
+
+		budiVersion := w.fieldPromise(t, w.karyawan, budi, day(2026, 11, 21))
+		require.Equal(t, budiVersion, promiseOf("Budi Hartono").VersionID)
+		setNow(env, 2026, 11, 15, 8, 0)
+		require.Nil(t, promiseOf("Budi Hartono"), "yesterday's promise is not today's")
+	})
 }
 
 // TestVisitIsolation: visit_outcome and visit_outcome_task are scoped to their organization like

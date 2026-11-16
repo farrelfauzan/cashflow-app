@@ -1569,6 +1569,25 @@ type FieldPromiseOffer struct {
 	PromiseDates *PromiseDates `json:"promiseDates"`
 }
 
+// FieldPromiseVersion A promise version the caller made from the field, to name in recordVisitOutcome.
+type FieldPromiseVersion struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Kind specific_date: a day the tenant chose ("Pilih tanggal sendiri"). with_next_invoice: the next invoice's due date, set by the server ("Bareng tagihan berikutnya").
+	Kind      PromiseKind        `json:"kind"`
+	PromiseId openapi_types.UUID `json:"promiseId"`
+
+	// PromiseVersionId What recordVisitOutcome takes as promiseVersionId.
+	PromiseVersionId openapi_types.UUID `json:"promiseVersionId"`
+
+	// PromisedAmount Rupiah promised by the date; null means everything owed.
+	PromisedAmount *int64             `json:"promisedAmount"`
+	PromisedDate   openapi_types.Date `json:"promisedDate"`
+
+	// Version The version's number, from 1.
+	Version int `json:"version"`
+}
+
 // FieldTodayItem defines model for FieldTodayItem.
 type FieldTodayItem struct {
 	// CashToday The cash the caller recorded from the tenant today (Asia/Jakarta) with recordCashPayment, net of corrections: amount 0, count 0 and no payments when none. Cash recorded through recordPayment is not field cash and is not counted here.
@@ -1658,6 +1677,9 @@ type FieldVisit struct {
 
 	// UnlinkedCashToday The caller's field cash from this tenant today that no outcome names yet, oldest first.
 	UnlinkedCashToday []FieldCashPayment `json:"unlinkedCashToday"`
+
+	// UnlinkedPromiseToday The newest promise version the caller made for this tenant today (Asia/Jakarta) with makeFieldPromise, when no outcome names it yet; null otherwise, also when an outcome names that newest version (an older one of the day is never offered).
+	UnlinkedPromiseToday *FieldPromiseVersion `json:"unlinkedPromiseToday"`
 }
 
 // FieldVisitList defines model for FieldVisitList.

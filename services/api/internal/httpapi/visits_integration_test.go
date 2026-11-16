@@ -17,6 +17,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/visit"
 )
@@ -80,6 +81,8 @@ func TestVisitsOverHTTP(t *testing.T) {
 		require.Equal(t, []apigen.FieldCashPayment{}, row.UnlinkedCashToday)
 		require.Nil(t, row.LastOutcome)
 		require.Contains(t, string(body), `"unlinkedCashToday":[]`)
+		require.Nil(t, row.UnlinkedPromiseToday)
+		require.Contains(t, string(body), `"unlinkedPromiseToday":null`, "present and null when there is none")
 		require.NotContains(t, string(body), `"lastOutcome"`, "absent when nothing was recorded today")
 
 		resp, body = karyawan.do(http.MethodGet, orgA+"/field/visits?page=2&pageSize=1", nil)
@@ -187,5 +190,41 @@ func TestVisitsOverHTTP(t *testing.T) {
 		got := decode[apigen.VisitOutcome](t, body)
 		require.Equal(t, ptrTo("+6281234567890"), got.NewPhone)
 		require.Equal(t, []apigen.VisitReasonCode{apigen.VisitReasonCodeUndeliverable}, got.Resolved)
+	})
+
+	t.Run("unlinkedPromiseToday carries the version Janji baru names", func(t *testing.T) {
+		dian, _ := a.rent(t, "Dian Puspita", a.karyawan.MembershipID)
+		openTask(dian, visit.TaskH7, time.Date(2026, 11, 10, 6, 0, 0, 0, clock.Jakarta))
+		promises := promise.NewService(promise.Deps{Store: env.Store, Tenants: env.Billing, Clock: env.Clock})
+		on := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+		made, err := promises.MakeFromField(context.Background(), env.Principal(t, a.o.ID, a.o.Karyawan.UserID), dian,
+			promise.Input{Kind: promise.KindSpecificDate, PromisedDate: &on})
+		require.NoError(t, err)
+		dianRow := func() apigen.FieldVisit {
+			t.Helper()
+			resp, body := karyawan.do(http.MethodGet, orgA+"/field/visits", nil)
+			require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+			for _, it := range decode[apigen.FieldVisitList](t, body).Items {
+				if it.TenantId == dian {
+					return it
+				}
+			}
+			require.FailNow(t, "Dian is not listed")
+			return apigen.FieldVisit{}
+		}
+
+		offered := dianRow().UnlinkedPromiseToday
+		require.NotNil(t, offered)
+		require.Equal(t, apigen.FieldPromiseVersion{
+			PromiseVersionId: made.Latest().ID, PromiseId: made.ID, Version: 1, Kind: apigen.SpecificDate,
+			PromisedDate: date(2026, 11, 20), CreatedAt: offered.CreatedAt,
+		}, *offered)
+		require.True(t, offered.CreatedAt.Equal(env.Clock.Now()), offered.CreatedAt)
+
+		resp, body := karyawan.do(http.MethodPost, outcomePath(dian), apigen.VisitOutcomeInput{
+			RequestId: uuid.New(), Outcome: apigen.VisitOutcomeKindPromise, PromiseVersionId: &offered.PromiseVersionId,
+		})
+		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
+		require.Nil(t, dianRow().UnlinkedPromiseToday, "named by the outcome")
 	})
 }
