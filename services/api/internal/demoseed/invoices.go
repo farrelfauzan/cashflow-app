@@ -11,11 +11,13 @@ import (
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/org"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
 
@@ -57,12 +59,20 @@ const (
 	labelPartial = "partial"
 )
 
+// PromiseFactory returns the promise service and closer that read clock c. GenerateInvoices asks
+// for them on clocks in the recent past, because a promise can only be made for a later day and
+// closed once its day has ended (see brokenPromises).
+type PromiseFactory func(c clock.Clock) (*promise.Service, *promise.Closer)
+
 // GenerateDeps are the services GenerateInvoices works through.
 type GenerateDeps struct {
 	Store   *store.Store
 	Authz   *authz.Service
 	Orgs    *org.Service
 	Billing *billing.Service
+	// Promises is needed for the organizations whose spec has BrokenPromises; nil there is an
+	// error.
+	Promises PromiseFactory
 }
 
 // Summary is what GenerateInvoices did in one demo organization.
@@ -72,6 +82,7 @@ type Summary struct {
 	Invoices     int // invoices created
 	Skipped      int // leases with no price in force
 	Payments     int // demo payments recorded by this run
+	Promises     int // broken promises recorded by this run
 }
 
 // GenerateInvoices bills the demo organizations and records their demo payments. It touches only
@@ -84,6 +95,9 @@ type Summary struct {
 //   - Partial pays about half of the tenant's oldest invoice, in cash;
 //   - Overdue pays nothing.
 //
+// A payer with no name is skipped. Then, for the tenants the spec lists in BrokenPromises, it gives
+// each two broken promises and so an open broken_promises visit task (see brokenPromises).
+//
 // Each payment has a fixed requestId, and a payment whose requestId is already stored is skipped
 // before anything is computed. That is the whole of the idempotency: the amount of the full
 // payment depends on the invoices that exist, which can grow on a later day, so a repeat would
@@ -91,7 +105,7 @@ type Summary struct {
 func GenerateInvoices(ctx context.Context, d GenerateDeps, c clock.Clock) ([]Summary, error) {
 	var out []Summary
 	for _, o := range demoOrgs(c) {
-		g := &generator{d: d, spec: o, today: tenant.Today(c)}
+		g := &generator{d: d, spec: o, clock: c, today: tenant.Today(c)}
 		sum, err := g.run(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("invoicing %s: %w", o.Name, err)
@@ -105,6 +119,7 @@ func GenerateInvoices(ctx context.Context, d GenerateDeps, c clock.Clock) ([]Sum
 type generator struct {
 	d     GenerateDeps
 	spec  orgSpec
+	clock clock.Clock
 	today time.Time       // in Asia/Jakarta
 	p     authz.Principal // the org-wide Admin who records the payments
 }
@@ -138,6 +153,9 @@ func (g *generator) run(ctx context.Context) (Summary, error) {
 		{pay.Full, labelFull, fullAmount, billing.MethodTransfer, "Pembayaran lunas (data demo)"},
 		{pay.Partial, labelPartial, partialAmount, billing.MethodCash, "Cicilan sebagian, sisanya menyusul (data demo)"},
 	} {
+		if step.name == "" {
+			continue
+		}
 		recorded, err := g.pay(ctx, step.name, step.label, step.amount, step.method, step.note)
 		if err != nil {
 			return sum, fmt.Errorf("payment of %s: %w", step.name, err)
@@ -146,7 +164,98 @@ func (g *generator) run(ctx context.Context) (Summary, error) {
 			sum.Payments++
 		}
 	}
+	if sum.Promises, err = g.brokenPromises(ctx); err != nil {
+		return sum, fmt.Errorf("broken promises: %w", err)
+	}
 	return sum, nil
+}
+
+// The days before today at which brokenPromises acts. A promise is for a day after the day it is
+// made, and CloseDue closes it once that day is before its own today, so each is made one day
+// before its date and closed one day after it:
+//
+//	today-6  promise 1 made, for today-5
+//	today-4  promise 1 closed broken; promise 2 made, for today-3
+//	today-2  promise 2 closed broken, which opens the visit task
+const (
+	firstMadeDaysAgo = 6
+	firstClosedAgo   = 4 // and when the second is made
+	secondClosedAgo  = 2
+)
+
+// brokenPromises gives each tenant named in the spec's BrokenPromises two broken promises, made
+// and closed through the promise service and Closer on clocks in the recent past (see Behind), so
+// nothing is written but through the code the app runs, and every row is dated before today. The
+// Admin makes the promises, each for the whole outstanding amount with nothing paid, so nobody
+// pays and each ends broken; the second broken one reaches the organization's threshold (2 by
+// default) and CloseDue opens the tenant's broken_promises visit task.
+//
+// It acts on tenants that have no promise at all, so a later run changes nothing; it returns how
+// many tenants it gave two. The Closer closes every due promise of the organization, which here
+// are only the ones it just made. It does not touch a tenant who owes nothing: that tenant has no
+// invoice yet and the promise service refuses, which is returned.
+func (g *generator) brokenPromises(ctx context.Context) (int, error) {
+	if len(g.spec.BrokenPromises) == 0 {
+		return 0, nil
+	}
+	if g.d.Promises == nil {
+		return 0, errors.New("the spec has broken promises but GenerateDeps has no Promises")
+	}
+	var todo []uuid.UUID
+	for _, name := range g.spec.BrokenPromises {
+		number, err := g.phoneOf(name)
+		if err != nil {
+			return 0, err
+		}
+		tenantID, err := g.tenantID(ctx, number)
+		if err != nil {
+			return 0, err
+		}
+		has, err := g.hasPromise(ctx, tenantID)
+		if err != nil {
+			return 0, fmt.Errorf("promises of %s: %w", name, err)
+		}
+		if !has {
+			todo = append(todo, tenantID)
+		}
+	}
+	if len(todo) == 0 {
+		return 0, nil
+	}
+	for _, step := range []struct{ makeAgo, closeAgo int }{
+		{firstMadeDaysAgo, firstClosedAgo}, {firstClosedAgo, secondClosedAgo},
+	} {
+		makeClock, closeClock := Behind(g.clock, step.makeAgo), Behind(g.clock, step.closeAgo)
+		maker, _ := g.d.Promises(makeClock)
+		date := tenant.Today(makeClock).AddDate(0, 0, 1)
+		for _, id := range todo {
+			_, err := maker.MakeForTenant(ctx, g.p, id, promise.Input{
+				Kind: promise.KindSpecificDate, PromisedDate: &date, Note: "Janji bayar tidak ditepati (data demo)",
+			})
+			if err != nil {
+				return 0, fmt.Errorf("making a promise: %w", err)
+			}
+		}
+		_, closer := g.d.Promises(closeClock)
+		res, err := closer.CloseDue(ctx, g.p.OrganizationID)
+		if err != nil {
+			return 0, fmt.Errorf("closing the promises: %w", err)
+		}
+		if res.Broken < len(todo) {
+			return 0, fmt.Errorf("%d promises closed broken, want %d", res.Broken, len(todo))
+		}
+	}
+	return len(todo), nil
+}
+
+// hasPromise reports whether the tenant has any promise, active or closed.
+func (g *generator) hasPromise(ctx context.Context, tenantID uuid.UUID) (bool, error) {
+	svc, _ := g.d.Promises(g.clock)
+	page, err := svc.List(ctx, g.p, tenantID, listing.Page{Number: 1, Size: 1})
+	if err != nil {
+		return false, err
+	}
+	return page.Total > 0, nil
 }
 
 // fullAmount is everything the tenant owes.
