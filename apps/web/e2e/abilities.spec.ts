@@ -5,6 +5,8 @@ import {
   isPhone,
   menuSections,
   ORG_HOME_URL,
+  ORG_LANDING_URL,
+  orgHomeOf,
   openAccountMenu,
   openMenu,
   openSection,
@@ -30,7 +32,7 @@ async function openOrganization(page: Page, staff: SeededStaff, name: string) {
       .getByRole("link", { name })
       .click();
   }
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(page).toHaveURL(ORG_LANDING_URL);
 }
 
 // Follows a menu section, as a person would, and waits for its heading.
@@ -162,7 +164,7 @@ test.describe("Karyawan", () => {
     page,
   }) => {
     await openOrganization(page, RUDI, "Kost Putri Anggrek");
-    const home = page.url();
+    const home = orgHomeOf(page.url());
     // Typed addresses: the menu does not offer these screens, and the API refuses their lists.
     await page.goto(`${home}/members`);
     await expect(

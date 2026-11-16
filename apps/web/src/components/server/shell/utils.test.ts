@@ -4,6 +4,8 @@ import type { Capability } from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
 import {
+  isExactSection,
+  landingSegment,
   moreMenuRoleLine,
   moreMenuSections,
   ORG_MENU,
@@ -21,9 +23,32 @@ function capabilities(
   }));
 }
 
+// The built-in roles' capabilities as getOrgMe answers them (internal/authz/builtin.go), only the
+// actions the menu reads.
+const KARYAWAN = capabilities({
+  "report:read": "deny",
+  "property:read": "deny",
+  "tenant:read": "conditional",
+  "invoice:read": "conditional",
+  "cash:record": "conditional",
+  "cash:deposit": "conditional",
+  "member:read": "deny",
+});
+const ADMIN = capabilities({
+  "report:read": "allow",
+  "property:read": "allow",
+  "tenant:read": "allow",
+  "invoice:read": "allow",
+  "cash:record": "deny",
+  "cash:deposit": "deny",
+  "member:read": "allow",
+});
+
 describe("visibleOrgMenu", () => {
-  it("shows every item to a member allowed everything", () => {
+  it("shows every item to a member allowed everything, field work first", () => {
     const all = capabilities({
+      "cash:record": "allow",
+      "report:read": "allow",
       "property:read": "allow",
       "tenant:read": "allow",
       "invoice:read": "allow",
@@ -33,17 +58,19 @@ describe("visibleOrgMenu", () => {
     expect(
       visibleOrgMenu(createAppAbility(all)).map((item) => item.key),
     ).toEqual([
+      "field",
+      "deposit",
       "home",
       "properties",
       "tenants",
       "billing",
-      "deposit",
       "members",
     ]);
   });
 
   it("shows an item allowed on some records", () => {
     const limited = capabilities({
+      "report:read": "conditional",
       "property:read": "conditional",
       "tenant:read": "conditional",
       "invoice:read": "conditional",
@@ -54,20 +81,21 @@ describe("visibleOrgMenu", () => {
     ).toEqual(["home", "properties", "tenants", "billing"]);
   });
 
-  it("shows Setor tunai to a member who may deposit their own cash", () => {
-    const karyawan = capabilities({
-      "tenant:read": "conditional",
-      "invoice:read": "conditional",
-      "cash:deposit": "conditional",
-      "member:read": "deny",
-    });
+  it("shows Tagihan hari ini and Setor tunai first, and no Beranda, to a karyawan", () => {
     expect(
-      visibleOrgMenu(createAppAbility(karyawan)).map((item) => item.key),
-    ).toEqual(["home", "tenants", "billing", "deposit"]);
+      visibleOrgMenu(createAppAbility(KARYAWAN)).map((item) => item.label),
+    ).toEqual(["Tagihan hari ini", "Setor tunai", "Penyewa", "Penagihan"]);
+  });
+
+  it("keeps the admin's menu, which starts at Beranda", () => {
+    expect(
+      visibleOrgMenu(createAppAbility(ADMIN)).map((item) => item.label),
+    ).toEqual(["Beranda", "Properti", "Penyewa", "Penagihan", "Anggota tim"]);
   });
 
   it("hides Setor tunai from a member denied cash:deposit", () => {
     const admin = capabilities({
+      "report:read": "allow",
       "invoice:read": "allow",
       "cash:deposit": "deny",
     });
@@ -76,10 +104,18 @@ describe("visibleOrgMenu", () => {
     ).toEqual(["home", "billing"]);
   });
 
-  it("shows only the home to a member with no matching action", () => {
+  it("shows Beranda only to a member who may read reports", () => {
+    const noReports = capabilities({
+      "report:read": "deny",
+      "tenant:read": "allow",
+    });
     expect(
-      visibleOrgMenu(createAppAbility([])).map((item) => item.key),
-    ).toEqual(["home"]);
+      visibleOrgMenu(createAppAbility(noReports)).map((item) => item.key),
+    ).toEqual(["tenants"]);
+  });
+
+  it("shows nothing to a member with no matching action", () => {
+    expect(visibleOrgMenu(createAppAbility([]))).toEqual([]);
   });
 
   it("names a catalog action for every gated item", () => {
@@ -116,16 +152,38 @@ describe("roleSummary", () => {
 });
 
 describe("phoneTabs and moreMenuSections", () => {
-  it("puts the whole menu in the tab bar's order, and Setor tunai and Anggota tim in Lainnya", () => {
-    expect(phoneTabs(ORG_MENU).map((item) => item.label)).toEqual([
+  it("gives the admin Beranda, Penyewa, Penagihan and Properti, and Anggota tim in Lainnya", () => {
+    const visible = visibleOrgMenu(createAppAbility(ADMIN));
+    expect(phoneTabs(visible).map((item) => item.label)).toEqual([
       "Beranda",
       "Penyewa",
       "Penagihan",
       "Properti",
     ]);
-    expect(moreMenuSections(ORG_MENU).map((item) => item.label)).toEqual([
-      "Setor tunai",
+    expect(moreMenuSections(visible).map((item) => item.label)).toEqual([
       "Anggota tim",
+    ]);
+  });
+
+  it("gives the karyawan Tagihan, Setor, Penyewa and Penagihan, and nothing more in Lainnya", () => {
+    const visible = visibleOrgMenu(createAppAbility(KARYAWAN));
+    expect(
+      phoneTabs(visible).map((item) => item.tabLabel ?? item.label),
+    ).toEqual(["Tagihan", "Setor", "Penyewa", "Penagihan"]);
+    expect(moreMenuSections(visible)).toEqual([]);
+  });
+
+  it("takes four tabs at most and moves the rest to Lainnya in the side menu's order", () => {
+    expect(phoneTabs(ORG_MENU).map((item) => item.key)).toEqual([
+      "field",
+      "deposit",
+      "home",
+      "tenants",
+    ]);
+    expect(moreMenuSections(ORG_MENU).map((item) => item.key)).toEqual([
+      "properties",
+      "billing",
+      "members",
     ]);
   });
 
@@ -140,6 +198,35 @@ describe("phoneTabs and moreMenuSections", () => {
     expect(moreMenuSections(visible).map((item) => item.key)).toEqual([
       "members",
     ]);
+  });
+});
+
+describe("landingSegment", () => {
+  it("keeps a member who may read reports on Beranda", () => {
+    expect(landingSegment(createAppAbility(ADMIN))).toBeNull();
+  });
+
+  it("sends a karyawan to Tagihan hari ini", () => {
+    expect(landingSegment(createAppAbility(KARYAWAN))).toBe("field");
+  });
+
+  it("sends a member without reports or field work to their first section", () => {
+    const tenantsOnly = capabilities({ "tenant:read": "conditional" });
+    expect(landingSegment(createAppAbility(tenantsOnly))).toBe("tenants");
+  });
+
+  it("keeps a member who may open nothing on the home", () => {
+    expect(landingSegment(createAppAbility([]))).toBeNull();
+  });
+});
+
+describe("isExactSection", () => {
+  it("matches the home and Tagihan hari ini on their own page only", () => {
+    expect(
+      ORG_MENU.filter((item) => isExactSection(item.key)).map(
+        (item) => item.key,
+      ),
+    ).toEqual(["field", "home"]);
   });
 });
 

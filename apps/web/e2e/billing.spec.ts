@@ -37,7 +37,7 @@ import {
 import { minBodyFontPx, projectDigit, projectWord } from "./support/projects";
 import { findOrCreateProperty } from "./support/property-fixtures";
 import { rangeText } from "../src/components/client/list/utils";
-import { ORG_HOME_URL, openSection } from "./support/shell";
+import { ORG_LANDING_URL, openSection } from "./support/shell";
 import { HENDRA, RUDI, type SeededStaff } from "./support/staff";
 
 // Penagihan, the month's invoices, against the real API and its worker. The admin test makes its
@@ -88,7 +88,7 @@ async function openOrganization(page: Page, staff: SeededStaff, name: string) {
       .getByRole("link", { name })
       .click();
   }
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  await expect(page).toHaveURL(ORG_LANDING_URL);
 }
 
 // Setup through the API, as the signed-in member (the page's cookies).

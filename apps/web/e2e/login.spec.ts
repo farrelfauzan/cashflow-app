@@ -16,6 +16,7 @@ import {
   expectNoMenu,
   HOME_HEADING,
   ORG_HOME_URL,
+  ORG_LANDING_URL,
   openAccountMenu,
 } from "./support/shell";
 import { LOGIN_PHONES, type LoginPhones } from "./support/staff";
@@ -171,7 +172,8 @@ test("returns to the next path after login, submitting with Enter", async ({
   await codeField(page).press("Enter");
 
   await loadsNext;
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  // Beranda, or Tagihan hari ini for a member without reports.
+  await expect(page).toHaveURL(ORG_LANDING_URL);
   expect(outsideRequests).toEqual([]);
 });
 
@@ -267,9 +269,13 @@ test("a wrong code shows the API's error under the field; a new code works", asy
   );
   await codeField(page).fill(newCode);
   await page.getByRole("button", { name: "Masuk", exact: true }).click();
-  await expect(page).toHaveURL(ORG_HOME_URL);
+  // Beranda, or Tagihan hari ini for a karyawan (Mas Dimas Saputra on the iPad), who may not
+  // read reports.
+  await expect(page).toHaveURL(ORG_LANDING_URL);
   await expect(
-    page.getByRole("heading", { level: 1, name: HOME_HEADING }),
+    page
+      .getByRole("heading", { level: 1, name: HOME_HEADING })
+      .or(page.getByRole("heading", { level: 1, name: "Tagihan hari ini" })),
   ).toBeVisible();
   expect(outsideRequests).toEqual([]);
 });

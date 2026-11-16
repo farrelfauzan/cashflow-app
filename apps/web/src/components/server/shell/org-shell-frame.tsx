@@ -44,6 +44,7 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
     (item) => ({
       key: item.key,
       label: item.label,
+      tabLabel: item.tabLabel ?? item.label,
       href: orgPath(orgId, item.segment),
     }),
   );

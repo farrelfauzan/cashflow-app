@@ -7,10 +7,23 @@ import {
 import { projectName } from "./projects";
 
 // The app shell from a test's point of view: on iPad and desktop the side menu is always open;
-// on the phone the sections are a tab bar at the bottom (board HP-Tab) and the rest (Anggota
-// tim, Ganti usaha, Telegram, Keluar) is in the sheet behind its "Lainnya" tab.
+// on the phone up to four sections are a tab bar at the bottom (boards HP-Tab and
+// HP-Tab-Karyawan) and the rest (Anggota tim, Ganti usaha, Telegram, Keluar) is in the sheet
+// behind its "Lainnya" tab.
 
 export const ORG_HOME_URL = /\/o\/[0-9a-f-]{36}$/;
+
+// Where opening an organization lands: Beranda for a member who may read reports, Tagihan hari
+// ini for a karyawan (the home page sends a member without reports to their first section).
+export const ORG_LANDING_URL = /\/o\/[0-9a-f-]{36}(\/field)?$/;
+export const FIELD_TODAY_URL = /\/o\/[0-9a-f-]{36}\/field$/;
+
+// The organization's home (/o/<id>) of any page inside it.
+export function orgHomeOf(url: string): string {
+  const home = /^(.*\/o\/[0-9a-f-]{36})(?:[/?#]|$)/.exec(url)?.[1];
+  if (home === undefined) throw new Error(`not an organization's page: ${url}`);
+  return home;
+}
 
 // Beranda's heading greets by the hour in Jakarta ("Selamat pagi").
 export const HOME_HEADING = /^Selamat (pagi|siang|sore|malam)$/;
@@ -36,29 +49,54 @@ export function menuSections(menu: Locator) {
 }
 
 // The sections the menu shows at this size, from the side menu's list: the phone's tab bar has
-// Beranda, Penyewa, Penagihan and Properti in that order, and Anggota tim moves to "Lainnya".
-const PHONE_TABS = ["Beranda", "Penyewa", "Penagihan", "Properti"];
+// at most four, in this order (field work first), under their short names; the rest moves to
+// "Lainnya".
+const PHONE_TAB_ORDER = [
+  "Tagihan hari ini",
+  "Setor tunai",
+  "Beranda",
+  "Penyewa",
+  "Penagihan",
+  "Properti",
+];
+const TAB_LABELS: Readonly<Record<string, string>> = {
+  "Tagihan hari ini": "Tagihan",
+  "Setor tunai": "Setor",
+};
+export function tabLabel(section: string): string {
+  return TAB_LABELS[section] ?? section;
+}
 export function expectedSections(
   testInfo: TestInfo,
   sideMenu: readonly string[],
 ): string[] {
   if (!isPhone(testInfo)) return [...sideMenu];
-  return PHONE_TABS.filter((tab) => sideMenu.includes(tab));
+  return PHONE_TAB_ORDER.filter((tab) => sideMenu.includes(tab))
+    .slice(0, 4)
+    .map(tabLabel);
 }
 
-// Follows a section of the menu, as a person would: a link in the side menu, a tab on the phone,
-// or on the phone "Anggota tim" from the "Lainnya" sheet.
+// Follows a section of the menu, as a person would: a link in the side menu, a tab on the phone
+// (under its short name), or on the phone a section that is not a tab from the "Lainnya" sheet.
 export async function openSection(
   page: Page,
   testInfo: TestInfo,
   section: string,
 ) {
-  const onPhoneInSheet = isPhone(testInfo) && !PHONE_TABS.includes(section);
-  const menu = onPhoneInSheet
-    ? await openAccountMenu(page, testInfo)
-    : await openMenu(page, testInfo);
-  const links = onPhoneInSheet ? menu.getByRole("link") : menuSections(menu);
-  await links.filter({ hasText: section }).click();
+  const menu = await openMenu(page, testInfo);
+  if (!isPhone(testInfo)) {
+    await menuSections(menu).filter({ hasText: section }).click();
+    return;
+  }
+  const tab = menuSections(menu).filter({
+    hasText: new RegExp(`^${tabLabel(section)}$`),
+  });
+  if ((await tab.count()) > 0) {
+    await tab.click();
+    return;
+  }
+  const sheet = await openAccountMenu(page, testInfo);
+  await sheet.getByRole("link").filter({ hasText: section }).click();
 }
 
 // Pages outside the staff shell (login, the tenant's payment page) have no menu and no tab bar.

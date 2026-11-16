@@ -6,7 +6,7 @@ import type { OrgSwitchOption } from "@/components/client/shell/type";
 import { OrgTile } from "@/components/server/organization/org-tile";
 
 import type { OrgNavItem } from "./type";
-import { ORG_NAV_ICONS } from "./utils";
+import { isExactSection, ORG_NAV_ICONS } from "./utils";
 
 type OrgNavProps = {
   organizationName: string;
@@ -61,7 +61,7 @@ export function OrgNav({
             <li key={item.key}>
               <OrgNavLink
                 href={item.href}
-                exact={item.key === "home"}
+                exact={isExactSection(item.key)}
                 label={item.label}
               >
                 <Icon aria-hidden="true" className="size-5 shrink-0" />
