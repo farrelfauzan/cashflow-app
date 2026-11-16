@@ -13,6 +13,12 @@ export type SeededStaff = {
   storageState: string;
 };
 
+// Kos Kunjungan Asri, the organization seed-demo makes only for the karyawan field specs: one
+// property, Kos Asri Kaliurang (Rp800.000 a month), every tenant overdue once "admin run-day" has
+// run for it. Its staff are members of it only (no picker), and each spec has its own karyawans,
+// one per size project, so no two specs record on the same tenants.
+export const VISIT_ORG = "Kos Kunjungan Asri";
+
 // Admin in Griya Sejahtera and Supervisor in Kost Putri Anggrek: one login shows both
 // organizations. Only one phone is signed in per run, shared by every project, because the API
 // allows 3 login code requests per phone per 15 minutes.
@@ -124,12 +130,9 @@ export const FITRI: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "fitri.json"),
 };
 
-// Kos Kunjungan Asri, the small organization seeded only for "Kunjungan hari ini"
-// (e2e/field-visits.spec.ts): one property, Kos Asri Kaliurang, with twelve tenants about two
-// invoices past due, so every visit is open once "admin run-day" has run for it. Each size project
-// signs in as its own karyawan, a member of this organization only (no picker), who collects from
-// four of the tenants; no other spec uses them. Signed in by the setup project only.
-export const VISIT_ORG = "Kos Kunjungan Asri";
+// "Kunjungan hari ini" (e2e/field-visits.spec.ts): twelve Kos Kunjungan Asri tenants about two
+// invoices past due, so every visit is open once "admin run-day" has run. Signed in by the setup
+// project only.
 
 // Admin of Kos Kunjungan Asri: answers the new numbers the karyawan bring back (Antrean cek).
 export const BAMBANG: SeededStaff = {
