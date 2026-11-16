@@ -15,10 +15,7 @@ import {
   FIELD_PROMISE_DATE_LABEL,
   RECORD_FIELD_PROMISE_TEXT,
 } from "../src/components/client/field-promise/utils";
-import {
-  UNSAVED_CHANGES_DISCARD,
-  UNSAVED_CHANGES_TITLE,
-} from "../src/components/client/form-sheet/utils";
+import { UNSAVED_CHANGES_TITLE } from "../src/components/client/form-sheet/utils";
 import {
   CHANGE_PROMISE_TEXT,
   DIRECTIONS_TEXT,
@@ -459,13 +456,11 @@ test.describe("Karyawan", () => {
     await expect(save(sheet)).toBeEnabled();
 
     // Closing and pressing Catat hasil again brings back the same opening, still locked.
+    // The opening is kept, so even on the phone closing it does not ask to discard.
     await sheet.getByRole("button", { name: "Tutup" }).click();
-    if (projectName(testInfo) === "phone") {
-      await page
-        .getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE })
-        .getByRole("button", { name: UNSAVED_CHANGES_DISCARD })
-        .click();
-    }
+    await expect(
+      page.getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE }),
+    ).toHaveCount(0);
     await expect(sheet).toBeHidden();
     const reopened = await openSheet(page, notHome);
     await expect(reopened.getByText(UNKNOWN_SAVE_TEXT)).toBeVisible();

@@ -20,10 +20,7 @@ import {
   UNKNOWN_SAVE_TEXT,
   WAITING_PHOTO_TEXT,
 } from "../src/components/client/field-cash/utils";
-import {
-  UNSAVED_CHANGES_DISCARD,
-  UNSAVED_CHANGES_TITLE,
-} from "../src/components/client/form-sheet/utils";
+import { UNSAVED_CHANGES_TITLE } from "../src/components/client/form-sheet/utils";
 import {
   LIST_LABEL,
   owedText,
@@ -558,13 +555,10 @@ test.describe("Karyawan", () => {
     const listPath = (url: URL) => /\/field\/today$/.test(url.pathname);
     await page.route(listPath, (route) => route.abort("internetdisconnected"));
     await sheet.getByRole("button", { name: CLOSE_LABEL }).first().click();
-    if (projectName(testInfo) === "phone") {
-      // On the phone a sheet with something typed asks first.
-      await page
-        .getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE })
-        .getByRole("button", { name: UNSAVED_CHANGES_DISCARD })
-        .click();
-    }
+    // The opening is kept, so even on the phone closing it does not ask to discard.
+    await expect(
+      page.getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE }),
+    ).toHaveCount(0);
     await expect(sheet).toBeHidden();
     await page.unroute(listPath);
     const reopened = await openSheet(page, tenant);

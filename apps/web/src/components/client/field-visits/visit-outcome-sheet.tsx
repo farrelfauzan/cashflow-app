@@ -80,7 +80,9 @@ export function VisitOutcomeSheet({
     <FormSheet
       open={open}
       onOpenChange={changeOpen}
-      dirty={record.dirty}
+      // After a lost answer the opening is kept (locked): the row's button brings it back with
+      // its requestId, so closing loses nothing and does not ask "Tutup tanpa menyimpan?".
+      dirty={record.dirty && !record.locked}
       busy={record.saving}
     >
       <FormSheetContent showCloseButton={false}>
