@@ -176,7 +176,9 @@ test.describe("Karyawan", () => {
     );
     const tenant = tenants.items.find((t) => t.name === COLLECTED_TENANT);
     if (tenant === undefined) throw new Error(`${COLLECTED_TENANT} not seeded`);
-    const amount = Number(`1${runId()}${projectDigit(testInfo)}0`);
+    // About Rp100.000 a run, so Ayu Lestari still owes past her due date after many runs on one
+    // stack (field-today.spec.ts expects her overdue).
+    const amount = Number(`1${runId()}${projectDigit(testInfo)}`);
     const input: CashPaymentInput = {
       requestId: crypto.randomUUID(),
       amount,
