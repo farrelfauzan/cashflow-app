@@ -193,47 +193,26 @@ func enqueueScan(ctx context.Context, queue ScanQueue, log *slog.Logger, org, id
 func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Read, error) {
 	org := p.OrganizationID
 	var row dbgen.Upload
+	var deleted bool
 	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
 		q := dbgen.New(tx)
 		var err error
 		if row, err = getUpload(ctx, q, org, id); err != nil {
 			return err
 		}
-		reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID.UUID)
-		if err != nil {
+		if err := s.authorizeRead(ctx, q, p, row); err != nil {
 			return err
 		}
-		if allAllowed(p, withAction(reqs, actionPaymentCheck)) || allAllowed(p, withAction(reqs, actionCashRead)) ||
-			allAllowed(p, reqs) {
-			return nil
+		if deleted, err = q.UploadDeleted(ctx, dbgen.UploadDeletedParams{OrganizationID: org, UploadID: id}); err != nil {
+			return fmt.Errorf("checking upload %s's file: %w", id, err)
 		}
-		if row.Purpose == PurposeTransferProof && row.UploadedByStaffUserID.Valid && row.UploadedByStaffUserID.UUID == p.UserID {
-			sent, err := writeRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, p.UserID)
-			if err != nil {
-				return err
-			}
-			if allAllowed(p, sent) {
-				return nil
-			}
-		}
-		return s.authz.Deny(ctx, p, reqs[0])
+		return nil
 	})
 	if err != nil {
 		return Read{}, err
 	}
 	out := Read{Upload: fromRow(row)}
-	if row.Status != StatusClean || row.ContentType == nil {
-		return out, nil
-	}
-	var deleted bool
-	if err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
-		var err error
-		deleted, err = dbgen.New(tx).UploadDeleted(ctx, dbgen.UploadDeletedParams{OrganizationID: org, UploadID: id})
-		return err
-	}); err != nil {
-		return Read{}, fmt.Errorf("checking upload %s's file: %w", id, err)
-	}
-	if deleted {
+	if row.Status != StatusClean || row.ContentType == nil || deleted {
 		return out, nil
 	}
 	now := s.clock.Now()
@@ -243,6 +222,29 @@ func (s *Service) Get(ctx context.Context, p authz.Principal, id uuid.UUID) (Rea
 	}
 	out.DownloadURL, out.DownloadExpiresAt = url, now.Add(GetURLTTL)
 	return out, nil
+}
+
+// authorizeRead checks that p may read upload row (see Get), auditing a denial.
+func (s *Service) authorizeRead(ctx context.Context, q *dbgen.Queries, p authz.Principal, row dbgen.Upload) error {
+	org := p.OrganizationID
+	reqs, err := recordRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, row.UploadedByStaffUserID.UUID)
+	if err != nil {
+		return err
+	}
+	if allAllowed(p, withAction(reqs, actionPaymentCheck)) || allAllowed(p, withAction(reqs, actionCashRead)) ||
+		allAllowed(p, reqs) {
+		return nil
+	}
+	if row.Purpose == PurposeTransferProof && row.UploadedByStaffUserID.Valid && row.UploadedByStaffUserID.UUID == p.UserID {
+		sent, err := writeRequests(ctx, q, org, row.Purpose, row.TenantID.UUID, row.ID, p.UserID)
+		if err != nil {
+			return err
+		}
+		if allAllowed(p, sent) {
+			return nil
+		}
+	}
+	return s.authz.Deny(ctx, p, reqs[0])
 }
 
 // recordRequests returns the permission checks of an upload's record, one per way a member
