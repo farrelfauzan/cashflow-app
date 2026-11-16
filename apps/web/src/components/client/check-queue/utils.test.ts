@@ -12,6 +12,8 @@ import type {
   CheckUploadInfected,
   MatchTransferProofResult,
   PaymentPreviewItem,
+  Tenant,
+  TenantList,
   TenantPaymentPreview,
   Upload,
 } from "@/lib/api/generated/model";
@@ -19,6 +21,7 @@ import { UploadPurpose } from "@/lib/api/generated/model";
 import { createAppAbility } from "@/lib/capabilities";
 
 import {
+  canChangeProofPayer,
   canCheckItems,
   canMatchProofs,
   canReadCheckQueue,
@@ -51,14 +54,21 @@ import {
   proofPhotoState,
   proofPreviewView,
   proofReady,
+  otherPayeeNotice,
+  payeeSearchQuery,
+  payeeSearchView,
+  payeeSubtitle,
   PURPOSE_LABEL,
   qrisDifferenceText,
   qrisMismatchSheetView,
   readCheckKind,
   REASON_EMPTY_MESSAGE,
   rejectFormSchema,
+  saveOutcomeUnknown,
+  senderPayee,
   shortName,
   tenantLine,
+  tenantPayee,
   uploadInfectedSheetView,
   uploadRefetchMs,
   uploadTitle,
@@ -683,7 +693,7 @@ describe("transfer proof form", () => {
       receivedOn: "2026-11-13",
       note: "  masuk ke BCA usaha  ",
     });
-    expect(proofMatchRequestBody(fields, "req-1")).toEqual({
+    expect(proofMatchRequestBody(fields, "req-1", "t-1", "t-1")).toEqual({
       requestId: "req-1",
       amount: 1_050_000,
       receivedOn: "2026-11-13",
@@ -694,13 +704,27 @@ describe("transfer proof form", () => {
       receivedOn: TODAY,
       note: " ",
     });
-    const body = proofMatchRequestBody(bare, "req-2");
+    const body = proofMatchRequestBody(bare, "req-2", "t-1", "t-1");
     expect(body).toEqual({
       requestId: "req-2",
       amount: 50_000,
       receivedOn: TODAY,
     });
     expect(body).not.toHaveProperty("tenantId");
+  });
+
+  it("names another tenant only when the payment is not the sender's", () => {
+    const fields = proofMatchSchema(TODAY).parse({
+      amount: "950.000",
+      receivedOn: TODAY,
+      note: "",
+    });
+    expect(proofMatchRequestBody(fields, "req-3", "t-1", "t-9")).toEqual({
+      requestId: "req-3",
+      tenantId: "t-9",
+      amount: 950_000,
+      receivedOn: TODAY,
+    });
   });
 
   it("asks for an amount above zero and a day not in the future", () => {
@@ -841,13 +865,15 @@ describe("transfer proof photo", () => {
 
 describe("transfer proof payer and preview", () => {
   it("names the tenant, the unit and what they owe", () => {
-    expect(proofPayerView(WATI, 1_050_000)).toEqual({
+    const wati = senderPayee(WATI);
+    const joko = senderPayee(NO_UNIT);
+    expect(proofPayerView(wati, 1_050_000)).toEqual({
       name: "Bu Wati Handayani",
       detail: "Kamar 11, Kos Melati · sisa Rp1.050.000",
     });
-    expect(proofPayerView(WATI, undefined).detail).toBe("Kamar 11, Kos Melati");
-    expect(proofPayerView(NO_UNIT, 0).detail).toBe("sisa Rp0");
-    expect(proofPayerView(NO_UNIT, undefined).detail).toBeNull();
+    expect(proofPayerView(wati, undefined).detail).toBe("Kamar 11, Kos Melati");
+    expect(proofPayerView(joko, 0).detail).toBe("sisa Rp0");
+    expect(proofPayerView(joko, undefined).detail).toBeNull();
   });
 
   it("lists what the API says the amount pays", () => {
@@ -916,5 +942,186 @@ describe("transfer proof payer and preview", () => {
       title: "Pembayaran disimpan",
       description: "Rp1.050.000 dari Bu Wati Handayani",
     });
+  });
+});
+
+function lease(
+  unitLabel: string,
+  propertyName: string,
+  status: "active" | "ended",
+): Tenant["leases"][number] {
+  return {
+    id: `l-${unitLabel}`,
+    tenantId: "t",
+    unitId: `u-${unitLabel}`,
+    unitLabel,
+    propertyId: "p-1",
+    propertyName,
+    startDate: "2026-01-01",
+    enteredOn: "2026-01-01",
+    billedFrom: "2026-01-01",
+    termMonths: 1,
+    depositAmount: 0,
+    status,
+    charges: [],
+    meteredChargeTypes: [],
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+}
+
+function tenant(id: string, name: string, leases: Tenant["leases"]): Tenant {
+  return {
+    id,
+    name,
+    phone: "+6281300000000",
+    note: "",
+    leases,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+}
+
+const RINA = tenant("t-7", "Bu Rina Wulandari", [
+  lease("Kamar 7", "Kos Melati", "active"),
+]);
+const ARINA = tenant("t-3", "Pak Arina Saputra", [
+  lease("Kamar 3", "Kos Melati", "ended"),
+]);
+
+describe("another tenant's payment (Ganti)", () => {
+  it("is offered to a member who matches proofs and reads tenants", () => {
+    const matcher = [
+      { action: "payment:check", access: "allow" },
+      { action: "payment:record", access: "allow" },
+    ] satisfies Capability[];
+    expect(
+      canChangeProofPayer(
+        ability([...matcher, { action: "tenant:read", access: "allow" }]),
+      ),
+    ).toBe(true);
+    // A member limited to some properties searches the tenants they may see.
+    expect(
+      canChangeProofPayer(
+        ability([...matcher, { action: "tenant:read", access: "conditional" }]),
+      ),
+    ).toBe(true);
+    expect(
+      canChangeProofPayer(
+        ability([...matcher, { action: "tenant:read", access: "deny" }]),
+      ),
+    ).toBe(false);
+    expect(
+      canChangeProofPayer(
+        ability([
+          { action: "payment:check", access: "allow" },
+          { action: "tenant:read", access: "allow" },
+        ]),
+      ),
+    ).toBe(false);
+  });
+
+  it("makes the sender a payee, ended when every lease ended", () => {
+    expect(senderPayee(WATI)).toEqual({
+      id: "t-1",
+      name: "Bu Wati Handayani",
+      place: "Kamar 11, Kos Melati",
+      ended: false,
+    });
+    expect(senderPayee(NO_UNIT).ended).toBe(false);
+    expect(
+      senderPayee({
+        ...NO_UNIT,
+        units: [
+          { unitLabel: "Ruko 2", propertyName: "Ruko Sudirman", active: false },
+        ],
+      }),
+    ).toEqual({
+      id: "t-2",
+      name: "Pak Joko Susilo",
+      place: "Ruko 2, Ruko Sudirman",
+      ended: true,
+    });
+  });
+
+  it("makes a found tenant a payee, marking an ended lease", () => {
+    expect(tenantPayee(RINA)).toEqual({
+      id: "t-7",
+      name: "Bu Rina Wulandari",
+      place: "Kamar 7, Kos Melati",
+      ended: false,
+    });
+    expect(tenantPayee(ARINA).ended).toBe(true);
+    expect(tenantPayee(tenant("t-8", "Dhea Ananda Putri", []))).toEqual({
+      id: "t-8",
+      name: "Dhea Ananda Putri",
+      place: null,
+      ended: false,
+    });
+    // One running lease is enough to not be ended.
+    expect(
+      tenantPayee(
+        tenant("t-9", "Mbak Rina Kartika", [
+          lease("Rumah 2", "Kontrakan Mawar", "active"),
+          lease("Rumah 1", "Kontrakan Mawar", "ended"),
+        ]),
+      ).ended,
+    ).toBe(false);
+  });
+
+  it("lists the tenants found without the sender, counting the matches", () => {
+    const page = (items: Tenant[], total: number): TenantList => ({
+      items,
+      page: 1,
+      pageSize: 20,
+      total,
+    });
+    const withSender = payeeSearchView(
+      page([RINA, tenant("t-1", "Bu Wati Handayani", []), ARINA], 3),
+      "t-1",
+    );
+    expect(withSender.payees.map((each) => each.id)).toEqual(["t-7", "t-3"]);
+    expect(withSender.heading).toBe("2 penyewa cocok");
+    // More than one page: the API's total counts them all.
+    expect(payeeSearchView(page([RINA, ARINA], 45), "t-1").heading).toBe(
+      "45 penyewa cocok",
+    );
+    expect(payeeSearchView(page([], 0), "t-1")).toEqual({
+      payees: [],
+      heading: "0 penyewa cocok",
+    });
+  });
+
+  it("searches only once something is typed", () => {
+    expect(payeeSearchQuery("")).toBeNull();
+    expect(payeeSearchQuery("   ")).toBeNull();
+    expect(payeeSearchQuery(" rina ")).toBe("rina");
+  });
+
+  it("names the sender in the picker's subtitle", () => {
+    expect(payeeSubtitle(WATI)).toBe(
+      "Bukti dari Bu Wati Handayani · Kamar 11, Kos Melati",
+    );
+  });
+
+  it("says the sender's invoices do not change when it is someone else's", () => {
+    expect(otherPayeeNotice(WATI, "t-1")).toBeNull();
+    expect(otherPayeeNotice(WATI, "t-7")).toBe(
+      "Bukan pengirim bukti (Bu Wati Handayani). Tagihan Bu Wati tidak berubah.",
+    );
+    expect(otherPayeeNotice({ ...WATI, name: "Kartika Dewi" }, "t-7")).toBe(
+      "Bukan pengirim bukti (Kartika Dewi). Tagihan Kartika Dewi tidak berubah.",
+    );
+  });
+
+  it("treats only a missing answer or a server failure as a save that may have gone through", () => {
+    const refusal = (status: number, code: string) =>
+      new ApiError({ status, code, message: "x" });
+    expect(saveOutcomeUnknown(refusal(0, "network_error"))).toBe(true);
+    expect(saveOutcomeUnknown(refusal(502, "unknown"))).toBe(true);
+    expect(saveOutcomeUnknown(new Error("boom"))).toBe(true);
+    expect(saveOutcomeUnknown(refusal(400, "invalid"))).toBe(false);
+    expect(saveOutcomeUnknown(refusal(403, "forbidden"))).toBe(false);
+    expect(saveOutcomeUnknown(refusal(409, "request_id_reused"))).toBe(false);
   });
 });

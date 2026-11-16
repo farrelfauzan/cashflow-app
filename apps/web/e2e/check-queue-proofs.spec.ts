@@ -10,6 +10,14 @@ import {
   NOTE_EMPTY_MESSAGE,
   NOTE_LABEL,
   NO_RECEIPT_TEXT,
+  PAYEE_ENDED_TAG,
+  PAYEE_INTRO,
+  PAYEE_SEARCH_LABEL,
+  PAYEE_SENDER_LABEL,
+  PAYEE_TITLE,
+  PAYEE_USE,
+  PAYER_CHANGE,
+  PAYER_LABEL,
   PREVIEW_LEAD,
   PROOF_AMOUNT_LABEL,
   PROOF_CALLOUT,
@@ -19,6 +27,7 @@ import {
   PROOF_REJECT_TITLE,
   PROOF_SUBMIT,
   PROOF_TITLE,
+  shortName,
   UPLOAD_SUBMIT,
   UPLOAD_TITLE,
   ZOOM_LABEL,
@@ -46,11 +55,14 @@ import {
 import { call, runId } from "./support/payment-page";
 import {
   clearTenantProofs,
+  ENDED_LEASE_TENANT,
   infectedPhoto,
   INFECTED_TENANTS,
   linkToken,
   MATCH_TENANT,
   NOT_PAYMENT_TENANTS,
+  OTHER_PAYER_PAYEES,
+  OTHER_PAYER_SENDERS,
   sendProof,
   tenantFor,
   transferPhoto,
@@ -540,5 +552,177 @@ test("lists an infected proof as a refused file", async ({
   await expectToast(page, "Ditandai sudah ditangani", "create");
   await expect(sheet).toHaveCount(0);
   await expect(row).toHaveCount(0);
+  expect(outsideRequests).toEqual([]);
+});
+
+// "Ganti" (boards Admin-Cek-Bukti-Ganti and Admin-Cek-Bukti-Lain): the proof one tenant sent
+// becomes another tenant's transfer (a relative paid for them). Each project has its own sender
+// and payee, so the money of one project never meets another's.
+test("records a proof as another tenant's payment", async ({
+  page,
+}, testInfo) => {
+  const outsideRequests = trackOutsideRequests(page);
+  const orgId = await openBulanan(page);
+  const senderName = tenantFor(OTHER_PAYER_SENDERS, testInfo);
+  const payeeName = tenantFor(OTHER_PAYER_PAYEES, testInfo);
+  const sender = await tenantNamed(page, orgId, senderName);
+  const payee = await tenantNamed(page, orgId, payeeName);
+  await clearTenantProofs(page.request, orgId, payee.id);
+  const { proof } = await sentProof(page, testInfo, orgId, sender, false);
+  const senderBefore = await account(page, orgId, sender.id);
+
+  await openRow(page, orgId, "transfer_proof", senderName, ["Siap dicek"]);
+  const sheet = page.getByRole("dialog", { name: PROOF_TITLE, exact: true });
+  await expect(sheet).toBeVisible();
+  await expectLoaded(
+    sheet.getByRole("img", { name: `${ZOOM_TITLE} dari ${senderName}` }),
+  );
+  const payer = sheet.getByRole("region", { name: PAYER_LABEL });
+  await expect(payer).toContainText(senderName);
+  const notice = `Bukan pengirim bukti (${senderName}). Tagihan ${shortName(senderName)} tidak berubah.`;
+  await expect(sheet.getByText(notice)).toHaveCount(0);
+
+  // The amount, day and note typed first stay through the picker.
+  const amount = 7_000 + Number(runId());
+  const amountField = sheet.getByLabel(PROOF_AMOUNT_LABEL);
+  await amountField.fill(String(amount));
+  const typedAmount = formatRupiah(amount).slice(2);
+  await expect(amountField).toHaveValue(typedAmount);
+  const note = `Dibayar keluarga, run ${runId()}`;
+  await sheet.getByLabel(PROOF_NOTE_LABEL).fill(note);
+
+  const change = payer.getByRole("button", { name: PAYER_CHANGE });
+  await expectTall(change, 44);
+  await change.click();
+  const picker = page.getByRole("dialog", { name: PAYEE_TITLE });
+  await expect(picker).toBeVisible();
+  await expect(picker).toContainText(`Bukti dari ${senderName}`);
+  await expect(picker.getByText(PAYEE_INTRO)).toBeVisible();
+  // The sender is always first, and chosen.
+  const senderGroup = picker.getByRole("group", { name: PAYEE_SENDER_LABEL });
+  await expect(
+    senderGroup.getByRole("radio", { name: new RegExp(senderName) }),
+  ).toBeChecked();
+  const search = picker.getByLabel(PAYEE_SEARCH_LABEL);
+  await expectTall(search, 44);
+
+  // A tenant whose lease ended can be found and chosen: they may still owe.
+  await search.fill(ENDED_LEASE_TENANT);
+  const ended = picker.locator("label").filter({ hasText: ENDED_LEASE_TENANT });
+  await expect(ended).toHaveCount(1);
+  await expect(ended).toContainText(PAYEE_ENDED_TAG);
+  await expectTall(ended, 44);
+  await expect(picker).toContainText(/\d+ penyewa cocok/i);
+  expect(
+    await fontSize(ended.getByText(ENDED_LEASE_TENANT)),
+  ).toBeGreaterThanOrEqual(minBodyFontPx(testInfo));
+  await ended.click();
+  await expect(
+    picker.getByRole("radio", { name: new RegExp(ENDED_LEASE_TENANT) }),
+  ).toBeChecked();
+  await attachViewportScreenshot(page, testInfo, "check-queue-proof-payee");
+
+  // "Kembali" changes nothing: still the sender, the amount as typed, no notice.
+  await picker.getByRole("button", { name: "Kembali" }).click();
+  await expect(sheet).toBeVisible();
+  await expect(payer).toContainText(senderName);
+  await expect(payer).not.toContainText(ENDED_LEASE_TENANT);
+  await expect(sheet.getByText(notice)).toHaveCount(0);
+  await expect(amountField).toHaveValue(typedAmount);
+
+  // Choosing the payee: the frame turns orange with the line about the sender, and the preview is
+  // the payee's.
+  async function choose(name: string, waitForPreview: boolean) {
+    await payer.getByRole("button", { name: PAYER_CHANGE }).click();
+    await expect(picker).toBeVisible();
+    await picker.getByLabel(PAYEE_SEARCH_LABEL).fill(name);
+    const option = picker.getByRole("radio", { name: new RegExp(name) });
+    await expect(option).toHaveCount(1);
+    await option.click();
+    await expect(option).toBeChecked();
+    const use = picker.getByRole("button", { name: PAYEE_USE });
+    await expectTall(use, 44);
+    const previewAnswer = waitForPreview
+      ? page.waitForResponse((response) => {
+          const url = new URL(response.url());
+          return (
+            url.pathname.endsWith(`/tenants/${payee.id}/payment-preview`) &&
+            url.searchParams.get("amount") === String(amount)
+          );
+        })
+      : null;
+    await use.click();
+    await expect(sheet).toBeVisible();
+    if (previewAnswer !== null)
+      expect((await previewAnswer).status()).toBe(200);
+  }
+
+  await choose(payeeName, true);
+  await expect(payer).toContainText(payeeName);
+  const noticeLine = sheet.getByText(notice);
+  await expect(noticeLine).toBeVisible();
+  expect(await fontSize(noticeLine)).toBeGreaterThanOrEqual(
+    minBodyFontPx(testInfo),
+  );
+  const frame = payer.locator("div").first();
+  expect(
+    await frame.evaluate((el) => getComputedStyle(el).borderTopColor),
+  ).toBe(await noticeLine.evaluate((el) => getComputedStyle(el).color));
+  await expect(amountField).toHaveValue(typedAmount);
+  await expect(sheet.getByLabel(PROOF_NOTE_LABEL)).toHaveValue(note);
+  await expect(sheet.getByText(PREVIEW_LEAD)).toBeVisible();
+  await attachViewportScreenshot(page, testInfo, "check-queue-proof-other");
+
+  // Choosing the sender again takes the notice away; then the payee once more.
+  await payer.getByRole("button", { name: PAYER_CHANGE }).click();
+  await picker
+    .getByRole("group", { name: PAYEE_SENDER_LABEL })
+    .getByRole("radio")
+    .click();
+  await picker.getByRole("button", { name: PAYEE_USE }).click();
+  await expect(payer).toContainText(senderName);
+  await expect(sheet.getByText(notice)).toHaveCount(0);
+  await choose(payeeName, false);
+  await expect(sheet.getByText(notice)).toBeVisible();
+
+  // "Simpan pembayaran" records the transfer for the payee, once.
+  const answer = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith(
+        `/check-queue/transfer_proof/${proof.id}/match`,
+      ),
+  );
+  await sheet.getByRole("button", { name: PROOF_SUBMIT }).click();
+  const response = await answer;
+  expect(response.status(), await response.text()).toBe(201);
+  expect(response.request().postDataJSON()).toEqual({
+    requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    tenantId: payee.id,
+    amount,
+    receivedOn: jakartaToday(new Date()),
+    note,
+  });
+  const result = (await response.json()) as MatchTransferProofResult;
+  expect(result.resolution.outcome).toBe("matched");
+  await expectToast(
+    page,
+    "Pembayaran disimpan",
+    "create",
+    `${formatRupiah(amount)} dari ${payeeName}`,
+  );
+  await expect(sheet).toHaveCount(0);
+
+  // The payee has the transfer; the sender's account did not change.
+  const payeeAfter = await account(page, orgId, payee.id);
+  expect(
+    payeeAfter.payments.find((each) => each.id === result.payment.payment.id),
+  ).toMatchObject({ method: "transfer", amount });
+  const senderAfter = await account(page, orgId, sender.id);
+  expect(
+    senderAfter.payments.find((each) => each.id === result.payment.payment.id),
+  ).toBeUndefined();
+  expect(senderAfter.outstanding).toBe(senderBefore.outstanding);
+  expect(senderAfter.payments).toHaveLength(senderBefore.payments.length);
   expect(outsideRequests).toEqual([]);
 });

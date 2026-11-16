@@ -37,6 +37,8 @@ import {
   type DismissCheckItemRequest,
   type MatchTransferProofRequest,
   type MatchTransferProofResult,
+  type Tenant,
+  type TenantList,
   type TenantPaymentPreview,
   type Upload,
   type UploadPurpose,
@@ -57,6 +59,8 @@ import type {
   PhoneChangeSheetView,
   ProofMatchOutput,
   ProofMatchValues,
+  ProofPayee,
+  ProofPayeeSearchView,
   ProofPayerView,
   ProofPhotoCaption,
   ProofPhotoState,
@@ -181,6 +185,23 @@ export const PHOTO_ERROR_TEXT = "Foto tidak bisa dimuat.";
 export const PROOF_CALLOUT =
   "Cek mutasi rekening usaha dulu. Simpan hanya jika uangnya sudah masuk.";
 export const PAYER_LABEL = "Pembayaran dari";
+export const PAYER_CHANGE = "Ganti";
+// "Pembayaran untuk siapa?" (board Admin-Cek-Bukti-Ganti): the proof becomes another tenant's
+// payment, for instance a relative who paid for them.
+export const PAYEE_TITLE = "Pembayaran untuk siapa?";
+export const PAYEE_INTRO =
+  "Pakai ini bila uangnya untuk tagihan penyewa lain, misalnya keluarga yang membayarkan.";
+export const PAYEE_SEARCH_LABEL = "Cari penyewa";
+export const PAYEE_SEARCH_HINT = "Nama, unit, atau nomor HP.";
+export const PAYEE_SENDER_LABEL = "Pengirim bukti";
+export const PAYEE_ENDED_TAG = "Sewa selesai";
+export const PAYEE_EMPTY_TEXT = "Tidak ada penyewa yang cocok.";
+export const PAYEE_USE = "Pakai penyewa ini";
+// A group of the picker ("PENGIRIM BUKTI", "3 PENYEWA COCOK"), in small capitals.
+export const PAYEE_GROUP_HEADING_CLASS =
+  "text-sm font-bold tracking-wide text-muted-foreground uppercase md:text-[15px]";
+// The tenants one search shows; a longer list is narrowed by typing more.
+export const PAYEE_SEARCH_PAGE_SIZE = 20;
 export const PROOF_AMOUNT_LABEL = "Jumlah yang masuk";
 export const PROOF_DATE_LABEL = "Tanggal masuk";
 export const PROOF_FIELDS_HINT =
@@ -236,6 +257,13 @@ export function canCheckItems(ability: AppAbility): boolean {
 // shows it and the API decides per tenant). Never by role name.
 export function canMatchProofs(ability: AppAbility): boolean {
   return canCheckItems(ability) && canRecordPayment(ability);
+}
+
+// "Ganti" (the proof becomes another tenant's payment) for a member who may match proofs and
+// search the tenants (tenant:read, "conditional" too: the search lists only the tenants they may
+// see, and the API checks payment:record on the chosen one). Never by role name.
+export function canChangeProofPayer(ability: AppAbility): boolean {
+  return canMatchProofs(ability) && ability.can("read", "tenant");
 }
 
 // The screen is for a member who may answer the items or read cash for the whole organization
@@ -661,18 +689,21 @@ export function proofMatchDefaults(today: string): ProofMatchValues {
   return { amount: "", receivedOn: today, note: "" };
 }
 
-// The request body: the proof's own tenant (no tenantId), the integer amount, the day, and the
-// trimmed note only when there is one. One requestId per opening of the drawer, sent again
-// unchanged on a retry.
+// The request body: the integer amount, the day, the trimmed note only when there is one, and the
+// payee's tenantId only when it is not the proof's own tenant (the API's default). One requestId
+// per opening of the drawer, sent again unchanged on a retry.
 export function proofMatchRequestBody(
   fields: ProofMatchOutput,
   requestId: string,
+  proofTenantId: string,
+  payeeId: string,
 ): MatchTransferProofRequest {
   const body: MatchTransferProofRequest = {
     requestId,
     amount: fields.amount,
     receivedOn: fields.receivedOn,
   };
+  if (payeeId !== proofTenantId) body.tenantId = payeeId;
   if (fields.note !== "") body.note = fields.note;
   return body;
 }
@@ -768,17 +799,86 @@ export function proofPhotoCaption(
 // "Pembayaran dari": the tenant, their unit and what they still owe over all their invoices
 // (getTenantAccount's outstanding), each left out while unknown.
 export function proofPayerView(
-  tenant: CheckTenant,
+  payee: ProofPayee,
   outstanding: number | undefined,
 ): ProofPayerView {
   const parts = [
-    unitPlace(tenant),
+    payee.place,
     outstanding === undefined ? null : `sisa ${formatRupiah(outstanding)}`,
   ].filter((part) => part !== null);
   return {
-    name: tenant.name,
+    name: payee.name,
     detail: parts.length === 0 ? null : parts.join(" · "),
   };
+}
+
+// The proof's sender as a payee: their first unit (active ones first); ended when every unit's
+// lease ended.
+export function senderPayee(tenant: CheckTenant): ProofPayee {
+  return {
+    id: tenant.id,
+    name: tenant.name,
+    place: unitPlace(tenant),
+    ended:
+      tenant.units.length > 0 && tenant.units.every((unit) => !unit.active),
+  };
+}
+
+// A tenant listTenants found, as a payee: the unit of their first lease (the API lists active ones
+// first); ended when every lease ended. A tenant without a lease is not ended.
+export function tenantPayee(tenant: Tenant): ProofPayee {
+  const lease = tenant.leases[0];
+  return {
+    id: tenant.id,
+    name: tenant.name,
+    place:
+      lease === undefined ? null : `${lease.unitLabel}, ${lease.propertyName}`,
+    ended:
+      tenant.leases.length > 0 &&
+      tenant.leases.every((each) => each.status === "ended"),
+  };
+}
+
+// The search's answer without the sender, who is always listed first on their own, and how many
+// tenants matched (the API's total, less the sender when the search found them).
+export function payeeSearchView(
+  list: TenantList,
+  senderId: string,
+): ProofPayeeSearchView {
+  const others = list.items.filter((tenant) => tenant.id !== senderId);
+  const total = list.total - (others.length < list.items.length ? 1 : 0);
+  return {
+    payees: others.map(tenantPayee),
+    heading: `${total} penyewa cocok`,
+  };
+}
+
+// The search to send: the typed text, trimmed; null (no request) while it is empty.
+export function payeeSearchQuery(text: string): string | null {
+  const q = text.trim();
+  return q === "" ? null : q;
+}
+
+// "Pembayaran untuk siapa?"'s subtitle: "Bukti dari Bu Wati Handayani · Kamar 11, Kos Melati".
+export function payeeSubtitle(sender: CheckTenant): string {
+  return `Bukti dari ${tenantLine(sender)}`;
+}
+
+// Under "Pembayaran dari" when the payment is not the sender's: "Bukan pengirim bukti (Bu Wati
+// Handayani). Tagihan Bu Wati tidak berubah." Null when it is the sender's own.
+export function otherPayeeNotice(
+  sender: CheckTenant,
+  payeeId: string,
+): string | null {
+  if (payeeId === sender.id) return null;
+  return `Bukan pengirim bukti (${sender.name}). Tagihan ${shortName(sender.name)} tidak berubah.`;
+}
+
+// Whether a failed "Simpan pembayaran" may still have recorded the payment: no answer arrived, or
+// the server failed. Any other refusal is the API's answer, and nothing was recorded.
+export function saveOutcomeUnknown(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status === 0 || error.status >= 500;
 }
 
 // The API's preview as lines: which invoice becomes "Lunas", which is paid in part and what it
