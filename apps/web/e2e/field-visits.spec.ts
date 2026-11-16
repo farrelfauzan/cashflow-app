@@ -16,6 +16,7 @@ import {
   RECORD_FIELD_PROMISE_TEXT,
 } from "../src/components/client/field-promise/utils";
 import { UNSAVED_CHANGES_TITLE } from "../src/components/client/form-sheet/utils";
+import { visitsTabAccessibleName } from "../src/components/client/shell/utils";
 import {
   CHANGE_PROMISE_TEXT,
   DIRECTIONS_TEXT,
@@ -371,6 +372,17 @@ test.describe("Karyawan", () => {
         await expect(doneRows(page).nth(index)).toContainText(chip.label);
       }
     }
+
+    // The phone's Kunjungan tab carries the count still open (board HP-Kunjungan), in its name;
+    // iPad and desktop have the side menu, with no count.
+    expect(list.openTotal).toBe(open.length);
+    const countedTab = page.getByRole("link", {
+      name: visitsTabAccessibleName("Kunjungan", list.openTotal),
+      exact: true,
+    });
+    await expect(countedTab).toHaveCount(
+      projectName(testInfo) === "phone" ? 1 : 0,
+    );
 
     // Readable sizes, as on Tagihan hari ini.
     const firstVisit = open[0];
