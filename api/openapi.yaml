@@ -4689,6 +4689,11 @@ components:
         tenantId: { type: string, format: uuid }
         outcome: { $ref: "#/components/schemas/VisitOutcomeKind" }
         paymentId: { type: string, format: uuid }
+        amount:
+          type: integer
+          format: int64
+          description: For paid only, with paymentId; what that cash counts now, net of its corrections.
+          example: 950000
         promiseVersionId: { type: string, format: uuid }
         newPhone: { type: string, description: "E.164.", example: "+6281234567890" }
         note: { type: string }

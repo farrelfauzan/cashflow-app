@@ -12,6 +12,8 @@ export interface VisitOutcome {
   tenantId: string;
   outcome: VisitOutcomeKind;
   paymentId?: string;
+  /** For paid only, with paymentId; what that cash counts now, net of its corrections. */
+  amount?: number;
   promiseVersionId?: string;
   /** E.164. */
   newPhone?: string;

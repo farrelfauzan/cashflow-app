@@ -92,10 +92,12 @@ type Input struct {
 
 // Outcome is a recorded outcome.
 type Outcome struct {
-	ID               uuid.UUID
-	TenantID         uuid.UUID
-	Outcome          string
-	PaymentID        uuid.UUID // uuid.Nil unless paid
+	ID        uuid.UUID
+	TenantID  uuid.UUID
+	Outcome   string
+	PaymentID uuid.UUID // uuid.Nil unless paid
+	// Amount is what the payment counts now, net of its corrections; 0 unless paid.
+	Amount           int64
 	PromiseVersionID uuid.UUID // uuid.Nil unless promise
 	NewPhone         string    // E.164, empty unless number_changed
 	Note             string

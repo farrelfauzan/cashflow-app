@@ -3157,7 +3157,11 @@ type User struct {
 
 // VisitOutcome defines model for VisitOutcome.
 type VisitOutcome struct {
-	Id openapi_types.UUID `json:"id"`
+	// Amount For paid only, with paymentId; what that cash counts now, net of its corrections.
+	//
+	// Example: 950000
+	Amount *int64             `json:"amount,omitempty"`
+	Id     openapi_types.UUID `json:"id"`
 
 	// NewPhone E.164.
 	//

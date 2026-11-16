@@ -281,6 +281,9 @@ func (s *Service) Record(ctx context.Context, p authz.Principal, tenantID uuid.U
 			return fmt.Errorf("recording the visit outcome: %w", err)
 		}
 		out = fromRow(row)
+		if out.Amount, err = paidAmount(ctx, q, org, row); err != nil {
+			return err
+		}
 		out.Resolved = []string{}
 		for _, t := range tasks {
 			if !answers(in.Outcome, t.Reason) {
@@ -372,9 +375,27 @@ func checkRefs(ctx context.Context, q *dbgen.Queries, p authz.Principal, tenantI
 	return nil
 }
 
-// withResolved is an outcome row with the reasons of the tasks it resolved.
+// paidAmount is what a paid outcome's payment counts now, net of its corrections; 0 for any other
+// outcome.
+func paidAmount(ctx context.Context, q *dbgen.Queries, org uuid.UUID, row dbgen.VisitOutcome) (int64, error) {
+	if !row.PaymentID.Valid {
+		return 0, nil
+	}
+	net, err := q.GetPaymentNet(ctx, dbgen.GetPaymentNetParams{OrganizationID: org, ID: row.PaymentID.UUID})
+	if err != nil {
+		return 0, fmt.Errorf("loading the outcome's payment amount: %w", err)
+	}
+	return net, nil
+}
+
+// withResolved is an outcome row with the reasons of the tasks it resolved and, when paid, what its
+// payment counts now.
 func withResolved(ctx context.Context, q *dbgen.Queries, org uuid.UUID, row dbgen.VisitOutcome) (Outcome, error) {
 	out := fromRow(row)
+	var err error
+	if out.Amount, err = paidAmount(ctx, q, org, row); err != nil {
+		return Outcome{}, err
+	}
 	reasons, err := q.ListVisitOutcomeTaskReasons(ctx, dbgen.ListVisitOutcomeTaskReasonsParams{OrganizationID: org, OutcomeID: row.ID})
 	if err != nil {
 		return Outcome{}, fmt.Errorf("listing what the outcome resolved: %w", err)
