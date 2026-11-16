@@ -4,6 +4,8 @@ package demoseed_test
 
 import (
 	"context"
+	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,10 +16,27 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/authz"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/demoseed"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/promise"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/reminder"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/testenv"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/visit"
 )
+
+// generateDeps are the services GenerateInvoices works through, with promise services on any clock
+// it asks for.
+func generateDeps(env *testenv.Env) demoseed.GenerateDeps {
+	return demoseed.GenerateDeps{
+		Store: env.Store, Authz: env.Authz, Orgs: env.Orgs, Billing: env.Billing,
+		Promises: func(c clock.Clock) (*promise.Service, *promise.Closer) {
+			return promise.NewService(promise.Deps{Store: env.Store, Tenants: env.Billing, Clock: c}),
+				promise.NewCloser(env.Store, c, slog.New(slog.DiscardHandler))
+		},
+	}
+}
 
 // moneyTables are the tables generate-invoices writes to.
 var moneyTables = []string{"invoice", "invoice_line", "payment", "payment_allocation", "correction"}
@@ -80,7 +99,7 @@ func TestGenerateInvoices(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	gen := demoseed.GenerateDeps{Store: env.Store, Authz: env.Authz, Orgs: env.Orgs, Billing: env.Billing}
+	gen := generateDeps(env)
 
 	t.Run("it needs the demo organizations to exist", func(t *testing.T) {
 		_, err := demoseed.GenerateInvoices(ctx, gen, env.Clock)
@@ -98,6 +117,8 @@ func TestGenerateInvoices(t *testing.T) {
 		demoseed.OrgGriya:   {"0812-0001-0002", [3]string{"Budi Santoso", "Citra Lestari", "Eko Prasetyo"}},
 		demoseed.OrgAnggrek: {"0812-0002-0002", [3]string{"Nadia Putri", "Ayu Lestari", "Rina Wulandari"}},
 		demoseed.OrgBulanan: {"0812-0009-0027", [3]string{"Andi Pratama", "Bagas Aditya", "Cahyo Wibowo"}},
+		// Nobody pays here; TestGenerateInvoicesKunjungan covers it.
+		demoseed.OrgKunjungan: {"0812-0010-0002", [3]string{}},
 	} {
 		m, err := env.Orgs.FindForMember(ctx, a.phone, name)
 		require.NoError(t, err)
@@ -106,12 +127,17 @@ func TestGenerateInvoices(t *testing.T) {
 
 	first, err := demoseed.GenerateInvoices(ctx, gen, env.Clock)
 	require.NoError(t, err)
-	require.Len(t, first, 3)
+	require.Len(t, first, 4)
 
 	for _, sum := range first {
 		a := orgs[sum.Organization]
 		t.Run(sum.Organization, func(t *testing.T) {
 			require.Positive(t, sum.Invoices, "the seeded leases were billed")
+			if sum.Organization == demoseed.OrgKunjungan {
+				require.Zero(t, sum.Payments, "nobody pays here")
+				require.Equal(t, 3, sum.Promises)
+				return
+			}
 			require.Equal(t, 2, sum.Payments, "a full and a partial payment")
 			require.Zero(t, sum.Skipped)
 
@@ -167,6 +193,7 @@ func TestGenerateInvoices(t *testing.T) {
 		for _, sum := range second {
 			require.Zero(t, sum.Invoices, sum.Organization)
 			require.Zero(t, sum.Payments, sum.Organization)
+			require.Zero(t, sum.Promises, sum.Organization)
 		}
 		for name, a := range orgs {
 			require.Equal(t, before[name], moneyCounts(t, env, a.admin.OrganizationID), name)
@@ -184,11 +211,184 @@ func TestGenerateInvoices(t *testing.T) {
 		for _, sum := range later {
 			require.Positive(t, sum.Invoices, sum.Organization)
 			require.Zero(t, sum.Payments, sum.Organization)
+			require.Zero(t, sum.Promises, sum.Organization)
 		}
 		for name, a := range orgs {
 			after := moneyCounts(t, env, a.admin.OrganizationID)
 			require.Greater(t, after["invoice"], before[name]["invoice"], name)
 			require.Equal(t, before[name]["payment"], after["payment"], name)
+		}
+	})
+}
+
+// openVisitTasks is the reasons of the open visit tasks of each tenant (by name) in the
+// organization.
+func openVisitTasks(t *testing.T, env *testenv.Env, org uuid.UUID) map[string][]string {
+	t.Helper()
+	ctx := context.Background()
+	out := map[string][]string{}
+	err := env.Store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT t.name, v.reason FROM visit_task v JOIN tenant t ON t.id = v.tenant_id
+			WHERE v.resolved_at IS NULL ORDER BY t.name, v.reason`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name, reason string
+			if err := rows.Scan(&name, &reason); err != nil {
+				return err
+			}
+			out[name] = append(out[name], reason)
+		}
+		return rows.Err()
+	})
+	require.NoError(t, err)
+	return out
+}
+
+// promiseCount is how many promises the organization has, whatever their status.
+func promiseCount(t *testing.T, env *testenv.Env, org uuid.UUID) int {
+	t.Helper()
+	ctx := context.Background()
+	var n int
+	err := env.Store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, "SELECT count(*) FROM payment_promise").Scan(&n)
+	})
+	require.NoError(t, err)
+	return n
+}
+
+func TestGenerateInvoicesKunjungan(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.New(t) // the clock reads 2 November 2026, 09:00 in Jakarta
+	today := tenant.Today(env.Clock)
+	gen := generateDeps(env)
+
+	_, err := demoseed.Run(ctx, deps(env), env.Clock)
+	require.NoError(t, err)
+	sums, err := demoseed.GenerateInvoices(ctx, gen, env.Clock)
+	require.NoError(t, err)
+	var sum demoseed.Summary
+	for _, s := range sums {
+		if s.Organization == demoseed.OrgKunjungan {
+			sum = s
+		}
+	}
+	require.Equal(t, 12, sum.Leases)
+	require.Positive(t, sum.Invoices)
+	require.Zero(t, sum.Payments, "nobody pays")
+	require.Equal(t, 3, sum.Promises)
+
+	m, err := env.Orgs.FindForMember(ctx, "0812-0010-0002", demoseed.OrgKunjungan)
+	require.NoError(t, err)
+	org := m.OrganizationID
+	admin := env.Principal(t, org, m.UserID)
+	tenants, err := env.AllTenants(ctx, admin)
+	require.NoError(t, err)
+	require.Len(t, tenants, 12)
+	promises := promise.NewService(promise.Deps{Store: env.Store, Tenants: env.Billing, Clock: env.Clock})
+
+	brokenTwice := []string{"Citra Ayu Lestari", "Gilang Permana", "Kiki Amelia"}
+	t.Run("every tenant owes overdue invoices and only three have promises", func(t *testing.T) {
+		for _, tn := range tenants {
+			acct := account(t, env, admin, tn.Name)
+			require.Positive(t, acct.Overdue, tn.Name)
+			require.Empty(t, acct.Payments, tn.Name)
+			var overdue int
+			for _, inv := range acct.Invoices {
+				if inv.DueDate.Before(today) && inv.Outstanding > 0 {
+					overdue++
+				}
+			}
+			require.GreaterOrEqual(t, overdue, 1, tn.Name)
+
+			got, err := promises.List(ctx, admin, tn.ID, listing.FirstPage)
+			require.NoError(t, err)
+			if !slices.Contains(brokenTwice, tn.Name) {
+				require.Zero(t, got.Total, "%s has no promise", tn.Name)
+				continue
+			}
+			require.Equal(t, int64(2), got.Total, tn.Name)
+			for _, p := range got.Items {
+				require.Equal(t, promise.StatusBroken, p.Status, tn.Name)
+				require.Len(t, p.Versions, 1)
+				require.Equal(t, promise.SourceAdmin, p.Latest().Source)
+				require.NotNil(t, p.ClosedAt)
+				require.True(t, p.CreatedAt.Before(env.Clock.Now()), "dated in the past")
+				require.True(t, p.ClosedAt.Before(env.Clock.Now()), "closed in the past")
+				require.True(t, p.Latest().PromisedDate.Before(today), "its day has ended")
+			}
+		}
+		require.Equal(t, 6, promiseCount(t, env, org))
+	})
+
+	t.Run("the three tenants have an open broken_promises visit task and no other task yet", func(t *testing.T) {
+		require.Equal(t, map[string][]string{
+			"Citra Ayu Lestari": {promise.VisitReasonBrokenPromises},
+			"Gilang Permana":    {promise.VisitReasonBrokenPromises},
+			"Kiki Amelia":       {promise.VisitReasonBrokenPromises},
+		}, openVisitTasks(t, env, org))
+	})
+
+	t.Run("running it again adds no promise and no visit task", func(t *testing.T) {
+		again, err := demoseed.GenerateInvoices(ctx, gen, env.Clock)
+		require.NoError(t, err)
+		for _, s := range again {
+			require.Zero(t, s.Promises, s.Organization)
+		}
+		require.Equal(t, 6, promiseCount(t, env, org))
+		require.Len(t, openVisitTasks(t, env, org), 3)
+	})
+
+	t.Run("a later day gives no tenant new promises", func(t *testing.T) {
+		// On a later day the tenants still have their promises, so none is made again.
+		env.Clock.Advance(24 * time.Hour)
+		later, err := demoseed.GenerateInvoices(ctx, gen, env.Clock)
+		require.NoError(t, err)
+		for _, s := range later {
+			require.Zero(t, s.Promises, s.Organization)
+		}
+		require.Equal(t, 6, promiseCount(t, env, org))
+		env.Clock.Advance(-24 * time.Hour)
+	})
+
+	t.Run("the daily jobs open H+7 for everyone and each karyawan sees their four tenants", func(t *testing.T) {
+		res, err := reminder.NewDecider(env.Store, env.Clock, slog.New(slog.DiscardHandler), nil).DecideOrg(ctx, org)
+		require.NoError(t, err)
+		require.Equal(t, 12, res.VisitTasks, "an h7 task for each tenant")
+
+		visits := visit.NewService(env.Store, env.Billing, env.Clock)
+		wantTenants := map[string][]string{
+			"0812-0010-0011": {"Ahmad Fauzi", "Bayu Saputra", "Citra Ayu Lestari", "Danu Prakoso"},
+			"0812-0010-0012": {"Eko Nugroho", "Fajar Ramadhan", "Gilang Permana", "Hesti Wulansari"},
+			"0812-0010-0013": {"Imam Santoso", "Joko Susilo", "Kiki Amelia", "Lutfi Hakim"},
+		}
+		for number, want := range wantTenants {
+			p := env.Principal(t, org, env.UserID(t, number))
+			got, err := visits.List(ctx, p, listing.FirstPage)
+			require.NoError(t, err)
+			require.Equal(t, int64(4), got.Total, number)
+			var names []string
+			for _, row := range got.Items {
+				names = append(names, row.TenantName)
+				require.Equal(t, visit.StatusOpen, row.Status, row.TenantName)
+				require.Positive(t, row.Overdue, row.TenantName)
+				codes := map[string]visit.Reason{}
+				for _, r := range row.Reasons {
+					codes[r.Code] = r
+				}
+				require.Contains(t, codes, visit.ReasonOverdue, row.TenantName)
+				require.Positive(t, codes[visit.ReasonOverdue].DaysOverdue, row.TenantName)
+				if slices.Contains(brokenTwice, row.TenantName) {
+					require.Len(t, codes, 2, row.TenantName)
+					require.Equal(t, 2, codes[visit.ReasonBrokenPromises].BrokenPromises, row.TenantName)
+				} else {
+					require.Len(t, codes, 1, row.TenantName)
+				}
+			}
+			require.ElementsMatch(t, want, names, number)
 		}
 	})
 }

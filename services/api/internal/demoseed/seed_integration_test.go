@@ -152,7 +152,9 @@ func TestSeedDemo(t *testing.T) {
 	require.NoError(t, err)
 	c, err := env.Orgs.FindForMember(ctx, "0812-0009-0027", demoseed.OrgBulanan)
 	require.NoError(t, err)
-	before := snapshot(t, env, a.OrganizationID, b.OrganizationID, c.OrganizationID)
+	k, err := env.Orgs.FindForMember(ctx, "0812-0010-0002", demoseed.OrgKunjungan)
+	require.NoError(t, err)
+	before := snapshot(t, env, a.OrganizationID, b.OrganizationID, c.OrganizationID, k.OrganizationID)
 
 	t.Run("running it again creates and changes nothing", func(t *testing.T) {
 		second, err := demoseed.Run(ctx, deps(env), env.Clock)
@@ -166,7 +168,7 @@ func TestSeedDemo(t *testing.T) {
 		c2, err := env.Orgs.FindForMember(ctx, "0812-0009-0027", demoseed.OrgBulanan)
 		require.NoError(t, err)
 		require.Equal(t, c, c2)
-		require.Equal(t, before, snapshot(t, env, a.OrganizationID, b.OrganizationID, c.OrganizationID))
+		require.Equal(t, before, snapshot(t, env, a.OrganizationID, b.OrganizationID, c.OrganizationID, k.OrganizationID))
 	})
 
 	t.Run("the counts match the demo contents", func(t *testing.T) {
@@ -202,7 +204,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("the login list has every member with E.164 phones", func(t *testing.T) {
-		require.Len(t, first.Logins, 38)
+		require.Len(t, first.Logins, 43)
 		var disabled []string
 		for _, l := range first.Logins {
 			require.Regexp(t, `^\+62\d+$`, l.Phone)
@@ -577,6 +579,89 @@ func TestSeedDemo(t *testing.T) {
 		}
 		require.Equal(t, int64(1_100_000), rents["Umi Kulsum"])
 		require.Equal(t, int64(6_500_000), rents["Klinik Sehat Sentosa"], "a ruko here is let by the month")
+	})
+
+	t.Run("Kos Kunjungan Asri has three karyawan with four tenants each", func(t *testing.T) {
+		adminK := env.Principal(t, k.OrganizationID, k.UserID)
+		gk := before[k.OrganizationID]
+		require.Equal(t, 5, gk["membership"].Rows)
+		require.Equal(t, 1, gk["property"].Rows)
+		require.Equal(t, 12, gk["unit"].Rows)
+		require.Equal(t, 12, gk["tenant"].Rows)
+		require.Equal(t, 12, gk["lease"].Rows)
+		require.Equal(t, 12, gk["unit_price"].Rows)
+		require.Zero(t, gk["invoice"].Rows, "seed-demo creates no invoice")
+
+		members, err := env.AllMembers(ctx, adminK)
+		require.NoError(t, err)
+		roles := map[string][]string{}
+		for _, m := range members {
+			require.Equal(t, member.StatusActive, m.Status, m.Name)
+			for _, r := range m.Roles {
+				require.Equal(t, uuid.Nil, r.PropertyID, "%s is not limited to a property", m.Name)
+				roles[m.Name] = append(roles[m.Name], r.Key)
+			}
+		}
+		require.Equal(t, map[string][]string{
+			"Bu Ratna Wulandari":   {authz.RoleSupervisor},
+			"Pak Bambang Sutrisno": {authz.RoleAdmin},
+			"Mas Arif Setiadi":     {authz.RoleKaryawan},
+			"Mbak Sri Lestari":     {authz.RoleKaryawan},
+			"Mas Teguh Prasetyo":   {authz.RoleKaryawan},
+		}, roles)
+		for _, phone := range []string{"0812-0010-0001", "0812-0010-0002", "0812-0010-0011", "0812-0010-0012", "0812-0010-0013"} {
+			orgs, err := env.Auth.Organizations(ctx, env.UserID(t, phone))
+			require.NoError(t, err)
+			require.Len(t, orgs, 1, "%s belongs to this organization only", phone)
+		}
+
+		props, err := env.AllProperties(ctx, adminK)
+		require.NoError(t, err)
+		require.Len(t, props, 1)
+		require.Equal(t, "Kos Asri Kaliurang", props[0].Name)
+		require.Equal(t, property.KindKos, props[0].Kind)
+		require.Equal(t, "Jl. Kaliurang Km 7 No. 21, Sleman", props[0].Address)
+		units, err := env.AllUnits(ctx, adminK, props[0].ID)
+		require.NoError(t, err)
+		require.Len(t, units, 12)
+		for _, u := range units {
+			price := int64(800_000)
+			require.Equal(t, []property.UnitTerm{{Months: 1, Price: &price}}, u.Terms, u.Label)
+		}
+
+		collector := map[string]uuid.UUID{}
+		for _, m := range members {
+			collector[m.Name] = m.ID
+		}
+		tenantsK, err := env.AllTenants(ctx, adminK)
+		require.NoError(t, err)
+		require.Len(t, tenantsK, 12)
+		want := []struct{ name, phone, unit, collector string }{
+			{"Ahmad Fauzi", "+6281300100001", "Kamar 1", "Mas Arif Setiadi"},
+			{"Bayu Saputra", "+6281300100002", "Kamar 2", "Mas Arif Setiadi"},
+			{"Citra Ayu Lestari", "+6281300100003", "Kamar 3", "Mas Arif Setiadi"},
+			{"Danu Prakoso", "+6281300100004", "Kamar 4", "Mas Arif Setiadi"},
+			{"Eko Nugroho", "+6281300100005", "Kamar 5", "Mbak Sri Lestari"},
+			{"Fajar Ramadhan", "+6281300100006", "Kamar 6", "Mbak Sri Lestari"},
+			{"Gilang Permana", "+6281300100007", "Kamar 7", "Mbak Sri Lestari"},
+			{"Hesti Wulansari", "+6281300100008", "Kamar 8", "Mbak Sri Lestari"},
+			{"Imam Santoso", "+6281300100009", "Kamar 9", "Mas Teguh Prasetyo"},
+			{"Joko Susilo", "+6281300100010", "Kamar 10", "Mas Teguh Prasetyo"},
+			{"Kiki Amelia", "+6281300100011", "Kamar 11", "Mas Teguh Prasetyo"},
+			{"Lutfi Hakim", "+6281300100012", "Kamar 12", "Mas Teguh Prasetyo"},
+		}
+		for _, w := range want {
+			tn := find(t, tenantsK, w.name)
+			require.Equal(t, w.phone, tn.Phone, w.name)
+			require.Equal(t, []string{"Kos Asri Kaliurang/" + w.unit}, leaseUnits(tn), w.name)
+			l := tn.Leases[0]
+			require.Equal(t, tenant.StatusActive, l.Status, w.name)
+			require.Equal(t, 1, l.TermMonths, w.name)
+			require.Equal(t, collector[w.collector], l.CollectorMemberID, w.name)
+			require.True(t, l.CollectorActive, w.name)
+			require.Equal(t, int64(800_000), *l.PeriodRent, w.name)
+			require.True(t, l.StartDate.Before(tenant.Today(env.Clock)), "a running lease")
+		}
 	})
 
 	t.Run("Lestari is limited to Kontrakan Seturan in Kos Bulanan Sejahtera", func(t *testing.T) {
