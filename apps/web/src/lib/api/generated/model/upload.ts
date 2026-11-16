@@ -22,7 +22,7 @@ export interface Upload {
   completedAt?: string;
   /** When the scan decided the status. */
   scannedAt?: string;
-  /** Only when status is clean (getUpload only): a short-lived link that downloads the file as an attachment. Do not store it; ask getUpload again for a new one. */
+  /** Only when status is clean and the file was not deleted as an unused receipt photo (getUpload only): a short-lived link that downloads the file as an attachment. Do not store it; ask getUpload again for a new one. */
   downloadUrl?: string;
   downloadExpiresAt?: string;
 }

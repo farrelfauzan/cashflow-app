@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/httpapi/apigen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/paylink"
@@ -46,6 +47,15 @@ func (s *Server) sendPaymentProof(w http.ResponseWriter, r *http.Request) {
 	if s.Proofs == nil {
 		s.writeError(w, http.StatusServiceUnavailable, "uploads_unavailable", "Unggah foto belum tersedia di server ini.")
 		return
+	}
+	var requestID uuid.UUID
+	if raw := r.URL.Query().Get("requestId"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil || id == uuid.Nil {
+			s.writeErrorField(w, http.StatusBadRequest, "invalid_input", "requestId tidak valid.", "requestId")
+			return
+		}
+		requestID = id
 	}
 	ok, err := s.PublicLimiter.Allow(r.Context(), "proof:"+paylink.LimitKey(token), proofsPerLink, proofWindow)
 	if err != nil {
@@ -87,15 +97,15 @@ func (s *Server) sendPaymentProof(w http.ResponseWriter, r *http.Request) {
 		}
 		return p, nil
 	}
-	proof, err := s.Proofs.Send(r.Context(), token, open)
+	proof, err := s.Proofs.Send(r.Context(), token, requestID, open)
 	if err != nil {
 		s.failProof(w, r, err)
 		return
 	}
-	s.writeJSON(w, http.StatusCreated, apigen.PaymentProof{Id: proof.ID, CreatedAt: proof.CreatedAt})
+	s.writeJSON(w, createdStatus(proof.Created), apigen.PaymentProof{Id: proof.ID, CreatedAt: proof.CreatedAt})
 }
 
-// failProof answers a transfer proof's errors; every one names the file field.
+// failProof answers a transfer proof's errors; each names the field it is about.
 func (s *Server) failProof(w http.ResponseWriter, r *http.Request, err error) {
 	var input *upload.InputError
 	switch {
@@ -108,6 +118,9 @@ func (s *Server) failProof(w http.ResponseWriter, r *http.Request, err error) {
 			"Hanya foto JPEG, PNG atau WebP yang bisa dikirim.", "file")
 	case errors.Is(err, upload.ErrTooLarge):
 		s.writeErrorField(w, http.StatusBadRequest, "upload_too_large", "Ukuran foto paling besar 10 MB.", "file")
+	case errors.Is(err, upload.ErrRequestIDReused):
+		s.writeErrorField(w, http.StatusConflict, "request_id_reused",
+			"Permintaan ini sudah dipakai untuk data lain. Muat ulang halaman lalu coba lagi.", "requestId")
 	default:
 		s.fail(w, r, err)
 	}

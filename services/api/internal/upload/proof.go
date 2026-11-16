@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
@@ -70,7 +71,15 @@ type Proof struct {
 	InvoiceID uuid.UUID // the invoice of the link it was sent from
 	UploadID  uuid.UUID
 	CreatedAt time.Time
+	// Created is false when the call repeated an earlier one's requestId and stored nothing.
+	Created bool
 }
+
+// proofRequestUnique is the index that keeps one proof per requestId in an organization.
+const proofRequestUnique = "transfer_proof_request_id_unique"
+
+// errProofRaced means another call with the same requestId recorded its proof first.
+var errProofRaced = errors.New("upload: another call recorded this request's proof")
 
 // Send stores a transfer proof photo the tenant behind token sent, and queues its scan. The token
 // grants it (payment:proof, CLAUDE.md "Not RBAC principals"); there is no principal to authorize.
@@ -88,16 +97,29 @@ type Proof struct {
 // upload (pending, already completed) and the proof are recorded together, and the scan queued
 // after the commit (the reconcile covers a lost enqueue). Should recording fail after the file
 // was stored, the file stays in incoming/ and is never read, as for an abandoned staff upload.
-func (s *Proofs) Send(ctx context.Context, token string, open func() (io.Reader, error)) (Proof, error) {
+//
+// requestID, when not uuid.Nil, makes a retry safe: a call that repeats a requestId already sent
+// from the same link answers that proof with Created false, without reading the file or storing
+// anything, and one already sent from another link is ErrRequestIDReused. Two calls racing with
+// one requestId store one proof; the other's file stays in incoming/, as above.
+func (s *Proofs) Send(ctx context.Context, token string, requestID uuid.UUID, open func() (io.Reader, error)) (Proof, error) {
 	org, linkID, err := s.links.Resolve(ctx, token)
 	if err != nil {
 		return Proof{}, err
 	}
+	var earlier *Proof
 	if err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
-		_, _, err := s.links.OpenLink(ctx, tx, org, linkID)
+		if _, _, err := s.links.OpenLink(ctx, tx, org, linkID); err != nil {
+			return err
+		}
+		var err error
+		earlier, err = sentProof(ctx, dbgen.New(tx), org, linkID, requestID)
 		return err
 	}); err != nil {
 		return Proof{}, err
+	}
+	if earlier != nil {
+		return *earlier, nil
 	}
 
 	select {
@@ -135,19 +157,74 @@ func (s *Proofs) Send(ctx context.Context, token string, open func() (io.Reader,
 		}
 		row, err := q.InsertTransferProof(ctx, dbgen.InsertTransferProofParams{
 			ID: id, OrganizationID: org, TenantID: tenantID, PaymentLinkID: linkID, InvoiceID: invoiceID,
-			UploadID: uploadID, CreatedAt: now,
+			UploadID: uploadID, CreatedAt: now, RequestID: uuid.NullUUID{UUID: requestID, Valid: requestID != uuid.Nil},
 		})
+		if isUniqueViolation(err, proofRequestUnique) {
+			return errProofRaced
+		}
 		if err != nil {
 			return fmt.Errorf("recording transfer proof: %w", err)
 		}
-		out = Proof{ID: row.ID, TenantID: row.TenantID, InvoiceID: invoiceID, UploadID: row.UploadID, CreatedAt: row.CreatedAt}
+		out = proofFromRow(row, true)
 		return nil
 	})
+	if errors.Is(err, errProofRaced) {
+		return s.raced(ctx, org, linkID, requestID)
+	}
 	if err != nil {
 		return Proof{}, err
 	}
 	enqueueScan(ctx, s.queue, s.log, org, uploadID)
 	return out, nil
+}
+
+// raced answers the proof another call with requestID recorded while this one stored its file.
+func (s *Proofs) raced(ctx context.Context, org, linkID, requestID uuid.UUID) (Proof, error) {
+	var earlier *Proof
+	err := s.store.WithOrgTx(ctx, org, func(tx pgx.Tx) error {
+		var err error
+		earlier, err = sentProof(ctx, dbgen.New(tx), org, linkID, requestID)
+		return err
+	})
+	if err != nil {
+		return Proof{}, err
+	}
+	if earlier == nil {
+		// The index refused the insert, so a proof with this requestId committed first.
+		return Proof{}, fmt.Errorf("transfer proof of request %s not found after its insert was refused", requestID)
+	}
+	return *earlier, nil
+}
+
+// sentProof returns the proof an earlier call sent under requestID from link linkID, nil when
+// there is none (or requestID is uuid.Nil), and ErrRequestIDReused when it was sent from another
+// link.
+func sentProof(ctx context.Context, q *dbgen.Queries, org, linkID, requestID uuid.UUID) (*Proof, error) {
+	if requestID == uuid.Nil {
+		return nil, nil
+	}
+	row, err := q.GetTransferProofByRequest(ctx, dbgen.GetTransferProofByRequestParams{OrganizationID: org, RequestID: requestID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading the transfer proof of request %s: %w", requestID, err)
+	}
+	if !row.PaymentLinkID.Valid || row.PaymentLinkID.UUID != linkID {
+		return nil, ErrRequestIDReused
+	}
+	p := proofFromRow(row, false)
+	return &p, nil
+}
+
+func proofFromRow(row dbgen.TransferProof, created bool) Proof {
+	return Proof{ID: row.ID, TenantID: row.TenantID, InvoiceID: row.InvoiceID.UUID, UploadID: row.UploadID,
+		CreatedAt: row.CreatedAt, Created: created}
+}
+
+func isUniqueViolation(err error, index string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == index
 }
 
 // readProof reads a proof file of at most MaxSize bytes and returns it with its type, sniffed

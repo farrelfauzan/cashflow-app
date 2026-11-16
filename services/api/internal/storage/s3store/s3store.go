@@ -215,6 +215,17 @@ func (s *Store) Move(ctx context.Context, src, dst string) error {
 	return nil
 }
 
+// Delete implements upload.ObjectDeleter. S3 answers a delete of a missing key with success.
+func (s *Store) Delete(ctx context.Context, key string) error {
+	if err := checkKey(key); err != nil {
+		return err
+	}
+	if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)}); err != nil {
+		return wrap("DELETE", err)
+	}
+	return nil
+}
+
 func checkKey(key string) error {
 	if !safeKey.MatchString(key) || strings.Contains(key, "//") || strings.Contains(key, "..") {
 		return fmt.Errorf("s3store: refusing key %q", key)

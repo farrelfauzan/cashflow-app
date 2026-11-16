@@ -168,6 +168,20 @@ func TestAgainstRustFS(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, photo, got)
 	})
+
+	t.Run("delete removes an object, and deleting a missing key is no error", func(t *testing.T) {
+		const doomed = "files/uploads/7b0e0b2a-6f7c-4f43-9a52-3c6c1f0b9b11/0123456789abcdef0123456789abcdef"
+		require.NoError(t, s.PutObject(ctx, doomed, "image/jpeg", photo))
+		_, err := s.Head(ctx, doomed)
+		require.NoError(t, err)
+		require.NoError(t, s.Delete(ctx, doomed))
+		_, err = s.Head(ctx, doomed)
+		require.ErrorIs(t, err, upload.ErrObjectNotFound)
+		require.NoError(t, s.Delete(ctx, doomed), "a missing key")
+		_, err = s.Head(ctx, stored)
+		require.NoError(t, err, "other objects stay")
+		require.ErrorContains(t, s.Delete(ctx, "files/../secret"), "refusing key")
+	})
 }
 
 // TestUploadFlowAgainstRustFS is the whole flow on a real bucket: start, PUT with net/http,

@@ -292,11 +292,16 @@ Declare it as `image/jpeg` with its size (68 bytes); the scan marks it `infected
 `quarantine/` in the bucket, and writes an `upload:scan` row to the audit log. A PDF or text file
 sent as `.jpg` ends `rejected`. Where objects live in the bucket: `incoming/` (what the PUT
 writes), `files/` (the scanned copy a clean upload is read from), `quarantine/`. On R2, add a
-lifecycle rule that deletes `incoming/` after a day, for PUTs that were never completed.
+lifecycle rule that deletes `incoming/` after a day, for PUTs that were never completed. The
+worker's daily `upload:cleanup` (03:40 Asia/Jakarta) deletes the `files/` copy of a clean cash
+receipt photo that backs no payment 30 days after it was made (the karyawan uploads it before
+recording the cash, decision 50); the upload row stays and table `upload_deletion` records it, and
+such a photo can no longer be linked to a payment.
 
 A tenant's proof needs no session: open a payment link from the database seed or "Salin link
 bayar", then `curl -F 'file=@foto.jpg' http://localhost:8080/api/t/<token>/proof`; an admin reads it with `getUpload` (purpose
-`transfer_proof`).
+`transfer_proof`). Add `?requestId=<uuid>` to make a retry safe: the same requestId from the
+same link answers the first proof (200) and stores nothing.
 
 Tests: unit tests use the fakes in `internal/upload/uploadtest` (an in-memory bucket and a
 scanner that flags EICAR); the integration tests run RustFS in Docker
@@ -536,9 +541,10 @@ replay Bot API answers.
 - `internal/upload`: staff photo uploads (S6-1): starting one with a presigned PUT, completing
   it, the tenant's transfer proof from the payment page (S6-5, `Proofs`, table `transfer_proof`,
   append-only) or sent for them by a member (decision 49: `createUpload` with purpose
-  `transfer_proof` and `payment:proof`, the proof recorded on `completeUpload` with its sender), the scan that checks the real size and type and runs the malware scanner, quarantine, and
-  the short-lived download link of a clean file. `uploadtask` runs `upload:scan` and the
-  10-minute `upload:reconcile`; `uploadtest` has the fakes. The adapters are
+  `transfer_proof` and `payment:proof`, the proof recorded on `completeUpload` with its sender), the scan that checks the real size and type and runs the malware scanner, quarantine,
+  the short-lived download link of a clean file, and `Cleaner`, which deletes the files of unused
+  cash receipt photos. `uploadtask` runs `upload:scan`, the 10-minute `upload:reconcile` and the
+  daily `upload:cleanup`; `uploadtest` has the fakes. The adapters are
   `internal/storage/s3store` (R2 and RustFS, AWS SDK for Go v2) and `internal/scan/clamd` (clamd's
   INSTREAM over TCP).
 - `internal/phone`, `internal/ratelimit`: phone number parsing and attempt counting.

@@ -5,6 +5,7 @@ package billing_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -190,6 +191,23 @@ func (ph photos) insertedReceipt(t *testing.T, uploader, tenantID uuid.UUID) uui
 			return err
 		}
 		_, err := q.MarkUploadCompleted(ctx, dbgen.MarkUploadCompletedParams{CompletedAt: w.env.Clock.Now(), OrganizationID: w.org.ID, ID: id})
+		return err
+	})
+	return id
+}
+
+// cleanedUp is a clean receipt photo of body for r made by p whose stored file upload:cleanup
+// deleted: its upload_deletion row written as the job writes it.
+func (ph photos) cleanedUp(t *testing.T, p authz.Principal, r rental) uuid.UUID {
+	t.Helper()
+	id := ph.scanned(t, p, r, cleanPhoto, upload.StatusClean)
+	ph.w.mustTx(t, func(ctx context.Context, _ pgx.Tx, q *dbgen.Queries) error {
+		n, err := q.InsertUploadDeletion(ctx, dbgen.InsertUploadDeletionParams{
+			UploadID: id, OrganizationID: ph.w.org.ID, DeletedAt: ph.w.env.Clock.Now(),
+		})
+		if err == nil && n != 1 {
+			err = fmt.Errorf("recorded %d deletions", n)
+		}
 		return err
 	})
 	return id
@@ -381,12 +399,18 @@ func TestAttachReceiptPhoto(t *testing.T) {
 				return ph.insertedReceipt(t, w.dina.UserID, wati.tenantID)
 			}},
 			{name: "another payment's photo", upload: func(*testing.T) uuid.UUID { return first }},
+			{name: "a photo whose file upload:cleanup deleted", upload: func(t *testing.T) uuid.UUID {
+				return ph.cleanedUp(t, w.karyawan, wati)
+			}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				id := tc.upload(t)
 				links := w.count(t, "payment_receipt_photo")
 				_, _, err := attach(w.karyawan, pay, id)
 				require.ErrorIs(t, err, billing.ErrReceiptPhotoInvalid)
+				var fe *billing.FieldError
+				require.ErrorAs(t, err, &fe)
+				require.Equal(t, "uploadId", fe.Field)
 				require.Equal(t, links, w.count(t, "payment_receipt_photo"))
 			})
 		}
@@ -1125,6 +1149,9 @@ func TestCashComesWithItsPhoto(t *testing.T) {
 		}, check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
 		{name: "another payment's photo", photo: func(*testing.T) uuid.UUID { return used },
 			check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
+		{name: "a photo whose file upload:cleanup deleted", photo: func(t *testing.T) uuid.UUID {
+			return ph.cleanedUp(t, w.karyawan, wati)
+		}, check: requirePhotoField(billing.ErrReceiptPhotoInvalid)},
 		{name: "a photo the scan rejected", photo: func(t *testing.T) uuid.UUID {
 			return ph.scanned(t, w.karyawan, wati, notAPhoto, upload.StatusRejected)
 		}, check: requirePhotoField(billing.ErrReceiptPhotoRefused)},

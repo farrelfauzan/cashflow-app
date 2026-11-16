@@ -184,6 +184,7 @@ export * from './roleRef';
 export * from './scheduledPrice';
 export * from './searchParameter';
 export * from './sendPaymentProofBody';
+export * from './sendPaymentProofParams';
 export * from './setMemberStatus';
 export * from './setRoles';
 export * from './staffRef';

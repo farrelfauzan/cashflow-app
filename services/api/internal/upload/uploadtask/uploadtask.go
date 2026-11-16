@@ -1,7 +1,8 @@
 // Package uploadtask runs upload scans through the queue (S6-1): one upload:scan task per
 // completed upload, enqueued by completeUpload once its transaction commits, and upload:reconcile
 // every 10 minutes, which enqueues the scan of every upload completed a while ago and still
-// pending (a lost enqueue, or a task that failed every retry). The rules live in package upload;
+// pending (a lost enqueue, or a task that failed every retry). upload:cleanup runs daily and
+// deletes the files of cash receipt photos that back no payment after upload.UnusedAfter. The rules live in package upload;
 // this package only moves ids between the queue and the worker.
 package uploadtask
 
@@ -28,6 +29,13 @@ const (
 	TypeReconcile = "upload:reconcile"
 	// ReconcileCron runs TypeReconcile every 10 minutes; the scheduler runs in Asia/Jakarta.
 	ReconcileCron = "*/10 * * * *"
+	// TypeCleanup deletes the files of every organization's unused cash receipt photos.
+	TypeCleanup = "upload:cleanup"
+	// CleanupCron runs TypeCleanup daily at 03:40 Asia/Jakarta, away from the morning's invoice
+	// and reminder runs.
+	CleanupCron = "40 3 * * *"
+	// cleanupTimeout bounds one cleanup run.
+	cleanupTimeout = 30 * time.Minute
 	// slot is the period one reconcile run covers, which names the scan tasks it enqueues.
 	slot = 10 * time.Minute
 
@@ -100,17 +108,23 @@ type OrgLister interface {
 	ActiveOrganizationIDs(ctx context.Context) ([]uuid.UUID, error)
 }
 
+// Cleaner deletes one organization's unused cash receipt photos. upload.Cleaner implements it.
+type Cleaner interface {
+	Clean(ctx context.Context, org uuid.UUID) (int, error)
+}
+
 // Worker holds what the handlers need.
 type Worker struct {
 	Checker  Checker
+	Cleaner  Cleaner
 	Orgs     OrgLister
 	Enqueuer Enqueuer
 	Clock    clock.Clock
 	Log      *slog.Logger
 }
 
-// Register adds the handlers to mux and the 10-minute reconcile to the scheduler, which must run
-// in Asia/Jakarta (queue.NewScheduler with clock.Jakarta).
+// Register adds the handlers to mux, and the 10-minute reconcile and the daily cleanup to the
+// scheduler, which must run in Asia/Jakarta (queue.NewScheduler with clock.Jakarta).
 func (w Worker) Register(mux *asynq.ServeMux, sched *asynq.Scheduler) error {
 	mux.HandleFunc(TypeScan, w.HandleScan)
 	mux.HandleFunc(TypeReconcile, w.HandleReconcile)
@@ -118,6 +132,12 @@ func (w Worker) Register(mux *asynq.ServeMux, sched *asynq.Scheduler) error {
 	if _, err := sched.Register(ReconcileCron, asynq.NewTask(TypeReconcile, nil),
 		asynq.Queue(queue.Default), asynq.MaxRetry(0), asynq.Timeout(slot)); err != nil {
 		return fmt.Errorf("scheduling the upload reconcile: %w", err)
+	}
+	mux.HandleFunc(TypeCleanup, w.HandleCleanup)
+	// A run that fails is not retried: tomorrow's covers what it left.
+	if _, err := sched.Register(CleanupCron, asynq.NewTask(TypeCleanup, nil),
+		asynq.Queue(queue.Default), asynq.MaxRetry(0), asynq.Timeout(cleanupTimeout)); err != nil {
+		return fmt.Errorf("scheduling the upload cleanup: %w", err)
 	}
 	return nil
 }
@@ -176,6 +196,37 @@ func Reconcile(ctx context.Context, orgs OrgLister, c Checker, enq Enqueuer, at 
 				continue
 			}
 			n++
+		}
+	}
+	return n, errors.Join(errs...)
+}
+
+// HandleCleanup deletes the files of every organization's unused cash receipt photos.
+func (w Worker) HandleCleanup(ctx context.Context, _ *asynq.Task) error {
+	n, err := Cleanup(ctx, w.Orgs, w.Cleaner)
+	if n > 0 {
+		w.Log.InfoContext(ctx, "unused cash receipt photos deleted", "uploads", n)
+	}
+	if err != nil {
+		return fmt.Errorf("cleaning up uploads: %w", err)
+	}
+	return nil
+}
+
+// Cleanup runs c for every organization and returns how many files it deleted. A failure for one
+// organization does not stop the others; they come back joined.
+func Cleanup(ctx context.Context, orgs OrgLister, c Cleaner) (int, error) {
+	ids, err := orgs.ActiveOrganizationIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	var errs []error
+	for _, org := range ids {
+		k, err := c.Clean(ctx, org)
+		n += k
+		if err != nil {
+			errs = append(errs, fmt.Errorf("organization %s: %w", org, err))
 		}
 	}
 	return n, errors.Join(errs...)

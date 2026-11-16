@@ -70,6 +70,9 @@ const (
 	// MissingAfter is how long after completeUpload a file that is still not in storage is waited
 	// for; after it the upload is rejected.
 	MissingAfter = time.Hour
+	// UnusedAfter is how old a cash receipt photo that backs no payment gets before upload:cleanup
+	// deletes its file (decision 50: the photo is uploaded before the cash is recorded).
+	UnusedAfter = 30 * 24 * time.Hour
 )
 
 // allowedTypes are the accepted image types, as http.DetectContentType names them, with the
@@ -123,6 +126,9 @@ var (
 	ErrTenantNotFound = errors.New("upload: tenant not found")
 	// ErrObjectNotFound is what an Objects adapter returns for a key that holds no object.
 	ErrObjectNotFound = errors.New("upload: object not found")
+	// ErrRequestIDReused means a requestId already sent a transfer proof from another payment
+	// link.
+	ErrRequestIDReused = errors.New("upload: request id used for another proof")
 )
 
 // InputError is an invalid input other than the ones with their own error, naming the field,
@@ -169,6 +175,12 @@ type Objects interface {
 	// Move copies the object at src to dst, replacing dst, then deletes src. A missing src is
 	// ErrObjectNotFound.
 	Move(ctx context.Context, src, dst string) error
+}
+
+// ObjectDeleter deletes stored objects. The s3store adapter implements it.
+type ObjectDeleter interface {
+	// Delete removes the object at key. A key with no object is not an error.
+	Delete(ctx context.Context, key string) error
 }
 
 // Verdict is a malware scanner's answer.

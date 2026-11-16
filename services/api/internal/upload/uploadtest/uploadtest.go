@@ -34,6 +34,9 @@ type Storage struct {
 	calls   []string
 	// Err, when set, fails every call that touches the bucket.
 	Err error
+	// BeforeDelete, when set, runs at the start of Delete, outside the bucket's lock, so a test
+	// can hold a delete where it is. Set it before the code under test runs.
+	BeforeDelete func(key string)
 }
 
 // NewStorage returns an empty bucket.
@@ -67,7 +70,7 @@ func (s *Storage) Keys() []string {
 }
 
 // Calls returns the bucket operations made so far ("head <key>", "open <key>",
-// "move <src> <dst>", "put <key> <content type>"), oldest first.
+// "move <src> <dst>", "put <key> <content type>", "delete <key>"), oldest first.
 func (s *Storage) Calls() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,6 +148,21 @@ func (s *Storage) Move(_ context.Context, src, dst string) error {
 	}
 	s.objects[dst] = b
 	delete(s.objects, src)
+	return nil
+}
+
+// Delete implements upload.ObjectDeleter. A missing key is not an error.
+func (s *Storage) Delete(_ context.Context, key string) error {
+	if s.BeforeDelete != nil {
+		s.BeforeDelete(key)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, "delete "+key)
+	if s.Err != nil {
+		return s.Err
+	}
+	delete(s.objects, key)
 	return nil
 }
 

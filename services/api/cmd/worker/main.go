@@ -51,9 +51,9 @@ func main() {
 	}
 }
 
-// registerUploads adds the upload scan and its reconcile (S6-1) when the worker has a bucket and
-// a scanner. Without STORAGE_* settings, which config.LoadWorker allows only in development, it
-// registers nothing.
+// registerUploads adds the upload scan, its reconcile (S6-1) and the daily cleanup of unused cash
+// receipt photos when the worker has a bucket and a scanner. Without STORAGE_* settings, which
+// config.LoadWorker allows only in development, it registers nothing.
 func registerUploads(ctx context.Context, cfg config.Worker, st *store.Store, az *authz.Service, client *asynq.Client,
 	clk clock.Clock, log *slog.Logger, mux *asynq.ServeMux, sched *asynq.Scheduler) error {
 	if !cfg.Storage.Enabled() {
@@ -76,6 +76,7 @@ func registerUploads(ctx context.Context, cfg config.Worker, st *store.Store, az
 		Checker: upload.NewChecker(upload.CheckerDeps{
 			Store: st, Objects: bucket, Scanner: scanner, Audit: az, Clock: clk, Log: log,
 		}),
+		Cleaner:  upload.NewCleaner(st, bucket, clk, log),
 		Orgs:     st,
 		Enqueuer: uploadtask.NewClient(client),
 		Clock:    clk,

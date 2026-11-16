@@ -41,6 +41,35 @@ func (q *Queries) FinishUploadScan(ctx context.Context, arg FinishUploadScanPara
 	return result.RowsAffected(), nil
 }
 
+const getTransferProofByRequest = `-- name: GetTransferProofByRequest :one
+SELECT id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at, sent_by_staff_user_id, request_id FROM transfer_proof
+WHERE organization_id = $1 AND request_id = $2::uuid
+`
+
+type GetTransferProofByRequestParams struct {
+	OrganizationID uuid.UUID
+	RequestID      uuid.UUID
+}
+
+// The proof a tenant's sendPaymentProof already stored under a requestId.
+func (q *Queries) GetTransferProofByRequest(ctx context.Context, arg GetTransferProofByRequestParams) (TransferProof, error) {
+	row := q.db.QueryRow(ctx, getTransferProofByRequest, arg.OrganizationID, arg.RequestID)
+	var i TransferProof
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.TenantID,
+		&i.PaymentLinkID,
+		&i.InvoiceID,
+		&i.UploadID,
+		&i.UploadPurpose,
+		&i.CreatedAt,
+		&i.SentByStaffUserID,
+		&i.RequestID,
+	)
+	return i, err
+}
+
 const getUpload = `-- name: GetUpload :one
 SELECT id, organization_id, purpose, tenant_id, object_key, declared_size, content_type, status, uploaded_by_staff_user_id, created_at, completed_at, scanned_at FROM upload
 WHERE organization_id = $1 AND id = $2
@@ -104,9 +133,9 @@ func (q *Queries) InsertStaffTransferProof(ctx context.Context, arg InsertStaffT
 }
 
 const insertTransferProof = `-- name: InsertTransferProof :one
-INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
-VALUES ($1, $2, $3, $4::uuid, $5::uuid, $6, $7)
-RETURNING id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at, sent_by_staff_user_id
+INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at, request_id)
+VALUES ($1, $2, $3, $4::uuid, $5::uuid, $6, $7, $8)
+RETURNING id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, upload_purpose, created_at, sent_by_staff_user_id, request_id
 `
 
 type InsertTransferProofParams struct {
@@ -117,9 +146,10 @@ type InsertTransferProofParams struct {
 	InvoiceID      uuid.UUID
 	UploadID       uuid.UUID
 	CreatedAt      time.Time
+	RequestID      uuid.NullUUID
 }
 
-// A proof the tenant sent from a payment link (S6-5).
+// A proof the tenant sent from a payment link (S6-5), with the page's requestId when it sent one.
 func (q *Queries) InsertTransferProof(ctx context.Context, arg InsertTransferProofParams) (TransferProof, error) {
 	row := q.db.QueryRow(ctx, insertTransferProof,
 		arg.ID,
@@ -129,6 +159,7 @@ func (q *Queries) InsertTransferProof(ctx context.Context, arg InsertTransferPro
 		arg.InvoiceID,
 		arg.UploadID,
 		arg.CreatedAt,
+		arg.RequestID,
 	)
 	var i TransferProof
 	err := row.Scan(
@@ -141,6 +172,7 @@ func (q *Queries) InsertTransferProof(ctx context.Context, arg InsertTransferPro
 		&i.UploadPurpose,
 		&i.CreatedAt,
 		&i.SentByStaffUserID,
+		&i.RequestID,
 	)
 	return i, err
 }
@@ -238,6 +270,31 @@ func (q *Queries) InsertUpload(ctx context.Context, arg InsertUploadParams) (Upl
 	return i, err
 }
 
+const insertUploadDeletion = `-- name: InsertUploadDeletion :execrows
+INSERT INTO upload_deletion (upload_id, organization_id, deleted_at)
+SELECT $1::uuid, $2::uuid, $3::timestamptz
+WHERE NOT EXISTS (SELECT 1 FROM payment_receipt_photo p
+                  WHERE p.organization_id = $2::uuid AND p.upload_id = $1::uuid)
+ON CONFLICT (upload_id) DO NOTHING
+`
+
+type InsertUploadDeletionParams struct {
+	UploadID       uuid.UUID
+	OrganizationID uuid.UUID
+	DeletedAt      time.Time
+}
+
+// Records that upload:cleanup deletes the upload's file, unless a payment links it as its photo
+// (0 rows then, or when it was already recorded). Run after LockUpload, as a statement of its
+// own, so it sees a link committed while the job waited for the lock.
+func (q *Queries) InsertUploadDeletion(ctx context.Context, arg InsertUploadDeletionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertUploadDeletion, arg.UploadID, arg.OrganizationID, arg.DeletedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listStaleUploads = `-- name: ListStaleUploads :many
 SELECT id
 FROM upload
@@ -267,6 +324,52 @@ func (q *Queries) ListStaleUploads(ctx context.Context, arg ListStaleUploadsPara
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnusedCashReceipts = `-- name: ListUnusedCashReceipts :many
+SELECT u.id, u.object_key
+FROM upload u
+WHERE u.organization_id = $1 AND u.purpose = 'cash_receipt' AND u.status = 'clean'
+  AND u.created_at < $2::timestamptz
+  AND NOT EXISTS (SELECT 1 FROM payment_receipt_photo p
+                  WHERE p.organization_id = u.organization_id AND p.upload_id = u.id)
+  AND NOT EXISTS (SELECT 1 FROM upload_deletion d
+                  WHERE d.organization_id = u.organization_id AND d.upload_id = u.id)
+ORDER BY u.created_at, u.id
+LIMIT $3
+`
+
+type ListUnusedCashReceiptsParams struct {
+	OrganizationID uuid.UUID
+	Before         time.Time
+	RowLimit       int32
+}
+
+type ListUnusedCashReceiptsRow struct {
+	ID        uuid.UUID
+	ObjectKey string
+}
+
+// Clean receipt photos made before @before that back no payment and whose file is still stored,
+// oldest first: the photos of cash that was never recorded (decision 50), for upload:cleanup.
+func (q *Queries) ListUnusedCashReceipts(ctx context.Context, arg ListUnusedCashReceiptsParams) ([]ListUnusedCashReceiptsRow, error) {
+	rows, err := q.db.Query(ctx, listUnusedCashReceipts, arg.OrganizationID, arg.Before, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnusedCashReceiptsRow
+	for rows.Next() {
+		var i ListUnusedCashReceiptsRow
+		if err := rows.Scan(&i.ID, &i.ObjectKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -352,6 +455,40 @@ func (q *Queries) LockUpload(ctx context.Context, arg LockUploadParams) (Upload,
 	return i, err
 }
 
+const lockUploadShared = `-- name: LockUploadShared :one
+SELECT id, organization_id, purpose, tenant_id, object_key, declared_size, content_type, status, uploaded_by_staff_user_id, created_at, completed_at, scanned_at FROM upload
+WHERE organization_id = $1 AND id = $2
+FOR SHARE
+`
+
+type LockUploadSharedParams struct {
+	OrganizationID uuid.UUID
+	ID             uuid.UUID
+}
+
+// An upload, locked against upload:cleanup until the transaction ends: linking it as a payment's
+// photo takes this lock first, then checks UploadDeleted in a statement of its own, so it sees a
+// deletion the job committed while it waited.
+func (q *Queries) LockUploadShared(ctx context.Context, arg LockUploadSharedParams) (Upload, error) {
+	row := q.db.QueryRow(ctx, lockUploadShared, arg.OrganizationID, arg.ID)
+	var i Upload
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Purpose,
+		&i.TenantID,
+		&i.ObjectKey,
+		&i.DeclaredSize,
+		&i.ContentType,
+		&i.Status,
+		&i.UploadedByStaffUserID,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.ScannedAt,
+	)
+	return i, err
+}
+
 const markUploadCompleted = `-- name: MarkUploadCompleted :execrows
 UPDATE upload
 SET completed_at = $1::timestamptz
@@ -372,4 +509,22 @@ func (q *Queries) MarkUploadCompleted(ctx context.Context, arg MarkUploadComplet
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const uploadDeleted = `-- name: UploadDeleted :one
+SELECT EXISTS (SELECT 1 FROM upload_deletion
+               WHERE organization_id = $1 AND upload_id = $2) AS deleted
+`
+
+type UploadDeletedParams struct {
+	OrganizationID uuid.UUID
+	UploadID       uuid.UUID
+}
+
+// Whether upload:cleanup deleted the upload's file.
+func (q *Queries) UploadDeleted(ctx context.Context, arg UploadDeletedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, uploadDeleted, arg.OrganizationID, arg.UploadID)
+	var deleted bool
+	err := row.Scan(&deleted)
+	return deleted, err
 }
