@@ -19,6 +19,7 @@ import { toFormError } from "@/lib/api/form-error";
 import {
   getGetFieldPromiseOfferQueryKey,
   getListFieldTodayQueryKey,
+  getListFieldVisitsQueryKey,
   useGetFieldPromiseOffer,
   useMakeFieldPromise,
 } from "@/lib/api/generated/field/field";
@@ -49,7 +50,9 @@ const CLASSES = PROMISE_SHEET_CLASSES.drawer;
 // getFieldPromiseOffer then (never the cached answer of an earlier opening: a payment in between
 // moves the dates) and shows a skeleton until it arrives. The form is made once from that answer
 // and kept while the sheet is open. Saving sends makeFieldPromise (recorded as the karyawan's),
-// raises the toast and reloads Tagihan hari ini and the offer.
+// raises the toast and reloads Tagihan hari ini, Kunjungan hari ini and the offer. The sheet
+// closes only once they have reloaded, so "Catat hasil kunjungan" beneath it already offers the
+// new promise (its unlinkedPromiseToday: the answer itself carries no version id).
 export function FieldPromiseSheet({
   orgId,
   tenant,
@@ -74,6 +77,7 @@ export function FieldPromiseSheet({
     Promise.all(
       [
         getListFieldTodayQueryKey(orgId),
+        getListFieldVisitsQueryKey(orgId),
         getGetFieldPromiseOfferQueryKey(orgId, tenant.tenantId),
       ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
     );
