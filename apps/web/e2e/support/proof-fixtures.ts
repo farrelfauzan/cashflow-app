@@ -39,6 +39,23 @@ export const INFECTED_TENANTS: Record<ProjectName, string> = {
   desktop: "Farhan Maulana",
 };
 
+// "Ganti" (board Admin-Cek-Bukti-Ganti): each project's sender sends a proof that Pak Dimas records
+// as the payee's transfer (a relative paid for them). The money is the payee's, so each project
+// has its own pair. The ended-lease tenant is only searched and chosen, never paid.
+export const OTHER_PAYER_SENDERS: Record<ProjectName, string> = {
+  ipad: "Kartika Dewi",
+  phone: "Maya Anggraeni",
+  desktop: "Putri Rahayu",
+};
+
+export const OTHER_PAYER_PAYEES: Record<ProjectName, string> = {
+  ipad: "Umi Kulsum",
+  phone: "Vina Oktaviani",
+  desktop: "Jumiati",
+};
+
+export const ENDED_LEASE_TENANT = "Agung Laksono";
+
 export function tenantFor(
   tenants: Record<ProjectName, string>,
   testInfo: TestInfo,

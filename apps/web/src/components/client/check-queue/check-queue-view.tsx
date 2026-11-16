@@ -20,6 +20,7 @@ import type { AppAbility } from "@/lib/capabilities";
 
 import {
   canCheckItems,
+  canChangeProofPayer,
   canMatchProofs,
   canReadCheckQueue,
   checkRowViews,
@@ -58,6 +59,7 @@ export function CheckQueueView({ orgId }: CheckQueueViewProps) {
   const canRead = canReadCheckQueue(ability);
   const canAct = canCheckItems(ability);
   const canMatch = canMatchProofs(ability);
+  const canChangePayer = canChangeProofPayer(ability);
 
   const url = useListUrl();
   const kind = readCheckKind(url.searchParams);
@@ -143,6 +145,7 @@ export function CheckQueueView({ orgId }: CheckQueueViewProps) {
           item={sheet.item}
           canAct={canAct}
           canMatch={canMatch}
+          canChangePayer={canChangePayer}
           open={sheet.open}
           onOpenChange={(open) => setSheet((current) => ({ ...current, open }))}
         />

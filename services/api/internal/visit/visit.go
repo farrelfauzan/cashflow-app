@@ -129,6 +129,20 @@ type Row struct {
 	// UnlinkedCashToday is the field cash the member took from the tenant today that no outcome
 	// names yet, oldest first, for "Sudah bayar hari ini".
 	UnlinkedCashToday []billing.FieldCashPayment
+	// UnlinkedPromiseToday is the newest promise version the member made for the tenant today from
+	// the field, when no outcome names it yet, for "Janji baru"; nil otherwise.
+	UnlinkedPromiseToday *TodayPromise
+}
+
+// TodayPromise is a promise version a member made from the field today.
+type TodayPromise struct {
+	VersionID      uuid.UUID
+	PromiseID      uuid.UUID
+	Version        int
+	Kind           string
+	PromisedDate   time.Time // a calendar day, midnight UTC
+	PromisedAmount *int64    // nil: everything owed
+	CreatedAt      time.Time
 }
 
 // validInput trims and checks an outcome; the phone is normalized by the caller.

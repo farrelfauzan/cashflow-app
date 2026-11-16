@@ -520,6 +520,78 @@ func (q *Queries) ListUnlinkedCashToday(ctx context.Context, arg ListUnlinkedCas
 	return items, nil
 }
 
+const listUnlinkedPromisesToday = `-- name: ListUnlinkedPromisesToday :many
+SELECT v.id, v.promise_id, v.tenant_id, v.version, v.kind, v.promised_date, v.promised_amount, v.created_at
+FROM promise_version v
+WHERE v.organization_id = $1 AND v.tenant_id = ANY($2::uuid[]) AND v.source = 'karyawan'
+  AND v.created_by_staff_user_id = $3::uuid
+  AND v.created_at >= $4 AND v.created_at < $5
+  AND NOT EXISTS (SELECT 1 FROM promise_version n
+                  WHERE n.organization_id = v.organization_id AND n.tenant_id = v.tenant_id AND n.source = 'karyawan'
+                    AND n.created_by_staff_user_id = v.created_by_staff_user_id
+                    AND n.created_at >= $4 AND n.created_at < $5
+                    AND (n.created_at, n.id) > (v.created_at, v.id))
+  AND NOT EXISTS (SELECT 1 FROM visit_outcome o WHERE o.organization_id = v.organization_id AND o.promise_version_id = v.id)
+ORDER BY v.tenant_id
+`
+
+type ListUnlinkedPromisesTodayParams struct {
+	OrganizationID uuid.UUID
+	TenantIds      []uuid.UUID
+	StaffUserID    uuid.UUID
+	DayStart       time.Time
+	DayEnd         time.Time
+}
+
+type ListUnlinkedPromisesTodayRow struct {
+	ID             uuid.UUID
+	PromiseID      uuid.UUID
+	TenantID       uuid.UUID
+	Version        int32
+	Kind           string
+	PromisedDate   time.Time
+	PromisedAmount *int64
+	CreatedAt      time.Time
+}
+
+// For each of the given tenants, the newest promise version @staff_user_id made from the field in
+// [@day_start, @day_end), when no visit outcome names it yet. An older version of the day is never
+// returned, even when the newest one is named.
+func (q *Queries) ListUnlinkedPromisesToday(ctx context.Context, arg ListUnlinkedPromisesTodayParams) ([]ListUnlinkedPromisesTodayRow, error) {
+	rows, err := q.db.Query(ctx, listUnlinkedPromisesToday,
+		arg.OrganizationID,
+		arg.TenantIds,
+		arg.StaffUserID,
+		arg.DayStart,
+		arg.DayEnd,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnlinkedPromisesTodayRow
+	for rows.Next() {
+		var i ListUnlinkedPromisesTodayRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PromiseID,
+			&i.TenantID,
+			&i.Version,
+			&i.Kind,
+			&i.PromisedDate,
+			&i.PromisedAmount,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVisitOutcomeTaskReasons = `-- name: ListVisitOutcomeTaskReasons :many
 SELECT v.reason
 FROM visit_outcome_task ot

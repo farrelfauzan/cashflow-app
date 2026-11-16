@@ -11,8 +11,9 @@ import {
 } from "./utils";
 
 type ProofPhotoPreviewProps = {
-  // Null while the chosen photo is made ready.
-  photo: ProofPhoto | null;
+  // Null while the chosen photo is made ready. Only its object URL is shown, so the karyawan's
+  // "Bukti transfer dari penyewa" (field-proof) passes its own photo too.
+  photo: Pick<ProofPhoto, "previewUrl"> | null;
 };
 
 // The chosen photo, whole, as it will be sent. A file this browser cannot show (a HEIC photo on a

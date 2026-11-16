@@ -9,11 +9,15 @@ import { useGetTenantAccount } from "@/lib/api/generated/money/money";
 import type { CheckTransferProof } from "@/lib/api/generated/model";
 import { jakartaToday } from "@/lib/format/date";
 
-import type { ProofSheetStep } from "./type";
+import type { ProofPayee, ProofSheetStep } from "./type";
 import {
   BACK_LABEL,
   CLOSE_LABEL,
   NOTE_LABEL,
+  otherPayeeNotice,
+  PAYEE_TITLE,
+  PAYEE_USE,
+  payeeSubtitle,
   previewAmount,
   PROOF_CALLOUT,
   PROOF_DISMISSED_TOAST,
@@ -28,6 +32,7 @@ import {
   PROOF_SUBMIT,
   PROOF_TITLE,
   proofPayerView,
+  senderPayee,
   proofPhotoAlt,
   proofPhotoCaption,
   tenantLine,
@@ -39,6 +44,7 @@ import { CheckNoteField } from "./check-note-field";
 import { CheckSheetFooter } from "./check-sheet-footer";
 import { CheckSheetFrame } from "./check-sheet-frame";
 import { ProofMatchFields } from "./proof-match-fields";
+import { ProofPayeePicker } from "./proof-payee-picker";
 import { ProofPayer } from "./proof-payer";
 import { ProofPhoto } from "./proof-photo";
 import { ProofPreview } from "./proof-preview";
@@ -58,6 +64,8 @@ type TransferProofSheetProps = {
   canAct: boolean;
   // Whether the member may also record payments; matching needs both.
   canMatch: boolean;
+  // Whether the member may also search tenants, which "Ganti" (another tenant's payment) needs.
+  canChangePayer: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -65,7 +73,9 @@ type TransferProofSheetProps = {
 // "Bukti transfer" (board Admin-Cek-Bukti): a tenant's photo of a bank transfer, sent from the
 // payment page. The admin checks the business account's statement, then types what arrived and
 // when; the API previews what it would pay and "Simpan pembayaran" records it as a transfer for the
-// proof's own tenant. "Bukan pembayaran" turns the drawer into a note that takes the proof off the
+// proof's own tenant, or for another tenant chosen with "Ganti" (board Admin-Cek-Bukti-Ganti: a
+// relative paid for them), which turns the drawer into "Pembayaran untuk siapa?" and back; the
+// typed amount, day and note stay. "Bukan pembayaran" turns the drawer into a note that takes the proof off the
 // queue. While the photo is being scanned it is not shown and cannot be matched. A member who may
 // answer items but not record payments gets only "Bukan pembayaran"; one who may only read (the
 // Supervisor) sees the photo and "Tutup".
@@ -76,6 +86,7 @@ export function TransferProofSheet({
   proof,
   canAct,
   canMatch,
+  canChangePayer,
   open,
   onOpenChange,
 }: TransferProofSheetProps) {
@@ -86,6 +97,10 @@ export function TransferProofSheet({
   const subtitle = tenantLine(tenant);
   const [today] = useState(() => jakartaToday(new Date()));
   const [step, setStep] = useState<ProofSheetStep>("review");
+  const [sender] = useState(() => senderPayee(tenant));
+  // Whose payment it becomes, and the choice being made in the picker.
+  const [payee, setPayee] = useState<ProofPayee>(sender);
+  const [draft, setDraft] = useState<ProofPayee>(sender);
   const close = () => onOpenChange(false);
   const refreshQueue = useRefreshCheckQueue(orgId);
 
@@ -101,14 +116,20 @@ export function TransferProofSheet({
       close();
     },
   });
+  // The sender's account names the invoice of the link the proof came from; the payee's says what
+  // they still owe (the same read while the payee is the sender).
   const account = useGetTenantAccount(orgId, tenant.id, {
+    query: { enabled: open },
+  });
+  const payeeAccount = useGetTenantAccount(orgId, payee.id, {
     query: { enabled: open },
   });
   const match = useMatchProofForm({
     orgId,
     itemId,
-    tenantId: tenant.id,
-    tenantName: tenant.name,
+    proofTenantId: tenant.id,
+    payeeId: payee.id,
+    payeeName: payee.name,
     today,
     onDone: close,
     onNotReady: upload.reload,
@@ -122,9 +143,16 @@ export function TransferProofSheet({
   });
   const typed = useWatch({ control: match.form.control, name: "amount" });
   const amount = canMatch ? previewAmount(typed) : null;
-  const preview = useProofPreview({ orgId, tenantId: tenant.id, amount });
+  const preview = useProofPreview({ orgId, tenantId: payee.id, amount });
 
   const rejecting = canAct && step === "reject";
+  const choosing = canMatch && canChangePayer && step === "payee";
+  // "Ganti" goes once a save may have recorded the payment for this payee, and while one runs.
+  const mayChange = canChangePayer && !match.payeeLocked && !match.saving;
+  function openPicker() {
+    setDraft(payee);
+    setStep("payee");
+  }
   const pending = match.pending || reject.pending;
   // Set by the press on "Perbesar foto", before the large view has registered as the top layer:
   // an Escape in that moment would otherwise reach the drawer and close it instead. It counts
@@ -153,7 +181,37 @@ export function TransferProofSheet({
 
   let body;
   let footer;
-  if (rejecting) {
+  if (choosing) {
+    body = (
+      <ProofPayeePicker
+        orgId={orgId}
+        sender={sender}
+        selected={draft}
+        onSelect={setDraft}
+        initialSearch={payee.id === sender.id ? "" : payee.name}
+      />
+    );
+    // Its own key: "Pakai penyewa ini" must not be the same button that becomes "Simpan
+    // pembayaran" (a submit) when the step changes during the click, or the browser would then
+    // submit the payment with that very click.
+    footer = (
+      <CheckSheetFooter
+        key="payee"
+        readOnly={false}
+        secondaryLabel={BACK_LABEL}
+        onSecondary={() => setStep("review")}
+        primaryLabel={PAYEE_USE}
+        onPrimary={() => {
+          // An alert from a save for the previous payee does not hold for this one.
+          if (draft.id !== payee.id) match.form.clearErrors("root");
+          setPayee(draft);
+          setStep("review");
+        }}
+        saving={false}
+        pending={false}
+      />
+    );
+  } else if (rejecting) {
     body = (
       <>
         {reject.alert !== undefined && <FormAlert message={reject.alert} />}
@@ -188,7 +246,11 @@ export function TransferProofSheet({
         {photo}
         {pendingCallout}
         <CheckCallout tone="warning" text={PROOF_CALLOUT} />
-        <ProofPayer payer={proofPayerView(tenant, account.data?.outstanding)} />
+        <ProofPayer
+          payer={proofPayerView(payee, payeeAccount.data?.outstanding)}
+          notice={otherPayeeNotice(tenant, payee.id)}
+          onChange={mayChange ? openPicker : undefined}
+        />
         <ProofMatchFields
           form={match.form}
           today={today}
@@ -265,7 +327,8 @@ export function TransferProofSheet({
   if (rejecting) {
     formId = rejectFormId;
     onSubmit = reject.submit;
-  } else if (canMatch) {
+  } else if (canMatch && !choosing) {
+    // The picker is no form: Enter in "Cari penyewa" must not save the payment.
     formId = matchFormId;
     onSubmit = match.submit;
   }
@@ -275,9 +338,15 @@ export function TransferProofSheet({
       open={open}
       onOpenChange={onOpenChange}
       busy={pending || (zoomed && upload.photo.kind === "clean")}
-      dirty={match.form.formState.isDirty || reject.form.formState.isDirty}
-      title={rejecting ? PROOF_REJECT_TITLE : PROOF_TITLE}
-      subtitle={subtitle}
+      dirty={
+        match.form.formState.isDirty ||
+        reject.form.formState.isDirty ||
+        payee.id !== sender.id
+      }
+      title={
+        choosing ? PAYEE_TITLE : rejecting ? PROOF_REJECT_TITLE : PROOF_TITLE
+      }
+      subtitle={choosing ? payeeSubtitle(tenant) : subtitle}
       formId={formId}
       onSubmit={onSubmit}
       footer={footer}

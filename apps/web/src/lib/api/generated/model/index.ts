@@ -59,6 +59,7 @@ export * from './fieldCashPayment';
 export * from './fieldCashToday';
 export * from './fieldDueReason';
 export * from './fieldPromiseOffer';
+export * from './fieldPromiseVersion';
 export * from './fieldTodayItem';
 export * from './fieldTodayList';
 export * from './fieldUnit';

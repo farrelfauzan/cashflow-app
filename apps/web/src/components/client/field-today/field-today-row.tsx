@@ -1,6 +1,7 @@
 "use client";
 
 import { ReceiveCashButton } from "@/components/client/field-cash/receive-cash-button";
+import { SendFieldProofButton } from "@/components/client/field-proof/send-field-proof-button";
 import { RecordPromiseButton } from "@/components/client/field-promise/record-promise-button";
 import { TenantChip } from "@/components/client/tenant/tenant-chip";
 
@@ -13,7 +14,8 @@ type FieldTodayRowProps = {
 
 // One tenant to collect from (board HP-Tagihan, column 1): name and units, why they are on the
 // list, what they still owe, the cash taken from them today with its photo, and "Terima tunai"
-// while they still owe, with "Catat janji bayar" beside it.
+// while they still owe, with "Catat janji bayar" beside it and "Penyewa sudah transfer? Kirim
+// bukti" under both (board HP-Bukti-Karyawan, 1).
 export function FieldTodayRow({ orgId, view }: FieldTodayRowProps) {
   return (
     <li className="flex flex-col gap-2 rounded-[14px] border bg-card px-3.5 py-3 md:px-4 md:py-3.5">
@@ -58,6 +60,13 @@ export function FieldTodayRow({ orgId, view }: FieldTodayRowProps) {
             className="flex-1"
           />
         </div>
+      )}
+      {view.canCollect && (
+        <SendFieldProofButton
+          orgId={orgId}
+          tenant={view.item}
+          placeLabel={view.place}
+        />
       )}
     </li>
   );
