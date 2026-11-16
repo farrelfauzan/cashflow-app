@@ -4691,6 +4691,11 @@ components:
         tenantId: { type: string, format: uuid }
         outcome: { $ref: "#/components/schemas/VisitOutcomeKind" }
         paymentId: { type: string, format: uuid }
+        amount:
+          type: integer
+          format: int64
+          description: For paid only, with paymentId; what that cash counts now, net of its corrections.
+          example: 950000
         promiseVersionId: { type: string, format: uuid }
         newPhone: { type: string, description: "E.164.", example: "+6281234567890" }
         note: { type: string }
@@ -4759,11 +4764,17 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
         - type: object
-          required: [items]
+          required: [items, openTotal]
           properties:
             items:
               type: array
               items: { $ref: "#/components/schemas/FieldVisit" }
+            openTotal:
+              type: integer
+              minimum: 0
+              description: >
+                How many rows of the whole list (every page, what total counts) are status open:
+                the visits the caller has not finished today, for the Kunjungan tab's badge.
 
     CorrectionInput:
       type: object

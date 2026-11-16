@@ -712,7 +712,8 @@ func TestListFieldVisits(t *testing.T) {
 	all := func(t *testing.T, p authz.Principal) []visit.Row {
 		t.Helper()
 		items, err := listing.All(func(page listing.Page) (listing.Result[visit.Row], error) {
-			return w.visits.List(ctx, p, page)
+			res, err := w.visits.List(ctx, p, page)
+			return res.Result, err
 		})
 		require.NoError(t, err)
 		return items
@@ -792,6 +793,8 @@ func TestListFieldVisits(t *testing.T) {
 		require.NotNil(t, dewiRow.LastOutcome)
 		require.Equal(t, visit.OutcomePaid, dewiRow.LastOutcome.Outcome)
 		require.Equal(t, dewiCash.Payment.ID, dewiRow.LastOutcome.PaymentID)
+		require.EqualValues(t, 700_000, dewiRow.LastOutcome.Amount, "what the cash counts")
+		require.Zero(t, byName(rows, "Joko Widodo").LastOutcome.Amount, "a promise has none")
 		require.Equal(t, []string{visit.ReasonOverdue}, dewiRow.LastOutcome.Resolved)
 
 		jokoRow := byName(rows, "Joko Widodo")
@@ -813,6 +816,7 @@ func TestListFieldVisits(t *testing.T) {
 			res, err := w.visits.List(ctx, w.karyawan, listing.Page{Number: n, Size: 4})
 			require.NoError(t, err)
 			require.EqualValues(t, 6, res.Total)
+			require.EqualValues(t, 4, res.OpenTotal, "Agus, Citra (not home), Budi and Hana, on every page")
 			got = append(got, names(res.Items)...)
 		}
 		require.Equal(t, []string{"Agus Setiawan", "Citra Lestari", "Budi Hartono", "Hana Safitri", "Joko Widodo", "Dewi Anggraini"}, got)
@@ -824,6 +828,7 @@ func TestListFieldVisits(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, res.Items)
 			require.Zero(t, res.Total)
+			require.Zero(t, res.OpenTotal)
 		}
 	})
 
@@ -844,9 +849,23 @@ func TestListFieldVisits(t *testing.T) {
 		t.Cleanup(func() { setNow(env, 2026, 11, 14, 10, 0) })
 		rows := all(t, w.karyawan)
 		require.Equal(t, []string{"Agus Setiawan", "Citra Lestari", "Budi Hartono", "Hana Safitri"}, names(rows))
+		res, err := w.visits.List(ctx, w.karyawan, listing.Page{Number: 1, Size: 1})
+		require.NoError(t, err)
+		require.EqualValues(t, 4, res.Total)
+		require.EqualValues(t, 4, res.OpenTotal, "every row is open again")
 		require.Equal(t, visit.Reason{Code: visit.ReasonOverdue, DaysOverdue: 14}, rows[0].Reasons[0])
 		require.Equal(t, noCash, rows[0].UnlinkedCashToday)
 		require.Nil(t, rows[1].LastOutcome, "yesterday's not home is not today's")
+	})
+
+	// Near the end, since it changes what Dewi paid; before the next one, which moves to the next day.
+	t.Run("a paid outcome's amount is what its cash counts after corrections", func(t *testing.T) {
+		newAmount := int64(650_000)
+		_, err := env.Billing.CreateCorrection(ctx, w.admin, billing.CorrectionInput{
+			RequestID: uuid.New(), PaymentID: dewiCash.Payment.ID, NewAmount: &newAmount, Reason: "Uang kurang Rp50.000 saat disetor",
+		})
+		require.NoError(t, err)
+		require.EqualValues(t, 650_000, byName(all(t, w.karyawan), "Dewi Anggraini").LastOutcome.Amount)
 	})
 
 	// Last, since it records outcomes the subtests above do not expect.

@@ -56,19 +56,19 @@ func (s *Service) today() (day, start, end time.Time) {
 // dashboard's (a member with no access at all is denied and audited), then a tenant is listed only
 // when p may read visits through each of its active leases (decision 47). A member with the
 // organization-wide grant still sees only the tenants they collect from. Total counts the rows p
-// may see.
-func (s *Service) List(ctx context.Context, p authz.Principal, page listing.Page) (listing.Result[Row], error) {
+// may see, and OpenTotal those of them still open.
+func (s *Service) List(ctx context.Context, p authz.Principal, page listing.Page) (ListResult, error) {
 	org := p.OrganizationID
 	now := s.clock.Now()
 	day, start, end := s.today()
-	out := listing.Result[Row]{Items: []Row{}, Page: page}
+	out := ListResult{Result: listing.Result[Row]{Items: []Row{}, Page: page}}
 	err := s.store.WithOrgSnapshot(ctx, org, func(tx pgx.Tx) error {
 		leaseIDs, err := s.tenants.VisibleLeaseIDs(ctx, tx, p, authz.ActionVisitRead, "tenant")
 		if err != nil {
 			return err
 		}
 		q := dbgen.New(tx)
-		total, err := q.CountFieldVisits(ctx, dbgen.CountFieldVisitsParams{
+		count, err := q.CountFieldVisits(ctx, dbgen.CountFieldVisitsParams{
 			OrganizationID: org, CollectorID: p.UserID, LeaseIds: leaseIDs, DayStart: start, DayEnd: end,
 		})
 		if err != nil {
@@ -84,11 +84,11 @@ func (s *Service) List(ctx context.Context, p authz.Principal, page listing.Page
 		if out.Items, err = s.rows(ctx, tx, p, rows, now, start, end); err != nil {
 			return err
 		}
-		out.Total = total
+		out.Total, out.OpenTotal = count.Total, count.OpenTotal
 		return nil
 	})
 	if err != nil {
-		return listing.Result[Row]{}, err
+		return ListResult{}, err
 	}
 	return out, nil
 }
@@ -291,6 +291,9 @@ func (s *Service) Record(ctx context.Context, p authz.Principal, tenantID uuid.U
 			return fmt.Errorf("recording the visit outcome: %w", err)
 		}
 		out = fromRow(row)
+		if out.Amount, err = paidAmount(ctx, q, org, row); err != nil {
+			return err
+		}
 		out.Resolved = []string{}
 		for _, t := range tasks {
 			if !answers(in.Outcome, t.Reason) {
@@ -390,9 +393,27 @@ func todayPromise(v dbgen.ListUnlinkedPromisesTodayRow) *TodayPromise {
 	}
 }
 
-// withResolved is an outcome row with the reasons of the tasks it resolved.
+// paidAmount is what a paid outcome's payment counts now, net of its corrections; 0 for any other
+// outcome.
+func paidAmount(ctx context.Context, q *dbgen.Queries, org uuid.UUID, row dbgen.VisitOutcome) (int64, error) {
+	if !row.PaymentID.Valid {
+		return 0, nil
+	}
+	net, err := q.GetPaymentNet(ctx, dbgen.GetPaymentNetParams{OrganizationID: org, ID: row.PaymentID.UUID})
+	if err != nil {
+		return 0, fmt.Errorf("loading the outcome's payment amount: %w", err)
+	}
+	return net, nil
+}
+
+// withResolved is an outcome row with the reasons of the tasks it resolved and, when paid, what its
+// payment counts now.
 func withResolved(ctx context.Context, q *dbgen.Queries, org uuid.UUID, row dbgen.VisitOutcome) (Outcome, error) {
 	out := fromRow(row)
+	var err error
+	if out.Amount, err = paidAmount(ctx, q, org, row); err != nil {
+		return Outcome{}, err
+	}
 	reasons, err := q.ListVisitOutcomeTaskReasons(ctx, dbgen.ListVisitOutcomeTaskReasonsParams{OrganizationID: org, OutcomeID: row.ID})
 	if err != nil {
 		return Outcome{}, fmt.Errorf("listing what the outcome resolved: %w", err)
