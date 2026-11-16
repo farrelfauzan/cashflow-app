@@ -17,6 +17,7 @@ export const ORG_HOME_URL = /\/o\/[0-9a-f-]{36}$/;
 // ini for a karyawan (the home page sends a member without reports to their first section).
 export const ORG_LANDING_URL = /\/o\/[0-9a-f-]{36}(\/field)?$/;
 export const FIELD_TODAY_URL = /\/o\/[0-9a-f-]{36}\/field$/;
+export const FIELD_VISITS_URL = /\/o\/[0-9a-f-]{36}\/field\/visits$/;
 
 // The organization's home (/o/<id>) of any page inside it.
 export function orgHomeOf(url: string): string {
@@ -53,6 +54,7 @@ export function menuSections(menu: Locator) {
 // "Lainnya".
 const PHONE_TAB_ORDER = [
   "Tagihan hari ini",
+  "Kunjungan hari ini",
   "Setor tunai",
   "Beranda",
   "Penyewa",
@@ -61,6 +63,7 @@ const PHONE_TAB_ORDER = [
 ];
 const TAB_LABELS: Readonly<Record<string, string>> = {
   "Tagihan hari ini": "Tagihan",
+  "Kunjungan hari ini": "Kunjungan",
   "Setor tunai": "Setor",
 };
 export function tabLabel(section: string): string {

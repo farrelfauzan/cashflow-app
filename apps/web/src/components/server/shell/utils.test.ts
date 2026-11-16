@@ -31,6 +31,8 @@ const KARYAWAN = capabilities({
   "tenant:read": "conditional",
   "invoice:read": "conditional",
   "cash:record": "conditional",
+  "visit:read": "conditional",
+  "visit:record": "conditional",
   "cash:deposit": "conditional",
   "member:read": "deny",
 });
@@ -40,6 +42,8 @@ const ADMIN = capabilities({
   "tenant:read": "allow",
   "invoice:read": "allow",
   "cash:record": "deny",
+  "visit:read": "allow",
+  "visit:record": "deny",
   "cash:deposit": "deny",
   "member:read": "allow",
 });
@@ -53,12 +57,14 @@ describe("visibleOrgMenu", () => {
       "tenant:read": "allow",
       "invoice:read": "allow",
       "cash:deposit": "allow",
+      "visit:record": "allow",
       "member:read": "allow",
     });
     expect(
       visibleOrgMenu(createAppAbility(all)).map((item) => item.key),
     ).toEqual([
       "field",
+      "visits",
       "deposit",
       "home",
       "properties",
@@ -81,10 +87,25 @@ describe("visibleOrgMenu", () => {
     ).toEqual(["home", "properties", "tenants", "billing"]);
   });
 
-  it("shows Tagihan hari ini and Setor tunai first, and no Beranda, to a karyawan", () => {
+  it("shows Tagihan hari ini, Kunjungan hari ini and Setor tunai first, and no Beranda, to a karyawan", () => {
     expect(
       visibleOrgMenu(createAppAbility(KARYAWAN)).map((item) => item.label),
-    ).toEqual(["Tagihan hari ini", "Setor tunai", "Penyewa", "Penagihan"]);
+    ).toEqual([
+      "Tagihan hari ini",
+      "Kunjungan hari ini",
+      "Setor tunai",
+      "Penyewa",
+      "Penagihan",
+    ]);
+  });
+
+  it("shows Kunjungan hari ini by visit:record, not by visit:read", () => {
+    const readOnly = capabilities({ "visit:read": "allow" });
+    expect(visibleOrgMenu(createAppAbility(readOnly))).toEqual([]);
+    const records = capabilities({ "visit:record": "conditional" });
+    expect(
+      visibleOrgMenu(createAppAbility(records)).map((item) => item.segment),
+    ).toEqual(["field/visits"]);
   });
 
   it("keeps the admin's menu, which starts at Beranda", () => {
@@ -165,23 +186,26 @@ describe("phoneTabs and moreMenuSections", () => {
     ]);
   });
 
-  it("gives the karyawan Tagihan, Setor, Penyewa and Penagihan, and nothing more in Lainnya", () => {
+  it("gives the karyawan Tagihan, Kunjungan, Setor and Penyewa, and Penagihan in Lainnya", () => {
     const visible = visibleOrgMenu(createAppAbility(KARYAWAN));
     expect(
       phoneTabs(visible).map((item) => item.tabLabel ?? item.label),
-    ).toEqual(["Tagihan", "Setor", "Penyewa", "Penagihan"]);
-    expect(moreMenuSections(visible)).toEqual([]);
+    ).toEqual(["Tagihan", "Kunjungan", "Setor", "Penyewa"]);
+    expect(moreMenuSections(visible).map((item) => item.label)).toEqual([
+      "Penagihan",
+    ]);
   });
 
   it("takes four tabs at most and moves the rest to Lainnya in the side menu's order", () => {
     expect(phoneTabs(ORG_MENU).map((item) => item.key)).toEqual([
       "field",
+      "visits",
       "deposit",
       "home",
-      "tenants",
     ]);
     expect(moreMenuSections(ORG_MENU).map((item) => item.key)).toEqual([
       "properties",
+      "tenants",
       "billing",
       "members",
     ]);
