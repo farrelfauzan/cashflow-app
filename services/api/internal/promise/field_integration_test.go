@@ -138,6 +138,12 @@ func TestFieldPromiseOffer(t *testing.T) {
 		require.NoError(t, err)
 		return acct.Promises
 	}
+	owedAsAdmin := func(t *testing.T, r renter) int64 {
+		t.Helper()
+		acct, err := env.Billing.Account(ctx, w.admin, r.tenantID)
+		require.NoError(t, err)
+		return acct.Outstanding
+	}
 	readDenials := func() int {
 		n := 0
 		for _, row := range env.AuditLog(t, w.org.ID) {
@@ -158,6 +164,8 @@ func TestFieldPromiseOffer(t *testing.T) {
 		want := asAdmin(t, own)
 		require.Equal(t, want.Dates, got.Dates)
 		require.Equal(t, want.NextInvoiceDueDate, got.NextInvoiceDueDate)
+		require.EqualValues(t, 700_000, got.Outstanding, "the month's rent")
+		require.Equal(t, owedAsAdmin(t, own), got.Outstanding)
 	})
 
 	t.Run("with an active promise: its newest version, which saving replaces", func(t *testing.T) {
@@ -172,6 +180,18 @@ func TestFieldPromiseOffer(t *testing.T) {
 		require.Equal(t, want.Active, got.Active)
 		require.Equal(t, want.Dates, got.Dates)
 		require.Equal(t, want.NextInvoiceDueDate, got.NextInvoiceDueDate)
+	})
+
+	t.Run("what the tenant owes is read with the offer, so cash recorded meanwhile shows", func(t *testing.T) {
+		_, err := env.Billing.RecordCashPayment(ctx, karyawan, billing.CashInput{
+			RequestID: uuid.New(), TenantID: own.tenantID, Amount: 200_000,
+			PhotoUploadID: env.CashPhoto(t, w.org.ID, karyawan.UserID, own.tenantID),
+		})
+		require.NoError(t, err)
+		got, err := env.Billing.FieldPromiseOffer(ctx, karyawan, own.tenantID)
+		require.NoError(t, err)
+		require.EqualValues(t, 500_000, got.Outstanding)
+		require.Equal(t, owedAsAdmin(t, own), got.Outstanding)
 	})
 
 	t.Run("not for a tenant the karyawan does not collect from; the refusal is audited", func(t *testing.T) {
