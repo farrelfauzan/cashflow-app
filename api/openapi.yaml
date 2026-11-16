@@ -4732,11 +4732,17 @@ components:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
         - type: object
-          required: [items]
+          required: [items, openTotal]
           properties:
             items:
               type: array
               items: { $ref: "#/components/schemas/FieldVisit" }
+            openTotal:
+              type: integer
+              minimum: 0
+              description: >
+                How many rows of the whole list (every page, what total counts) are status open:
+                the visits the caller has not finished today, for the Kunjungan tab's badge.
 
     CorrectionInput:
       type: object

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/billing"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/listing"
 )
 
 // Outcomes of a visit.
@@ -112,6 +113,13 @@ type Reason struct {
 	// BrokenPromises is, for ReasonBrokenPromises, how many promises broke since the tenant's last
 	// such visit.
 	BrokenPromises int
+}
+
+// ListResult is one page of the visit list, with how many of all its rows are still open.
+type ListResult struct {
+	listing.Result[Row]
+	// OpenTotal counts the rows of the whole list (not only this page) with status open.
+	OpenTotal int64
 }
 
 // Row is one tenant on the visit list.

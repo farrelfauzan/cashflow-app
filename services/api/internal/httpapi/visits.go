@@ -31,6 +31,7 @@ func (s *Server) listFieldVisits(w http.ResponseWriter, r *http.Request) {
 	}
 	out := apigen.FieldVisitList{
 		Items: make([]apigen.FieldVisit, len(res.Items)), Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+		OpenTotal: int(res.OpenTotal),
 	}
 	for i, row := range res.Items {
 		out.Items[i] = toAPIFieldVisit(row)

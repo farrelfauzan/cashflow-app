@@ -1664,6 +1664,9 @@ type FieldVisit struct {
 type FieldVisitList struct {
 	Items []FieldVisit `json:"items"`
 
+	// OpenTotal How many rows of the whole list (every page, what total counts) are status open: the visits the caller has not finished today, for the Kunjungan tab's badge.
+	OpenTotal int `json:"openTotal"`
+
 	// Page The page returned, from 1.
 	Page     int `json:"page"`
 	PageSize int `json:"pageSize"`

@@ -29,7 +29,8 @@ WITH mine AS (
                       WHERE l.organization_id = t.organization_id AND l.tenant_id = t.id
                         AND l.status = 'active' AND NOT (l.id = ANY($5::uuid[])))
 )
-SELECT count(*) FROM mine WHERE oldest_open_at IS NOT NULL OR visited_at IS NOT NULL
+SELECT count(*) AS total, count(*) FILTER (WHERE oldest_open_at IS NOT NULL) AS open_total
+FROM mine WHERE oldest_open_at IS NOT NULL OR visited_at IS NOT NULL
 `
 
 type CountFieldVisitsParams struct {
@@ -40,7 +41,12 @@ type CountFieldVisitsParams struct {
 	LeaseIds       []uuid.UUID
 }
 
-func (q *Queries) CountFieldVisits(ctx context.Context, arg CountFieldVisitsParams) (int64, error) {
+type CountFieldVisitsRow struct {
+	Total     int64
+	OpenTotal int64
+}
+
+func (q *Queries) CountFieldVisits(ctx context.Context, arg CountFieldVisitsParams) (CountFieldVisitsRow, error) {
 	row := q.db.QueryRow(ctx, countFieldVisits,
 		arg.CollectorID,
 		arg.DayStart,
@@ -48,9 +54,9 @@ func (q *Queries) CountFieldVisits(ctx context.Context, arg CountFieldVisitsPara
 		arg.OrganizationID,
 		arg.LeaseIds,
 	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+	var i CountFieldVisitsRow
+	err := row.Scan(&i.Total, &i.OpenTotal)
+	return i, err
 }
 
 const getVisitOutcomeByRequestID = `-- name: GetVisitOutcomeByRequestID :one

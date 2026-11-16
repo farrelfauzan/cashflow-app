@@ -65,7 +65,8 @@ WITH mine AS (
                       WHERE l.organization_id = t.organization_id AND l.tenant_id = t.id
                         AND l.status = 'active' AND NOT (l.id = ANY(@lease_ids::uuid[])))
 )
-SELECT count(*) FROM mine WHERE oldest_open_at IS NOT NULL OR visited_at IS NOT NULL;
+SELECT count(*) AS total, count(*) FILTER (WHERE oldest_open_at IS NOT NULL) AS open_total
+FROM mine WHERE oldest_open_at IS NOT NULL OR visited_at IS NOT NULL;
 
 -- name: ListOpenVisitTasksOfTenants :many
 -- The open visit tasks of the given tenants, oldest first.

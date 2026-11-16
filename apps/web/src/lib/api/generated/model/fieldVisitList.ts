@@ -9,4 +9,9 @@ import type { PageInfo } from './pageInfo';
 
 export type FieldVisitList = PageInfo & {
   items: FieldVisit[];
+  /**
+     * How many rows of the whole list (every page, what total counts) are status open: the visits the caller has not finished today, for the Kunjungan tab's badge.
+     * @minimum 0
+     */
+  openTotal: number;
 };
