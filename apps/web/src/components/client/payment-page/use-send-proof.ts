@@ -75,7 +75,7 @@ export function useSendProof({
     if (urlRef.current !== null) URL.revokeObjectURL(urlRef.current);
     const previewUrl = URL.createObjectURL(file);
     urlRef.current = previewUrl;
-    return { file, previewUrl };
+    return { file, previewUrl, requestId: crypto.randomUUID() };
   }
 
   function close() {
@@ -113,7 +113,11 @@ export function useSendProof({
     sendingRef.current = true;
     setState({ kind: "sending", photo, percent: 0 });
     mutation.mutate(
-      { token, data: { file: photo.file } },
+      {
+        token,
+        data: { file: photo.file },
+        params: { requestId: photo.requestId },
+      },
       {
         onSuccess: () => {
           sendingRef.current = false;

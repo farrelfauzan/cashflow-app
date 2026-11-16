@@ -199,6 +199,34 @@ func TestFieldOverHTTP(t *testing.T) {
 		require.Equal(t, apigen.PromiseFromAdmin, latest[len(latest)-1].Source, "makeTenantPromise is unchanged")
 	})
 
+	t.Run("getFieldPromiseOffer answers what getTenantAccount shows the admin", func(t *testing.T) {
+		offerPath := func(tenantID uuid.UUID) string { return orgA + "/field/tenants/" + tenantID.String() + "/promises" }
+		resp, body := karyawan.do(http.MethodGet, offerPath(wati), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		got := decode[apigen.FieldPromiseOffer](t, body)
+		require.NotNil(t, got.ActivePromise, "the promise made above")
+		require.NotNil(t, got.PromiseDates)
+		require.Equal(t, date(2026, 11, 15), got.PromiseDates.Earliest)
+
+		resp, body = admin.do(http.MethodGet, orgA+"/tenants/"+wati.String()+"/account", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+		acct := decode[apigen.TenantAccount](t, body)
+		require.Equal(t, acct.ActivePromise, got.ActivePromise)
+		require.Equal(t, acct.PromiseDates, got.PromiseDates)
+		require.Equal(t, acct.NextInvoiceDueDate, got.NextInvoiceDueDate)
+
+		resp, body = karyawan.do(http.MethodGet, offerPath(bambang), nil)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode, "not their tenant: %s", body)
+		resp, body = karyawan.do(http.MethodGet, offerPath(dewi), nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, "another organization's tenant: %s", body)
+		resp, body = karyawan.do(http.MethodGet, offerPath(uuid.New()), nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, string(body))
+		resp, body = karyawan.do(http.MethodGet, orgA+"/field/tenants/nope/promises", nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, string(body))
+		resp, body = karyawanB.do(http.MethodGet, offerPath(wati), nil)
+		require.Equal(t, http.StatusNotFound, resp.StatusCode, "not a member of a: %s", body)
+	})
+
 	t.Run("refusals are audited", func(t *testing.T) {
 		denied := 0
 		for _, row := range env.AuditLog(t, a.o.ID) {

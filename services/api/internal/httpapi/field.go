@@ -107,6 +107,34 @@ func (s *Server) getMyFieldCash(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, toAPICashTotal(cash))
 }
 
+// getFieldPromiseOffer is what "Catat janji bayar" on Tagihan hari ini shows before it saves.
+func (s *Server) getFieldPromiseOffer(w http.ResponseWriter, r *http.Request) {
+	p, ok := principalFrom(r.Context())
+	if !ok {
+		s.fail(w, r, errMissingContext)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "tenantID"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	offer, err := s.Billing.FieldPromiseOffer(r.Context(), p, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := apigen.FieldPromiseOffer{ActivePromise: toAPIActivePromise(offer.Active)}
+	if d := offer.Dates; d != nil {
+		out.PromiseDates = &apigen.PromiseDates{Earliest: date(d.Earliest), Latest: date(d.Latest)}
+	}
+	if due := offer.NextInvoiceDueDate; due != nil {
+		d := date(*due)
+		out.NextInvoiceDueDate = &d
+	}
+	s.writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) makeFieldPromise(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFrom(r.Context())
 	if !ok {

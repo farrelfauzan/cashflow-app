@@ -121,3 +121,69 @@ func TestCashKeepsAPromise(t *testing.T) {
 	require.NoError(t, err)
 	w.requireStatus(t, wati, promise.StatusKept, wib(time.November, 15, 10, 30))
 }
+
+// TestFieldPromiseOffer: what "Catat janji bayar" shows before it saves is what Detail penyewa
+// shows the admin, for a tenant the karyawan collects from, and nothing for anyone else.
+func TestFieldPromiseOffer(t *testing.T) {
+	env := testenv.New(t)
+	ctx := context.Background()
+	env.Clock.Set(wib(time.November, 14, 9, 0))
+	w := newWorld(t, env, "Griya Janji", "0812969")
+	karyawan := env.Principal(t, w.org.ID, w.org.Karyawan.UserID)
+	own := w.rentCollected(t, "Wati Susanti", karyawan.MembershipID)
+	notOwn := w.rentCollected(t, "Bambang Wijaya", uuid.Nil)
+	asAdmin := func(t *testing.T, r renter) billing.TenantPromises {
+		t.Helper()
+		acct, err := env.Billing.Account(ctx, w.admin, r.tenantID)
+		require.NoError(t, err)
+		return acct.Promises
+	}
+	readDenials := func() int {
+		n := 0
+		for _, row := range env.AuditLog(t, w.org.ID) {
+			if row.Action == authz.ActionInvoiceRead && row.Decision == "deny" {
+				n++
+			}
+		}
+		return n
+	}
+
+	t.Run("before any promise: the dates and the next due date, as the admin sees them", func(t *testing.T) {
+		got, err := env.Billing.FieldPromiseOffer(ctx, karyawan, own.tenantID)
+		require.NoError(t, err)
+		require.Nil(t, got.Active)
+		require.NotNil(t, got.Dates)
+		require.Equal(t, day(2026, 11, 15), got.Dates.Earliest, "tomorrow")
+		require.NotNil(t, got.NextInvoiceDueDate, "the monthly lease bills again on 14 Dec")
+		want := asAdmin(t, own)
+		require.Equal(t, want.Dates, got.Dates)
+		require.Equal(t, want.NextInvoiceDueDate, got.NextInvoiceDueDate)
+	})
+
+	t.Run("with an active promise: its newest version, which saving replaces", func(t *testing.T) {
+		_, err := w.promises.MakeFromField(ctx, karyawan, own.tenantID, onDay(day(2026, 11, 20)))
+		require.NoError(t, err)
+		got, err := env.Billing.FieldPromiseOffer(ctx, karyawan, own.tenantID)
+		require.NoError(t, err)
+		require.NotNil(t, got.Active)
+		require.Equal(t, 1, got.Active.Version)
+		require.Equal(t, day(2026, 11, 20), got.Active.PromisedDate)
+		want := asAdmin(t, own)
+		require.Equal(t, want.Active, got.Active)
+		require.Equal(t, want.Dates, got.Dates)
+		require.Equal(t, want.NextInvoiceDueDate, got.NextInvoiceDueDate)
+	})
+
+	t.Run("not for a tenant the karyawan does not collect from; the refusal is audited", func(t *testing.T) {
+		denied := readDenials()
+		_, err := env.Billing.FieldPromiseOffer(ctx, karyawan, notOwn.tenantID)
+		require.ErrorIs(t, err, authz.ErrForbidden)
+		require.Equal(t, denied+1, readDenials())
+	})
+
+	t.Run("a tenant not in the organization is not found", func(t *testing.T) {
+		_, err := env.Billing.FieldPromiseOffer(ctx, karyawan, uuid.New())
+		var nf *billing.NotFoundError
+		require.ErrorAs(t, err, &nf)
+	})
+}

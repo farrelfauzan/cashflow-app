@@ -132,6 +132,11 @@ function isProofPost(request: Request, path: string): boolean {
   );
 }
 
+// The proof's address, whatever its query string (the page adds ?requestId=...), for page.route.
+function proofUrl(path: string): (url: URL) => boolean {
+  return (url) => url.pathname === `/api${path}/proof`;
+}
+
 async function fontSize(page: Page, text: string): Promise<number> {
   return page
     .getByText(text, { exact: true })
@@ -196,7 +201,8 @@ test("Kirim bukti transfer sends a shrunk photo through our API; it waits in the
   const held = new Promise<void>((done) => {
     release = done;
   });
-  await page.route(`**/api${path}/proof`, async (route) => {
+  const proofRoute = proofUrl(path);
+  await page.route(proofRoute, async (route) => {
     await held;
     await route.continue();
   });
@@ -224,7 +230,7 @@ test("Kirim bukti transfer sends a shrunk photo through our API; it waits in the
   const response = await answered;
   expect(response.status()).toBe(201);
   const proof = (await response.json()) as PaymentProof;
-  await page.unroute(`**/api${path}/proof`);
+  await page.unroute(proofRoute);
 
   // Board 3: the sheet closes, the line says it was received, and the API's list shows it.
   await expect(sheet).toHaveCount(0);
@@ -268,7 +274,7 @@ test("Kirim bukti transfer sends a shrunk photo through our API; it waits in the
   expect(fixture.leaks).toEqual([]);
 });
 
-test("a file that is not a photo gets the API's message, and a dropped connection resends the same photo", async ({
+test("a file that is not a photo gets the API's message, and a lost answer resends the same photo, stored once", async ({
   page,
 }, testInfo) => {
   const fixture = await openTransferTab(page, testInfo, 2);
@@ -318,22 +324,36 @@ test("a file that is not a photo gets the API's message, and a dropped connectio
   ).toBeVisible();
   await expect(sheet.getByRole("alert")).toHaveCount(0);
 
-  // The signal drops: "Gagal terkirim." and "Coba lagi" sends the same photo.
-  await page.route(`**/api${path}/proof`, (route) =>
-    route.abort("internetdisconnected"),
-  );
+  // The signal drops after the API stored the proof, so its answer is lost: "Gagal terkirim."
+  // "Coba lagi" sends the same photo with the same requestId, and the API answers 200 with the
+  // proof it already has instead of storing a second one.
+  const requestIds: (string | null)[] = [];
+  const dropAnswer = proofUrl(path);
+  await page.route(dropAnswer, async (route) => {
+    requestIds.push(
+      new URL(route.request().url()).searchParams.get("requestId"),
+    );
+    await route.fetch();
+    await route.abort("internetdisconnected");
+  });
   await send.click();
   await expect(sheet.getByText("Gagal terkirim.")).toBeVisible();
   const retry = sheet.getByRole("button", { name: "Coba lagi" });
   await expect(retry).toBeEnabled();
-  await page.unroute(`**/api${path}/proof`);
+  await page.unroute(dropAnswer);
   const answered = page.waitForResponse((response) =>
     isProofPost(response.request(), path),
   );
   await retry.click();
   const response = await answered;
-  expect(response.status()).toBe(201);
+  expect(response.status()).toBe(200);
   const proof = (await response.json()) as PaymentProof;
+  const retried = new URL(response.request().url()).searchParams.get(
+    "requestId",
+  );
+  expect(requestIds).toHaveLength(1);
+  expect(requestIds[0]).toMatch(/^[0-9a-f-]{36}$/);
+  expect(retried).toBe(requestIds[0]);
 
   await expect(sheet).toHaveCount(0);
   await expect(
