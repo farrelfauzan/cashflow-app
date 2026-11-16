@@ -1,4 +1,5 @@
 import type { ChipTone } from "@/components/client/tenant/type";
+import type { FieldTodayItem } from "@/lib/api/generated/model";
 
 // A chip's text and look: why the tenant is on the list, or the photo of today's cash.
 export type FieldChip = {
@@ -23,4 +24,9 @@ export type FieldTodayRowView = {
   owed: string;
   reason: FieldChip;
   cash: FieldCashLineView | null;
+  // The API's row, for the sheets it opens ("Terima tunai").
+  item: FieldTodayItem;
+  // Still owes something: the row offers "Terima tunai". A tenant who paid everything today
+  // ("Lunas") shows no action (board HP-Tagihan).
+  canCollect: boolean;
 };

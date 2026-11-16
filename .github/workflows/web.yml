@@ -142,8 +142,8 @@ jobs:
           exit 1
       # RustFS on 127.0.0.1:9100 and its bucket: `run` starts rustfs (rustfs-init depends on it)
       # and waits until rustfs-init has made the bucket. ClamAV, in the same profile, is not
-      # started. The proof photo is loaded by an <img>, which needs no CORS, so
-      # RUSTFS_CORS_ALLOWED_ORIGINS (http://localhost:3000) does not matter here.
+      # started. The karyawan's receipt photo is PUT by the browser straight to storage, so
+      # RUSTFS_CORS_ALLOWED_ORIGINS (http://localhost:3000) must stay the web app's origin here.
       - name: Start object storage
         run: docker compose -f infra/compose.dev.yaml --profile uploads run --rm rustfs-init
       - name: Build the API

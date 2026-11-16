@@ -1,17 +1,19 @@
 "use client";
 
+import { ReceiveCashButton } from "@/components/client/field-cash/receive-cash-button";
 import { TenantChip } from "@/components/client/tenant/tenant-chip";
 
 import type { FieldTodayRowView } from "./type";
 
 type FieldTodayRowProps = {
+  orgId: string;
   view: FieldTodayRowView;
 };
 
 // One tenant to collect from (board HP-Tagihan, column 1): name and units, why they are on the
-// list, what they still owe, and the cash taken from them today with its photo. "Terima tunai"
-// and "Catat janji bayar" come with their sheets.
-export function FieldTodayRow({ view }: FieldTodayRowProps) {
+// list, what they still owe, the cash taken from them today with its photo, and "Terima tunai"
+// while they still owe. "Catat janji bayar" joins it with its sheet.
+export function FieldTodayRow({ orgId, view }: FieldTodayRowProps) {
   return (
     <li className="flex flex-col gap-2 rounded-[14px] border bg-card px-3.5 py-3 md:px-4 md:py-3.5">
       <div className="flex items-start justify-between gap-2">
@@ -38,6 +40,16 @@ export function FieldTodayRow({ view }: FieldTodayRowProps) {
           <TenantChip tone={view.cash.photo.tone}>
             {view.cash.photo.label}
           </TenantChip>
+        </div>
+      )}
+      {view.canCollect && (
+        <div className="flex gap-2">
+          <ReceiveCashButton
+            orgId={orgId}
+            tenant={view.item}
+            placeLabel={view.place}
+            className="flex-1"
+          />
         </div>
       )}
     </li>

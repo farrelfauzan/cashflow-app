@@ -182,6 +182,8 @@ describe("fieldTodayRow", () => {
       owed: "Sisa Rp1.050.000 · telat Rp1.050.000",
       reason: { label: "Telat 7 hari", tone: "warning" },
       cash: null,
+      item: WATI,
+      canCollect: true,
     });
   });
 
@@ -198,6 +200,8 @@ describe("fieldTodayRow", () => {
     expect(row.owed).toBe("Lunas");
     expect(row.reason.label).toBe("Tunai diterima");
     expect(row.cash?.text).toBe("Tunai hari ini Rp950.000");
+    // Nothing left to collect: no "Terima tunai" on the row.
+    expect(row.canCollect).toBe(false);
   });
 });
 
