@@ -793,6 +793,8 @@ func TestListFieldVisits(t *testing.T) {
 		require.NotNil(t, dewiRow.LastOutcome)
 		require.Equal(t, visit.OutcomePaid, dewiRow.LastOutcome.Outcome)
 		require.Equal(t, dewiCash.Payment.ID, dewiRow.LastOutcome.PaymentID)
+		require.EqualValues(t, 700_000, dewiRow.LastOutcome.Amount, "what the cash counts")
+		require.Zero(t, byName(rows, "Joko Widodo").LastOutcome.Amount, "a promise has none")
 		require.Equal(t, []string{visit.ReasonOverdue}, dewiRow.LastOutcome.Resolved)
 
 		jokoRow := byName(rows, "Joko Widodo")
@@ -854,6 +856,16 @@ func TestListFieldVisits(t *testing.T) {
 		require.Equal(t, visit.Reason{Code: visit.ReasonOverdue, DaysOverdue: 14}, rows[0].Reasons[0])
 		require.Equal(t, noCash, rows[0].UnlinkedCashToday)
 		require.Nil(t, rows[1].LastOutcome, "yesterday's not home is not today's")
+	})
+
+	// Last, since it changes what Dewi paid.
+	t.Run("a paid outcome's amount is what its cash counts after corrections", func(t *testing.T) {
+		newAmount := int64(650_000)
+		_, err := env.Billing.CreateCorrection(ctx, w.admin, billing.CorrectionInput{
+			RequestID: uuid.New(), PaymentID: dewiCash.Payment.ID, NewAmount: &newAmount, Reason: "Uang kurang Rp50.000 saat disetor",
+		})
+		require.NoError(t, err)
+		require.EqualValues(t, 650_000, byName(all(t, w.karyawan), "Dewi Anggraini").LastOutcome.Amount)
 	})
 }
 

@@ -116,6 +116,7 @@ func TestVisitsOverHTTP(t *testing.T) {
 		require.Equal(t, apigen.VisitOutcomeKindPaid, got.Outcome)
 		require.Equal(t, wati, got.TenantId)
 		require.Equal(t, &paymentID, got.PaymentId)
+		require.Equal(t, ptrTo(int64(700_000)), got.Amount)
 		require.Nil(t, got.PromiseVersionId)
 		require.Nil(t, got.NewPhone)
 		require.Equal(t, ptrTo("Lunas"), got.Note)
@@ -188,6 +189,7 @@ func TestVisitsOverHTTP(t *testing.T) {
 		require.Equal(t, http.StatusCreated, resp.StatusCode, string(body))
 		got := decode[apigen.VisitOutcome](t, body)
 		require.Equal(t, ptrTo("+6281234567890"), got.NewPhone)
+		require.Nil(t, got.Amount, "only a paid outcome has an amount")
 		require.Equal(t, []apigen.VisitReasonCode{apigen.VisitReasonCodeUndeliverable}, got.Resolved)
 	})
 }
