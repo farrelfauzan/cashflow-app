@@ -30,6 +30,7 @@ import {
   type CheckQrisAmountMismatch,
   type CheckQueueCounts,
   type CheckQueueItem,
+  type CheckStaff,
   type CheckTenant,
   type CheckTransferProof,
   type CheckUploadInfected,
@@ -169,6 +170,9 @@ export const PHONE_REJECT_SUBMIT = "Simpan, jangan pakai";
 export const PROOF_TITLE = "Bukti transfer";
 export const PROOF_SENT_LABEL = "Dikirim penyewa";
 export const PROOF_LINK_LABEL = "Dari tautan tagihan";
+// A proof a member sent for the tenant (board Admin-Cek-Bukti-Staf): who, then when it came in.
+export const PROOF_SENT_BY_LABEL = "Dikirim oleh";
+export const PROOF_ARRIVED_LABEL = "Masuk";
 export const ZOOM_LABEL = "Perbesar foto";
 export const ZOOM_TITLE = "Foto bukti transfer";
 export const PROOF_PENDING_TEXT = "Foto sedang diperiksa, tunggu sebentar.";
@@ -339,7 +343,10 @@ function rowContent(item: CheckQueueItem): RowContent | null {
       if (proof === undefined) return null;
       return {
         title: tenantLine(proof.tenant),
-        detail: "Foto bukti dari halaman pembayaran",
+        detail:
+          proof.sentBy === undefined
+            ? "Foto bukti dari halaman pembayaran"
+            : `Dikirim oleh ${proof.sentBy.name}`,
         chip: transferProofChip(proof),
       };
     }
@@ -740,11 +747,12 @@ export function proofPhotoAlt(tenant: CheckTenant): string {
 }
 
 // When the proof was sent (the item's createdAt), and the month of the link's invoice when the
-// tenant's account lists it. A proof a member sent names no invoice (decision 49).
+// tenant's account lists it. A proof a member sent names no invoice but its sender (decision 49).
 export function proofPhotoCaption(
   createdAt: string,
   invoiceId: string | undefined,
   invoices: readonly AccountInvoice[] | undefined,
+  sentBy?: CheckStaff,
 ): ProofPhotoCaption {
   const invoice =
     invoiceId === undefined
@@ -753,6 +761,7 @@ export function proofPhotoCaption(
   return {
     sentAt: formatTimestampShortWeekdayDayMonthTime(createdAt),
     link: invoice === undefined ? null : invoiceTitle(invoice),
+    sentBy: sentBy?.name ?? null,
   };
 }
 

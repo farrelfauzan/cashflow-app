@@ -10,7 +10,9 @@ import type { ProofPhotoCaption, ProofPhotoState } from "./type";
 import {
   PHOTO_ERROR_TEXT,
   PHOTO_LOADING_TEXT,
+  PROOF_ARRIVED_LABEL,
   PROOF_LINK_LABEL,
+  PROOF_SENT_BY_LABEL,
   PROOF_SENT_LABEL,
   ZOOM_LABEL,
 } from "./utils";
@@ -98,8 +100,18 @@ export function ProofPhoto({
       {thumbnail}
       <div className="flex min-w-0 flex-1 flex-col justify-between gap-2">
         <dl className="flex flex-col gap-1">
+          {caption.sentBy !== null && (
+            <>
+              <dt className="text-sm text-muted-foreground md:text-base">
+                {PROOF_SENT_BY_LABEL}
+              </dt>
+              <dd className="mb-1.5 text-base font-semibold md:text-[17px]">
+                {caption.sentBy}
+              </dd>
+            </>
+          )}
           <dt className="text-sm text-muted-foreground md:text-base">
-            {PROOF_SENT_LABEL}
+            {caption.sentBy === null ? PROOF_SENT_LABEL : PROOF_ARRIVED_LABEL}
           </dt>
           <dd className="text-base font-semibold whitespace-nowrap md:text-[17px]">
             {caption.sentAt}

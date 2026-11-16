@@ -331,6 +331,20 @@ describe("rows", () => {
         }),
       )?.chip,
     ).toEqual({ label: "Foto sedang diperiksa", tone: "neutral" });
+    // A proof a member sent for the tenant (decision 49) says who.
+    expect(
+      checkRowView(
+        item({
+          kind: "transfer_proof",
+          transferProof: {
+            tenant: WATI,
+            sentBy: { staffUserId: "s-1", name: "Mas Dimas Saputra" },
+            uploadId: "u-1",
+            uploadStatus: "clean",
+          },
+        }),
+      )?.detail,
+    ).toBe("Dikirim oleh Mas Dimas Saputra");
   });
 
   it("shows a deposit gap", () => {
@@ -801,6 +815,7 @@ describe("transfer proof photo", () => {
     expect(proofPhotoCaption(CREATED, "inv-nov", [invoice])).toEqual({
       sentAt: "Sab 14 Nov, 17.02",
       link: "November 2026",
+      sentBy: null,
     });
     expect(
       proofPhotoCaption(CREATED, "inv-nov", [{ ...invoice, kind: "final" }])
@@ -811,6 +826,13 @@ describe("transfer proof photo", () => {
     expect(proofPhotoCaption(CREATED, "other", [invoice]).link).toBeNull();
     // A proof a member sent names no invoice (decision 49).
     expect(proofPhotoCaption(CREATED, undefined, [invoice]).link).toBeNull();
+    // ...and names who sent it.
+    expect(
+      proofPhotoCaption(CREATED, undefined, [invoice], {
+        staffUserId: "s-1",
+        name: "Mas Dimas Saputra",
+      }).sentBy,
+    ).toBe("Mas Dimas Saputra");
     expect(proofPhotoAlt(WATI)).toBe(
       "Foto bukti transfer dari Bu Wati Handayani",
     );

@@ -127,6 +127,9 @@ export type ProofPhotoState =
 export type ProofPhotoCaption = {
   sentAt: string;
   link: string | null;
+  // The member who sent it for the tenant ("Dikirim oleh Mas Dimas Saputra", decision 49); null
+  // when the tenant sent it from the payment page.
+  sentBy: string | null;
 };
 
 // "Pembayaran dari": the tenant and "Kamar 11, Kos Melati · sisa Rp1.050.000" (the unit or the
