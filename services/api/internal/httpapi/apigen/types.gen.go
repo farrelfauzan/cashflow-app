@@ -1565,6 +1565,12 @@ type FieldPromiseOffer struct {
 	// NextInvoiceDueDate The due date a with_next_invoice promise made now would take, as on TenantAccount. Null when the tenant owes nothing, no lease will bill again, or it is after promiseDates.latest (or promiseDates is null); the choice is then hidden.
 	NextInvoiceDueDate *openapi_types.Date `json:"nextInvoiceDueDate"`
 
+	// Outstanding Everything the tenant owes now, as TenantAccount.outstanding, read with the rest of the offer: what a promise with no amount covers, and the most one may name.
+	//
+	//
+	// Example: 1800000
+	Outstanding int64 `json:"outstanding"`
+
 	// PromiseDates The days a promise made now may name, as on TenantAccount: for an edit of the active promise, no later than 60 days from its first version. Null when no promise can be made now: the tenant owes nothing, or the active promise has reached that bound.
 	PromiseDates *PromiseDates `json:"promiseDates"`
 }

@@ -124,7 +124,7 @@ func (s *Server) getFieldPromiseOffer(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	out := apigen.FieldPromiseOffer{ActivePromise: toAPIActivePromise(offer.Active)}
+	out := apigen.FieldPromiseOffer{ActivePromise: toAPIActivePromise(offer.Active), Outstanding: offer.Outstanding}
 	if d := offer.Dates; d != nil {
 		out.PromiseDates = &apigen.PromiseDates{Earliest: date(d.Earliest), Latest: date(d.Latest)}
 	}

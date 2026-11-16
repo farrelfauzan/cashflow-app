@@ -136,8 +136,8 @@ func (s *Service) Account(ctx context.Context, p authz.Principal, tenantID uuid.
 // Promises and the payment page. It needs invoice:read on the tenant through each of its active
 // leases (decision 47), as Tagihan hari ini does; a read, so only a denial is audited. A missing
 // tenant is a *NotFoundError.
-func (s *Service) FieldPromiseOffer(ctx context.Context, p authz.Principal, tenantID uuid.UUID) (TenantPromises, error) {
-	var out TenantPromises
+func (s *Service) FieldPromiseOffer(ctx context.Context, p authz.Principal, tenantID uuid.UUID) (FieldOffer, error) {
+	var out FieldOffer
 	err := s.store.WithOrgSnapshot(ctx, p.OrganizationID, func(tx pgx.Tx) error {
 		if err := s.AuthorizeTenantInField(ctx, tx, p, tenantID, authz.ActionInvoiceRead); err != nil {
 			return err
@@ -147,10 +147,19 @@ func (s *Service) FieldPromiseOffer(ctx context.Context, p authz.Principal, tena
 		if err != nil {
 			return err
 		}
-		out, err = s.promises.TenantPromisesTx(ctx, tx, p.OrganizationID, tenantID, acct.Outstanding, today)
+		out.Outstanding = acct.Outstanding
+		out.TenantPromises, err = s.promises.TenantPromisesTx(ctx, tx, p.OrganizationID, tenantID, acct.Outstanding, today)
 		return err
 	})
 	return out, err
+}
+
+// FieldOffer is FieldPromiseOffer's answer: the promise offer and what the tenant owes now, read in
+// the same snapshot, so the sheet's "everything owed" and its amount check agree with the offer.
+type FieldOffer struct {
+	TenantPromises
+	// Outstanding is everything the tenant owes now, as Account's Outstanding.
+	Outstanding int64
 }
 
 // LoadAccountTx reads a tenant's money account inside tx, which must be scoped to org (WithOrgTx

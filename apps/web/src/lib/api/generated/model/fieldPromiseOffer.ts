@@ -11,6 +11,8 @@ import type { PromiseDates } from './promiseDates';
  * What a promise made now from the field may say (getFieldPromiseOffer).
  */
 export interface FieldPromiseOffer {
+  /** Everything the tenant owes now, as TenantAccount.outstanding, read with the rest of the offer: what a promise with no amount covers, and the most one may name. */
+  outstanding: number;
   /** The newest version of the tenant's active payment promise, or null when there is none. Saving with makeFieldPromise makes the next version of it. */
   activePromise: ActivePromise | null;
   /** The days a promise made now may name, as on TenantAccount: for an edit of the active promise, no later than 60 days from its first version. Null when no promise can be made now: the tenant owes nothing, or the active promise has reached that bound. */

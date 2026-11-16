@@ -4302,9 +4302,16 @@ components:
 
     FieldPromiseOffer:
       type: object
-      required: [activePromise, promiseDates, nextInvoiceDueDate]
+      required: [activePromise, promiseDates, nextInvoiceDueDate, outstanding]
       description: What a promise made now from the field may say (getFieldPromiseOffer).
       properties:
+        outstanding:
+          type: integer
+          format: int64
+          description: >
+            Everything the tenant owes now, as TenantAccount.outstanding, read with the rest of the
+            offer: what a promise with no amount covers, and the most one may name.
+          example: 1800000
         activePromise:
           description: >
             The newest version of the tenant's active payment promise, or null when there is none.

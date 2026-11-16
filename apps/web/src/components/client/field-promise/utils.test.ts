@@ -23,6 +23,7 @@ const offer = (over: Partial<FieldPromiseOffer> = {}): FieldPromiseOffer => ({
   activePromise: null,
   promiseDates: DATES,
   nextInvoiceDueDate: "2026-12-15",
+  outstanding: TENANT.outstanding,
   ...over,
 });
 
