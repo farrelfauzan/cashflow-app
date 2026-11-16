@@ -13,19 +13,19 @@ import { isTooLarge, preparePhoto } from "@/lib/photo";
 import type {
   ChosenPhoto,
   PhotoResume,
+  PhotoUploadSteps,
   ReceiptPhotoState,
   ReceiptPhotoUpload,
-  ReceiptUploadSteps,
 } from "./type";
 import {
   PHOTO_TOO_LARGE_TEXT,
   uploadFailureView,
-  uploadReceiptPhoto,
+  uploadTenantPhoto,
 } from "./utils";
 
 // "Foto kwitansi (wajib)": the receipt photo goes to storage before the cash can be saved
 // (decision 50). A chosen photo is made ready (lib/photo: HEIC to JPEG, at most 2000px on its
-// longest side, 10 MB at most), then sent at once by uploadReceiptPhoto (createUpload, the PUT
+// longest side, 10 MB at most), then sent at once by uploadTenantPhoto (createUpload, the PUT
 // with its percent, completeUpload); the scan is not waited for. Each attempt has its own
 // AbortController: choosing another photo, "Coba lagi", Batal or leaving aborts the running one,
 // which stops its PUT and drops whatever it answers after. The object URL that shows the photo
@@ -71,7 +71,7 @@ export function useReceiptPhoto(
     return { file, previewUrl };
   }
 
-  const steps: ReceiptUploadSteps = {
+  const steps: PhotoUploadSteps = {
     create: (data) => createUpload.mutateAsync({ orgId, data }),
     put: putToStorage,
     complete: (uploadId) => completeUpload.mutateAsync({ orgId, uploadId }),
@@ -83,7 +83,8 @@ export function useReceiptPhoto(
     resume: PhotoResume,
   ) {
     setState({ kind: "uploading", photo, percent: null });
-    const outcome = await uploadReceiptPhoto(steps, {
+    const outcome = await uploadTenantPhoto(steps, {
+      purpose: "cash_receipt",
       tenantId,
       file: photo.file,
       resume,
