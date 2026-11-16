@@ -132,6 +132,11 @@ function isProofPost(request: Request, path: string): boolean {
   );
 }
 
+// The proof's address, whatever its query string (the page adds ?requestId=...), for page.route.
+function proofUrl(path: string): (url: URL) => boolean {
+  return (url) => url.pathname === `/api${path}/proof`;
+}
+
 async function fontSize(page: Page, text: string): Promise<number> {
   return page
     .getByText(text, { exact: true })
@@ -196,7 +201,8 @@ test("Kirim bukti transfer sends a shrunk photo through our API; it waits in the
   const held = new Promise<void>((done) => {
     release = done;
   });
-  await page.route(`**/api${path}/proof`, async (route) => {
+  const proofRoute = proofUrl(path);
+  await page.route(proofRoute, async (route) => {
     await held;
     await route.continue();
   });
@@ -224,7 +230,7 @@ test("Kirim bukti transfer sends a shrunk photo through our API; it waits in the
   const response = await answered;
   expect(response.status()).toBe(201);
   const proof = (await response.json()) as PaymentProof;
-  await page.unroute(`**/api${path}/proof`);
+  await page.unroute(proofRoute);
 
   // Board 3: the sheet closes, the line says it was received, and the API's list shows it.
   await expect(sheet).toHaveCount(0);
@@ -322,7 +328,8 @@ test("a file that is not a photo gets the API's message, and a lost answer resen
   // "Coba lagi" sends the same photo with the same requestId, and the API answers 200 with the
   // proof it already has instead of storing a second one.
   const requestIds: (string | null)[] = [];
-  await page.route(`**/api${path}/proof`, async (route) => {
+  const dropAnswer = proofUrl(path);
+  await page.route(dropAnswer, async (route) => {
     requestIds.push(
       new URL(route.request().url()).searchParams.get("requestId"),
     );
@@ -333,7 +340,7 @@ test("a file that is not a photo gets the API's message, and a lost answer resen
   await expect(sheet.getByText("Gagal terkirim.")).toBeVisible();
   const retry = sheet.getByRole("button", { name: "Coba lagi" });
   await expect(retry).toBeEnabled();
-  await page.unroute(`**/api${path}/proof`);
+  await page.unroute(dropAnswer);
   const answered = page.waitForResponse((response) =>
     isProofPost(response.request(), path),
   );
