@@ -185,10 +185,25 @@ describe("outcome lines", () => {
     expect(doneChip(outcome(kind))).toEqual(want);
   });
 
-  it("says when a done row was recorded, never an amount", () => {
+  it("names the cash amount of a paid row with the time it was recorded", () => {
+    expect(
+      doneLine({
+        ...outcome("paid", "2026-11-16T02:15:00Z"),
+        amount: 950_000,
+      }),
+    ).toBe("Rp950.000 tunai · 09.15");
+  });
+
+  it("says only when it was recorded without an amount, and for other outcomes", () => {
     expect(doneLine(outcome("paid", "2026-11-16T02:15:00Z"))).toBe(
       "Tunai dicatat 09.15",
     );
+    expect(
+      doneLine({
+        ...outcome("promise", "2026-11-16T02:15:00Z"),
+        amount: 950_000,
+      }),
+    ).toBe("Dicatat 09.15");
     expect(doneLine(outcome("promise", "2026-11-16T02:15:00Z"))).toBe(
       "Dicatat 09.15",
     );

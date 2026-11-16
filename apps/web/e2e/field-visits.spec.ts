@@ -645,6 +645,8 @@ test.describe("Karyawan", () => {
     const sheet = await openSheet(page, tenant);
 
     let paymentId: string;
+    // What this run received through Terima tunai; null when an earlier run took the cash.
+    let receivedAmount: number | null = null;
     if (visit.unlinkedCashToday.length === 0) {
       // No cash yet: Sudah bayar says why and offers Terima tunai, which opens over this sheet.
       await outcomeRadio(sheet, "Sudah bayar hari ini").click();
@@ -656,6 +658,7 @@ test.describe("Karyawan", () => {
 
       // A small part of what is owed, with its receipt photo.
       const amount = Number(`5${runId()}`);
+      receivedAmount = amount;
       await cash.getByLabel("Uang yang diterima").fill(String(amount));
       await cash.getByLabel("Ambil foto kwitansi").setInputFiles({
         name: "kwitansi.jpg",
@@ -703,6 +706,13 @@ test.describe("Karyawan", () => {
     expect(answer.paymentId).toBe(paymentId);
     const after = await expectRowAsListed(page, orgId, tenant);
     expect(after.status).toBe("done");
+    // The done row names the cash it counts, as the board says: "Rp950.000 tunai · 09.15".
+    if (receivedAmount !== null) {
+      await expect(
+        doneRows(page).filter({ hasText: tenant }),
+        "the done row names the received amount",
+      ).toContainText(`${formatRupiah(receivedAmount)} tunai`);
+    }
     expect(outsideRequests).toEqual([]);
   });
 });
