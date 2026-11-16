@@ -2056,6 +2056,27 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrgId"
       - $ref: "#/components/parameters/TenantId"
+    get:
+      tags: [field]
+      operationId: getFieldPromiseOffer
+      summary: What "Catat janji bayar" may offer for a tenant the caller collects from (needs invoice:read)
+      description: >
+        The karyawan's sheet before makeFieldPromise: the tenant's active promise (saving makes a
+        new version of it), the days a promise made now may name, and the due date a
+        with_next_invoice promise would take. The same values, from the same code, as
+        getTenantAccount's activePromise, promiseDates and nextInvoiceDueDate and the payment page,
+        read when the sheet opens. Needs invoice:read on the tenant through each of its active
+        leases (a karyawan's own are the leases they collect; decision 47), as listFieldToday;
+        403 otherwise (audited), 404 for a tenant not in the organization.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FieldPromiseOffer" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
     post:
       tags: [field]
       operationId: makeFieldPromise
@@ -4276,6 +4297,35 @@ components:
           format: int64
           description: The part of outstanding still owed after its due date (debt from the day after it).
         cashToday: { $ref: "#/components/schemas/FieldCashToday" }
+
+    FieldPromiseOffer:
+      type: object
+      required: [activePromise, promiseDates, nextInvoiceDueDate]
+      description: What a promise made now from the field may say (getFieldPromiseOffer).
+      properties:
+        activePromise:
+          description: >
+            The newest version of the tenant's active payment promise, or null when there is none.
+            Saving with makeFieldPromise makes the next version of it.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ActivePromise"
+        promiseDates:
+          description: >
+            The days a promise made now may name, as on TenantAccount: for an edit of the active
+            promise, no later than 60 days from its first version. Null when no promise can be made
+            now: the tenant owes nothing, or the active promise has reached that bound.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PromiseDates"
+        nextInvoiceDueDate:
+          type: string
+          format: date
+          nullable: true
+          description: >
+            The due date a with_next_invoice promise made now would take, as on TenantAccount. Null
+            when the tenant owes nothing, no lease will bill again, or it is after
+            promiseDates.latest (or promiseDates is null); the choice is then hidden.
 
     FieldTodayList:
       allOf:

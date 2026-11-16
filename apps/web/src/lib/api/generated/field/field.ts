@@ -33,6 +33,7 @@ import type {
   CashTotal,
   Error,
   ErrorResponse,
+  FieldPromiseOffer,
   FieldTodayList,
   FieldVisitList,
   ListFieldTodayParams,
@@ -842,6 +843,103 @@ export const useRecordVisitOutcome = <TError = ErrorType<Error | ErrorResponse>,
       return useMutation(getRecordVisitOutcomeMutationOptions(options), queryClient);
     }
     /**
+ * The karyawan's sheet before makeFieldPromise: the tenant's active promise (saving makes a new version of it), the days a promise made now may name, and the due date a with_next_invoice promise would take. The same values, from the same code, as getTenantAccount's activePromise, promiseDates and nextInvoiceDueDate and the payment page, read when the sheet opens. Needs invoice:read on the tenant through each of its active leases (a karyawan's own are the leases they collect; decision 47), as listFieldToday; 403 otherwise (audited), 404 for a tenant not in the organization.
+ * @summary What "Catat janji bayar" may offer for a tenant the caller collects from (needs invoice:read)
+ */
+export const getFieldPromiseOffer = (
+    orgId: string,
+    tenantId: string,
+ options?: SecondParameter<typeof apiRequest>,signal?: AbortSignal
+) => {
+
+
+      return apiRequest<FieldPromiseOffer>(
+      {url: `/orgs/${orgId}/field/tenants/${tenantId}/promises`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetFieldPromiseOfferQueryKey = (orgId: string,
+    tenantId: string,) =>
+    apiQueryKey({ orgId,tenantId }, { url: `/orgs/${orgId}/field/tenants/${tenantId}/promises` });
+
+
+export const useGetFieldPromiseOfferQueryOptions = <TData = Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError = ErrorType<ErrorResponse>>(orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  apiQueryKey({ orgId,tenantId }, { url: `/orgs/${orgId}/field/tenants/${tenantId}/promises`, queryOptions });
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFieldPromiseOffer>>> = ({ signal }) => getFieldPromiseOffer(orgId,tenantId, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orgId !== null && orgId !== undefined && tenantId !== null && tenantId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetFieldPromiseOfferQueryResult = NonNullable<Awaited<ReturnType<typeof getFieldPromiseOffer>>>
+export type GetFieldPromiseOfferQueryError = ErrorType<ErrorResponse>
+
+
+export function useGetFieldPromiseOffer<TData = Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFieldPromiseOffer>>,
+          TError,
+          Awaited<ReturnType<typeof getFieldPromiseOffer>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFieldPromiseOffer<TData = Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFieldPromiseOffer>>,
+          TError,
+          Awaited<ReturnType<typeof getFieldPromiseOffer>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetFieldPromiseOffer<TData = Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary What "Catat janji bayar" may offer for a tenant the caller collects from (needs invoice:read)
+ */
+
+export function useGetFieldPromiseOffer<TData = Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError = ErrorType<ErrorResponse>>(
+ orgId: string,
+    tenantId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getFieldPromiseOffer>>, TError, TData>>, request?: SecondParameter<typeof apiRequest>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = useGetFieldPromiseOfferQueryOptions(orgId,tenantId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+/**
  * makeTenantPromise from the karyawan's app: the same body, rules, errors and answer, but the version's source is karyawan. Needs promise:create on the tenant through each of its active leases (a karyawan's own are the leases they collect; decision 47); 403 otherwise. Allowed and denied checks are audited.
  * @summary Record a tenant's payment promise from the field, "Catat janji bayar" (needs promise:create; audited)
  */
