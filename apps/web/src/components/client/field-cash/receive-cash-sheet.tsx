@@ -1,6 +1,7 @@
 "use client";
 
 import { XIcon } from "lucide-react";
+import { useEffect } from "react";
 
 import { FormSheet } from "@/components/client/form-sheet/form-sheet";
 import { FormSheetContent } from "@/components/client/form-sheet/form-sheet-content";
@@ -33,6 +34,10 @@ type ReceiveCashSheetProps = {
   requestId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Whether this opening may have recorded the cash without the app knowing (its answer was
+  // lost): the caller then reopens this same sheet instead of a fresh one, so Simpan resends the
+  // identical request and the cash is recorded once.
+  onUnsureChange: (unsure: boolean) => void;
 };
 
 // "Terima tunai" (boards HP-Tagihan and HP-Foto): a bottom sheet on the phone, the right-hand
@@ -46,8 +51,12 @@ export function ReceiveCashSheet({
   requestId,
   open,
   onOpenChange,
+  onUnsureChange,
 }: ReceiveCashSheetProps) {
   const cash = useReceiveCash({ orgId, tenantId: tenant.tenantId, requestId });
+  useEffect(() => {
+    onUnsureChange(cash.locked);
+  }, [cash.locked, onUnsureChange]);
   const subtitle = sheetSubtitle(tenant.tenantName, placeLabel);
   const recordedPhoto =
     cash.photo.state.kind === "sent" ? cash.photo.state.photo : null;

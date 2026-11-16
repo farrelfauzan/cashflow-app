@@ -10,6 +10,7 @@ import {
 
 import { invoiceName } from "../src/components/client/billing/utils";
 import {
+  CLOSE_LABEL,
   PHOTO_FAILED_TITLE,
   PHOTO_NETWORK_TEXT,
   PHOTO_PROGRESS_LABEL,
@@ -19,6 +20,10 @@ import {
   UNKNOWN_SAVE_TEXT,
   WAITING_PHOTO_TEXT,
 } from "../src/components/client/field-cash/utils";
+import {
+  UNSAVED_CHANGES_DISCARD,
+  UNSAVED_CHANGES_TITLE,
+} from "../src/components/client/form-sheet/utils";
 import {
   LIST_LABEL,
   owedText,
@@ -546,6 +551,29 @@ test.describe("Karyawan", () => {
     ).toHaveCount(0);
     await expect(primary(sheet)).toHaveText(`Simpan ${formatRupiah(amount)}`);
     await expect(primary(sheet)).toBeEnabled();
+
+    // He closes the unsure sheet, and the list's reload fails too (still no signal), so the row
+    // still offers Terima tunai. Pressing it again brings back the same opening, still locked:
+    // a fresh one would get a new requestId and record the same cash twice.
+    const listPath = (url: URL) => /\/field\/today$/.test(url.pathname);
+    await page.route(listPath, (route) => route.abort("internetdisconnected"));
+    await sheet.getByRole("button", { name: CLOSE_LABEL }).first().click();
+    if (projectName(testInfo) === "phone") {
+      // On the phone a sheet with something typed asks first.
+      await page
+        .getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE })
+        .getByRole("button", { name: UNSAVED_CHANGES_DISCARD })
+        .click();
+    }
+    await expect(sheet).toBeHidden();
+    await page.unroute(listPath);
+    const reopened = await openSheet(page, tenant);
+    await expect(reopened.getByText(UNKNOWN_SAVE_TEXT)).toBeVisible();
+    await expect(reopened.getByLabel("Uang yang diterima")).toBeDisabled();
+    await expect(reopened.getByLabel("Uang yang diterima")).toHaveValue(
+      formatRupiah(amount).replace(/^Rp/, ""),
+    );
+    await expect(primary(reopened)).toBeEnabled();
 
     const secondPost = page.waitForRequest(isCashPost);
     const answered = page.waitForResponse((response) =>

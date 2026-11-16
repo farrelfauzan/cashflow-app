@@ -24,7 +24,8 @@ type ReceiveCashButtonProps = {
 
 // "Terima tunai" on a Tagihan hari ini row: the row's primary, shown only to a member with
 // cash:record (conditional counts; the API decides per tenant). Each press opens the sheet afresh
-// with a new requestId, kept for every retry of that opening. The sheet stays mounted after it
+// with a new requestId, kept for every retry of that opening, except after an opening left unsure
+// whether the cash was recorded: that one is reopened as it was. The sheet stays mounted after it
 // closes, so it can animate out; the next opening replaces it.
 export function ReceiveCashButton({
   orgId,
@@ -35,6 +36,10 @@ export function ReceiveCashButton({
   const ability = useAbility<AppAbility>();
   const [requestId, setRequestId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  // The last opening's save may have reached the API with its answer lost ("belum pasti
+  // tersimpan"). Pressing Terima tunai again then reopens that opening, with its amount, photo
+  // and requestId, instead of starting a new one that would record the same cash twice.
+  const [unsure, setUnsure] = useState(false);
 
   return (
     <>
@@ -42,7 +47,9 @@ export function ReceiveCashButton({
         <Button
           type="button"
           onClick={() => {
-            setRequestId(crypto.randomUUID());
+            if (!unsure || requestId === null) {
+              setRequestId(crypto.randomUUID());
+            }
             setOpen(true);
           }}
           className={cn(
@@ -63,6 +70,7 @@ export function ReceiveCashButton({
           requestId={requestId}
           open={open}
           onOpenChange={setOpen}
+          onUnsureChange={setUnsure}
         />
       )}
     </>
