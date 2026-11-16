@@ -48,9 +48,9 @@ sends it again.
 
 ### Demo data (development only)
 
-To get a realistic database without typing it in, seed three demo organizations (Griya
-Sejahtera, Kost Putri Anggrek and Kos Bulanan Sejahtera) with their staff, properties, units,
-tenants and leases. From `services/api`, with `DATABASE_URL` pointing at your local database
+To get a realistic database without typing it in, seed four demo organizations (Griya Sejahtera,
+Kost Putri Anggrek, Kos Bulanan Sejahtera and Kos Kunjungan Asri) with their staff, properties,
+units, tenants and leases. From `services/api`, with `DATABASE_URL` pointing at your local database
 (the app role, as for `create-org`):
 
 ```bash
@@ -68,16 +68,17 @@ the tenant list show "1 penyewa belum punya penagih". That needs a database seed
 (`make dev-reset`, `make dev-up`, `make migrate`, then `seed-demo`): a rerun leaves an existing lease as it is, so on a database seeded before
 Agus was added, Eko's lease keeps no collector and the flag does not show.
 
-Seeded leases are entered 40 days before today and bill from the period that ran 70 days ago,
-so they have only a few invoices, some overdue. `seed-demo` creates no invoice; run
+Seeded leases are entered 40 days before today and bill from the period that ran 70 days ago, so
+they have only a few invoices, some overdue. `seed-demo` creates no invoice; run
 `APP_ENV=development go run ./cmd/admin generate-invoices` right after it (same development-only
-rule). It generates the invoices of the three demo organizations only, never of any other
-organization, and records two payments in each: one demo tenant pays everything they owe
-(transfer), one pays about half of their oldest invoice (cash), and a third pays nothing and stays
-overdue. It is safe to run again: the payments carry fixed request ids, so a repeat records
-nothing new, and a later day only bills the periods that have come due since. Like the seed, it
-needs a database seeded from empty: a lease seeded earlier keeps its old dates and would bill
-every period since its start.
+rule). It generates the invoices of the four demo organizations only, never of any other
+organization, and records two payments in each but Kos Kunjungan Asri: one demo tenant pays
+everything they owe (transfer), one pays about half of their oldest invoice (cash), and a third pays
+nothing and stays overdue. Kos Kunjungan Asri has no payer, and three of its tenants get two broken
+payment promises (see below). It is safe to run again: the payments carry fixed request ids, so a
+repeat records nothing new, and a later day only bills the periods that have come due since. Like
+the seed, it needs a database seeded from empty: a lease seeded earlier keeps its old dates and
+would bill every period since its start.
 
 To show what the worker's daily jobs do on a day other than today, run them for that day:
 
@@ -110,6 +111,21 @@ disabled, 2 still collecting on running leases), 25 properties, 95 units (30 in 
 Utama) and 45 tenants, some with a booked lease (starting in June or July 2027), some moved out
 and some with no lease. Sign in as Pak Dimas Prakoso (0812-0009-0027, Admin of the whole
 organization) or as Mbak Lestari Anjani (0812-0009-0028, Admin of Kontrakan Seturan only).
+
+Kos Kunjungan Asri is the field organization, for the karyawan's field specs: one kos (Kos Asri
+Kaliurang, Kamar 1 to 18, Rp800.000 a month) and eighteen tenants. Three karyawan collect from four
+tenants each for the visit list: Mas Arif Setiadi (0812-0010-0011), Mbak Sri Lestari
+(0812-0010-0012) and Mas Teguh Prasetyo (0812-0010-0013). Three more collect from two tenants each,
+for the receipt photo retake spec, which only records cash: Mbak Nurul Hidayah (0812-0010-0021), Mas
+Bagus Wicaksono (0812-0010-0022) and Mbak Mira Widyastuti (0812-0010-0023). Bu Ratna Wulandari
+(0812-0010-0001) is its Supervisor and Pak Bambang Sutrisno (0812-0010-0002) its Admin. Nobody pays,
+so each tenant owes about two overdue invoices, and `run-day` for today opens an H+7 visit task for
+every one of them. `generate-invoices` also gives Citra Ayu Lestari, Gilang Permana and Kiki Amelia
+two broken promises each, so they have a `broken_promises` visit task too (the default threshold is
+2). The promises go through the promise service as the Admin and `Closer.CloseDue`, on clocks 6, 4
+and 2 days in the past (the first promise is made 6 days ago for 5 days ago and closed 4 days ago,
+the second made then for 3 days ago and closed 2 days ago), so every row is dated before today. A
+tenant who already has any promise is left alone, so a rerun adds none.
 
 ### The secrets key (`SECRETS_KEY`)
 

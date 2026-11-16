@@ -162,6 +162,12 @@ jobs:
             psql -U cashflow_owner -d cashflow -tAc \
             "select id from organization where name = 'Kos Bulanan Sejahtera'")
           ./bin/admin run-day -day "$(TZ=Asia/Jakarta date +%F)" -org "$bulanan"
+          # e2e/field-visits.spec.ts uses the open visits of Kos Kunjungan Asri: H+7 for all eighteen
+          # tenants, and broken_promises for three of them (which generate-invoices recorded).
+          kunjungan=$(docker compose -f ../../infra/compose.dev.yaml exec -T postgres \
+            psql -U cashflow_owner -d cashflow -tAc \
+            "select id from organization where name = 'Kos Kunjungan Asri'")
+          ./bin/admin run-day -day "$(TZ=Asia/Jakarta date +%F)" -org "$kunjungan"
       # seed-demo gives Griya Sejahtera a fake AutoGoPay key, so its payment pages offer QRIS,
       # and e2e/payment-page-qris.spec.ts pays, expires and fails QRs through the stand-in's
       # /_control routes. It keeps its QRs in memory, so it starts before the API and the worker.

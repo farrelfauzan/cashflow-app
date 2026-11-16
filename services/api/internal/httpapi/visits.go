@@ -31,6 +31,7 @@ func (s *Server) listFieldVisits(w http.ResponseWriter, r *http.Request) {
 	}
 	out := apigen.FieldVisitList{
 		Items: make([]apigen.FieldVisit, len(res.Items)), Page: res.Page.Number, PageSize: res.Page.Size, Total: int(res.Total),
+		OpenTotal: int(res.OpenTotal),
 	}
 	for i, row := range res.Items {
 		out.Items[i] = toAPIFieldVisit(row)
@@ -143,8 +144,9 @@ func toAPIVisitOutcome(o visit.Outcome) apigen.VisitOutcome {
 		Note: optionalString(o.Note), NewPhone: optionalString(o.NewPhone), Resolved: make([]apigen.VisitReasonCode, len(o.Resolved)),
 	}
 	if o.PaymentID != uuid.Nil {
-		id := o.PaymentID
+		id, amount := o.PaymentID, o.Amount
 		out.PaymentId = &id
+		out.Amount = &amount
 	}
 	if o.PromiseVersionID != uuid.Nil {
 		id := o.PromiseVersionID

@@ -1692,6 +1692,9 @@ type FieldVisit struct {
 type FieldVisitList struct {
 	Items []FieldVisit `json:"items"`
 
+	// OpenTotal How many rows of the whole list (every page, what total counts) are status open: the visits the caller has not finished today, for the Kunjungan tab's badge.
+	OpenTotal int `json:"openTotal"`
+
 	// Page The page returned, from 1.
 	Page     int `json:"page"`
 	PageSize int `json:"pageSize"`
@@ -3182,7 +3185,11 @@ type User struct {
 
 // VisitOutcome defines model for VisitOutcome.
 type VisitOutcome struct {
-	Id openapi_types.UUID `json:"id"`
+	// Amount For paid only, with paymentId; what that cash counts now, net of its corrections.
+	//
+	// Example: 950000
+	Amount *int64             `json:"amount,omitempty"`
+	Id     openapi_types.UUID `json:"id"`
 
 	// NewPhone E.164.
 	//
