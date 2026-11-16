@@ -204,7 +204,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("the login list has every member with E.164 phones", func(t *testing.T) {
-		require.Len(t, first.Logins, 43)
+		require.Len(t, first.Logins, 46)
 		var disabled []string
 		for _, l := range first.Logins {
 			require.Regexp(t, `^\+62\d+$`, l.Phone)
@@ -581,15 +581,15 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, int64(6_500_000), rents["Klinik Sehat Sentosa"], "a ruko here is let by the month")
 	})
 
-	t.Run("Kos Kunjungan Asri has three karyawan with four tenants each", func(t *testing.T) {
+	t.Run("Kos Kunjungan Asri has its karyawan and their tenants", func(t *testing.T) {
 		adminK := env.Principal(t, k.OrganizationID, k.UserID)
 		gk := before[k.OrganizationID]
-		require.Equal(t, 5, gk["membership"].Rows)
+		require.Equal(t, 8, gk["membership"].Rows)
 		require.Equal(t, 1, gk["property"].Rows)
-		require.Equal(t, 12, gk["unit"].Rows)
-		require.Equal(t, 12, gk["tenant"].Rows)
-		require.Equal(t, 12, gk["lease"].Rows)
-		require.Equal(t, 12, gk["unit_price"].Rows)
+		require.Equal(t, 18, gk["unit"].Rows)
+		require.Equal(t, 18, gk["tenant"].Rows)
+		require.Equal(t, 18, gk["lease"].Rows)
+		require.Equal(t, 18, gk["unit_price"].Rows)
 		require.Zero(t, gk["invoice"].Rows, "seed-demo creates no invoice")
 
 		members, err := env.AllMembers(ctx, adminK)
@@ -608,8 +608,12 @@ func TestSeedDemo(t *testing.T) {
 			"Mas Arif Setiadi":     {authz.RoleKaryawan},
 			"Mbak Sri Lestari":     {authz.RoleKaryawan},
 			"Mas Teguh Prasetyo":   {authz.RoleKaryawan},
+			"Mbak Nurul Hidayah":   {authz.RoleKaryawan},
+			"Mas Bagus Wicaksono":  {authz.RoleKaryawan},
+			"Mbak Mira Widyastuti": {authz.RoleKaryawan},
 		}, roles)
-		for _, phone := range []string{"0812-0010-0001", "0812-0010-0002", "0812-0010-0011", "0812-0010-0012", "0812-0010-0013"} {
+		for _, phone := range []string{"0812-0010-0001", "0812-0010-0002", "0812-0010-0011", "0812-0010-0012", "0812-0010-0013",
+			"0812-0010-0021", "0812-0010-0022", "0812-0010-0023"} {
 			orgs, err := env.Auth.Organizations(ctx, env.UserID(t, phone))
 			require.NoError(t, err)
 			require.Len(t, orgs, 1, "%s belongs to this organization only", phone)
@@ -623,7 +627,7 @@ func TestSeedDemo(t *testing.T) {
 		require.Equal(t, "Jl. Kaliurang Km 7 No. 21, Sleman", props[0].Address)
 		units, err := env.AllUnits(ctx, adminK, props[0].ID)
 		require.NoError(t, err)
-		require.Len(t, units, 12)
+		require.Len(t, units, 18)
 		for _, u := range units {
 			price := int64(800_000)
 			require.Equal(t, []property.UnitTerm{{Months: 1, Price: &price}}, u.Terms, u.Label)
@@ -635,7 +639,7 @@ func TestSeedDemo(t *testing.T) {
 		}
 		tenantsK, err := env.AllTenants(ctx, adminK)
 		require.NoError(t, err)
-		require.Len(t, tenantsK, 12)
+		require.Len(t, tenantsK, 18)
 		want := []struct{ name, phone, unit, collector string }{
 			{"Ahmad Fauzi", "+6281300100001", "Kamar 1", "Mas Arif Setiadi"},
 			{"Bayu Saputra", "+6281300100002", "Kamar 2", "Mas Arif Setiadi"},
@@ -649,6 +653,12 @@ func TestSeedDemo(t *testing.T) {
 			{"Joko Susilo", "+6281300100010", "Kamar 10", "Mas Teguh Prasetyo"},
 			{"Kiki Amelia", "+6281300100011", "Kamar 11", "Mas Teguh Prasetyo"},
 			{"Lutfi Hakim", "+6281300100012", "Kamar 12", "Mas Teguh Prasetyo"},
+			{"Nico Pranata", "+6281300100013", "Kamar 13", "Mbak Nurul Hidayah"},
+			{"Satria Nugraha", "+6281300100014", "Kamar 14", "Mbak Nurul Hidayah"},
+			{"Galuh Kartiko", "+6281300100015", "Kamar 15", "Mas Bagus Wicaksono"},
+			{"Zaskia Ardiningsih", "+6281300100016", "Kamar 16", "Mas Bagus Wicaksono"},
+			{"Ilham Sasongko", "+6281300100017", "Kamar 17", "Mbak Mira Widyastuti"},
+			{"Tiara Anindita", "+6281300100018", "Kamar 18", "Mbak Mira Widyastuti"},
 		}
 		for _, w := range want {
 			tn := find(t, tenantsK, w.name)

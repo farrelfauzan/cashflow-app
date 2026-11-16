@@ -28,8 +28,8 @@ const (
 	OrgAnggrek = "Kost Putri Anggrek"
 	// OrgBulanan is the big one: enough rows to fill several pages of every list.
 	OrgBulanan = "Kos Bulanan Sejahtera"
-	// OrgKunjungan is the field one: three karyawan with four tenants each, all overdue, for the
-	// visit list.
+	// OrgKunjungan is the field one: karyawan with tenants of their own, all overdue, for the
+	// visit list and the receipt photo retake specs.
 	OrgKunjungan = "Kos Kunjungan Asri"
 )
 

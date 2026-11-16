@@ -8,12 +8,13 @@ import (
 )
 
 // Kos Kunjungan Asri is the field organization, for the karyawan's visit list ("Kunjungan hari
-// ini"): one kos of 12 rooms, three karyawan who collect from four tenants each, and nobody who
-// pays, so every tenant owes about two overdue invoices and opens an H+7 visit task once the daily
-// jobs run (admin run-day). One tenant of each karyawan also has two broken promises, which
-// GenerateInvoices records (see orgSpec.BrokenPromises), so their visit list shows the
-// broken_promises reason next to the overdue one. It belongs to the web's Playwright spec of the
-// visit list; change it only together with that spec.
+// ini") and the receipt photo retake: one kos of 18 rooms, three karyawan who collect from four
+// tenants each for the visit list, three more who collect from two each for the retake spec, and
+// nobody who pays, so every tenant owes about two overdue invoices and opens an H+7 visit task once
+// the daily jobs run (admin run-day). One tenant of each of the first three karyawan also has two
+// broken promises, which GenerateInvoices records (see orgSpec.BrokenPromises), so their visit list
+// shows the broken_promises reason next to the overdue one. It belongs to the web's Playwright
+// specs of the field app; change it only together with them.
 
 const (
 	phoneKunjunganSupervisor = "0812-0010-0001"
@@ -23,11 +24,16 @@ const (
 )
 
 func kunjunganOrg() orgSpec {
-	// The three karyawan, each collecting from the four tenants listed under their name below.
+	// The karyawan, each collecting from the tenants listed under their name below.
 	const (
 		arif  = "0812-0010-0011"
 		sri   = "0812-0010-0012"
 		teguh = "0812-0010-0013"
+		// Three more, one per Playwright project too, for the receipt photo retake spec: they only
+		// record cash from their two tenants, so that spec never touches the visit spec's tenants.
+		nurul = "0812-0010-0021"
+		bagus = "0812-0010-0022"
+		mira  = "0812-0010-0023"
 	)
 	karyawan := func(phone, name string) staffSpec {
 		return staffSpec{Phone: phone, Name: name, Grants: orgWide(authz.RoleKaryawan)}
@@ -52,10 +58,13 @@ func kunjunganOrg() orgSpec {
 			karyawan(arif, "Mas Arif Setiadi"),
 			karyawan(sri, "Mbak Sri Lestari"),
 			karyawan(teguh, "Mas Teguh Prasetyo"),
+			karyawan(nurul, "Mbak Nurul Hidayah"),
+			karyawan(bagus, "Mas Bagus Wicaksono"),
+			karyawan(mira, "Mbak Mira Widyastuti"),
 		},
 		Properties: []propertySpec{{
 			Name: propKunjungan, Kind: property.KindKos, Address: "Jl. Kaliurang Km 7 No. 21, Sleman",
-			Units: units("Kamar", 1, 12), Terms: monthly(800_000), UnitTerms: unitTerms,
+			Units: units("Kamar", 1, 18), Terms: monthly(800_000), UnitTerms: unitTerms,
 		}},
 		Tenants: []tenantSpec{
 			// Mas Arif.
@@ -73,6 +82,13 @@ func kunjunganOrg() orgSpec {
 			room("Joko Susilo", "0813-0010-0010", "Kamar 10", day(2026, 5, 16), teguh),
 			room("Kiki Amelia", "0813-0010-0011", "Kamar 11", day(2026, 6, 4), teguh),
 			room("Lutfi Hakim", "0813-0010-0012", "Kamar 12", day(2026, 6, 18), teguh),
+			// Mbak Nurul, Mas Bagus and Mbak Mira: two each, for cash only.
+			room("Nico Pranata", "0813-0010-0013", "Kamar 13", day(2026, 7, 2), nurul),
+			room("Satria Nugraha", "0813-0010-0014", "Kamar 14", day(2026, 7, 16), nurul),
+			room("Galuh Kartiko", "0813-0010-0015", "Kamar 15", day(2026, 8, 3), bagus),
+			room("Zaskia Ardiningsih", "0813-0010-0016", "Kamar 16", day(2026, 8, 17), bagus),
+			room("Ilham Sasongko", "0813-0010-0017", "Kamar 17", day(2026, 9, 1), mira),
+			room("Tiara Anindita", "0813-0010-0018", "Kamar 18", day(2026, 9, 15), mira),
 		},
 		// Nobody pays: every tenant stays overdue.
 		BrokenPromises: []string{"Citra Ayu Lestari", "Gilang Permana", "Kiki Amelia"},

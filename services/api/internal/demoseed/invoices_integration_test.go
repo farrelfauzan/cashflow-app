@@ -276,7 +276,7 @@ func TestGenerateInvoicesKunjungan(t *testing.T) {
 			sum = s
 		}
 	}
-	require.Equal(t, 12, sum.Leases)
+	require.Equal(t, 18, sum.Leases)
 	require.Positive(t, sum.Invoices)
 	require.Zero(t, sum.Payments, "nobody pays")
 	require.Equal(t, 3, sum.Promises)
@@ -287,7 +287,7 @@ func TestGenerateInvoicesKunjungan(t *testing.T) {
 	admin := env.Principal(t, org, m.UserID)
 	tenants, err := env.AllTenants(ctx, admin)
 	require.NoError(t, err)
-	require.Len(t, tenants, 12)
+	require.Len(t, tenants, 18)
 	promises := promise.NewService(promise.Deps{Store: env.Store, Tenants: env.Billing, Clock: env.Clock})
 
 	brokenTwice := []string{"Citra Ayu Lestari", "Gilang Permana", "Kiki Amelia"}
@@ -354,22 +354,25 @@ func TestGenerateInvoicesKunjungan(t *testing.T) {
 		env.Clock.Advance(-24 * time.Hour)
 	})
 
-	t.Run("the daily jobs open H+7 for everyone and each karyawan sees their four tenants", func(t *testing.T) {
+	t.Run("the daily jobs open H+7 for everyone and each karyawan sees exactly their tenants", func(t *testing.T) {
 		res, err := reminder.NewDecider(env.Store, env.Clock, slog.New(slog.DiscardHandler), nil).DecideOrg(ctx, org)
 		require.NoError(t, err)
-		require.Equal(t, 12, res.VisitTasks, "an h7 task for each tenant")
+		require.Equal(t, 18, res.VisitTasks, "an h7 task for each tenant")
 
 		visits := visit.NewService(env.Store, env.Billing, env.Clock)
 		wantTenants := map[string][]string{
 			"0812-0010-0011": {"Ahmad Fauzi", "Bayu Saputra", "Citra Ayu Lestari", "Danu Prakoso"},
 			"0812-0010-0012": {"Eko Nugroho", "Fajar Ramadhan", "Gilang Permana", "Hesti Wulansari"},
 			"0812-0010-0013": {"Imam Santoso", "Joko Susilo", "Kiki Amelia", "Lutfi Hakim"},
+			"0812-0010-0021": {"Nico Pranata", "Satria Nugraha"},
+			"0812-0010-0022": {"Galuh Kartiko", "Zaskia Ardiningsih"},
+			"0812-0010-0023": {"Ilham Sasongko", "Tiara Anindita"},
 		}
 		for number, want := range wantTenants {
 			p := env.Principal(t, org, env.UserID(t, number))
 			got, err := visits.List(ctx, p, listing.FirstPage)
 			require.NoError(t, err)
-			require.Equal(t, int64(4), got.Total, number)
+			require.EqualValues(t, len(want), got.Total, number)
 			var names []string
 			for _, row := range got.Items {
 				names = append(names, row.TenantName)
