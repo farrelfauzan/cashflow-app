@@ -13,14 +13,16 @@ const STORAGE_HINT =
 
 // The photo field cash must come with (decision 50): uploaded as the karyawan api is signed in as,
 // for the tenant, before recordCashPayment, which takes the returned id as photoUploadId. The
-// photo is a real JPEG drawn on page's canvas; its scan runs later and is not waited for.
+// photo is a real JPEG drawn on page's canvas; its scan runs later and is not waited for. `bytes`
+// replaces it (an infected copy, for "Ambil ulang").
 export async function cashPhoto(
   page: Page,
   api: APIRequestContext,
   orgId: string,
   tenantId: string,
+  bytes?: Buffer,
 ): Promise<string> {
-  const photo = await transferPhoto(page, "Uang tunai diterima");
+  const photo = bytes ?? (await transferPhoto(page, "Uang tunai diterima"));
   const input: UploadInput = {
     purpose: "cash_receipt",
     tenantId,

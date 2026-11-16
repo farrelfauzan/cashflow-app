@@ -1,3 +1,4 @@
+import { retakePayment } from "@/components/client/receipt-retake/utils";
 import type {
   FieldCashToday,
   FieldTodayItem,
@@ -68,8 +69,8 @@ export function reasonChip(
   }
 }
 
-// The photo of today's cash. Taking another photo is not on this screen, so a refused one only
-// says so.
+// The photo of today's cash. A refused one is retaken with "Ambil ulang" on its payment's line
+// under the chip.
 const PHOTO_CHIPS: Record<ReceiptPhotoStatus, FieldChip> = {
   clean: { label: "Foto tersimpan", tone: "active" },
   pending: { label: "Foto sedang diperiksa", tone: "none" },
@@ -103,13 +104,17 @@ export function cashLine(cash: FieldCashToday): FieldCashLineView | null {
 }
 
 export function fieldTodayRow(item: FieldTodayItem): FieldTodayRowView {
+  const place = placeText(item.units);
   return {
     tenantId: item.tenantId,
     tenantName: item.tenantName,
-    place: placeText(item.units),
+    place,
     owed: owedText(item),
     reason: reasonChip(item),
     cash: cashLine(item.cashToday),
+    cashPayments: item.cashToday.payments.map((payment) =>
+      retakePayment(payment, item, place),
+    ),
     item,
     canCollect: item.outstanding > 0,
   };

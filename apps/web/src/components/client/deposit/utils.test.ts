@@ -195,8 +195,8 @@ describe("photoChip", () => {
     { status: "clean", label: "Foto tersimpan", tone: "active" },
     { status: "pending", label: "Foto sedang diperiksa", tone: "none" },
     { status: "missing", label: "Foto belum ada", tone: "warning" },
-    { status: "rejected", label: "Foto ditolak, ambil ulang", tone: "warning" },
-    { status: "infected", label: "Foto ditolak, ambil ulang", tone: "warning" },
+    { status: "rejected", label: "Foto ditolak", tone: "warning" },
+    { status: "infected", label: "Foto ditolak", tone: "warning" },
   ] as const)("shows a $status photo as $label", ({ status, label, tone }) => {
     expect(photoChip(status)).toEqual({ label, tone });
   });
@@ -210,6 +210,15 @@ describe("heldReceiptView", () => {
       detail: "Rumah A1 · Jumat 13 Nov, 10.15",
       amount: "Rp1.050.000",
       photo: { label: "Foto tersimpan", tone: "active" },
+      retake: {
+        paymentId: "p-1",
+        tenantId: "t-1",
+        tenantName: "Bu Wati Handayani",
+        place: "Rumah A1 · Kontrakan Seturan",
+        amount: 1_050_000,
+        recordedAt: "2026-11-13T03:15:00Z",
+        photoStatus: "clean",
+      },
     });
   });
 

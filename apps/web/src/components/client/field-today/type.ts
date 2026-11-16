@@ -1,3 +1,4 @@
+import type { RetakePayment } from "@/components/client/receipt-retake/type";
 import type { ChipTone } from "@/components/client/tenant/type";
 import type { FieldTodayItem } from "@/lib/api/generated/model";
 
@@ -24,6 +25,9 @@ export type FieldTodayRowView = {
   owed: string;
   reason: FieldChip;
   cash: FieldCashLineView | null;
+  // Each cash payment taken from the tenant today, oldest first: one whose photo the scan refused
+  // offers "Ambil ulang" under the cash line.
+  cashPayments: readonly RetakePayment[];
   // The API's row, for the sheets it opens ("Terima tunai", "Catat janji bayar").
   item: FieldTodayItem;
   // Still owes something: the row offers "Terima tunai", "Catat janji bayar" and "Penyewa sudah

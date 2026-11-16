@@ -108,6 +108,13 @@ const jakartaShortWeekdayDayMonthTimeParts = new Intl.DateTimeFormat("id-ID", {
   hourCycle: "h23",
 });
 
+const jakartaTimeParts = new Intl.DateTimeFormat("id-ID", {
+  timeZone: JAKARTA,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const jakartaDateParts = new Intl.DateTimeFormat("id-ID", {
   timeZone: JAKARTA,
   day: "numeric",
@@ -355,6 +362,19 @@ export function formatTimestampShortWeekdayDayMonthTime(
     toInstant(timestamp, "formatTimestampShortWeekdayDayMonthTime"),
   );
   return `${part(parts, "weekday")} ${part(parts, "day")} ${part(parts, "month")}, ${part(parts, "hour")}.${part(parts, "minute")}`;
+}
+
+/**
+ * Formats the Jakarta time of day of an API timestamp, for a moment of today:
+ * `"2026-11-16T03:42:00Z"` gives `"10.42"`.
+ *
+ * @throws RangeError when the value is not a valid timestamp with a zone.
+ */
+export function formatTimestampTime(timestamp: string | Date): string {
+  const parts = jakartaTimeParts.formatToParts(
+    toInstant(timestamp, "formatTimestampTime"),
+  );
+  return `${part(parts, "hour")}.${part(parts, "minute")}`;
 }
 
 function toInstant(timestamp: string | Date, caller: string): Date {

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { placeText } from "@/components/client/field-today/utils";
+import { retakePayment } from "@/components/client/receipt-retake/utils";
 import type { ToastMessage } from "@/components/client/toast/type";
 import { ApiError } from "@/lib/api/errors";
 import type {
@@ -70,8 +72,9 @@ const PHOTO_CHIPS: Record<ReceiptPhotoStatus, DepositChip> = {
   clean: { label: "Foto tersimpan", tone: "active" },
   pending: { label: "Foto sedang diperiksa", tone: "none" },
   missing: { label: "Foto belum ada", tone: "warning" },
-  rejected: { label: "Foto ditolak, ambil ulang", tone: "warning" },
-  infected: { label: "Foto ditolak, ambil ulang", tone: "warning" },
+  // "Ambil ulang" is the button beside it (board HP-Foto: "Foto ditolak · Ambil ulang").
+  rejected: { label: "Foto ditolak", tone: "warning" },
+  infected: { label: "Foto ditolak", tone: "warning" },
 };
 
 // The friendly early checks of the amount. The Go API checks it again and its message wins.
@@ -162,6 +165,7 @@ export function heldReceiptView(payment: HeldCashPayment): HeldReceiptView {
     detail: units === "" ? recorded : `${units} · ${recorded}`,
     amount: formatRupiah(payment.amount),
     photo: photoChip(payment.photo.status),
+    retake: retakePayment(payment, payment, placeText(payment.units)),
   };
 }
 

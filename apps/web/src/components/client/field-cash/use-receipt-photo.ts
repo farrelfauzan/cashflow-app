@@ -16,6 +16,7 @@ import type {
   PhotoUploadSteps,
   ReceiptPhotoState,
   ReceiptPhotoUpload,
+  UploadFailureView,
 } from "./type";
 import {
   PHOTO_TOO_LARGE_TEXT,
@@ -30,9 +31,13 @@ import {
 // AbortController: choosing another photo, "Coba lagi", Batal or leaving aborts the running one,
 // which stops its PUT and drops whatever it answers after. The object URL that shows the photo
 // is revoked when it is replaced or the sheet goes.
+//
+// `failureView` words a failed step; Terima tunai keeps the default (its lines end "Uang belum
+// tercatat."), "Ambil ulang foto kwitansi" passes its own, since that cash is already recorded.
 export function useReceiptPhoto(
   orgId: string,
   tenantId: string,
+  failureView: (error: unknown) => UploadFailureView = uploadFailureView,
 ): ReceiptPhotoUpload {
   const [state, setState] = useState<ReceiptPhotoState>({ kind: "empty" });
   const createUpload = useCreateUpload();
@@ -103,7 +108,7 @@ export function useReceiptPhoto(
       setState({ kind: "sent", photo, uploadId: outcome.uploadId });
       return;
     }
-    const view = uploadFailureView(outcome.error);
+    const view = failureView(outcome.error);
     if (view.kind === "cancelled") return;
     if (view.kind === "refused") {
       setState({ kind: "refused", photo, message: view.message });

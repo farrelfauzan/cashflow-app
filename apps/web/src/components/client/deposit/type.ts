@@ -1,5 +1,6 @@
 import type { z } from "zod";
 
+import type { RetakePayment } from "@/components/client/receipt-retake/type";
 import type { ChipTone } from "@/components/client/tenant/type";
 
 import type { depositFormSchema } from "./utils";
@@ -24,6 +25,8 @@ export type HeldReceiptView = {
   detail: string;
   amount: string;
   photo: DepositChip;
+  // The payment for "Ambil ulang", offered when the scan refused its photo.
+  retake: RetakePayment;
 };
 
 // A deposit waiting for an admin to count it (board phone 2).

@@ -105,7 +105,11 @@ export function CashDepositView({ orgId }: CashDepositViewProps) {
             amount={cash.data.amount}
             count={cash.data.count}
           />
-          <HeldReceiptList items={held.data.items} total={held.data.total} />
+          <HeldReceiptList
+            orgId={orgId}
+            items={held.data.items}
+            total={held.data.total}
+          />
           <CashDepositForm
             key={round}
             orgId={orgId}

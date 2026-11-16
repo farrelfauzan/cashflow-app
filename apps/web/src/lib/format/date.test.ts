@@ -11,6 +11,7 @@ import {
   formatTimestampDate,
   formatTimestampDayMonth,
   formatTimestampShortWeekdayDayMonthTime,
+  formatTimestampTime,
   formatTimestampWeekdayDayMonth,
   formatTimestampWeekdayDayMonthTime,
   formatWeekdayDayMonth,
@@ -410,5 +411,28 @@ describe("jakartaHour", () => {
 
   it("rejects an invalid date", () => {
     expect(() => jakartaHour(new Date("nope"))).toThrow(RangeError);
+  });
+});
+
+describe("formatTimestampTime", () => {
+  it.each([
+    {
+      name: "a morning in Jakarta",
+      input: "2026-11-16T03:42:00Z",
+      want: "10.42",
+    },
+    {
+      name: "an evening in UTC that is past midnight in Jakarta",
+      input: "2026-11-13T17:05:00Z",
+      want: "00.05",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampTime(input)).toBe(want);
+  });
+
+  it("throws on a timestamp without a zone", () => {
+    expect(() => formatTimestampTime("2026-11-16T10:42:00")).toThrow(
+      RangeError,
+    );
   });
 });
