@@ -112,7 +112,9 @@ func TestServerHandlerGivesProofsMoreTime(t *testing.T) {
 			start := time.Now()
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+tc.target, bytes.NewReader(nil))
 			require.NoError(t, err)
-			resp, err := http.DefaultClient.Do(req)
+			// The server's own client: the subtests run in parallel, and closing one server closes
+			// the idle connections of http.DefaultTransport under the other's request.
+			resp, err := srv.Client().Do(req)
 			require.NoError(t, err)
 			require.NoError(t, resp.Body.Close())
 			require.Equal(t, http.StatusNoContent, resp.StatusCode)

@@ -38,7 +38,12 @@ const (
 	ActionPaymentRecord = "payment:record"
 	// ActionPaymentCheck is the admin checking money others recorded: a manual payment, a deposit's
 	// count.
-	ActionPaymentCheck     = "payment:check"
+	ActionPaymentCheck = "payment:check"
+	// ActionPaymentProof is sending a photo of a tenant's bank transfer for the admin to check
+	// (decision 49): a member who got it from the tenant, checked on the tenant through each of
+	// its active leases. It records no money. The tenant sends their own through a payment link,
+	// which grants it without a principal.
+	ActionPaymentProof     = "payment:proof"
 	ActionCorrectionCreate = "correction:create"
 
 	// ActionPromiseRead and ActionPromiseCreate are a tenant's payment promises: list them, and
@@ -78,7 +83,7 @@ var catalog = map[string][]string{
 	"lease":        {"read", "manage"},
 	"charge":       {"read", "record"},
 	"invoice":      {"read", "create", "send-reminder", "share"},
-	"payment":      {"read", "record", "check"},
+	"payment":      {"read", "record", "check", "proof"},
 	"correction":   {"read", "create"},
 	"promise":      {"read", "create"},
 	"visit":        {"read", "record"},
@@ -136,6 +141,7 @@ var sensitive = map[string]bool{
 	"charge:record":       true,
 	"payment:record":      true,
 	"payment:check":       true,
+	"payment:proof":       true,
 	"correction:create":   true,
 	"promise:create":      true,
 	"cash:record":         true,

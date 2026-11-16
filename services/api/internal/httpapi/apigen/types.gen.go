@@ -1327,9 +1327,12 @@ type CheckTenantUnit struct {
 
 // CheckTransferProof defines model for CheckTransferProof.
 type CheckTransferProof struct {
-	// InvoiceId The invoice of the link it was sent from.
-	InvoiceId openapi_types.UUID `json:"invoiceId"`
-	Tenant    CheckTenant        `json:"tenant"`
+	// InvoiceId The invoice of the link the tenant sent it from; absent when a member sent it.
+	InvoiceId *openapi_types.UUID `json:"invoiceId,omitempty"`
+
+	// SentBy The member who sent it for the tenant ("Dikirim oleh Dimas", decision 49); absent when the tenant sent it from the payment page.
+	SentBy *CheckStaff `json:"sentBy,omitempty"`
+	Tenant CheckTenant `json:"tenant"`
 
 	// UploadId The photo; read it with getUpload once clean.
 	UploadId openapi_types.UUID `json:"uploadId"`
@@ -1343,7 +1346,7 @@ type CheckTransferProofUploadStatus string
 
 // CheckUploadInfected defines model for CheckUploadInfected.
 type CheckUploadInfected struct {
-	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof) or by a member who got it from the tenant (createUpload, decision 49).
 	Purpose   UploadPurpose      `json:"purpose"`
 	ScannedAt *time.Time         `json:"scannedAt,omitempty"`
 	Tenant    *CheckTenant       `json:"tenant,omitempty"`
@@ -3073,7 +3076,7 @@ type Upload struct {
 	DownloadUrl *string            `json:"downloadUrl,omitempty"`
 	Id          openapi_types.UUID `json:"id"`
 
-	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof) or by a member who got it from the tenant (createUpload, decision 49).
 	Purpose UploadPurpose `json:"purpose"`
 
 	// ScannedAt When the scan decided the status.
@@ -3096,7 +3099,7 @@ type UploadInput struct {
 	// Example: image/jpeg
 	ContentType string `json:"contentType"`
 
-	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+	// Purpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof) or by a member who got it from the tenant (createUpload, decision 49).
 	Purpose UploadPurpose `json:"purpose"`
 
 	// Size The file's exact size in bytes, at most 10 MB (10485760).
@@ -3104,11 +3107,11 @@ type UploadInput struct {
 	// Example: 2483120
 	Size int64 `json:"size"`
 
-	// TenantId Required for cash_receipt; must be left out for cash_deposit.
+	// TenantId Required for cash_receipt and transfer_proof; must be left out for cash_deposit.
 	TenantId *openapi_types.UUID `json:"tenantId,omitempty"`
 }
 
-// UploadPurpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+// UploadPurpose What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof) or by a member who got it from the tenant (createUpload, decision 49).
 type UploadPurpose string
 
 // UploadStatus pending until the scan has run; clean (can be downloaded); rejected (not a JPEG, PNG or WebP image, not the declared size, larger than 10 MB, or the file never arrived); infected (malware found; the file is quarantined and an admin sees it). Only pending changes, once.

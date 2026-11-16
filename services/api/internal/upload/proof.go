@@ -140,7 +140,7 @@ func (s *Proofs) Send(ctx context.Context, token string, open func() (io.Reader,
 		if err != nil {
 			return fmt.Errorf("recording transfer proof: %w", err)
 		}
-		out = Proof{ID: row.ID, TenantID: row.TenantID, InvoiceID: row.InvoiceID, UploadID: row.UploadID, CreatedAt: row.CreatedAt}
+		out = Proof{ID: row.ID, TenantID: row.TenantID, InvoiceID: invoiceID, UploadID: row.UploadID, CreatedAt: row.CreatedAt}
 		return nil
 	})
 	if err != nil {

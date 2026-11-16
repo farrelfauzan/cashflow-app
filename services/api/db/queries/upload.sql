@@ -14,9 +14,17 @@ VALUES (@id, @organization_id, 'transfer_proof', @tenant_id::uuid, @object_key, 
 RETURNING *;
 
 -- name: InsertTransferProof :one
+-- A proof the tenant sent from a payment link (S6-5).
 INSERT INTO transfer_proof (id, organization_id, tenant_id, payment_link_id, invoice_id, upload_id, created_at)
-VALUES (@id, @organization_id, @tenant_id, @payment_link_id, @invoice_id, @upload_id, @created_at)
+VALUES (@id, @organization_id, @tenant_id, @payment_link_id::uuid, @invoice_id::uuid, @upload_id, @created_at)
 RETURNING *;
+
+-- name: InsertStaffTransferProof :execrows
+-- A proof a member sent for the tenant (decision 49): no link or invoice. An upload already
+-- behind a proof is left as it is (0 rows), so completing the upload again changes nothing.
+INSERT INTO transfer_proof (id, organization_id, tenant_id, upload_id, sent_by_staff_user_id, created_at)
+VALUES (@id, @organization_id, @tenant_id, @upload_id, @sent_by_staff_user_id::uuid, @created_at)
+ON CONFLICT (upload_id) DO NOTHING;
 
 -- name: GetUpload :one
 SELECT * FROM upload

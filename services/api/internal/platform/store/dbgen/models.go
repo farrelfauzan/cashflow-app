@@ -500,14 +500,15 @@ type TenantBalance struct {
 }
 
 type TransferProof struct {
-	ID             uuid.UUID
-	OrganizationID uuid.UUID
-	TenantID       uuid.UUID
-	PaymentLinkID  uuid.UUID
-	InvoiceID      uuid.UUID
-	UploadID       uuid.UUID
-	UploadPurpose  string
-	CreatedAt      time.Time
+	ID                uuid.UUID
+	OrganizationID    uuid.UUID
+	TenantID          uuid.UUID
+	PaymentLinkID     uuid.NullUUID
+	InvoiceID         uuid.NullUUID
+	UploadID          uuid.UUID
+	UploadPurpose     string
+	CreatedAt         time.Time
+	SentByStaffUserID uuid.NullUUID
 }
 
 type Unit struct {

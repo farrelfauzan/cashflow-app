@@ -6,7 +6,7 @@
  */
 
 /**
- * What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof). createUpload takes only cash_receipt and cash_deposit (upload_purpose_unknown otherwise).
+ * What the photo is for: cash_receipt, a receipt photo for one tenant's cash payment; cash_deposit, a photo of a cash deposit (setor tunai); transfer_proof, a tenant's photo of a bank transfer, sent from the payment page (sendPaymentProof) or by a member who got it from the tenant (createUpload, decision 49).
  */
 export type UploadPurpose = typeof UploadPurpose[keyof typeof UploadPurpose];
 

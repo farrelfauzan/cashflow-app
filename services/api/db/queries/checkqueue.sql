@@ -24,10 +24,12 @@ FROM check_queue_item
 WHERE organization_id = @organization_id AND kind = @kind AND item_id = @item_id;
 
 -- name: ListQueueTransferProofs :many
-SELECT tp.id, tp.tenant_id, t.name AS tenant_name, tp.invoice_id, tp.upload_id, u.status AS upload_status, tp.created_at
+SELECT tp.id, tp.tenant_id, t.name AS tenant_name, tp.invoice_id, tp.upload_id, u.status AS upload_status, tp.created_at,
+       tp.sent_by_staff_user_id, su.name AS sent_by_name
 FROM transfer_proof tp
 JOIN tenant t ON t.organization_id = tp.organization_id AND t.id = tp.tenant_id
 JOIN upload u ON u.organization_id = tp.organization_id AND u.id = tp.upload_id
+LEFT JOIN staff_user su ON su.id = tp.sent_by_staff_user_id
 WHERE tp.organization_id = @organization_id AND tp.id = ANY(@ids::uuid[]);
 
 -- name: ListQueueDepositGaps :many

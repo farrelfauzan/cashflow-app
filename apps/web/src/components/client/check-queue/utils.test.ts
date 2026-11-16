@@ -809,6 +809,8 @@ describe("transfer proof photo", () => {
     // The account is not loaded, or does not list the invoice: no month.
     expect(proofPhotoCaption(CREATED, "inv-nov", undefined).link).toBeNull();
     expect(proofPhotoCaption(CREATED, "other", [invoice]).link).toBeNull();
+    // A proof a member sent names no invoice (decision 49).
+    expect(proofPhotoCaption(CREATED, undefined, [invoice]).link).toBeNull();
     expect(proofPhotoAlt(WATI)).toBe(
       "Foto bukti transfer dari Bu Wati Handayani",
     );
