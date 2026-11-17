@@ -56,7 +56,8 @@ jobs:
   # The login helper reads codes from DEVLOG_FILE.
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # One worker: about 26 to 30 minutes in November 2026. Shard the suite when it nears this.
+    timeout-minutes: 45
     env:
       APP_ENV: development
       E2E_DIR: /tmp/cashflow-e2e
