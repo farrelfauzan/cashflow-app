@@ -1,6 +1,7 @@
 export type OrgMenuItem = {
   key:
     | "field"
+    | "visits"
     | "deposit"
     | "home"
     | "properties"

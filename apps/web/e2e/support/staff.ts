@@ -13,6 +13,12 @@ export type SeededStaff = {
   storageState: string;
 };
 
+// Kos Kunjungan Asri, the organization seed-demo makes only for the karyawan field specs: one
+// property, Kos Asri Kaliurang (Rp800.000 a month), every tenant overdue once "admin run-day" has
+// run for it. Its staff are members of it only (no picker), and each spec has its own karyawans,
+// one per size project, so no two specs record on the same tenants.
+export const VISIT_ORG = "Kos Kunjungan Asri";
+
 // Admin in Griya Sejahtera and Supervisor in Kost Putri Anggrek: one login shows both
 // organizations. Only one phone is signed in per run, shared by every project, because the API
 // allows 3 login code requests per phone per 15 minutes.
@@ -124,6 +130,42 @@ export const FITRI: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "fitri.json"),
 };
 
+// "Kunjungan hari ini" (e2e/field-visits.spec.ts): twelve Kos Kunjungan Asri tenants about two
+// invoices past due, so every visit is open once "admin run-day" has run. Signed in by the setup
+// project only.
+
+// Admin of Kos Kunjungan Asri: answers the new numbers the karyawan bring back (Antrean cek).
+export const BAMBANG: SeededStaff = {
+  phone: "0812-0010-0002",
+  name: "Pak Bambang Sutrisno",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "bambang.json"),
+};
+
+// iPad: collector of Ahmad Fauzi, Bayu Saputra, Citra Ayu Lestari and Danu Prakoso.
+export const ARIF: SeededStaff = {
+  phone: "0812-0010-0011",
+  name: "Mas Arif Setiadi",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "arif.json"),
+};
+
+// Phone: collector of Eko Nugroho, Fajar Ramadhan, Gilang Permana and Hesti Wulansari.
+export const SRI: SeededStaff = {
+  phone: "0812-0010-0012",
+  name: "Mbak Sri Lestari",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "sri.json"),
+};
+
+// Desktop: collector of Imam Santoso, Joko Susilo, Kiki Amelia and Lutfi Hakim.
+export const TEGUH: SeededStaff = {
+  phone: "0812-0010-0013",
+  name: "Mas Teguh Prasetyo",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "teguh.json"),
+};
+
 // Every member the setup project signs in once per run.
 export const SETUP_STAFF: readonly SeededStaff[] = [
   HENDRA,
@@ -137,6 +179,10 @@ export const SETUP_STAFF: readonly SeededStaff[] = [
   GALIH,
   LINA,
   FITRI,
+  BAMBANG,
+  ARIF,
+  SRI,
+  TEGUH,
 ];
 
 // A seeded member the login spec signs in through the UI. Each is used by one test in one

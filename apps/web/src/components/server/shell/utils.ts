@@ -2,6 +2,7 @@ import {
   Banknote,
   Building2,
   House,
+  MapPin,
   Receipt,
   ReceiptText,
   Users,
@@ -21,6 +22,7 @@ export const PICKER_PATH = "/organizations";
 
 export const ORG_NAV_ICONS: Record<OrgNavItem["key"], LucideIcon> = {
   field: Receipt,
+  visits: MapPin,
   deposit: Banknote,
   home: House,
   properties: Building2,
@@ -53,10 +55,10 @@ export const loadOrgMe = cache(async (orgId: string) => {
 // Never by role name: a custom role or a property limit changes what shows without touching this
 // list. Hiding is visibility only; the API checks every request.
 //
-// Field work comes first (board HP-Tab-Karyawan, draft 6): a member who records cash sees
-// Tagihan hari ini and Setor tunai before the office sections. Kunjungan hari ini (visit:record,
-// W20a) joins as one entry between the two, and in PHONE_TAB_ORDER. An admin or Supervisor holds
-// neither action, so their menu starts at Beranda as before.
+// Field work comes first (board HP-Tab-Karyawan, draft 6): a member who does field work sees
+// Tagihan hari ini, Kunjungan hari ini and Setor tunai before the office sections. An admin or
+// Supervisor holds none of their actions (they read visits, visit:read, but never record one), so
+// their menu starts at Beranda as before.
 export const ORG_MENU: readonly OrgMenuItem[] = [
   {
     // "Tagihan hari ini": cash:record holds on the tenants the karyawan collects from only, so it
@@ -66,6 +68,19 @@ export const ORG_MENU: readonly OrgMenuItem[] = [
     tabLabel: "Tagihan",
     segment: "field",
     permission: ["record", "cash"],
+  },
+  {
+    // "Kunjungan hari ini" (board HP-Kunjungan): for a member who records visit outcomes, as the
+    // tab board says. Not visit:read, which an admin and the Supervisor hold for reading the
+    // outcomes: their list here would be empty, and their menu stays as it was. visit:record
+    // holds on the karyawan's own tenants only, so it is "conditional" and shows the item.
+    // The tab's count of visits still open ("3" on the board) needs an API count first; it
+    // goes on this item (and PhoneTabLink) when that exists.
+    key: "visits",
+    label: "Kunjungan hari ini",
+    tabLabel: "Kunjungan",
+    segment: "field/visits",
+    permission: ["record", "visit"],
   },
   {
     // The karyawan's own cash, "Setor tunai": cash:deposit holds on their own records only, so
@@ -147,9 +162,11 @@ export const SCREEN_LOADING_LABEL = "Memuat…";
 
 // The phone's tab bar (boards HP-Tab, approved 2026-11-08, and HP-Tab-Karyawan, draft 6): the
 // sections the member may open in this order, at most four, then "Lainnya" with the rest. Field
-// work first, then Beranda, Penyewa, Penagihan and Properti. iPad and desktop keep the side menu.
+// work first (Tagihan, Kunjungan, Setor), then Beranda, Penyewa, Penagihan and Properti. iPad and
+// desktop keep the side menu.
 export const PHONE_TAB_ORDER: readonly OrgMenuItem["key"][] = [
   "field",
+  "visits",
   "deposit",
   "home",
   "tenants",

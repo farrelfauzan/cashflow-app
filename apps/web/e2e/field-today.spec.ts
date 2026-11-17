@@ -92,17 +92,21 @@ test.describe("Karyawan", () => {
     if (isPhone(testInfo)) {
       await expect(menuSections(menu)).toHaveText([
         "Tagihan",
+        "Kunjungan",
         "Setor",
         "Penyewa",
-        "Penagihan",
       ]);
       await expect(page.getByRole("button", { name: "Lainnya" })).toBeVisible();
       const sheet = await openAccountMenu(page, testInfo);
       await expect(sheet.getByRole("link", { name: "Beranda" })).toHaveCount(0);
+      await expect(
+        sheet.getByRole("link", { name: "Penagihan" }),
+      ).toBeVisible();
       await page.keyboard.press("Escape");
     } else {
       await expect(menuSections(menu)).toHaveText([
         "Tagihan hari ini",
+        "Kunjungan hari ini",
         "Setor tunai",
         "Penyewa",
         "Penagihan",

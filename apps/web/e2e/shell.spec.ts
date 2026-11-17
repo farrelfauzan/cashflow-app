@@ -340,9 +340,9 @@ test.describe("Karyawan", () => {
       // Four tabs and "Lainnya", under their short names; Tagihan is current.
       const bar = await expectTabBar(page, testInfo, [
         "Tagihan",
+        "Kunjungan",
         "Setor",
         "Penyewa",
-        "Penagihan",
       ]);
       expect(await currentTabs(bar)).toEqual(["Tagihan"]);
       const sheet = await openAccountMenu(page, testInfo);
@@ -350,7 +350,11 @@ test.describe("Karyawan", () => {
       await expect(
         sheet.getByText("Karyawan di Kost Putri Anggrek", { exact: true }),
       ).toBeVisible();
-      // Every section he may open is a tab: none in the sheet, no Anggota tim, no Beranda.
+      // Field work and Penyewa are tabs; Penagihan, the fifth, is in the sheet. No Anggota tim,
+      // no Beranda.
+      await expect(
+        sheet.getByRole("link", { name: "Penagihan" }),
+      ).toBeVisible();
       await expect(
         sheet.getByRole("link", { name: "Anggota tim" }),
       ).toHaveCount(0);
@@ -367,6 +371,7 @@ test.describe("Karyawan", () => {
       await expect(menu.getByText("Karyawan", { exact: true })).toBeVisible();
       await expect(menuSections(menu)).toHaveText([
         "Tagihan hari ini",
+        "Kunjungan hari ini",
         "Setor tunai",
         "Penyewa",
         "Penagihan",

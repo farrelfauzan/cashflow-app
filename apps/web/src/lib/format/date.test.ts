@@ -11,6 +11,7 @@ import {
   formatTimestampDate,
   formatTimestampDayMonth,
   formatTimestampShortWeekdayDayMonthTime,
+  formatTimestampTime,
   formatTimestampWeekdayDayMonth,
   formatTimestampWeekdayDayMonthTime,
   formatWeekdayDayMonth,
@@ -259,6 +260,35 @@ describe("formatTimestampWeekdayDayMonthTime", () => {
     { name: "a calendar date", input: "2026-11-13" },
   ])("throws on $name", ({ input }) => {
     expect(() => formatTimestampWeekdayDayMonthTime(input)).toThrow(RangeError);
+  });
+});
+
+describe("formatTimestampTime", () => {
+  it.each([
+    {
+      name: "a morning in Jakarta",
+      input: "2026-11-16T03:42:00Z",
+      want: "10.42",
+    },
+    {
+      name: "an evening in UTC that is the next morning in Jakarta",
+      input: "2026-11-15T17:05:00Z",
+      want: "00.05",
+    },
+    {
+      name: "a timestamp with an offset",
+      input: "2026-11-16T09:15:00+07:00",
+      want: "09.15",
+    },
+  ])("formats $name", ({ input, want }) => {
+    expect(formatTimestampTime(input)).toBe(want);
+  });
+
+  it.each([
+    { name: "a timestamp without a zone", input: "2026-11-16T07:00:00" },
+    { name: "a calendar date", input: "2026-11-16" },
+  ])("throws on $name", ({ input }) => {
+    expect(() => formatTimestampTime(input)).toThrow(RangeError);
   });
 });
 
