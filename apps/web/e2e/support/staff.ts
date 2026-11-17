@@ -120,6 +120,34 @@ export const LINA: SeededStaff = {
   storageState: join(__dirname, "..", ".auth", "lina.json"),
 };
 
+// "Ambil ulang" (e2e/field-receipt-retake.spec.ts): Kos Kunjungan Asri karyawans whose cash only
+// that spec records, so the totals the Kos Bulanan Sejahtera field specs check exactly are never
+// touched by it. Signed in by the setup project only.
+
+// iPad: collector of Nico Pranata (Kamar 13) and Satria Nugraha (Kamar 14).
+export const NURUL: SeededStaff = {
+  phone: "0812-0010-0021",
+  name: "Mbak Nurul Hidayah",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "nurul.json"),
+};
+
+// Phone: collector of Galuh Kartiko (Kamar 15) and Zaskia Ardiningsih (Kamar 16).
+export const BAGUS: SeededStaff = {
+  phone: "0812-0010-0022",
+  name: "Mas Bagus Wicaksono",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "bagus.json"),
+};
+
+// Desktop: collector of Ilham Sasongko (Kamar 17) and Tiara Anindita (Kamar 18).
+export const MIRA: SeededStaff = {
+  phone: "0812-0010-0023",
+  name: "Mbak Mira Widyastuti",
+  organizations: [VISIT_ORG],
+  storageState: join(__dirname, "..", ".auth", "mira.json"),
+};
+
 // Desktop: collector of Farhan Maulana (Kamar 6), Hadi Susanto (Kamar 8) and Irfan Hakim
 // (Rumah 4). Farhan's transfer proofs belong to check-queue-proofs.spec.ts; field-cash.spec.ts
 // takes cash only from the other two.
@@ -176,6 +204,9 @@ export const SETUP_STAFF: readonly SeededStaff[] = [
   UDIN,
   JUWITA,
   KURNIA,
+  NURUL,
+  BAGUS,
+  MIRA,
   GALIH,
   LINA,
   FITRI,

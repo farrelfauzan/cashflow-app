@@ -182,6 +182,7 @@ describe("fieldTodayRow", () => {
       owed: "Sisa Rp1.050.000 · telat Rp1.050.000",
       reason: { label: "Telat 7 hari", tone: "warning" },
       cash: null,
+      cashPayments: [],
       item: WATI,
       canCollect: true,
     });
@@ -202,6 +203,35 @@ describe("fieldTodayRow", () => {
     expect(row.cash?.text).toBe("Tunai hari ini Rp950.000");
     // Nothing left to collect: no "Terima tunai" on the row.
     expect(row.canCollect).toBe(false);
+  });
+});
+
+describe("fieldTodayRow cashPayments", () => {
+  it("lists each payment of today with the row's tenant and place", () => {
+    const row = fieldTodayRow({
+      ...WATI,
+      cashToday: cashToday(100_000, ["clean", "infected"]),
+    });
+    expect(row.cashPayments).toEqual([
+      {
+        paymentId: "p-0",
+        tenantId: "t-1",
+        tenantName: "Bu Wati Handayani",
+        place: "Kamar 11 · Kos Melati",
+        amount: 50_000,
+        recordedAt: "2026-11-16T03:00:00Z",
+        photoStatus: "clean",
+      },
+      {
+        paymentId: "p-1",
+        tenantId: "t-1",
+        tenantName: "Bu Wati Handayani",
+        place: "Kamar 11 · Kos Melati",
+        amount: 50_000,
+        recordedAt: "2026-11-16T03:00:00Z",
+        photoStatus: "infected",
+      },
+    ]);
   });
 });
 
