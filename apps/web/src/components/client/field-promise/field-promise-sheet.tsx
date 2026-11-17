@@ -70,7 +70,7 @@ export function FieldPromiseSheet({
     undefined,
   );
   if (view === undefined && offer.isSuccess && offer.isFetchedAfterMount) {
-    setView(fieldPromiseDialogView(offer.data, tenant, subtitle));
+    setView(fieldPromiseDialogView(offer.data, subtitle));
   }
 
   const reload = () =>

@@ -183,14 +183,17 @@ export function doneChip(outcome: VisitOutcome | undefined): FieldChip | null {
   }
 }
 
-// The grey line of a row recorded today. The outcome names its cash payment but not its amount,
-// so the line says when it was recorded: "Tunai dicatat 09.15", "Dicatat 09.15".
+// The grey line of a row recorded today (board HP-Kunjungan). A paid outcome carries the amount
+// its cash counts now, so the line names it with the time: "Rp950.000 tunai · 09.15". Without an
+// amount it says only when it was recorded, as every other outcome does: "Tunai dicatat 09.15",
+// "Dicatat 09.15".
 export function doneLine(outcome: VisitOutcome | undefined): string | null {
   if (outcome === undefined) return null;
   const time = formatTimestampTime(outcome.recordedAt);
-  return outcome.outcome === VisitOutcomeKind.paid
+  if (outcome.outcome !== VisitOutcomeKind.paid) return `Dicatat ${time}`;
+  return outcome.amount === undefined
     ? `Tunai dicatat ${time}`
-    : `Dicatat ${time}`;
+    : `${formatRupiah(outcome.amount)} tunai · ${time}`;
 }
 
 // "Arahkan" searches the first address of the tenant's units in Google Maps (a link: nothing is

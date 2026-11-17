@@ -81,6 +81,7 @@ export async function OrgShellFrame({ params, children }: OrgShellFrameProps) {
         </OrgAbilityProvider>
       </main>
       <PhoneTabBar
+        orgId={orgId}
         items={items}
         userName={me.user.name}
         roleLine={moreMenuRoleLine(roles, organization.name)}

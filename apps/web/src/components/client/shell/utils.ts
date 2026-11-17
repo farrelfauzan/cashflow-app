@@ -69,3 +69,23 @@ export function markSidebarChoice(root: Element, collapsed: boolean): void {
   if (collapsed) root.setAttribute(SIDEBAR_CHOICE_ATTRIBUTE, SIDEBAR_COLLAPSED);
   else root.removeAttribute(SIDEBAR_CHOICE_ATTRIBUTE);
 }
+
+// The Kunjungan tab's count of visits still open today (board HP-Kunjungan): "99+" from 100 on,
+// so the circle stays small.
+export const VISITS_BADGE_CAP = 99;
+
+export function visitsBadgeText(openTotal: number): string {
+  return openTotal > VISITS_BADGE_CAP
+    ? `${VISITS_BADGE_CAP}+`
+    : String(openTotal);
+}
+
+// The tab's accessible name when it carries a count ("Kunjungan, 3 belum dicatat"), so a screen
+// reader hears what the circle means. The real count, not the capped text. Without one, the
+// label as it is.
+export function visitsTabAccessibleName(
+  label: string,
+  openTotal: number,
+): string {
+  return openTotal > 0 ? `${label}, ${openTotal} belum dicatat` : label;
+}

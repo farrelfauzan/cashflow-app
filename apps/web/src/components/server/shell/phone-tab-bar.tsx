@@ -1,5 +1,6 @@
 import { MoreMenu } from "@/components/client/shell/more-menu";
 import { PhoneTabLink } from "@/components/client/shell/phone-tab-link";
+import { PhoneVisitsTabLink } from "@/components/client/shell/phone-visits-tab-link";
 
 import { OrgMoreMenu } from "./org-more-menu";
 import type { OrgNavItem } from "./type";
@@ -12,6 +13,7 @@ import {
 } from "./utils";
 
 type PhoneTabBarProps = {
+  orgId: string;
   // The sections the member may open (visibleOrgMenu), as the side menu has them.
   items: readonly OrgNavItem[];
   userName: string;
@@ -25,6 +27,7 @@ type PhoneTabBarProps = {
 // rest. Above the home indicator; hidden from the iPad width up, where the side menu stays. On iOS it floats as a rounded glass panel 12px from the sides (board
 // iOS-HP-Tab, T-097e): solid with Increase Contrast; Android keeps the bar along the edge.
 export function PhoneTabBar({
+  orgId,
   items,
   userName,
   roleLine,
@@ -40,14 +43,26 @@ export function PhoneTabBar({
       <ul className="flex">
         {phoneTabs(items).map((item) => {
           const Icon = ORG_NAV_ICONS[item.key];
-          return (
-            <li key={item.key} className="flex min-w-0 flex-1">
+          // Kunjungan carries the count of visits still open; the other tabs carry none.
+          const TabLink =
+            item.key === "visits" ? (
+              <PhoneVisitsTabLink
+                orgId={orgId}
+                href={item.href}
+                label={item.tabLabel}
+                icon={<Icon aria-hidden="true" />}
+              />
+            ) : (
               <PhoneTabLink
                 href={item.href}
                 exact={isExactSection(item.key)}
                 label={item.tabLabel}
                 icon={<Icon aria-hidden="true" />}
               />
+            );
+          return (
+            <li key={item.key} className="flex min-w-0 flex-1">
+              {TabLink}
             </li>
           );
         })}

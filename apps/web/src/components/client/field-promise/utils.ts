@@ -6,13 +6,12 @@ import { PromiseKind } from "@/lib/api/generated/model";
 import { formatDate } from "@/lib/format/date";
 import { formatRupiah } from "@/lib/format/rupiah";
 
-import type { FieldPromiseTenant } from "./type";
-
 // "Catat janji bayar" (board HP-Tagihan, column 4): the karyawan records the tenant's payment
 // promise from Tagihan hari ini. The fields, their checks and the request are those of the admin's
 // "Catat janji" (billing's PromiseForm); only the copy, the order of the choices, and where the
-// values come from differ: getFieldPromiseOffer, read when the sheet opens, plus what the row
-// says the tenant owes (FieldTodayItem.outstanding, the tenant's whole debt, as on the account).
+// values come from differ: getFieldPromiseOffer, read when the sheet opens, which also says what
+// the tenant owes then (FieldPromiseOffer.outstanding, as on the account), so the hint and the
+// amount check never use a row read earlier.
 
 export const RECORD_FIELD_PROMISE_TEXT = "Catat janji bayar";
 export const FIELD_PROMISE_INTRO =
@@ -59,13 +58,9 @@ export function fieldPromiseKindOptions(
 // admin's). Null when no promise can be made now.
 export function fieldPromiseDialogView(
   offer: FieldPromiseOffer,
-  tenant: FieldPromiseTenant,
   subtitle: string,
 ): PromiseDialogView | null {
-  const view = promiseDialogView(
-    { ...offer, outstanding: tenant.outstanding },
-    subtitle,
-  );
+  const view = promiseDialogView(offer, subtitle);
   if (view === null) return null;
   return {
     ...view,
@@ -74,7 +69,7 @@ export function fieldPromiseDialogView(
     kindOptions: fieldPromiseKindOptions(offer.nextInvoiceDueDate),
     dateLabel: FIELD_PROMISE_DATE_LABEL,
     amountLabel: FIELD_PROMISE_AMOUNT_LABEL,
-    amountHint: fieldPromiseAmountHint(tenant.outstanding),
+    amountHint: fieldPromiseAmountHint(offer.outstanding),
     showNote: false,
     defaults:
       offer.activePromise === null

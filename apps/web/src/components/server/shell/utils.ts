@@ -74,8 +74,9 @@ export const ORG_MENU: readonly OrgMenuItem[] = [
     // tab board says. Not visit:read, which an admin and the Supervisor hold for reading the
     // outcomes: their list here would be empty, and their menu stays as it was. visit:record
     // holds on the karyawan's own tenants only, so it is "conditional" and shows the item.
-    // The tab's count of visits still open ("3" on the board) needs an API count first; it
-    // goes on this item (and PhoneTabLink) when that exists.
+    // The phone tab carries the count of visits still open ("3" on the board): PhoneTabBar
+    // renders this item as PhoneVisitsTabLink, which reads openTotal from listFieldVisits. The
+    // side menu on iPad and desktop has no count (the board draws only the phone).
     key: "visits",
     label: "Kunjungan hari ini",
     tabLabel: "Kunjungan",

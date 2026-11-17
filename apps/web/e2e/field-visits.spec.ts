@@ -15,10 +15,8 @@ import {
   FIELD_PROMISE_DATE_LABEL,
   RECORD_FIELD_PROMISE_TEXT,
 } from "../src/components/client/field-promise/utils";
-import {
-  UNSAVED_CHANGES_DISCARD,
-  UNSAVED_CHANGES_TITLE,
-} from "../src/components/client/form-sheet/utils";
+import { UNSAVED_CHANGES_TITLE } from "../src/components/client/form-sheet/utils";
+import { visitsTabAccessibleName } from "../src/components/client/shell/utils";
 import {
   CHANGE_PROMISE_TEXT,
   DIRECTIONS_TEXT,
@@ -375,6 +373,17 @@ test.describe("Karyawan", () => {
       }
     }
 
+    // The phone's Kunjungan tab carries the count still open (board HP-Kunjungan), in its name;
+    // iPad and desktop have the side menu, with no count.
+    expect(list.openTotal).toBe(open.length);
+    const countedTab = page.getByRole("link", {
+      name: visitsTabAccessibleName("Kunjungan", list.openTotal),
+      exact: true,
+    });
+    await expect(countedTab).toHaveCount(
+      projectName(testInfo) === "phone" ? 1 : 0,
+    );
+
     // Readable sizes, as on Tagihan hari ini.
     const firstVisit = open[0];
     if (firstVisit === undefined) throw new Error("no open visit");
@@ -459,13 +468,11 @@ test.describe("Karyawan", () => {
     await expect(save(sheet)).toBeEnabled();
 
     // Closing and pressing Catat hasil again brings back the same opening, still locked.
+    // The opening is kept, so even on the phone closing it does not ask to discard.
     await sheet.getByRole("button", { name: "Tutup" }).click();
-    if (projectName(testInfo) === "phone") {
-      await page
-        .getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE })
-        .getByRole("button", { name: UNSAVED_CHANGES_DISCARD })
-        .click();
-    }
+    await expect(
+      page.getByRole("alertdialog", { name: UNSAVED_CHANGES_TITLE }),
+    ).toHaveCount(0);
     await expect(sheet).toBeHidden();
     const reopened = await openSheet(page, notHome);
     await expect(reopened.getByText(UNKNOWN_SAVE_TEXT)).toBeVisible();
@@ -645,6 +652,8 @@ test.describe("Karyawan", () => {
     const sheet = await openSheet(page, tenant);
 
     let paymentId: string;
+    // What this run received through Terima tunai; null when an earlier run took the cash.
+    let receivedAmount: number | null = null;
     if (visit.unlinkedCashToday.length === 0) {
       // No cash yet: Sudah bayar says why and offers Terima tunai, which opens over this sheet.
       await outcomeRadio(sheet, "Sudah bayar hari ini").click();
@@ -656,6 +665,7 @@ test.describe("Karyawan", () => {
 
       // A small part of what is owed, with its receipt photo.
       const amount = Number(`5${runId()}`);
+      receivedAmount = amount;
       await cash.getByLabel("Uang yang diterima").fill(String(amount));
       await cash.getByLabel("Ambil foto kwitansi").setInputFiles({
         name: "kwitansi.jpg",
@@ -703,6 +713,13 @@ test.describe("Karyawan", () => {
     expect(answer.paymentId).toBe(paymentId);
     const after = await expectRowAsListed(page, orgId, tenant);
     expect(after.status).toBe("done");
+    // The done row names the cash it counts, as the board says: "Rp950.000 tunai · 09.15".
+    if (receivedAmount !== null) {
+      await expect(
+        doneRows(page).filter({ hasText: tenant }),
+        "the done row names the received amount",
+      ).toContainText(`${formatRupiah(receivedAmount)} tunai`);
+    }
     expect(outsideRequests).toEqual([]);
   });
 });

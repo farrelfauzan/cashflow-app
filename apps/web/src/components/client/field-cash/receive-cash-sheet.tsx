@@ -70,7 +70,9 @@ export function ReceiveCashSheet({
     <FormSheet
       open={open}
       onOpenChange={changeOpen}
-      dirty={cash.dirty}
+      // After a lost answer the opening is kept (locked): the row's button brings it back with
+      // its requestId, so closing loses nothing and does not ask "Tutup tanpa menyimpan?".
+      dirty={cash.dirty && !cash.locked}
       busy={cash.saving}
     >
       <FormSheetContent
