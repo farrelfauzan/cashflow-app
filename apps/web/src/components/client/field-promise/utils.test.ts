@@ -11,11 +11,6 @@ import {
   fieldPromiseKindOptions,
 } from "./utils";
 
-const TENANT = {
-  tenantId: "tenant-1",
-  tenantName: "Mbak Sinta Dewi",
-  outstanding: 1_050_000,
-};
 const SUBTITLE = "Mbak Sinta Dewi · Kamar 15 · Kos Melati";
 const DATES = { earliest: "2026-11-16", latest: "2027-01-15" };
 
@@ -23,7 +18,7 @@ const offer = (over: Partial<FieldPromiseOffer> = {}): FieldPromiseOffer => ({
   activePromise: null,
   promiseDates: DATES,
   nextInvoiceDueDate: "2026-12-15",
-  outstanding: TENANT.outstanding,
+  outstanding: 1_050_000,
   ...over,
 });
 
@@ -78,14 +73,13 @@ describe("fieldPromiseDialogView", () => {
     expect(
       fieldPromiseDialogView(
         offer({ promiseDates: null, nextInvoiceDueDate: null }),
-        TENANT,
         SUBTITLE,
       ),
     ).toBeNull();
   });
 
   it("opens empty on Pilih tanggal with the board's copy", () => {
-    const view = fieldPromiseDialogView(offer(), TENANT, SUBTITLE);
+    const view = fieldPromiseDialogView(offer(), SUBTITLE);
     expect(view).toMatchObject({
       title: "Catat janji bayar",
       subtitle: SUBTITLE,
@@ -112,7 +106,6 @@ describe("fieldPromiseDialogView", () => {
   it("opens filled from the active promise, which saving replaces", () => {
     const view = fieldPromiseDialogView(
       offer({ activePromise: active({ promisedAmount: 500_000 }) }),
-      TENANT,
       SUBTITLE,
     );
     expect(view?.replacesLine).toBe(
@@ -135,9 +128,17 @@ describe("fieldPromiseDialogView", () => {
           promisedDate: "2026-12-15",
         }),
       }),
-      TENANT,
       SUBTITLE,
     );
     expect(view?.defaults.kind).toBe("with_next_invoice");
+  });
+
+  it("takes what the tenant owes from the offer, read when the sheet opens", () => {
+    const view = fieldPromiseDialogView(
+      offer({ outstanding: 250_000 }),
+      SUBTITLE,
+    );
+    expect(view?.amountHint).toBe("Kosong = semua sisa, Rp250.000.");
+    expect(view?.offer.outstanding).toBe(250_000);
   });
 });
