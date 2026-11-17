@@ -214,6 +214,8 @@ func TestFieldOverHTTP(t *testing.T) {
 		require.Equal(t, acct.ActivePromise, got.ActivePromise)
 		require.Equal(t, acct.PromiseDates, got.PromiseDates)
 		require.Equal(t, acct.NextInvoiceDueDate, got.NextInvoiceDueDate)
+		require.Positive(t, got.Outstanding)
+		require.Equal(t, acct.Outstanding, got.Outstanding)
 
 		resp, body = karyawan.do(http.MethodGet, offerPath(bambang), nil)
 		require.Equal(t, http.StatusForbidden, resp.StatusCode, "not their tenant: %s", body)
