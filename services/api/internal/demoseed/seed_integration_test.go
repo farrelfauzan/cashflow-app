@@ -204,7 +204,7 @@ func TestSeedDemo(t *testing.T) {
 	})
 
 	t.Run("the login list has every member with E.164 phones", func(t *testing.T) {
-		require.Len(t, first.Logins, 46)
+		require.Len(t, first.Logins, 50)
 		var disabled []string
 		for _, l := range first.Logins {
 			require.Regexp(t, `^\+62\d+$`, l.Phone)
