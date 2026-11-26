@@ -48,8 +48,8 @@ sends it again.
 
 ### Demo data (development only)
 
-To get a realistic database without typing it in, seed four demo organizations (Griya Sejahtera,
-Kost Putri Anggrek, Kos Bulanan Sejahtera and Kos Kunjungan Asri) with their staff, properties,
+To get a realistic database without typing it in, seed five demo organizations (Griya Sejahtera,
+Kost Putri Anggrek, Kos Bulanan Sejahtera, Kos Kunjungan Asri and Kos Aneka Kasus) with their staff, properties,
 units, tenants and leases. From `services/api`, with `DATABASE_URL` pointing at your local database
 (the app role, as for `create-org`):
 
@@ -71,7 +71,7 @@ Agus was added, Eko's lease keeps no collector and the flag does not show.
 Seeded leases are entered 40 days before today and bill from the period that ran 70 days ago, so
 they have only a few invoices, some overdue. `seed-demo` creates no invoice; run
 `APP_ENV=development go run ./cmd/admin generate-invoices` right after it (same development-only
-rule). It generates the invoices of the four demo organizations only, never of any other
+rule). It generates the invoices of the demo organizations only, never of any other
 organization, and records two payments in each but Kos Kunjungan Asri: one demo tenant pays
 everything they owe (transfer), one pays about half of their oldest invoice (cash), and a third pays
 nothing and stays overdue. Kos Kunjungan Asri has no payer, and three of its tenants get two broken
@@ -126,6 +126,24 @@ two broken promises each, so they have a `broken_promises` visit task too (the d
 and 2 days in the past (the first promise is made 6 days ago for 5 days ago and closed 4 days ago,
 the second made then for 3 days ago and closed 2 days ago), so every row is dated before today. A
 tenant who already has any promise is left alone, so a rerun adds none.
+
+Kos Aneka Kasus is the case organization (T-109): one named tenant for each field and payment case,
+so every state of Tagihan hari ini, Kunjungan hari ini, Setoran tunai and Antrean cek can be walked
+without preparing data by hand. Bu Kartika Sari (0812-0011-0001) is its Supervisor, Pak Hadi Santoso
+(0812-0011-0002) its Admin, and two karyawan collect: Mas Yoga Pratama (0812-0011-0011) from almost
+every tenant and Mbak Dina Maharani (0812-0011-0012) from two, so Yoga sees what another karyawan's
+tenants look like. `seed-demo` creates its people, units and leases; `generate-invoices` then runs
+`demoseed.SeedCases`, which bills it and records each case through the app's own services as its
+admin, its karyawan, the tenant's payment page (QRIS against an in-process stand-in gateway) and
+the daily jobs: credit from an overpayment, promises kept, partly kept and broken, a lease moved out
+owing, visit outcomes, a new number, a QRIS paid at another amount. Unlike the other organizations
+its dates are relative to the day it is seeded, so its cases hold on that day; reseed after
+`make dev-reset` for another day. The cases that need a photo (cash with its receipt, the
+deposits, the two transfer proofs and the infected upload) are seeded only when `STORAGE_*` is set
+and the storage runs (`make dev-up-uploads`); each photo is scanned at once with the development
+scanner. Without storage it seeds the rest and prints a note on stderr; set it and run
+`generate-invoices` again. No web spec depends on this organization. The case list, with the
+tenant and screen for each, is in the slice 6 local demo guide.
 
 ### The secrets key (`SECRETS_KEY`)
 

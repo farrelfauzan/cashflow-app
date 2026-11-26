@@ -12,6 +12,26 @@ import (
 	"github.com/google/uuid"
 )
 
+const countTenantUploads = `-- name: CountTenantUploads :one
+SELECT count(*) FROM upload
+WHERE organization_id = $1 AND tenant_id = $2 AND purpose = $3
+`
+
+type CountTenantUploadsParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.NullUUID
+	Purpose        string
+}
+
+// How many uploads of the purpose the tenant has, whatever their status (the demo seed's check
+// before it uploads one again).
+func (q *Queries) CountTenantUploads(ctx context.Context, arg CountTenantUploadsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenantUploads, arg.OrganizationID, arg.TenantID, arg.Purpose)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const finishUploadScan = `-- name: FinishUploadScan :execrows
 UPDATE upload
 SET status = $1, content_type = $2, scanned_at = $3::timestamptz

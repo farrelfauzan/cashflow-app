@@ -182,3 +182,10 @@ LEFT JOIN membership m ON m.organization_id = l.organization_id AND m.staff_user
 LEFT JOIN staff_user su ON su.id = l.collector_staff_user_id
 WHERE l.organization_id = @organization_id AND l.tenant_id = ANY(@tenant_ids::uuid[])
 ORDER BY l.status, l.start_date DESC, l.id;
+
+-- name: CountTenantEndedLeasesOnUnit :one
+-- How many ended leases the tenant has on the unit (the demo seed's check before it starts one
+-- again).
+SELECT count(*) FROM lease
+WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND unit_id = @unit_id
+  AND status = 'ended';

@@ -113,3 +113,9 @@ SELECT sqlc.arg(upload_id)::uuid, sqlc.arg(organization_id)::uuid, sqlc.arg(dele
 WHERE NOT EXISTS (SELECT 1 FROM payment_receipt_photo p
                   WHERE p.organization_id = sqlc.arg(organization_id)::uuid AND p.upload_id = sqlc.arg(upload_id)::uuid)
 ON CONFLICT (upload_id) DO NOTHING;
+
+-- name: CountTenantUploads :one
+-- How many uploads of the purpose the tenant has, whatever their status (the demo seed's check
+-- before it uploads one again).
+SELECT count(*) FROM upload
+WHERE organization_id = @organization_id AND tenant_id = @tenant_id AND purpose = @purpose;

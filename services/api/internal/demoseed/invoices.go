@@ -105,6 +105,9 @@ type Summary struct {
 func GenerateInvoices(ctx context.Context, d GenerateDeps, c clock.Clock) ([]Summary, error) {
 	var out []Summary
 	for _, o := range demoOrgs(c) {
+		if o.Cases {
+			continue // SeedCases bills it
+		}
 		g := &generator{d: d, spec: o, clock: c, today: tenant.Today(c)}
 		sum, err := g.run(ctx)
 		if err != nil {
@@ -280,6 +283,13 @@ func partialAmount(a billing.Account) int64 {
 // pay records one demo payment unless its requestId is already stored. It reports whether it
 // recorded one. A tenant that owes nothing yet gets none.
 func (g *generator) pay(ctx context.Context, name, label string, amount func(billing.Account) int64, method, note string) (bool, error) {
+	return g.payOn(ctx, g.d.Billing, g.today, name, label, amount, method, note)
+}
+
+// payOn is pay through bill, the billing service on some clock, received on day.
+func (g *generator) payOn(ctx context.Context, bill *billing.Service, day time.Time, name, label string,
+	amount func(billing.Account) int64, method, note string,
+) (bool, error) {
 	number, err := g.phoneOf(name)
 	if err != nil {
 		return false, err
@@ -293,7 +303,7 @@ func (g *generator) pay(ctx context.Context, name, label string, amount func(bil
 	if err != nil || stored {
 		return false, err
 	}
-	acct, err := g.d.Billing.Account(ctx, g.p, tenantID)
+	acct, err := bill.Account(ctx, g.p, tenantID)
 	if err != nil {
 		return false, err
 	}
@@ -301,8 +311,8 @@ func (g *generator) pay(ctx context.Context, name, label string, amount func(bil
 	if due <= 0 {
 		return false, nil
 	}
-	res, err := g.d.Billing.RecordPayment(ctx, g.p, billing.PaymentInput{
-		RequestID: requestID, TenantID: tenantID, Amount: due, Method: method, ReceivedOn: g.today, Note: note,
+	res, err := bill.RecordPayment(ctx, g.p, billing.PaymentInput{
+		RequestID: requestID, TenantID: tenantID, Amount: due, Method: method, ReceivedOn: day, Note: note,
 	})
 	if err != nil {
 		return false, err
