@@ -122,8 +122,9 @@ const (
 //
 // Each step is skipped when what it makes exists: payments by their fixed requestId, promises when
 // the tenant has one, deposits by requestId, uploads when the tenant has one of that purpose. Its
-// dates are relative to today, so a run on a later day adds nothing and the cases drift; reseed
-// after dev-reset for a fresh demo.
+// dates are relative to today, so a run on a later day adds only what the daily jobs would (the
+// invoices and h7 visit tasks that have come due) and the cases drift; reseed after dev-reset for a
+// fresh demo.
 func SeedCases(ctx context.Context, d CaseDeps, c clock.Clock) (CaseSummary, error) {
 	k, err := newCaseSeeder(ctx, d, c)
 	if err != nil {

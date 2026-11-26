@@ -527,6 +527,24 @@ func TestSeedCases(t *testing.T) {
 		require.Equal(t, demoseed.CaseSummary{Organization: demoseed.OrgKasus}, again)
 		require.Equal(t, before, tableCounts(t, env, k.org, kasusMoneyTables))
 	})
+
+	t.Run("running seed-demo again keeps the ended lease ended and the next one running", func(t *testing.T) {
+		_, err := demoseed.Run(ctx, deps(env), env.Clock)
+		require.NoError(t, err)
+		dedi, err := env.Tenants.Get(ctx, k.admin, k.id(t, demoseed.KasusEndedLease))
+		require.NoError(t, err)
+		var house, room []string
+		for _, l := range dedi.Leases {
+			switch l.UnitLabel {
+			case "Rumah 2":
+				house = append(house, l.Status)
+			case "Kamar 20":
+				room = append(room, l.Status)
+			}
+		}
+		require.Equal(t, []string{tenant.StatusEnded}, house, "no new lease on Rumah 2")
+		require.Equal(t, []string{tenant.StatusActive}, room)
+	})
 }
 
 func TestSeedCasesWithoutFiles(t *testing.T) {

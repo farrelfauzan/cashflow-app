@@ -431,8 +431,11 @@ func (s *seeder) ensureTenant(ctx context.Context, ts tenantSpec) error {
 			}
 			if !ls.EndOn.IsZero() {
 				ended, err := s.hasEndedLease(ctx, tx, tenantID, ls)
-				if err != nil || ended {
+				if err != nil {
 					return err
+				}
+				if ended {
+					continue
 				}
 			}
 			if running[i], err = s.ensureActiveLease(ctx, tx, tenantID, ls); err != nil {
