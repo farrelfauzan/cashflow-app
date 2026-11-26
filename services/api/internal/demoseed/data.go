@@ -90,7 +90,11 @@ type leaseSpec struct {
 	Deposit        int64
 	Collector      string    // phone of the collecting member; "" means none
 	MovedOut       time.Time // last day of an ended lease; zero for a lease that is still running
-	Charges        []chargeSpec
+	// EndOn is the last day of a lease that runs until it is billed: seed-demo creates it running
+	// and SeedCases moves it out on this day, so it ends owing. Once it has ended, seed-demo leaves
+	// the unit alone. Zero for every other lease.
+	EndOn   time.Time
+	Charges []chargeSpec
 }
 
 // chargeSpec is a fixed monthly extra on a running lease.
@@ -140,6 +144,9 @@ type orgSpec struct {
 	// QRIS gives the organization DemoAutoGoPayKey, so its payment page offers QRIS against the
 	// AutoGoPay stand-in (cmd/fakeautogopay); false leaves it with bank transfer only.
 	QRIS bool
+	// Cases marks the case organization (OrgKasus): GenerateInvoices leaves it to SeedCases, which
+	// bills it on its own schedule.
+	Cases bool
 }
 
 // DemoAutoGoPayKey is the made-up AutoGoPay key the demo seed stores for organizations with QRIS.
@@ -327,5 +334,6 @@ func demoOrgs(c clock.Clock) []orgSpec {
 		},
 		bulananOrg(),
 		kunjunganOrg(),
+		kasusOrg(c),
 	}
 }

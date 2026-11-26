@@ -12,6 +12,27 @@ import (
 	"github.com/google/uuid"
 )
 
+const countTenantEndedLeasesOnUnit = `-- name: CountTenantEndedLeasesOnUnit :one
+SELECT count(*) FROM lease
+WHERE organization_id = $1 AND tenant_id = $2 AND unit_id = $3
+  AND status = 'ended'
+`
+
+type CountTenantEndedLeasesOnUnitParams struct {
+	OrganizationID uuid.UUID
+	TenantID       uuid.UUID
+	UnitID         uuid.UUID
+}
+
+// How many ended leases the tenant has on the unit (the demo seed's check before it starts one
+// again).
+func (q *Queries) CountTenantEndedLeasesOnUnit(ctx context.Context, arg CountTenantEndedLeasesOnUnitParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenantEndedLeasesOnUnit, arg.OrganizationID, arg.TenantID, arg.UnitID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTenantPage = `-- name: CountTenantPage :one
 WITH vl AS (
     SELECT l.tenant_id, l.status, l.start_date, u.property_id, u.label,

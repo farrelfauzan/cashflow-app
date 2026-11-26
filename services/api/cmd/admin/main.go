@@ -13,7 +13,9 @@
 //	APP_ENV=development admin seed-demo
 //
 // and bills the seeded leases and records a few demo payments (the invoices and payments of the
-// demo organizations only, never of any other organization):
+// demo organizations only, never of any other organization), then seeds every case of the case
+// organization, Kos Aneka Kasus (demoseed.SeedCases); with STORAGE_* set it also stores the photos
+// of its cash, deposits and transfer proofs, otherwise it skips those cases and says so:
 //
 //	APP_ENV=development admin generate-invoices
 //
@@ -98,7 +100,7 @@ import (
 const usage = `usage:
   admin create-org -name NAME -display-name NAME -member "phone|name|roles" [-member ...]
   admin seed-demo   (development only: APP_ENV=development)
-  admin generate-invoices   (development only: invoices and payments of the demo organizations)
+  admin generate-invoices   (development only: invoices, payments and cases of the demo organizations)
   admin run-day -day YYYY-MM-DD [-org ORGANIZATION_ID]   (development only: the daily jobs of that day)
   admin set-autogopay-key -org ORGANIZATION_ID   (reads the API key as one line from stdin)
   admin set-bank-account -org ORGANIZATION_ID -bank NAME -number NUMBER -holder NAME
@@ -313,7 +315,7 @@ func generateInvoices(ctx context.Context, args []string, e env) error {
 		}
 		fmt.Fprintln(e.stdout, ")")
 	}
-	return nil
+	return seedCases(ctx, cn, c, e.stdout, e.stderr)
 }
 
 // maxKeyLine bounds what set-autogopay-key reads from stdin: a little more than the longest key

@@ -299,6 +299,22 @@ type Admin struct {
 	WhatsAppProvider string `env:"WHATSAPP_PROVIDER"`
 	DevlogFile       string `env:"DEVLOG_FILE"`
 	PublicWebOrigin  string `env:"PUBLIC_WEB_ORIGIN"`
+	// Storage is as in API. Only generate-invoices reads it (CaseStorage), to store the photos of
+	// the demo's case organization; it is not validated at load, so no other admin command
+	// depends on it.
+	Storage Storage `env:", prefix=STORAGE_"`
+}
+
+// CaseStorage returns the bucket generate-invoices stores the demo's photos in, and false when
+// none is set (development without uploads). A bucket set only in part is an error.
+func (c Admin) CaseStorage() (Storage, bool, error) {
+	if !c.Storage.Enabled() {
+		return Storage{}, false, nil
+	}
+	if err := c.Storage.validate(c.Env); err != nil {
+		return Storage{}, false, err
+	}
+	return c.Storage, true, nil
 }
 
 // DevlogSending is what run-day sends reminders with: the devlog provider's settings and the

@@ -40,6 +40,7 @@ import (
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/phone"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/clock"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store"
+	"github.com/farrelfauzan/cashflow-app/services/api/internal/platform/store/dbgen"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/property"
 	"github.com/farrelfauzan/cashflow-app/services/api/internal/tenant"
 )
@@ -428,6 +429,12 @@ func (s *seeder) ensureTenant(ctx context.Context, ts tenantSpec) error {
 			if !ls.MovedOut.IsZero() {
 				continue
 			}
+			if !ls.EndOn.IsZero() {
+				ended, err := s.hasEndedLease(ctx, tx, tenantID, ls)
+				if err != nil || ended {
+					return err
+				}
+			}
 			if running[i], err = s.ensureActiveLease(ctx, tx, tenantID, ls); err != nil {
 				return err
 			}
@@ -496,6 +503,22 @@ func (s *seeder) ensureActiveLease(ctx context.Context, tx pgx.Tx, tenantID uuid
 		return uuid.Nil, fmt.Errorf("lease on %s %s: %w", ls.Property, ls.Unit, err)
 	}
 	return l.ID, nil
+}
+
+// hasEndedLease reports whether the tenant has an ended lease on the spec's unit: one SeedCases
+// moved out, which seed-demo must not start again.
+func (s *seeder) hasEndedLease(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ls leaseSpec) (bool, error) {
+	unitID, ok := s.units[ls.Property][ls.Unit]
+	if !ok {
+		return false, fmt.Errorf("unknown unit %s in %s", ls.Unit, ls.Property)
+	}
+	n, err := dbgen.New(tx).CountTenantEndedLeasesOnUnit(ctx, dbgen.CountTenantEndedLeasesOnUnitParams{
+		OrganizationID: s.p.OrganizationID, TenantID: tenantID, UnitID: unitID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("looking for an ended lease on %s %s: %w", ls.Property, ls.Unit, err)
+	}
+	return n > 0, nil
 }
 
 // ensureEndedLease leaves the tenant with an ended lease on the unit. It is skipped when they
